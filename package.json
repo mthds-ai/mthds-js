@@ -1,0 +1,45 @@
+{
+  "name": "mthds",
+  "version": "0.0.4",
+  "description": "CLI for composable methods for AI agents. Turn your knowledge processes into executable methods.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Pipelex/mthds-js"
+  },
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "bin": {
+    "mthds": "./dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "example": "npx tsx examples/call_api.ts"
+  },
+  "files": [
+    "dist/"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "@clack/prompts": "^1.0.0",
+    "@supabase/supabase-js": "^2.95.3",
+    "chalk": "^5.4.1",
+    "commander": "^13.1.0",
+    "ora": "^8.2.0",
+    "posthog-node": "^4.4.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.12.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.3"
+  }
+}

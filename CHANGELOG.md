@@ -1,5 +1,10 @@
 # Changelog
 
+## [v0.0.4] - 2026-02-19
+
+- Fix Readme
+- Fix deploy scripts
+
 ## [v0.0.3] - 2026-02-12
 
 - Add runner management CLI

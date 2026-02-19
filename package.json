@@ -5,7 +5,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/Pipelex/mthds-js"
+    "url": "https://github.com/mthds-ai/mthds-js"
   },
   "type": "module",
   "main": "./dist/index.js",

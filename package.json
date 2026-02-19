@@ -1,7 +1,7 @@
 {
   "name": "mthds",
-  "version": "0.0.4",
-  "description": "CLI for composable methods for AI agents. Turn your knowledge processes into executable methods.",
+  "version": "0.0.5",
+  "description": "CLI and SDK for MTHDS — the open standard for reusable AI agent methods. Install, execute, and manage methods.",
   "license": "MIT",
   "repository": {
     "type": "git",

@@ -2,6 +2,8 @@
 
 CLI and SDK for **methods** — reusable workflows for AI coding agents.
 
+The MTHDS open standard is defined at [mthds.ai](https://mthds.ai). Browse and discover public methods on the hub at [mthds.sh](https://mthds.sh).
+
 ## What is a method?
 
 A method is a packaged workflow that an AI agent (like Claude Code) can use. Methods are stored in a registry and installed locally via their unique slug.
@@ -19,7 +21,7 @@ The CLI will:
 1. Look up the method in the registry
 2. Ask which AI agent to install it for (Claude Code, with more coming soon)
 3. Ask where to install — **local** (current project) or **global** (your machine)
-4. Optionally install the pipelex software runtime
+4. Optionally install a [runner](#runners)
 5. Write the method to `.claude/methods/<slug>/METHOD.mthds`
 
 ### Install locations
@@ -29,13 +31,28 @@ The CLI will:
 | Local | `<cwd>/.claude/methods/<slug>/` |
 | Global | `~/.claude/methods/<slug>/` |
 
-### Install software runtime
+## Runners
+
+To execute a method, you need a **runner**. A runner is the engine that takes a method definition and actually runs it.
+
+### Available runners
+
+| Runner | Description |
+|--------|-------------|
+| **Pipelex** (local) | A Python-based runner you install on your machine. Install it with `npx mthds setup runner pipelex`. |
+| **Pipelex API** (remote) | An API server that runs methods remotely. You can self-host it using [pipelex-api](https://github.com/Pipelex/pipelex-api) (open source). A public hosted API at `https://api.pipelex.com` is coming soon. |
+
+These are the only runners that exist today. Feel free to create your own runner in a different language!
+
+### Install the local runner
 
 ```bash
-npx mthds setup software pipelex
+npx mthds setup runner pipelex
 ```
 
-Installs [uv](https://docs.astral.sh/uv/) and [pipelex](https://pipelex.dev) so methods that depend on them can run.
+### Use the API runner
+
+See the [SDK Usage](#sdk-usage) section below to connect to a Pipelex API instance.
 
 ## SDK Usage
 
@@ -65,11 +82,9 @@ const result = await client.executePipeline({
 console.log(result.pipe_output);
 ```
 
-The hosted API at `https://api.pipelex.com` is coming soon. In the meantime, you can run the API yourself.
-
 ### Self-hosted API
 
-Point the client to your own server:
+Point the client to your own [pipelex-api](https://github.com/Pipelex/pipelex-api) instance:
 
 ```typescript
 const client = new MthdsApiClient({

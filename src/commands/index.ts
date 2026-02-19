@@ -89,7 +89,7 @@ export function showBanner(): void {
   console.log(`    ${chalk.dim("$")} mthds install my-method-slug\n`);
 
   console.log(
-    chalk.dim("  Docs: https://pipelex.dev/docs\n")
+    chalk.dim("  Docs: https://docs.pipelex.com \n")
   );
 
   console.log(chalk.bold("  Telemetry:"));

@@ -69,7 +69,7 @@ export function showBanner(): void {
 
   console.log(chalk.bold("  Setup:"));
   console.log(
-    `    ${chalk.yellow("install <slug>")}            Install a method`
+    `    ${chalk.yellow("install <address>")}          Install a method package`
   );
   console.log(
     `    ${chalk.yellow("config set <key> <val>")}    Set a config value`
@@ -86,7 +86,8 @@ export function showBanner(): void {
   console.log(`    ${chalk.dim("$")} mthds run my_bundle.plx --inputs data.json`);
   console.log(`    ${chalk.dim("$")} mthds build pipe "Analyze a CV against a job offer"`);
   console.log(`    ${chalk.dim("$")} mthds validate my_bundle.plx`);
-  console.log(`    ${chalk.dim("$")} mthds install my-method-slug\n`);
+  console.log(`    ${chalk.dim("$")} mthds install pipelex/cookbook`);
+  console.log(`    ${chalk.dim("$")} mthds install --dir ./my-local-method\n`);
 
   console.log(
     chalk.dim("  Docs: https://docs.pipelex.com \n")
@@ -94,8 +95,17 @@ export function showBanner(): void {
 
   console.log(chalk.bold("  Telemetry:"));
   console.log(
+    `    ${chalk.yellow("telemetry disable")}        Disable anonymous telemetry`
+  );
+  console.log(
+    `    ${chalk.yellow("telemetry enable")}         Enable anonymous telemetry`
+  );
+  console.log(
+    `    ${chalk.yellow("telemetry status")}         Show telemetry status\n`
+  );
+  console.log(
     chalk.dim(
-      "  Anonymous usage data (method slug + timestamp) is collected\n  to help rank methods. No personal info is collected.\n  Opt out: DISABLE_TELEMETRY=1\n"
+      "  Anonymous usage data (method slug + timestamp) is collected\n  to help rank methods. No personal info is collected.\n  Opt out: DISABLE_TELEMETRY=1 or mthds telemetry disable\n"
     )
   );
 }

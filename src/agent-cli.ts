@@ -56,7 +56,6 @@ program
   .enablePositionalOptions()
   .exitOverride()
   .configureOutput({
-    writeOut: () => {},
     writeErr: () => {},
   });
 
@@ -160,7 +159,7 @@ program
   .option("--agent <id>", "AI agent to install for (required)")
   .option("--location <loc>", "Install location: local or global (required)")
   .option("--method <slug>", "Install only the specified method (by slug)")
-  .option("--skills <list>", "Install MTHDS skills plugin")
+  .option("--skills", "Install MTHDS skills plugin")
   .option("--no-runner", "Skip Pipelex runner install")
   .description("Install a method package (non-interactive)")
   .exitOverride()
@@ -169,7 +168,7 @@ program
     agent?: string;
     location?: string;
     method?: string;
-    skills?: string;
+    skills?: boolean;
     runner?: boolean; // Commander stores --no-runner as runner: false
   }) => {
     await agentInstall(address, { ...opts, noRunner: opts.runner === false });
@@ -227,14 +226,7 @@ program.action(() => {
 program.parseAsync(process.argv).catch((err: unknown) => {
   if (err instanceof CommanderError) {
     if (err.exitCode === 0) {
-      // --version: print plain text version
-      if (err.code === "commander.version") {
-        process.stdout.write(`mthds-agent ${pkg.version}\n`);
-      }
-      // --help: print help text (configureOutput no-ops suppress it)
-      if (err.code === "commander.helpDisplayed") {
-        process.stdout.write(program.helpInformation());
-      }
+      // Commander already wrote help/version to stdout (writeOut is not suppressed)
       process.exit(0);
     }
     const message = err.message.replace(/^error: /, "").replace(/^Error: /, "");

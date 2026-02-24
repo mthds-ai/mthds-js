@@ -27,7 +27,7 @@ interface AgentInstallOptions {
   agent?: string;
   location?: string;
   method?: string;
-  skills?: string;
+  skills?: boolean;
   noRunner?: boolean;
 }
 

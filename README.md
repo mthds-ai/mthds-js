@@ -30,20 +30,20 @@ The CLI will:
 4. Ask which AI agent to install it for (Claude Code, with more coming soon)
 5. Ask where to install — **local** (current project) or **global** (your machine)
 6. Optionally install a [runner](#runners)
-7. Copy all `.mthds` files to `.claude/methods/<repo-name>/<slug>/`
+7. Copy all `.mthds` files to `.claude/methods/<slug>/`
 
 You can also install from a local directory:
 
 ```bash
-npx mthds install --dir /path/to/your/repo
+npx mthds install --local /path/to/repo
 ```
 
 ### Install locations
 
 | Location | Path |
 |----------|------|
-| Local | `<cwd>/.claude/methods/<repo-name>/<slug>/` |
-| Global | `~/.claude/methods/<repo-name>/<slug>/` |
+| Local | `<cwd>/.claude/methods/<slug>/` |
+| Global | `~/.claude/methods/<slug>/` |
 
 ## Publishing a method
 
@@ -105,7 +105,7 @@ To execute a method, you need a **runner**. A runner is the engine that takes a 
 
 | Runner | Description |
 |--------|-------------|
-| **Pipelex** (local) | A Python-based runner you install on your machine. Install it with `npx mthds setup runner pipelex`. |
+| **[Pipelex](https://github.com/Pipelex/pipelex)** (local) | A Python-based runner you install on your machine. Install it with `npx mthds setup runner pipelex`. |
 | **Pipelex API** (remote) | An API server that runs methods remotely. You can self-host it using [pipelex-api](https://github.com/Pipelex/pipelex-api) (open source). A public hosted API at `https://api.pipelex.com` is coming soon. |
 
 These are the only runners that exist today. Feel free to create your own runner in a different language!

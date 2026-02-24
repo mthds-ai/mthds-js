@@ -14,7 +14,7 @@ export const claudeCodeHandler: AgentHandler = {
     const { repo } = ctx;
 
     for (const method of repo.methods) {
-      const installDir = resolve(join(ctx.targetDir, repo.repoName, method.slug));
+      const installDir = resolve(join(ctx.targetDir, method.slug));
 
       s.start(`Installing "${method.slug}" to ${installDir}...`);
 

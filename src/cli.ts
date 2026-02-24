@@ -119,26 +119,26 @@ program
 program
   .command("install")
   .argument("[address]", "Package address (org/repo or org/repo/sub/path)")
-  .option("--dir <path>", "Install from a local directory")
+  .option("--local <path>", "Install from a local directory")
   .option("--method <slug>", "Install only the specified method (by slug)")
   .description("Install a method package")
   .exitOverride()
-  .action(async (address: string | undefined, opts: { dir?: string; method?: string }) => {
-    if (address && opts.dir) {
+  .action(async (address: string | undefined, opts: { local?: string; method?: string }) => {
+    if (address && opts.local) {
       printLogo();
       p.intro("mthds install");
-      p.log.error("Cannot use both an address and --dir at the same time.");
+      p.log.error("Cannot use both an address and --local at the same time.");
       p.outro("");
       process.exit(1);
     }
-    if (!address && !opts.dir) {
+    if (!address && !opts.local) {
       printLogo();
       p.intro("mthds install");
-      p.log.error("Provide an address (org/repo) or use --dir <path>.");
+      p.log.error("Provide an address (org/repo) or use --local <path>.");
       p.outro("");
       process.exit(1);
     }
-    await installMethod({ address, dir: opts.dir, method: opts.method });
+    await installMethod({ address, dir: opts.local, method: opts.method });
   });
 
 // ── mthds setup runner <name> ──────────────────────────────────────

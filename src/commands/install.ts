@@ -178,8 +178,10 @@ export async function installMethod(options: {
   }
 
   // Step 3: Optional runner install
+  let hasPipelex = isPipelexInstalled();
+
   const wantsRunner = await p.confirm({
-    message: "Do you want to install the runner now? (optional)",
+    message: "Do you want to install the pipelex runner? (https://github.com/Pipelex/pipelex)",
     initialValue: false,
   });
 
@@ -189,9 +191,10 @@ export async function installMethod(options: {
   }
 
   if (wantsRunner) {
-    if (!isPipelexInstalled()) {
+    if (!hasPipelex) {
       await ensureRuntime();
       p.log.success("pipelex installed.");
+      hasPipelex = true;
     } else {
       p.log.success("pipelex is already installed.");
     }
@@ -232,7 +235,13 @@ export async function installMethod(options: {
     targetDir,
   });
 
-  // Step 5: Optional Pipelex skills
+  // Step 5: Optional Pipelex skills (only if user chose to install the runner)
+  if (!wantsRunner) {
+    p.outro("Done");
+    await shutdown();
+    return;
+  }
+
   const SKILLS_REPO = "https://github.com/pipelex/skills";
   const skillChoices = [
     { value: "check", label: "check", hint: "Validate and review Pipelex workflow bundles without making changes" },

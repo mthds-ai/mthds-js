@@ -63,6 +63,7 @@ program
   .option("--no-pretty-print", "Skip pretty printing the output")
   .description("Execute a pipeline")
   .allowUnknownOption()
+  .allowExcessArguments(true)
   .exitOverride()
   .action(async (target: string, options: Record<string, string | boolean | undefined>, cmd: Cmd) => {
     await runPipeline(target, { ...options, runner: getRunner(cmd), directory: getDirectory(cmd) } as Parameters<typeof runPipeline>[1]);
@@ -80,6 +81,7 @@ build
   .option("-o, --output <file>", "Path to save the generated .mthds file")
   .description("Build a pipeline from a prompt")
   .allowUnknownOption()
+  .allowExcessArguments(true)
   .exitOverride()
   .action(async (brief: string, options: { output?: string }, cmd: Cmd) => {
     await buildPipe(brief, { ...options, runner: getRunner(cmd), directory: getDirectory(cmd) });
@@ -92,6 +94,7 @@ build
   .option("-o, --output <file>", "Path to save the generated Python file")
   .description("Generate Python runner code for a pipe")
   .allowUnknownOption()
+  .allowExcessArguments(true)
   .exitOverride()
   .action(async (target: string, options: { pipe?: string; output?: string }, cmd: Cmd) => {
     await buildRunner(target, { ...options, runner: getRunner(cmd), directory: getDirectory(cmd) });
@@ -103,6 +106,7 @@ build
   .option("--pipe <code>", "Pipe code to generate inputs for")
   .description("Generate example input JSON for a pipe")
   .allowUnknownOption()
+  .allowExcessArguments(true)
   .exitOverride()
   .action(async (target: string, options: { pipe?: string }, cmd: Cmd) => {
     await buildInputs(target, { ...options, runner: getRunner(cmd), directory: getDirectory(cmd) });
@@ -115,6 +119,7 @@ build
   .option("--format <format>", "Output format (json, python, schema)", "schema")
   .description("Generate output representation for a pipe")
   .allowUnknownOption()
+  .allowExcessArguments(true)
   .exitOverride()
   .action(async (target: string, options: { pipe?: string; format?: string }, cmd: Cmd) => {
     await buildOutput(target, { ...options, runner: getRunner(cmd), directory: getDirectory(cmd) });

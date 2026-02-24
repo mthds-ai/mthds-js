@@ -1,7 +1,15 @@
 import type { RunnerProtocol } from "../client/protocol.js";
 
 // ── Runner type ─────────────────────────────────────────────────────
-export type RunnerType = "api" | "pipelex";
+
+export const Runners = {
+  API: "api",
+  PIPELEX: "pipelex",
+} as const;
+
+export type RunnerType = (typeof Runners)[keyof typeof Runners];
+
+export const RUNNER_NAMES: RunnerType[] = Object.values(Runners);
 
 // ── Shared enums / literals ─────────────────────────────────────────
 
@@ -18,12 +26,12 @@ export type ConceptRepresentationFormat = "json" | "python" | "schema";
 // ── Request types ───────────────────────────────────────────────────
 
 export interface BuildInputsRequest {
-  plx_content: string;
+  mthds_content: string;
   pipe_code: string;
 }
 
 export interface BuildOutputRequest {
-  plx_content: string;
+  mthds_content: string;
   pipe_code: string;
   format?: ConceptRepresentationFormat;
 }
@@ -34,25 +42,25 @@ export interface BuildPipeRequest {
 }
 
 export interface BuildRunnerRequest {
-  plx_content: string;
+  mthds_content: string;
   pipe_code: string;
 }
 
 export interface ExecuteRequest {
-  /** PLX content to validate, load, and execute. Omit to run an already-loaded pipe. */
-  plx_content?: string;
+  /** MTHDS bundle content to validate, load, and execute. Omit to run an already-loaded pipe. */
+  mthds_content?: string;
   pipe_code?: string;
   inputs?: Record<string, unknown>;
 }
 
 export interface ValidateRequest {
-  plx_content: string;
+  mthds_content: string;
 }
 
 // ── Response types ──────────────────────────────────────────────────
 
 export interface BuildPipeResponse {
-  plx_content: string;
+  mthds_content: string;
   pipelex_bundle_blueprint: Record<string, unknown>;
   success: boolean;
   message: string;
@@ -101,7 +109,7 @@ export interface PipelexBundleBlueprint {
 }
 
 export interface ValidateResponse {
-  plx_content: string;
+  mthds_content: string;
   pipelex_bundle_blueprint: PipelexBundleBlueprint;
   success: boolean;
   message: string;

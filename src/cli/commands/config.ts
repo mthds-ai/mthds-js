@@ -7,9 +7,8 @@ import {
   setConfigValue,
   listConfig,
 } from "../../config/config.js";
+import { RUNNER_NAMES } from "../../runners/types.js";
 import type { RunnerType } from "../../runners/types.js";
-
-const VALID_RUNNERS: RunnerType[] = ["api", "pipelex"];
 
 function isValidUrl(s: string): boolean {
   try {
@@ -33,9 +32,9 @@ export async function configSet(cliKey: string, value: string): Promise<void> {
   }
 
   // Validate value
-  if (configKey === "runner" && !VALID_RUNNERS.includes(value as RunnerType)) {
+  if (configKey === "runner" && !RUNNER_NAMES.includes(value as RunnerType)) {
     p.log.error(`Invalid runner: ${value}`);
-    p.log.info(`Valid runners: ${VALID_RUNNERS.join(", ")}`);
+    p.log.info(`Valid runners: ${RUNNER_NAMES.join(", ")}`);
     p.outro("");
     process.exit(1);
   }

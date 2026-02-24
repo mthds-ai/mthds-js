@@ -7,6 +7,7 @@ import {
   writeFileSync,
   unlinkSync,
 } from "node:fs";
+import { Runners } from "../runners/types.js";
 import type { RunnerType } from "../runners/types.js";
 
 // ── Types ──────────────────────────────────────────────────────────
@@ -49,7 +50,7 @@ const FILE_KEYS: Record<keyof MthdsCredentials, string> = {
 
 /** Defaults */
 const DEFAULTS: MthdsCredentials = {
-  runner: "api",
+  runner: Runners.API,
   apiUrl: "https://api.pipelex.com",
   apiKey: "",
   telemetry: true,

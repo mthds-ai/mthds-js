@@ -14,7 +14,7 @@ import {
   buildInputs,
   buildOutput,
 } from "./cli/commands/build.js";
-import { validatePlx } from "./cli/commands/validate.js";
+import { validateBundle } from "./cli/commands/validate.js";
 import {
   packageInit,
   packageList,
@@ -23,6 +23,7 @@ import {
   packageInstall,
   packageUpdate,
 } from "./cli/commands/package/stubs.js";
+import { RUNNER_NAMES } from "./runners/types.js";
 import type { RunnerType } from "./runners/types.js";
 import type { Command as Cmd } from "commander";
 
@@ -43,7 +44,7 @@ program
   .name("mthds")
   .version(pkg.version)
   .description("CLI for the MTHDS open standard")
-  .option("--runner <type>", "Runner to use (api, pipelex)")
+  .option("--runner <type>", `Runner to use (${RUNNER_NAMES.join(", ")})`)
   .option("-d, --directory <path>", "Target package directory (defaults to current directory)")
   .exitOverride()
   .configureOutput({
@@ -54,13 +55,14 @@ program
 // ── mthds run <target> ─────────────────────────────────────────────
 program
   .command("run")
-  .argument("<target>", "Pipe code or .plx bundle file")
+  .argument("<target>", "Pipe code or .mthds bundle file")
   .option("--pipe <code>", "Pipe code (when target is a bundle)")
   .option("-i, --inputs <file>", "Path to JSON inputs file")
   .option("-o, --output <file>", "Path to save output JSON")
   .option("--no-output", "Skip saving output to file")
   .option("--no-pretty-print", "Skip pretty printing the output")
   .description("Execute a pipeline")
+  .allowUnknownOption()
   .exitOverride()
   .action(async (target: string, options: Record<string, string | boolean | undefined>, cmd: Cmd) => {
     await runPipeline(target, { ...options, runner: getRunner(cmd), directory: getDirectory(cmd) } as Parameters<typeof runPipeline>[1]);
@@ -75,8 +77,9 @@ const build = program
 build
   .command("pipe")
   .argument("<brief>", "Natural-language description of the pipeline")
-  .option("-o, --output <file>", "Path to save the generated .plx file")
+  .option("-o, --output <file>", "Path to save the generated .mthds file")
   .description("Build a pipeline from a prompt")
+  .allowUnknownOption()
   .exitOverride()
   .action(async (brief: string, options: { output?: string }, cmd: Cmd) => {
     await buildPipe(brief, { ...options, runner: getRunner(cmd), directory: getDirectory(cmd) });
@@ -84,10 +87,11 @@ build
 
 build
   .command("runner")
-  .argument("<target>", ".plx bundle file")
+  .argument("<target>", "Bundle file path")
   .option("--pipe <code>", "Pipe code to generate runner for")
   .option("-o, --output <file>", "Path to save the generated Python file")
   .description("Generate Python runner code for a pipe")
+  .allowUnknownOption()
   .exitOverride()
   .action(async (target: string, options: { pipe?: string; output?: string }, cmd: Cmd) => {
     await buildRunner(target, { ...options, runner: getRunner(cmd), directory: getDirectory(cmd) });
@@ -95,35 +99,37 @@ build
 
 build
   .command("inputs")
-  .argument("<target>", ".plx bundle file")
-  .requiredOption("--pipe <code>", "Pipe code to generate inputs for")
+  .argument("<target>", "Bundle file path")
+  .option("--pipe <code>", "Pipe code to generate inputs for")
   .description("Generate example input JSON for a pipe")
+  .allowUnknownOption()
   .exitOverride()
-  .action(async (target: string, options: { pipe: string }, cmd: Cmd) => {
+  .action(async (target: string, options: { pipe?: string }, cmd: Cmd) => {
     await buildInputs(target, { ...options, runner: getRunner(cmd), directory: getDirectory(cmd) });
   });
 
 build
   .command("output")
-  .argument("<target>", ".plx bundle file")
-  .requiredOption("--pipe <code>", "Pipe code to generate output for")
+  .argument("<target>", "Bundle file path")
+  .option("--pipe <code>", "Pipe code to generate output for")
   .option("--format <format>", "Output format (json, python, schema)", "schema")
   .description("Generate output representation for a pipe")
+  .allowUnknownOption()
   .exitOverride()
-  .action(async (target: string, options: { pipe: string; format?: string }, cmd: Cmd) => {
+  .action(async (target: string, options: { pipe?: string; format?: string }, cmd: Cmd) => {
     await buildOutput(target, { ...options, runner: getRunner(cmd), directory: getDirectory(cmd) });
   });
 
 // ── mthds validate <target> ────────────────────────────────────────
 program
   .command("validate")
-  .argument("<target>", ".plx bundle file or pipe code")
+  .argument("<target>", ".mthds bundle file or pipe code")
   .option("--pipe <code>", "Pipe code that must exist in the bundle")
   .option("--bundle <file>", "Bundle file path (alternative to positional)")
-  .description("Validate PLX content")
+  .description("Validate a bundle")
   .exitOverride()
   .action(async (target: string, options: { pipe?: string; bundle?: string }, cmd: Cmd) => {
-    await validatePlx(target, { ...options, runner: getRunner(cmd), directory: getDirectory(cmd) });
+    await validateBundle(target, { ...options, runner: getRunner(cmd), directory: getDirectory(cmd) });
   });
 
 // ── mthds install [address] (JS-only) ──────────────────────────────
@@ -187,7 +193,7 @@ const setup = program.command("setup").exitOverride();
 
 setup
   .command("runner <name>")
-  .description("Install a runner (e.g. pipelex)")
+  .description(`Set up a runner (${RUNNER_NAMES.join(", ")})`)
   .exitOverride()
   .action(async (name: string) => {
     await installRunner(name);

@@ -5,7 +5,7 @@ import { printLogo } from "./index.js";
 import { createRunner } from "../../runners/registry.js";
 import type { RunnerType } from "../../runners/types.js";
 
-export async function validatePlx(
+export async function validateBundle(
   target: string,
   options: {
     pipe?: string;
@@ -22,24 +22,24 @@ export async function validatePlx(
     : undefined;
   const runner = createRunner(options.runner, libraryDirs);
 
-  // Resolve the PLX content from either the positional target or --bundle
-  const bundlePath = options.bundle ?? (target.endsWith(".plx") ? target : undefined);
+  // Resolve the bundle content from either the positional target or --bundle
+  const bundlePath = options.bundle ?? (target.endsWith(".mthds") ? target : undefined);
 
   if (!bundlePath) {
     p.log.error(
-      "Provide a .plx bundle file to validate (positional or --bundle)."
+      "Provide a .mthds bundle file to validate (positional or --bundle)."
     );
     p.outro("");
     process.exit(1);
   }
 
-  const plxContent = readFileSync(bundlePath, "utf-8");
+  const mthdsContent = readFileSync(bundlePath, "utf-8");
 
   const s = p.spinner();
   s.start("Validating...");
 
   try {
-    const result = await runner.validate({ plx_content: plxContent });
+    const result = await runner.validate({ mthds_content: mthdsContent });
 
     if (result.success) {
       s.stop("Validation passed.");

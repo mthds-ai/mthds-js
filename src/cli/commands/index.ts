@@ -53,7 +53,7 @@ export function showBanner(): void {
     `    ${chalk.yellow("build output <bundle>")}     Generate output schema`
   );
   console.log(
-    `    ${chalk.yellow("validate <target>")}         Validate PLX content\n`
+    `    ${chalk.yellow("validate <target>")}         Validate a bundle\n`
   );
 
   console.log(chalk.bold("  Configuration:"));
@@ -97,9 +97,9 @@ export function showBanner(): void {
 
   console.log(chalk.bold("  Examples:"));
   console.log(`    ${chalk.dim("$")} mthds run hello_world`);
-  console.log(`    ${chalk.dim("$")} mthds run my_bundle.plx --inputs data.json`);
+  console.log(`    ${chalk.dim("$")} mthds run my_bundle.mthds --inputs data.json`);
   console.log(`    ${chalk.dim("$")} mthds build pipe "Analyze a CV against a job offer"`);
-  console.log(`    ${chalk.dim("$")} mthds validate my_bundle.plx`);
+  console.log(`    ${chalk.dim("$")} mthds validate my_bundle.mthds`);
   console.log(`    ${chalk.dim("$")} mthds install pipelex/cookbook\n`);
 
   console.log(

@@ -1,4 +1,5 @@
 import { loadConfig } from "../config/config.js";
+import { Runners } from "./types.js";
 import type {
   Runner,
   RunnerType,
@@ -20,7 +21,7 @@ import type {
 } from "../client/pipeline.js";
 
 export class ApiRunner implements Runner {
-  readonly type: RunnerType = "api";
+  readonly type: RunnerType = Runners.API;
 
   private readonly baseUrl: string;
   private readonly apiKey: string;

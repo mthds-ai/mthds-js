@@ -10,6 +10,7 @@ import {
 } from "node:fs";
 import { join } from "node:path";
 import { homedir, tmpdir } from "node:os";
+import { Runners } from "./types.js";
 import type {
   Runner,
   RunnerType,
@@ -58,7 +59,7 @@ function resolveOutputBase(output: string | undefined): string {
 }
 
 export class PipelexRunner implements Runner {
-  readonly type: RunnerType = "pipelex";
+  readonly type: RunnerType = Runners.PIPELEX;
   private readonly libraryDirs: string[];
 
   constructor(libraryDirs?: string[]) {
@@ -99,6 +100,16 @@ export class PipelexRunner implements Runner {
     });
   }
 
+  // ── CLI passthrough ──────────────────────────────────────────
+
+  async buildPassthrough(subcommand: string, rawArgs: string[]): Promise<void> {
+    await this.execStreaming(["build", subcommand, ...rawArgs]);
+  }
+
+  async runPassthrough(rawArgs: string[]): Promise<void> {
+    await this.execStreaming(["run", ...rawArgs]);
+  }
+
   // ── Health & version ────────────────────────────────────────────
 
   async health(): Promise<Record<string, unknown>> {
@@ -118,12 +129,12 @@ export class PipelexRunner implements Runner {
   // ── Build ───────────────────────────────────────────────────────
   // buildInputs and buildOutput have no CLI equivalent.
 
-  // pipelex build inputs <bundle.plx> --pipe <pipe_code>
+  // pipelex build inputs <bundle.mthds> --pipe <pipe_code>
   async buildInputs(request: BuildInputsRequest): Promise<unknown> {
     const tmp = makeTmpDir();
     try {
-      const bundlePath = join(tmp, "bundle.plx");
-      writeFileSync(bundlePath, request.plx_content, "utf-8");
+      const bundlePath = join(tmp, "bundle.mthds");
+      writeFileSync(bundlePath, request.mthds_content, "utf-8");
 
       const { stdout } = await this.exec([
         "build",
@@ -139,12 +150,12 @@ export class PipelexRunner implements Runner {
     }
   }
 
-  // pipelex build output <bundle.plx> --pipe <pipe_code> [--format <fmt>]
+  // pipelex build output <bundle.mthds> --pipe <pipe_code> [--format <fmt>]
   async buildOutput(request: BuildOutputRequest): Promise<unknown> {
     const tmp = makeTmpDir();
     try {
-      const bundlePath = join(tmp, "bundle.plx");
-      writeFileSync(bundlePath, request.plx_content, "utf-8");
+      const bundlePath = join(tmp, "bundle.mthds");
+      writeFileSync(bundlePath, request.mthds_content, "utf-8");
 
       const args = [
         "build",
@@ -176,21 +187,21 @@ export class PipelexRunner implements Runner {
       outputDir,
     ]);
     return {
-      plx_content: "",
+      mthds_content: "",
       pipelex_bundle_blueprint: {},
       success: true,
       message: `Pipeline built successfully — saved to ${outputDir}`,
     };
   }
 
-  // pipelex build runner <bundle.plx> --pipe <pipe_code> -o <file>
+  // pipelex build runner <bundle.mthds> --pipe <pipe_code> -o <file>
   async buildRunner(
     request: BuildRunnerRequest
   ): Promise<BuildRunnerResponse> {
     const tmp = makeTmpDir();
     try {
-      const bundlePath = join(tmp, "bundle.plx");
-      writeFileSync(bundlePath, request.plx_content, "utf-8");
+      const bundlePath = join(tmp, "bundle.mthds");
+      writeFileSync(bundlePath, request.mthds_content, "utf-8");
 
       const outPath = join(tmp, "runner.py");
       await this.execStreaming([
@@ -223,9 +234,9 @@ export class PipelexRunner implements Runner {
     try {
       const args: string[] = ["run"];
 
-      if (request.plx_content) {
-        const bundlePath = join(tmp, "bundle.plx");
-        writeFileSync(bundlePath, request.plx_content, "utf-8");
+      if (request.mthds_content) {
+        const bundlePath = join(tmp, "bundle.mthds");
+        writeFileSync(bundlePath, request.mthds_content, "utf-8");
         args.push(bundlePath);
         if (request.pipe_code) {
           args.push("--pipe", request.pipe_code);
@@ -244,14 +255,14 @@ export class PipelexRunner implements Runner {
         args.push("--inputs", inputsPath);
       }
 
-      const outputPath = join(tmp, "output.json");
-      args.push("--output", outputPath);
+      args.push("--output-dir", tmp);
 
       await this.execStreaming(args);
 
-      const raw = JSON.parse(
-        readFileSync(outputPath, "utf-8")
-      ) as Record<string, unknown>;
+      const wmPath = join(tmp, "working_memory.json");
+      const raw = existsSync(wmPath)
+        ? (JSON.parse(readFileSync(wmPath, "utf-8")) as Record<string, unknown>)
+        : {};
 
       // The CLI output is working memory JSON. Wrap it in PipelineResponse shape.
       return {
@@ -271,29 +282,29 @@ export class PipelexRunner implements Runner {
   }
 
   // ── Validation ──────────────────────────────────────────────────
-  // pipelex validate --bundle <file.plx>
+  // pipelex validate --bundle <file.mthds>
 
   async validate(request: ValidateRequest): Promise<ValidateResponse> {
     const tmp = makeTmpDir();
     try {
-      const bundlePath = join(tmp, "bundle.plx");
-      writeFileSync(bundlePath, request.plx_content, "utf-8");
+      const bundlePath = join(tmp, "bundle.mthds");
+      writeFileSync(bundlePath, request.mthds_content, "utf-8");
 
       await this.exec(["validate", "--bundle", bundlePath]);
 
       return {
-        plx_content: request.plx_content,
+        mthds_content: request.mthds_content,
         pipelex_bundle_blueprint: {
           domain: "local",
         },
         success: true,
-        message: "PLX content validated via local CLI",
+        message: "Bundle validated via local CLI",
       };
     } catch (err) {
       const message =
         err instanceof Error ? err.message : "Validation failed";
       return {
-        plx_content: request.plx_content,
+        mthds_content: request.mthds_content,
         pipelex_bundle_blueprint: { domain: "local" },
         success: false,
         message,
@@ -309,7 +320,7 @@ export class PipelexRunner implements Runner {
     options: ExecutePipelineOptions
   ): Promise<PipelineExecuteResponse> {
     const request: ExecuteRequest = {
-      plx_content: options.mthds_content ?? undefined,
+      mthds_content: options.mthds_content ?? undefined,
       pipe_code: options.pipe_code ?? undefined,
       inputs: options.inputs
         ? Object.fromEntries(

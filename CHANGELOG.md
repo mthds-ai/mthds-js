@@ -1,5 +1,23 @@
 # Changelog
 
+## [v0.0.7] - 2026-02-23
+
+### Fixed
+
+- **Install path** — methods now install to `methods/<slug>/` instead of `methods/<org>/<repo>/<slug>/`
+- **Path traversal guard** — added trailing separator to `startsWith` check to prevent sibling directory prefix bypass
+- **Cross-platform basename** — use `basename()` from `node:path` instead of `split("/").pop()` in local resolver
+- **Reserved prefix validation** — `startsWith()` instead of exact match, so `native-utils` is correctly rejected
+- **`.env.local` parser** — now handles quoted values (`"1"`, `'1'`), whitespace, and comments
+- **Telemetry enable UX** — shows either success or warning about env override, never both
+
+### Changed
+
+- **Runner prompt** — now says "Do you want to install the pipelex runner?" with link to GitHub repo
+- **Skills prompt** — only shown when user says yes to the runner prompt, not based on whether pipelex is already installed
+- **Public-repo-only telemetry** — CLI checks GitHub API `private` field; no telemetry sent for private repos or `--dir` installs
+- **`ResolvedRepo.isPublic`** — new flag set by GitHub resolver
+
 ## [v0.0.6] - 2026-02-23
 
 ### Breaking Changes

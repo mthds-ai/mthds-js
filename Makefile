@@ -61,7 +61,9 @@ test:
 	@npx vitest run
 	@echo "$(GREEN)✓ All tests passed$(NC)"
 
-check: build test
+check:
+	$(MAKE) build
+	$(MAKE) test
 	@echo "$(GREEN)✓ All checks passed$(NC)"
 
 clean:

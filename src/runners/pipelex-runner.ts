@@ -79,8 +79,8 @@ export class PipelexRunner implements Runner {
   }
 
   /**
-   * Run pipelex with stderr streamed to the terminal (for user-visible logs)
-   * and stdout captured for parsing. Use this for long-running commands.
+   * Run pipelex with stdout and stderr inherited (streamed to the terminal).
+   * Use this for long-running or interactive commands.
    */
   private async execStreaming(args: string[]): Promise<void> {
     return new Promise<void>((resolve, reject) => {

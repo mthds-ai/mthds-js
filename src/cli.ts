@@ -288,8 +288,15 @@ program.action(() => {
 
 program.parseAsync(process.argv).catch((err: unknown) => {
   if (err instanceof CommanderError) {
-    // --help and --version exit with code 0
+    // --version: print version and exit
+    if (err.code === "commander.version") {
+      console.log(pkg.version);
+      process.exit(0);
+    }
+
+    // --help: show banner and exit
     if (err.exitCode === 0) {
+      showBanner();
       process.exit(0);
     }
 

@@ -71,7 +71,11 @@ export function trackInstall(data: InstallEvent): void {
 
 export async function shutdown(): Promise<void> {
   if (client) {
-    await client.shutdown();
+    try {
+      await client.shutdown();
+    } catch {
+      // Telemetry flush failures should never crash the CLI
+    }
     client = null;
   }
 }

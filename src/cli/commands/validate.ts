@@ -33,7 +33,14 @@ export async function validateBundle(
     process.exit(1);
   }
 
-  const mthdsContent = readFileSync(bundlePath, "utf-8");
+  let mthdsContent: string;
+  try {
+    mthdsContent = readFileSync(bundlePath, "utf-8");
+  } catch (err) {
+    p.log.error((err as Error).message);
+    p.outro("");
+    process.exit(1);
+  }
 
   const s = p.spinner();
   s.start("Validating...");

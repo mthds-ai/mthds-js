@@ -27,7 +27,7 @@ export const claudeCodeHandler: AgentHandler = {
       // Write all .mthds files, preserving directory structure
       for (const file of method.files) {
         const filePath = resolve(join(installDir, file.relativePath));
-        if (!filePath.startsWith(installDir)) {
+        if (!filePath.startsWith(installDir + "/")) {
           throw new Error(`Path traversal detected: "${file.relativePath}" escapes install directory.`);
         }
         mkdirSync(dirname(filePath), { recursive: true });

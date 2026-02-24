@@ -1,5 +1,35 @@
 # Changelog
 
+## [v0.0.8] - 2026-02-24
+
+### Breaking Changes
+
+- **`.plx` → `.mthds`** — all file extensions, variable names, and user-facing strings now use `.mthds` instead of `.plx`. Bundle detection (`target.endsWith(...)`) updated across `run`, `build`, and `validate` commands.
+- **`plx_content` → `mthds_content`** — all request/response interfaces and runner implementations renamed.
+- **`validatePlx` → `validateBundle`** — function renamed.
+
+### Added
+
+- **Runner passthrough** — `run` and all `build` subcommands now pass arguments directly to the `pipelex` CLI when using the pipelex runner. No temp files, no file roundtrips. Pipelex-specific flags (e.g. `--dry-run`, `--mock-inputs`, `--output-dir`) are forwarded transparently.
+- **`mthds setup runner api`** — interactive setup for the API runner. Prompts for API URL (pre-filled with current value) and API key (masked input). Saves to `~/.mthds/credentials`.
+- **`Runners` enum** — added `Runners` const object and `RUNNER_NAMES` array in `types.ts`. All runner type string literals replaced with `Runners.API` / `Runners.PIPELEX` across the codebase.
+- **`buildPassthrough()`** — new method on `PipelexRunner` that forwards `build <subcommand> <args>` to pipelex.
+- **`runPassthrough()`** — new method on `PipelexRunner` that forwards `run <args>` to pipelex.
+- **`.allowUnknownOption()` + `.allowExcessArguments(true)`** — on `run` and all `build` subcommands so runner-specific flags pass through Commander.js without error.
+
+### Changed
+
+- **`--pipe` now optional** — relaxed from `requiredOption` to `option` on `build inputs` and `build output`. Validated at handler level only for the API runner.
+- **`mthds setup runner`** — now accepts both `api` and `pipelex` (previously rejected `api` as unknown).
+- **API key input** — `setup runner api` uses `p.password()` with masked input. Existing key shown as first 5 chars + stars.
+- **CLI descriptions** — updated help text to use `.mthds` everywhere, `<target>` descriptions changed from ".plx bundle file" to "Bundle file path".
+- **Banner** — updated examples to use `.mthds` extension and "Validate a bundle" instead of "Validate PLX content".
+
+### Docs
+
+- **CLI.md** — fully rewritten: all `.plx` → `.mthds`, added "Runner Passthrough" section, documented `setup runner api`, updated all examples, `--pipe` marked optional where applicable.
+- **README.md** — quick start updated to use `mthds setup runner api`, all `.plx` → `.mthds`, API runner section updated.
+
 ## [v0.0.7] - 2026-02-23
 
 ### Fixed

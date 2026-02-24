@@ -240,7 +240,7 @@ Anonymous usage data is collected to help rank methods on the leaderboard. Each 
 To opt out:
 
 ```bash
-DISABLE_TELEMETRY=1 npx mthds install <slug>
+mthds telemetry disable
 ```
 
 ## Development

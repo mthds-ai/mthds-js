@@ -296,11 +296,11 @@ Displays all configuration keys with their current values and sources (env, file
 
 ## Setup
 
-Install and configure runners.
+Initialize and configure runners.
 
 ### `mthds setup runner`
 
-Set up a runner and optionally set it as the default.
+Initialize a runner and optionally set it as the default.
 
 ```bash
 mthds setup runner <name>
@@ -312,18 +312,67 @@ mthds setup runner <name>
 
 **For `api`:** interactively prompts for the API URL and API key (masked input), then saves them to `~/.mthds/credentials`.
 
-**For `pipelex`:** installs the pipelex CLI if not already present.
+**For `pipelex`:** installs the pipelex CLI if not already present, then runs `pipelex init` (interactive configuration for backends, credentials, routing, etc.).
 
 Both options then offer to set the runner as the default.
 
 **Examples:**
 
 ```bash
-# Set up the API runner (enter URL and key interactively)
+# Initialize the API runner (enter URL and key interactively)
 mthds setup runner api
 
-# Install and set up the pipelex runner
+# Initialize the pipelex runner (install + pipelex init)
 mthds setup runner pipelex
+```
+
+---
+
+## Set Default
+
+Change the default runner without running any initialization.
+
+### `mthds set-default runner`
+
+```bash
+mthds set-default runner <name>
+```
+
+| Argument | Type | Required | Description |
+|---|---|---|---|
+| `name` | string | yes | Runner name (`api` or `pipelex`) |
+
+**Examples:**
+
+```bash
+mthds set-default runner pipelex
+mthds set-default runner api
+```
+
+---
+
+## Telemetry
+
+Manage anonymous usage telemetry. Telemetry can also be controlled via the `DISABLE_TELEMETRY=1` environment variable, which takes precedence over the credentials file.
+
+### `mthds telemetry enable`
+
+```bash
+mthds telemetry enable
+```
+
+### `mthds telemetry disable`
+
+```bash
+mthds telemetry disable
+```
+
+### `mthds telemetry status`
+
+Show whether telemetry is currently enabled or disabled, and its source (env, file, or default).
+
+```bash
+mthds telemetry status
 ```
 
 ---

@@ -9,7 +9,7 @@ import * as p from "@clack/prompts";
 import chalk from "chalk";
 import { isPipelexInstalled } from "../runtime/check.js";
 import { ensureRuntime } from "../runtime/installer.js";
-import { trackMethodInstall, shutdown } from "../telemetry/posthog.js";
+import { trackInstall, shutdown } from "../telemetry/posthog.js";
 import { printLogo } from "./index.js";
 import type { Agent, InstallLocation } from "../agents/types.js";
 import { InstallLocation as Loc } from "../agents/types.js";
@@ -22,15 +22,19 @@ import type { ResolvedRepo } from "../resolver/types.js";
 export async function installMethod(options: {
   address?: string;
   dir?: string;
+  method?: string;
 }): Promise<void> {
   printLogo();
   p.intro("mthds install");
 
-  const { address, dir } = options;
+  const { address, dir, method: methodFilter } = options;
 
   // Step 0: Resolve repo (multiple methods)
   const s = p.spinner();
   let resolved: ResolvedRepo;
+
+  // Derive org/repo for telemetry
+  let orgRepo: string | undefined;
 
   if (dir) {
     s.start(`Resolving methods from ${dir}...`);
@@ -43,6 +47,12 @@ export async function installMethod(options: {
       process.exit(1);
     }
     s.stop(`Scanned methods/ folder in ${dir}`);
+
+    // Derive org/repo from first method's package.address (strip github.com/ prefix)
+    if (resolved.methods.length > 0) {
+      const addr = resolved.methods[0]!.manifest.package.address;
+      orgRepo = addr.replace(/^github\.com\//, "");
+    }
   } else if (address) {
     let parsed;
     try {
@@ -63,10 +73,25 @@ export async function installMethod(options: {
       process.exit(1);
     }
     s.stop(`Scanned methods/ folder in ${parsed.org}/${parsed.repo}`);
+    orgRepo = `${parsed.org}/${parsed.repo}`;
   } else {
     p.log.error("Provide an address (org/repo) or use --dir <path>.");
     p.outro("");
     process.exit(1);
+  }
+
+  // Filter by --method if provided
+  if (methodFilter) {
+    const match = resolved.methods.find((m) => m.slug === methodFilter);
+    if (!match) {
+      const available = resolved.methods.map((m) => m.slug).join(", ");
+      p.log.error(
+        `Method "${methodFilter}" not found. Available slugs: ${available || "(none)"}`
+      );
+      p.outro("");
+      process.exit(1);
+    }
+    resolved = { ...resolved, methods: [match] };
   }
 
   // Display summary
@@ -180,9 +205,24 @@ export async function installMethod(options: {
 
   const handler = getAgentHandler(selectedAgent);
 
-  // Track telemetry for each method
-  for (const method of resolved.methods) {
-    trackMethodInstall(method.manifest.package.address, method.manifest.package.version);
+  // Track telemetry only for public GitHub repositories
+  if (resolved.source === "github" && resolved.isPublic) {
+    for (const method of resolved.methods) {
+      const pkg = method.manifest.package;
+      trackInstall({
+        address: orgRepo ?? pkg.address.replace(/^github\.com\//, ""),
+        slug: method.slug,
+        version: pkg.version,
+        description: pkg.description,
+        display_name: pkg.display_name,
+        authors: pkg.authors,
+        license: pkg.license,
+        mthds_version: pkg.mthds_version,
+        exports: method.manifest.exports,
+        dependencies: method.manifest.dependencies,
+        manifest_raw: method.rawManifest,
+      });
+    }
   }
 
   await handler.installMethod({
@@ -211,7 +251,7 @@ export async function installMethod(options: {
       : chalk.dim("  press space to select, enter to confirm");
 
     const result = await p.multiselect({
-      message: `Which Pipelex skills do you want to install?\n${hint}`,
+      message: `For a better experience using the pipelex runner, install the skills:\n${hint}`,
       options: skillChoices,
       required: false,
     });

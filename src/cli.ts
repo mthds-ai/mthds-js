@@ -120,9 +120,10 @@ program
   .command("install")
   .argument("[address]", "Package address (org/repo or org/repo/sub/path)")
   .option("--dir <path>", "Install from a local directory")
+  .option("--method <slug>", "Install only the specified method (by slug)")
   .description("Install a method package")
   .exitOverride()
-  .action(async (address: string | undefined, opts: { dir?: string }) => {
+  .action(async (address: string | undefined, opts: { dir?: string; method?: string }) => {
     if (address && opts.dir) {
       printLogo();
       p.intro("mthds install");
@@ -137,7 +138,7 @@ program
       p.outro("");
       process.exit(1);
     }
-    await installMethod({ address, dir: opts.dir });
+    await installMethod({ address, dir: opts.dir, method: opts.method });
   });
 
 // ── mthds setup runner <name> ──────────────────────────────────────

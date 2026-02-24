@@ -62,4 +62,5 @@ export interface ResolvedRepo {
   readonly skipped: SkippedMethod[];
   readonly source: PackageSource;
   readonly repoName: string;
+  readonly isPublic: boolean;
 }

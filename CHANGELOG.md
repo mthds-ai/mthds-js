@@ -4,12 +4,18 @@
 
 ### Breaking Changes
 
-- `mthds install` now takes a GitHub address (`org/repo`) or `--dir <path>` instead of a Supabase slug
-- `InstallContext` no longer carries `method`/`content`; it now carries a `ResolvedPackage`
-- `trackMethodInstall` signature changed from `(slug)` to `(address, version)`
+- Telemetry event renamed from `method_installed` to `install`
+- `trackMethodInstall` renamed to `trackInstall` with enriched payload
+- Supabase types rewritten: `methods` table → `packages` table, `Method` → `Package`
+- `fetchMethodBySlug` replaced by `fetchPackageByAddressAndSlug` (queries by `address` + `slug`)
+- Install path changed from `<dir>/<repo>/<slug>/` to `<dir>/<org>/<repo>/<slug>/` to avoid collisions
 
 ### Added
 
+- **`--method <slug>` option** — install a single method from a multi-method repository
+- **Enriched telemetry** — `install` event now includes full manifest data: description, display_name, authors, license, mthds_version, exports, dependencies, and raw METHODS.toml
+- **Public-repo-only telemetry** — telemetry is only sent for public GitHub repositories; local installs and private repos send nothing
+- **Repository visibility check** — `ResolvedRepo.isPublic` flag, set by querying the GitHub API
 - **METHODS.toml-based package resolution** — packages are resolved from GitHub repos or local directories, validated against the spec, and all `.mthds` files are installed
 - `src/resolver/` module with:
   - `types.ts` — Core types (`MethodsManifest`, `ResolvedPackage`, `ParsedAddress`, etc.)
@@ -28,7 +34,8 @@
 - `mthds install` rewritten to resolve → display summary → agent selection → install flow
 - Claude Code agent handler now writes `METHODS.toml` + all `.mthds` files preserving directory structure
 - CLI banner updated with new `install <address>` usage and examples
-- Telemetry now tracks `address` and `version` instead of slug
+- Pipelex skills prompt now says "For a better experience using the pipelex runner, install the skills"
+- Install path uses `org/repo` as directory name instead of just `repo`
 
 ## [v0.0.5] - 2026-02-19
 

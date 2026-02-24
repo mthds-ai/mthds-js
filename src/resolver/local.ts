@@ -130,5 +130,6 @@ export function resolveFromLocal(dirPath: string): ResolvedRepo {
     skipped,
     source: "local",
     repoName,
+    isPublic: false,
   };
 }

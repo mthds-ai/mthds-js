@@ -224,6 +224,10 @@ export async function resolveFromGitHub(
   const { org, repo, subpath } = parsed;
   const methodsPath = subpath ? `${subpath}/methods` : "methods";
 
+  // Check if repo is public
+  const repoMeta = (await githubFetch(auth, `repos/${org}/${repo}`)) as { private: boolean };
+  const isPublic = !repoMeta.private;
+
   // List directories inside methods/
   let contents: GitHubContent[];
   try {
@@ -270,6 +274,7 @@ export async function resolveFromGitHub(
     methods,
     skipped,
     source: "github",
-    repoName: repo,
+    repoName: `${org}/${repo}`,
+    isPublic,
   };
 }

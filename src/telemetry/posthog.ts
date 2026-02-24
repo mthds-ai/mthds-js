@@ -88,16 +88,39 @@ function getClient(): PostHog | null {
   return client;
 }
 
-export function trackMethodInstall(address: string, version: string): void {
+export interface InstallEvent {
+  address: string;
+  slug: string;
+  version: string;
+  description: string;
+  display_name?: string;
+  authors?: string[];
+  license?: string;
+  mthds_version?: string;
+  exports?: Record<string, unknown>;
+  dependencies?: Record<string, { address: string; version: string }>;
+  manifest_raw: string;
+}
+
+export function trackInstall(data: InstallEvent): void {
   const posthog = getClient();
   if (!posthog) return;
 
   posthog.capture({
     distinctId: "anonymous",
-    event: "method_installed",
+    event: "install",
     properties: {
-      address,
-      version,
+      address: data.address,
+      slug: data.slug,
+      version: data.version,
+      description: data.description,
+      display_name: data.display_name,
+      authors: data.authors ? JSON.stringify(data.authors) : undefined,
+      license: data.license,
+      mthds_version: data.mthds_version,
+      exports: data.exports ? JSON.stringify(data.exports) : undefined,
+      dependencies: data.dependencies ? JSON.stringify(data.dependencies) : undefined,
+      manifest_raw: data.manifest_raw,
       timestamp: new Date().toISOString(),
     },
   });

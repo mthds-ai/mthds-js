@@ -30,7 +30,7 @@ The CLI will:
 4. Ask which AI agent to install it for (Claude Code, with more coming soon)
 5. Ask where to install — **local** (current project) or **global** (your machine)
 6. Optionally install a [runner](#runners)
-7. Copy all `.mthds` files to `.claude/methods/<repo-name>/<slug>/`
+7. Copy all `.mthds` files to `.claude/methods/<slug>/`
 
 You can also install from a local directory:
 
@@ -42,8 +42,8 @@ npx mthds install --local /path/to/repo
 
 | Location | Path |
 |----------|------|
-| Local | `<cwd>/.claude/methods/<repo-name>/<slug>/` |
-| Global | `~/.claude/methods/<repo-name>/<slug>/` |
+| Local | `<cwd>/.claude/methods/<slug>/` |
+| Global | `~/.claude/methods/<slug>/` |
 
 ## Publishing a method
 

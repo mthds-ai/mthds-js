@@ -35,7 +35,7 @@ The CLI will:
 You can also install from a local directory:
 
 ```bash
-npx mthds install --dir /path/to/your/repo
+npx mthds install --local /path/to/repo
 ```
 
 ### Install locations

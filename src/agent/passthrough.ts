@@ -21,7 +21,7 @@ export function passthrough(bin: string, args: string[]): void {
     }
     agentError(
       `Failed to spawn ${bin}: ${result.error.message}`,
-      "BinaryNotFoundError",
+      "BinarySpawnError",
       { error_domain: AGENT_ERROR_DOMAINS.BINARY }
     );
   }

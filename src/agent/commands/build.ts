@@ -35,7 +35,13 @@ function extractPassthroughArgs(): string[] {
       raw[i] === "--directory" ||
       raw[i] === "--log-level"
     ) {
-      i += 2;
+      i += 2; // skip flag + value
+    } else if (
+      raw[i]!.startsWith("--runner=") ||
+      raw[i]!.startsWith("--directory=") ||
+      raw[i]!.startsWith("--log-level=")
+    ) {
+      i += 1; // skip combined flag=value
     } else {
       result.push(raw[i]!);
       i++;
@@ -138,7 +144,16 @@ export async function agentBuildRunner(
     });
   }
 
-  const mthdsContent = readFileSync(target, "utf-8");
+  let mthdsContent: string;
+  try {
+    mthdsContent = readFileSync(target, "utf-8");
+  } catch (err) {
+    agentError(
+      `Cannot read bundle: ${(err as Error).message}`,
+      "IOError",
+      { error_domain: AGENT_ERROR_DOMAINS.IO }
+    );
+  }
 
   try {
     const result = await runner.buildRunner({
@@ -199,7 +214,16 @@ export async function agentBuildInputs(
     });
   }
 
-  const mthdsContent = readFileSync(target, "utf-8");
+  let mthdsContent: string;
+  try {
+    mthdsContent = readFileSync(target, "utf-8");
+  } catch (err) {
+    agentError(
+      `Cannot read bundle: ${(err as Error).message}`,
+      "IOError",
+      { error_domain: AGENT_ERROR_DOMAINS.IO }
+    );
+  }
 
   try {
     const result = await runner.buildInputs({
@@ -254,7 +278,16 @@ export async function agentBuildOutput(
     });
   }
 
-  const mthdsContent = readFileSync(target, "utf-8");
+  let mthdsContent: string;
+  try {
+    mthdsContent = readFileSync(target, "utf-8");
+  } catch (err) {
+    agentError(
+      `Cannot read bundle: ${(err as Error).message}`,
+      "IOError",
+      { error_domain: AGENT_ERROR_DOMAINS.IO }
+    );
+  }
 
   try {
     const result = await runner.buildOutput({

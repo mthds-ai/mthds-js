@@ -30,7 +30,13 @@ function extractPassthroughArgs(): string[] {
       raw[i] === "--directory" ||
       raw[i] === "--log-level"
     ) {
-      i += 2;
+      i += 2; // skip flag + value
+    } else if (
+      raw[i]!.startsWith("--runner=") ||
+      raw[i]!.startsWith("--directory=") ||
+      raw[i]!.startsWith("--log-level=")
+    ) {
+      i += 1; // skip combined flag=value
     } else {
       result.push(raw[i]!);
       i++;

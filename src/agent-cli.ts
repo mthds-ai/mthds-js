@@ -170,9 +170,9 @@ program
     location?: string;
     method?: string;
     skills?: string;
-    noRunner?: boolean;
+    runner?: boolean; // Commander stores --no-runner as runner: false
   }) => {
-    await agentInstall(address, opts);
+    await agentInstall(address, { ...opts, noRunner: opts.runner === false });
   });
 
 // ── mthds-agent config set|get|list ──────────────────────────────────
@@ -230,6 +230,10 @@ program.parseAsync(process.argv).catch((err: unknown) => {
       // --version: print plain text version
       if (err.code === "commander.version") {
         process.stdout.write(`mthds-agent ${pkg.version}\n`);
+      }
+      // --help: print help text (configureOutput no-ops suppress it)
+      if (err.code === "commander.helpDisplayed") {
+        process.stdout.write(program.helpInformation());
       }
       process.exit(0);
     }

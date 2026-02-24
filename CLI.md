@@ -351,6 +351,31 @@ mthds set-default runner api
 
 ---
 
+## Runner Status
+
+Show the current runner configuration: default runner, API URL, masked API key, and pipelex version.
+
+### `mthds runner status`
+
+```bash
+mthds runner status
+```
+
+**Example output:**
+
+```
+Default runner: pipelex
+
+  API runner
+    URL:     http://127.0.0.1:8081
+    API key: test-*******
+
+  Pipelex runner
+    Version: pipelex 0.18.0b4
+```
+
+---
+
 ## Telemetry
 
 Manage anonymous usage telemetry. Telemetry can also be controlled via the `DISABLE_TELEMETRY=1` environment variable, which takes precedence over the credentials file.

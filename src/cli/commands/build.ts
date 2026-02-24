@@ -3,11 +3,15 @@ import { resolve } from "node:path";
 import * as p from "@clack/prompts";
 import { printLogo } from "./index.js";
 import { createRunner } from "../../runners/registry.js";
-import type { ConceptRepresentationFormat, RunnerType } from "../../runners/types.js";
+import type { ConceptRepresentationFormat, Runner, RunnerType } from "../../runners/types.js";
 
 interface WithRunner {
   runner?: RunnerType;
   directory?: string;
+}
+
+function isStreamingRunner(runner: Runner): boolean {
+  return runner.type === "pipelex";
 }
 
 // ── mthds build pipe "PROMPT" [-o file] ─────────────────────────────
@@ -23,23 +27,31 @@ export async function buildPipe(
     ? [resolve(options.directory)]
     : undefined;
   const runner = createRunner(options.runner, libraryDirs);
-  const s = p.spinner();
-  s.start("Building pipeline...");
+  const streaming = isStreamingRunner(runner);
+  const s = streaming ? null : p.spinner();
+  s?.start("Building pipeline...");
+  if (streaming) p.log.step("Building pipeline...");
 
   try {
-    const result = await runner.buildPipe({ brief });
-    s.stop(result.message);
+    const result = await runner.buildPipe({
+      brief,
+      output: options.output,
+    });
+    s?.stop(result.message);
+    if (streaming) p.log.success(result.message);
 
-    if (options.output) {
-      writeFileSync(options.output, result.plx_content, "utf-8");
-      p.log.success(`PLX written to ${options.output}`);
-    } else {
-      p.log.info(result.plx_content);
+    if (result.plx_content) {
+      if (options.output) {
+        writeFileSync(options.output, result.plx_content, "utf-8");
+        p.log.success(`PLX written to ${options.output}`);
+      } else {
+        p.log.info(result.plx_content);
+      }
     }
 
     p.outro("Done");
   } catch (err) {
-    s.stop("Build failed.");
+    s?.stop("Build failed.");
     p.log.error((err as Error).message);
     p.outro("");
     process.exit(1);
@@ -82,15 +94,18 @@ export async function buildRunner(
     return; // unreachable, keeps TS happy
   }
 
-  const s = p.spinner();
-  s.start("Generating runner code...");
+  const streaming = isStreamingRunner(runner);
+  const s = streaming ? null : p.spinner();
+  s?.start("Generating runner code...");
+  if (streaming) p.log.step("Generating runner code...");
 
   try {
     const result = await runner.buildRunner({
       plx_content: plxContent,
       pipe_code: pipeCode,
     });
-    s.stop(result.message);
+    s?.stop(result.message);
+    if (streaming) p.log.success(result.message);
 
     if (options.output) {
       writeFileSync(options.output, result.python_code, "utf-8");
@@ -101,7 +116,7 @@ export async function buildRunner(
 
     p.outro("Done");
   } catch (err) {
-    s.stop("Build failed.");
+    s?.stop("Build failed.");
     p.log.error((err as Error).message);
     p.outro("");
     process.exit(1);

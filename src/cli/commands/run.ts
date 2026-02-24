@@ -3,8 +3,12 @@ import { resolve } from "node:path";
 import * as p from "@clack/prompts";
 import { printLogo } from "./index.js";
 import { createRunner } from "../../runners/registry.js";
-import type { RunnerType } from "../../runners/types.js";
+import type { Runner, RunnerType } from "../../runners/types.js";
 import type { ExecutePipelineOptions } from "../../client/pipeline.js";
+
+function isStreamingRunner(runner: Runner): boolean {
+  return runner.type === "pipelex";
+}
 
 interface RunOptions {
   pipe?: string;
@@ -46,12 +50,15 @@ export async function runPipeline(
     pipelineOptions.inputs = JSON.parse(readFileSync(options.inputs, "utf-8"));
   }
 
-  const s = p.spinner();
-  s.start("Executing pipeline...");
+  const streaming = isStreamingRunner(runner);
+  const s = streaming ? null : p.spinner();
+  s?.start("Executing pipeline...");
+  if (streaming) p.log.step("Executing pipeline...");
 
   try {
     const result = await runner.executePipeline(pipelineOptions);
-    s.stop(`Pipeline ${result.pipeline_state.toLowerCase()}.`);
+    s?.stop(`Pipeline ${result.pipeline_state.toLowerCase()}.`);
+    if (streaming) p.log.success(`Pipeline ${result.pipeline_state.toLowerCase()}.`);
 
     if (!options.noOutput && options.output) {
       writeFileSync(
@@ -68,7 +75,7 @@ export async function runPipeline(
 
     p.outro("Done");
   } catch (err) {
-    s.stop("Pipeline execution failed.");
+    s?.stop("Pipeline execution failed.");
     p.log.error((err as Error).message);
     p.outro("");
     process.exit(1);

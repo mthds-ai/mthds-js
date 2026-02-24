@@ -30,6 +30,7 @@ export interface BuildOutputRequest {
 
 export interface BuildPipeRequest {
   brief: string;
+  output?: string;
 }
 
 export interface BuildRunnerRequest {

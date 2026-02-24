@@ -164,10 +164,11 @@ export function validateManifest(raw: string): ValidationResult {
   const exports = parsed["exports"] as Record<string, unknown> | undefined;
   if (exports && typeof exports === "object") {
     for (const [domain, node] of Object.entries(exports)) {
-      const firstSegment = domain.toLowerCase();
-      if (RESERVED_PREFIXES.includes(firstSegment)) {
+      const domainLower = domain.toLowerCase();
+      const matchedPrefix = RESERVED_PREFIXES.find((prefix) => domainLower.startsWith(prefix));
+      if (matchedPrefix) {
         errors.push(
-          `[exports."${domain}"] domain cannot start with reserved prefix "${firstSegment}".`
+          `[exports."${domain}"] domain cannot start with reserved prefix "${matchedPrefix}".`
         );
       }
       validateExportNode(node, domain, errors);

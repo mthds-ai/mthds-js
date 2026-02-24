@@ -18,7 +18,11 @@ function readEnvLocal(): boolean {
     const content = readFileSync(ENV_LOCAL_PATH, "utf-8");
     return content.split("\n").some((line) => {
       const trimmed = line.trim();
-      return trimmed === "DISABLE_TELEMETRY=1" || trimmed === "DISABLE_TELEMETRY = 1";
+      if (trimmed.startsWith("#")) return false;
+      const [key, ...rest] = trimmed.split("=");
+      if (key?.trim() !== "DISABLE_TELEMETRY") return false;
+      const val = rest.join("=").trim().replace(/^["']|["']$/g, "").trim();
+      return val === "1";
     });
   } catch {
     return false;

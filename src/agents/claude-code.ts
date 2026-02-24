@@ -1,4 +1,4 @@
-import { join, dirname } from "node:path";
+import { join, dirname, resolve } from "node:path";
 import { mkdirSync, writeFileSync } from "node:fs";
 import * as p from "@clack/prompts";
 import type { AgentHandler, InstallContext } from "./types.js";
@@ -14,7 +14,7 @@ export const claudeCodeHandler: AgentHandler = {
     const { repo } = ctx;
 
     for (const method of repo.methods) {
-      const installDir = join(ctx.targetDir, repo.repoName, method.slug);
+      const installDir = resolve(join(ctx.targetDir, repo.repoName, method.slug));
 
       s.start(`Installing "${method.slug}" to ${installDir}...`);
 
@@ -26,7 +26,10 @@ export const claudeCodeHandler: AgentHandler = {
 
       // Write all .mthds files, preserving directory structure
       for (const file of method.files) {
-        const filePath = join(installDir, file.relativePath);
+        const filePath = resolve(join(installDir, file.relativePath));
+        if (!filePath.startsWith(installDir)) {
+          throw new Error(`Path traversal detected: "${file.relativePath}" escapes install directory.`);
+        }
         mkdirSync(dirname(filePath), { recursive: true });
         writeFileSync(filePath, file.content, "utf-8");
       }

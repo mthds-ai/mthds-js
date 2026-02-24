@@ -18,6 +18,16 @@ export async function telemetryEnable(): Promise<void> {
   printLogo();
   p.intro("mthds telemetry");
   p.log.success("Telemetry enabled.");
+
+  const { enabled, source } = getTelemetryStatus();
+  if (!enabled) {
+    if (source === "env") {
+      p.log.warning("Override active: DISABLE_TELEMETRY=1 environment variable is set. Telemetry remains disabled.");
+    } else if (source === "env.local") {
+      p.log.warning("Override active: DISABLE_TELEMETRY=1 in ~/.mthds/.env.local. Telemetry remains disabled.");
+    }
+  }
+
   p.outro("");
 }
 

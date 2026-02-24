@@ -1,4 +1,4 @@
-import { resolve, join } from "node:path";
+import { resolve, join, basename } from "node:path";
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import type { ResolvedRepo, ResolvedMethod, SkippedMethod, MethodsFile } from "./types.js";
 import { validateManifest } from "./validate.js";
@@ -123,7 +123,7 @@ export function resolveFromLocal(dirPath: string): ResolvedRepo {
   }
 
   // Derive repoName from directory basename
-  const repoName = absPath.split("/").pop() ?? "local";
+  const repoName = basename(absPath) || "local";
 
   return {
     methods,

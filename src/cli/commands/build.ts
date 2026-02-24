@@ -1,11 +1,13 @@
 import { readFileSync, writeFileSync } from "node:fs";
+import { resolve } from "node:path";
 import * as p from "@clack/prompts";
 import { printLogo } from "./index.js";
-import { createRunner } from "../runners/registry.js";
-import type { ConceptRepresentationFormat, RunnerType } from "../runners/types.js";
+import { createRunner } from "../../runners/registry.js";
+import type { ConceptRepresentationFormat, RunnerType } from "../../runners/types.js";
 
 interface WithRunner {
   runner?: RunnerType;
+  directory?: string;
 }
 
 // ── mthds build pipe "PROMPT" [-o file] ─────────────────────────────
@@ -17,7 +19,10 @@ export async function buildPipe(
   printLogo();
   p.intro("mthds build pipe");
 
-  const runner = createRunner(options.runner);
+  const libraryDirs = options.directory
+    ? [resolve(options.directory)]
+    : undefined;
+  const runner = createRunner(options.runner, libraryDirs);
   const s = p.spinner();
   s.start("Building pipeline...");
 
@@ -50,7 +55,10 @@ export async function buildRunner(
   printLogo();
   p.intro("mthds build runner");
 
-  const runner = createRunner(options.runner);
+  const libraryDirs = options.directory
+    ? [resolve(options.directory)]
+    : undefined;
+  const runner = createRunner(options.runner, libraryDirs);
   const isBundle = target.endsWith(".plx");
 
   let plxContent: string;
@@ -109,7 +117,10 @@ export async function buildInputs(
   printLogo();
   p.intro("mthds build inputs");
 
-  const runner = createRunner(options.runner);
+  const libraryDirs = options.directory
+    ? [resolve(options.directory)]
+    : undefined;
+  const runner = createRunner(options.runner, libraryDirs);
   const plxContent = readFileSync(target, "utf-8");
 
   const s = p.spinner();
@@ -140,7 +151,10 @@ export async function buildOutput(
   printLogo();
   p.intro("mthds build output");
 
-  const runner = createRunner(options.runner);
+  const libraryDirs = options.directory
+    ? [resolve(options.directory)]
+    : undefined;
+  const runner = createRunner(options.runner, libraryDirs);
   const plxContent = readFileSync(target, "utf-8");
 
   const s = p.spinner();

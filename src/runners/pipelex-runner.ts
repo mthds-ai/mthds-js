@@ -17,19 +17,19 @@ import type {
   BuildPipeResponse,
   BuildRunnerRequest,
   BuildRunnerResponse,
+  DictPipeOutput,
   ExecuteRequest,
   PipelineResponse,
   ValidateRequest,
   ValidateResponse,
 } from "./types.js";
+import type {
+  ExecutePipelineOptions,
+  PipelineExecuteResponse,
+  PipelineStartResponse,
+} from "../client/pipeline.js";
 
 const execFileAsync = promisify(execFile);
-
-function notSupported(method: string): never {
-  throw new Error(
-    `PipelexRunner.${method}() has no CLI equivalent. Use the API runner instead.`
-  );
-}
 
 function makeTmpDir(): string {
   return mkdtempSync(join(tmpdir(), "mthds-"));
@@ -37,11 +37,22 @@ function makeTmpDir(): string {
 
 export class PipelexRunner implements Runner {
   readonly type: RunnerType = "pipelex";
+  private readonly libraryDirs: string[];
+
+  constructor(libraryDirs?: string[]) {
+    this.libraryDirs = libraryDirs ?? [];
+  }
+
+  private libraryArgs(): string[] {
+    return this.libraryDirs.flatMap((dir) => ["-L", dir]);
+  }
 
   private async exec(
     args: string[]
   ): Promise<{ stdout: string; stderr: string }> {
-    return execFileAsync("pipelex", args, { encoding: "utf-8" });
+    return execFileAsync("pipelex", [...this.libraryArgs(), ...args], {
+      encoding: "utf-8",
+    });
   }
 
   // ── Health & version ────────────────────────────────────────────
@@ -63,12 +74,51 @@ export class PipelexRunner implements Runner {
   // ── Build ───────────────────────────────────────────────────────
   // buildInputs and buildOutput have no CLI equivalent.
 
-  async buildInputs(_request: BuildInputsRequest): Promise<unknown> {
-    notSupported("buildInputs");
+  // pipelex build inputs <bundle.plx> --pipe <pipe_code>
+  async buildInputs(request: BuildInputsRequest): Promise<unknown> {
+    const tmp = makeTmpDir();
+    try {
+      const bundlePath = join(tmp, "bundle.plx");
+      writeFileSync(bundlePath, request.plx_content, "utf-8");
+
+      const { stdout } = await this.exec([
+        "build",
+        "inputs",
+        bundlePath,
+        "--pipe",
+        request.pipe_code,
+      ]);
+
+      return JSON.parse(stdout) as unknown;
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
   }
 
-  async buildOutput(_request: BuildOutputRequest): Promise<unknown> {
-    notSupported("buildOutput");
+  // pipelex build output <bundle.plx> --pipe <pipe_code> [--format <fmt>]
+  async buildOutput(request: BuildOutputRequest): Promise<unknown> {
+    const tmp = makeTmpDir();
+    try {
+      const bundlePath = join(tmp, "bundle.plx");
+      writeFileSync(bundlePath, request.plx_content, "utf-8");
+
+      const args = [
+        "build",
+        "output",
+        bundlePath,
+        "--pipe",
+        request.pipe_code,
+      ];
+      if (request.format) {
+        args.push("--format", request.format);
+      }
+
+      const { stdout } = await this.exec(args);
+
+      return JSON.parse(stdout) as unknown;
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
   }
 
   // pipelex build pipe "PROMPT" -o <file>
@@ -207,5 +257,38 @@ export class PipelexRunner implements Runner {
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }
+  }
+
+  // ── RunnerProtocol implementation ─────────────────────────────────
+
+  async executePipeline(
+    options: ExecutePipelineOptions
+  ): Promise<PipelineExecuteResponse> {
+    const request: ExecuteRequest = {
+      plx_content: options.mthds_content ?? undefined,
+      pipe_code: options.pipe_code ?? undefined,
+      inputs: options.inputs
+        ? Object.fromEntries(
+            Object.entries(options.inputs).map(([k, v]) => [k, v])
+          )
+        : undefined,
+    };
+    const response = await this.execute(request);
+    return {
+      pipeline_run_id: response.pipeline_run_id,
+      created_at: response.created_at,
+      pipeline_state: response.pipeline_state,
+      finished_at: response.finished_at,
+      main_stuff_name: response.main_stuff_name,
+      pipe_output: response.pipe_output as unknown as DictPipeOutput,
+    };
+  }
+
+  async startPipeline(
+    _options: ExecutePipelineOptions
+  ): Promise<PipelineStartResponse> {
+    throw new Error(
+      "startPipeline is not supported by the pipelex CLI runner. Use the API runner instead."
+    );
   }
 }

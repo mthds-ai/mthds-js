@@ -6,8 +6,8 @@ import {
   getConfigValue,
   setConfigValue,
   listConfig,
-} from "../config/config.js";
-import type { RunnerType } from "../runners/types.js";
+} from "../../config/config.js";
+import type { RunnerType } from "../../runners/types.js";
 
 const VALID_RUNNERS: RunnerType[] = ["api", "pipelex"];
 

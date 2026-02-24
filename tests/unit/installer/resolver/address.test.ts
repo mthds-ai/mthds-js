@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseAddress } from "../../src/resolver/address.js";
+import { parseAddress } from "../../../../src/installer/resolver/address.js";
 
 describe("parseAddress", () => {
   it("parses org/repo", () => {

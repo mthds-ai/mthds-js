@@ -7,17 +7,17 @@ import { promisify } from "node:util";
 const execAsync = promisify(exec);
 import * as p from "@clack/prompts";
 import chalk from "chalk";
-import { isPipelexInstalled } from "../runtime/check.js";
-import { ensureRuntime } from "../runtime/installer.js";
-import { trackInstall, shutdown } from "../telemetry/posthog.js";
+import { isPipelexInstalled } from "../../installer/runtime/check.js";
+import { ensureRuntime } from "../../installer/runtime/installer.js";
+import { trackInstall, shutdown } from "../../installer/telemetry/posthog.js";
 import { printLogo } from "./index.js";
-import type { Agent, InstallLocation } from "../agents/types.js";
-import { InstallLocation as Loc } from "../agents/types.js";
-import { getAllAgents, getAgentHandler } from "../agents/registry.js";
-import { parseAddress } from "../resolver/address.js";
-import { resolveFromGitHub } from "../resolver/github.js";
-import { resolveFromLocal } from "../resolver/local.js";
-import type { ResolvedRepo } from "../resolver/types.js";
+import type { Agent, InstallLocation } from "../../installer/agents/types.js";
+import { InstallLocation as Loc } from "../../installer/agents/types.js";
+import { getAllAgents, getAgentHandler } from "../../installer/agents/registry.js";
+import { parseAddress } from "../../installer/resolver/address.js";
+import { resolveFromGitHub } from "../../installer/resolver/github.js";
+import { resolveFromLocal } from "../../installer/resolver/local.js";
+import type { ResolvedRepo } from "../../package/manifest/types.js";
 
 export async function installMethod(options: {
   address?: string;

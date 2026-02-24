@@ -1,17 +1,26 @@
 import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import * as p from "@clack/prompts";
 import { printLogo } from "./index.js";
-import { createRunner } from "../runners/registry.js";
-import type { RunnerType } from "../runners/types.js";
+import { createRunner } from "../../runners/registry.js";
+import type { RunnerType } from "../../runners/types.js";
 
 export async function validatePlx(
   target: string,
-  options: { pipe?: string; bundle?: string; runner?: RunnerType }
+  options: {
+    pipe?: string;
+    bundle?: string;
+    runner?: RunnerType;
+    directory?: string;
+  }
 ): Promise<void> {
   printLogo();
   p.intro("mthds validate");
 
-  const runner = createRunner(options.runner);
+  const libraryDirs = options.directory
+    ? [resolve(options.directory)]
+    : undefined;
+  const runner = createRunner(options.runner, libraryDirs);
 
   // Resolve the PLX content from either the positional target or --bundle
   const bundlePath = options.bundle ?? (target.endsWith(".plx") ? target : undefined);

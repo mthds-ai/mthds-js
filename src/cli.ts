@@ -2,26 +2,37 @@
 import { Command, CommanderError } from "commander";
 import { createRequire } from "node:module";
 import * as p from "@clack/prompts";
-import { showBanner } from "./commands/index.js";
-import { printLogo } from "./commands/index.js";
-import { installRunner } from "./commands/setup.js";
-import { installMethod } from "./commands/install.js";
-import { configSet, configGet, configList } from "./commands/config.js";
-import { runPipeline } from "./commands/run.js";
+import { showBanner } from "./cli/commands/index.js";
+import { printLogo } from "./cli/commands/index.js";
+import { installRunner } from "./cli/commands/setup.js";
+import { installMethod } from "./cli/commands/install.js";
+import { configSet, configGet, configList } from "./cli/commands/config.js";
+import { runPipeline } from "./cli/commands/run.js";
 import {
   buildPipe,
   buildRunner,
   buildInputs,
   buildOutput,
-} from "./commands/build.js";
-import { validatePlx } from "./commands/validate.js";
-import { runnerSetDefault, runnerList } from "./commands/runner.js";
-import { telemetryDisable, telemetryEnable, telemetryStatus } from "./commands/telemetry.js";
+} from "./cli/commands/build.js";
+import { validatePlx } from "./cli/commands/validate.js";
+import {
+  packageInit,
+  packageList,
+  packageAdd,
+  packageLock,
+  packageInstall,
+  packageUpdate,
+  packagePublish,
+} from "./cli/commands/package/stubs.js";
 import type { RunnerType } from "./runners/types.js";
 import type { Command as Cmd } from "commander";
 
 function getRunner(cmd: Cmd): RunnerType | undefined {
   return cmd.optsWithGlobals().runner as RunnerType | undefined;
+}
+
+function getDirectory(cmd: Cmd): string | undefined {
+  return cmd.optsWithGlobals().directory as string | undefined;
 }
 
 const require = createRequire(import.meta.url);
@@ -32,8 +43,9 @@ const program = new Command();
 program
   .name("mthds")
   .version(pkg.version)
-  .description("CLI bridge to the Pipelex runtime")
+  .description("CLI for the MTHDS open standard")
   .option("--runner <type>", "Runner to use (api, pipelex)")
+  .option("-d, --directory <path>", "Target package directory (defaults to current directory)")
   .exitOverride()
   .configureOutput({
     writeOut: () => {},
@@ -52,7 +64,7 @@ program
   .description("Execute a pipeline")
   .exitOverride()
   .action(async (target: string, options: Record<string, string | boolean | undefined>, cmd: Cmd) => {
-    await runPipeline(target, { ...options, runner: getRunner(cmd) } as Parameters<typeof runPipeline>[1]);
+    await runPipeline(target, { ...options, runner: getRunner(cmd), directory: getDirectory(cmd) } as Parameters<typeof runPipeline>[1]);
   });
 
 // ── mthds build <subcommand> ────────────────────────────────────────
@@ -68,7 +80,7 @@ build
   .description("Build a pipeline from a prompt")
   .exitOverride()
   .action(async (brief: string, options: { output?: string }, cmd: Cmd) => {
-    await buildPipe(brief, { ...options, runner: getRunner(cmd) });
+    await buildPipe(brief, { ...options, runner: getRunner(cmd), directory: getDirectory(cmd) });
   });
 
 build
@@ -79,7 +91,7 @@ build
   .description("Generate Python runner code for a pipe")
   .exitOverride()
   .action(async (target: string, options: { pipe?: string; output?: string }, cmd: Cmd) => {
-    await buildRunner(target, { ...options, runner: getRunner(cmd) });
+    await buildRunner(target, { ...options, runner: getRunner(cmd), directory: getDirectory(cmd) });
   });
 
 build
@@ -89,7 +101,7 @@ build
   .description("Generate example input JSON for a pipe")
   .exitOverride()
   .action(async (target: string, options: { pipe: string }, cmd: Cmd) => {
-    await buildInputs(target, { ...options, runner: getRunner(cmd) });
+    await buildInputs(target, { ...options, runner: getRunner(cmd), directory: getDirectory(cmd) });
   });
 
 build
@@ -100,7 +112,7 @@ build
   .description("Generate output representation for a pipe")
   .exitOverride()
   .action(async (target: string, options: { pipe: string; format?: string }, cmd: Cmd) => {
-    await buildOutput(target, { ...options, runner: getRunner(cmd) });
+    await buildOutput(target, { ...options, runner: getRunner(cmd), directory: getDirectory(cmd) });
   });
 
 // ── mthds validate <target> ────────────────────────────────────────
@@ -112,10 +124,10 @@ program
   .description("Validate PLX content")
   .exitOverride()
   .action(async (target: string, options: { pipe?: string; bundle?: string }, cmd: Cmd) => {
-    await validatePlx(target, { ...options, runner: getRunner(cmd) });
+    await validatePlx(target, { ...options, runner: getRunner(cmd), directory: getDirectory(cmd) });
   });
 
-// ── mthds install [address] ──────────────────────────────────────────
+// ── mthds install [address] (JS-only) ──────────────────────────────
 program
   .command("install")
   .argument("[address]", "Package address (org/repo or org/repo/sub/path)")
@@ -141,46 +153,12 @@ program
     await installMethod({ address, dir: opts.local, method: opts.method });
   });
 
-// ── mthds setup runner <name> ──────────────────────────────────────
-const setup = program.command("setup").exitOverride();
-
-setup
-  .command("runner <name>")
-  .description("Install a runner (e.g. pipelex)")
-  .exitOverride()
-  .action(async (name: string) => {
-    await installRunner(name);
-  });
-
-// ── mthds runner set-default|list ───────────────────────────────────
-const runnerCmd = program
-  .command("runner")
-  .description("Manage runners")
-  .exitOverride();
-
-runnerCmd
-  .command("set-default")
-  .argument("<name>", "Runner name (api, pipelex)")
-  .description("Set the default runner")
-  .exitOverride()
-  .action(async (name: string) => {
-    await runnerSetDefault(name);
-  });
-
-runnerCmd
-  .command("list")
-  .description("List available runners")
-  .exitOverride()
-  .action(async () => {
-    await runnerList();
-  });
-
 // ── mthds config set|get|list ──────────────────────────────────────
 const config = program.command("config").description("Manage configuration").exitOverride();
 
 config
   .command("set")
-  .argument("<key>", "Config key (runner, api-url, api-key)")
+  .argument("<key>", "Config key (runner, api-url, api-key, telemetry)")
   .argument("<value>", "Value to set")
   .description("Set a config value")
   .exitOverride()
@@ -190,7 +168,7 @@ config
 
 config
   .command("get")
-  .argument("<key>", "Config key (runner, api-url, api-key)")
+  .argument("<key>", "Config key (runner, api-url, api-key, telemetry)")
   .description("Get a config value")
   .exitOverride()
   .action(async (key: string) => {
@@ -205,35 +183,30 @@ config
     await configList();
   });
 
-// ── mthds telemetry disable|enable|status ───────────────────────────
-const telemetry = program
-  .command("telemetry")
-  .description("Manage anonymous telemetry")
+// ── mthds setup runner <name> ──────────────────────────────────────
+const setup = program.command("setup").exitOverride();
+
+setup
+  .command("runner <name>")
+  .description("Install a runner (e.g. pipelex)")
+  .exitOverride()
+  .action(async (name: string) => {
+    await installRunner(name);
+  });
+
+// ── mthds package <subcommand> (stubs — use mthds-python) ──────────
+const packageCmd = program
+  .command("package")
+  .description("Package management (use mthds-python for full implementation)")
   .exitOverride();
 
-telemetry
-  .command("disable")
-  .description("Disable anonymous telemetry")
-  .exitOverride()
-  .action(async () => {
-    await telemetryDisable();
-  });
-
-telemetry
-  .command("enable")
-  .description("Enable anonymous telemetry")
-  .exitOverride()
-  .action(async () => {
-    await telemetryEnable();
-  });
-
-telemetry
-  .command("status")
-  .description("Show telemetry status")
-  .exitOverride()
-  .action(async () => {
-    await telemetryStatus();
-  });
+packageCmd.command("init").description("Initialize a METHODS.toml manifest").action(packageInit);
+packageCmd.command("list").description("Display the package manifest").action(packageList);
+packageCmd.command("add").argument("<dep>", "Dependency address").description("Add a dependency").action(packageAdd);
+packageCmd.command("lock").description("Resolve and generate methods.lock").action(packageLock);
+packageCmd.command("install").description("Install dependencies from methods.lock").action(packageInstall);
+packageCmd.command("update").description("Re-resolve and update methods.lock").action(packageUpdate);
+packageCmd.command("publish").description("Publish package for distribution").action(packagePublish);
 
 // Default: show banner
 program.action(() => {
@@ -255,15 +228,7 @@ program.parseAsync(process.argv).catch((err: unknown) => {
       .replace(/^Error: /, "");
 
     p.log.error(message);
-
-    if (err.code === "commander.missingArgument") {
-      const args = process.argv.slice(2);
-      if (args.includes("runner") && args.includes("set-default")) {
-        p.log.info("Run mthds runner list to see available runners.");
-      } else {
-        p.log.info("Run mthds --help to see usage.");
-      }
-    }
+    p.log.info("Run mthds --help to see usage.");
 
     p.outro("");
     process.exit(1);

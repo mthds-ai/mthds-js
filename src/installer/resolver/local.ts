@@ -1,8 +1,8 @@
 import { resolve, join, basename } from "node:path";
 import { readFileSync, readdirSync, statSync } from "node:fs";
-import type { ResolvedRepo, ResolvedMethod, SkippedMethod, MethodsFile } from "./types.js";
-import { validateManifest } from "./validate.js";
-import { validateSlug } from "./validate.js";
+import type { ResolvedRepo, ResolvedMethod, SkippedMethod, MethodsFile } from "../../package/manifest/types.js";
+import { validateManifest } from "../../package/manifest/validate.js";
+import { validateSlug } from "../../package/manifest/validate.js";
 
 function collectMthdFiles(dirPath: string): MethodsFile[] {
   const entries = readdirSync(dirPath, { recursive: true, encoding: "utf-8" });

@@ -1,4 +1,4 @@
-import type { ParsedAddress } from "./types.js";
+import type { ParsedAddress } from "../../package/manifest/types.js";
 
 const VALID_SEGMENT = /^[a-zA-Z0-9._-]+$/;
 

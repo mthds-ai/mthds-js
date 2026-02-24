@@ -1,9 +1,9 @@
 import * as p from "@clack/prompts";
-import { isPipelexInstalled } from "../runtime/check.js";
-import { ensureRuntime } from "../runtime/installer.js";
-import { shutdown } from "../telemetry/posthog.js";
+import { isPipelexInstalled } from "../../installer/runtime/check.js";
+import { ensureRuntime } from "../../installer/runtime/installer.js";
+import { shutdown } from "../../installer/telemetry/posthog.js";
 import { printLogo } from "./index.js";
-import { getConfigValue, setConfigValue } from "../config/config.js";
+import { getConfigValue, setConfigValue } from "../../config/config.js";
 
 export async function installRunner(name: string): Promise<void> {
   printLogo();

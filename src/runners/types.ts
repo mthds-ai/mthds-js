@@ -1,3 +1,5 @@
+import type { RunnerProtocol } from "../client/protocol.js";
+
 // ── Runner type ─────────────────────────────────────────────────────
 export type RunnerType = "api" | "pipelex";
 
@@ -107,7 +109,7 @@ export interface ValidateResponse {
 // ── Runner interface ────────────────────────────────────────────────
 // Every runtime (API, local pipelex CLI, …) must implement this.
 
-export interface Runner {
+export interface Runner extends RunnerProtocol {
   readonly type: RunnerType;
 
   // Health & version

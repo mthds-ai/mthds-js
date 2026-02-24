@@ -1,7 +1,7 @@
 import { execFileSync } from "node:child_process";
-import type { ParsedAddress, ResolvedRepo, ResolvedMethod, SkippedMethod, MethodsFile } from "./types.js";
-import { validateManifest } from "./validate.js";
-import { validateSlug } from "./validate.js";
+import type { ParsedAddress, ResolvedRepo, ResolvedMethod, SkippedMethod, MethodsFile } from "../../package/manifest/types.js";
+import { validateManifest } from "../../package/manifest/validate.js";
+import { validateSlug } from "../../package/manifest/validate.js";
 
 type AuthMethod =
   | { type: "token"; token: string }

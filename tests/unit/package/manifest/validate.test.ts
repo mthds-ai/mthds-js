@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { validateManifest, validateSlug } from "../../src/resolver/validate.js";
+import { validateManifest, validateSlug } from "../../../../src/package/manifest/validate.js";
 
 // ---------------------------------------------------------------------------
 // Helpers

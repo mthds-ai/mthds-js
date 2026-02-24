@@ -13,6 +13,11 @@ import type {
   ValidateRequest,
   ValidateResponse,
 } from "./types.js";
+import type {
+  ExecutePipelineOptions,
+  PipelineExecuteResponse,
+  PipelineStartResponse,
+} from "../client/pipeline.js";
 
 export class ApiRunner implements Runner {
   readonly type: RunnerType = "api";
@@ -105,5 +110,33 @@ export class ApiRunner implements Runner {
 
   async validate(request: ValidateRequest): Promise<ValidateResponse> {
     return this.post("/api/v1/validate", request);
+  }
+
+  // ── RunnerProtocol implementation ─────────────────────────────────
+
+  async executePipeline(
+    options: ExecutePipelineOptions
+  ): Promise<PipelineExecuteResponse> {
+    return this.post("/api/v1/pipeline/execute", {
+      pipe_code: options.pipe_code,
+      mthds_content: options.mthds_content,
+      inputs: options.inputs,
+      output_name: options.output_name,
+      output_multiplicity: options.output_multiplicity,
+      dynamic_output_concept_code: options.dynamic_output_concept_code,
+    });
+  }
+
+  async startPipeline(
+    options: ExecutePipelineOptions
+  ): Promise<PipelineStartResponse> {
+    return this.post("/api/v1/pipeline/start", {
+      pipe_code: options.pipe_code,
+      mthds_content: options.mthds_content,
+      inputs: options.inputs,
+      output_name: options.output_name,
+      output_multiplicity: options.output_multiplicity,
+      dynamic_output_concept_code: options.dynamic_output_concept_code,
+    });
   }
 }

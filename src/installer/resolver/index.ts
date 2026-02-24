@@ -10,10 +10,10 @@ export type {
   ResolvedMethod,
   SkippedMethod,
   ResolvedRepo,
-} from "./types.js";
+} from "../../package/manifest/types.js";
 
 export { parseAddress } from "./address.js";
-export { validateManifest, validateSlug } from "./validate.js";
-export type { ValidationResult, SlugValidationResult } from "./validate.js";
+export { validateManifest, validateSlug } from "../../package/manifest/validate.js";
+export type { ValidationResult, SlugValidationResult } from "../../package/manifest/validate.js";
 export { resolveFromGitHub } from "./github.js";
 export { resolveFromLocal } from "./local.js";

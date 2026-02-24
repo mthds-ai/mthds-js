@@ -15,15 +15,17 @@ For the full CLI reference, see [CLI.md](./CLI.md).
 ### Quick Start
 
 ```bash
-# Configure the API runner (default)
-mthds config set api-key YOUR_KEY
-mthds config set api-url https://your-api-instance.com
+# Set up the API runner (interactive — prompts for URL and key)
+mthds setup runner api
+
+# Or set up the pipelex runner (local)
+mthds setup runner pipelex
 
 # Run a pipeline
 mthds run my_pipe_code
 
 # Validate a bundle
-mthds validate ./bundle.plx
+mthds validate ./bundle.mthds
 
 # Install a method from the hub
 mthds install org/repo
@@ -137,13 +139,18 @@ npx mthds setup runner pipelex
 
 ### Configure the API runner
 
-The API runner is the default. Configure it with:
+The API runner is the default. Set it up interactively:
 
 ```bash
-# Set your API key
-mthds config set api-key YOUR_KEY
+mthds setup runner api
+```
 
-# Set the API URL (defaults to https://api.pipelex.com)
+This prompts for the API URL and API key (masked input) and saves them to `~/.mthds/credentials`.
+
+You can also set values directly:
+
+```bash
+mthds config set api-key YOUR_KEY
 mthds config set api-url https://your-api-instance.com
 ```
 

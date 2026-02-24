@@ -27,10 +27,10 @@ mthds install org/repo
 # Run a pipeline
 mthds run my_pipe_code
 
-# Configure your API key
-mthds config set api-key YOUR_KEY
+# Set up the API runner (interactive)
+mthds setup runner api
 
-# Set pipelex as default runner
+# Set up the pipelex runner (local)
 mthds setup runner pipelex
 ```
 
@@ -44,6 +44,12 @@ mthds setup runner pipelex
 | `--help` | Show help for any command |
 
 When `--runner` is omitted, the CLI uses the runner configured via `mthds config set runner <name>` (default: `api`).
+
+## Runner Passthrough
+
+When using the **pipelex** runner, the `run`, `build`, and `validate` commands act as thin wrappers: they forward all arguments directly to the `pipelex` CLI. This means any pipelex-specific flags (e.g. `--dry-run`, `--mock-inputs`, `--output-dir`) are passed through transparently.
+
+The `--runner` and `-d/--directory` flags are consumed by mthds and not forwarded.
 
 ---
 
@@ -59,12 +65,14 @@ mthds run <target> [OPTIONS]
 
 | Argument / Option | Type | Required | Default | Description |
 |---|---|---|---|---|
-| `target` | string | yes | -- | Pipe code or `.plx` bundle file |
+| `target` | string | yes | -- | Pipe code or `.mthds` bundle file |
 | `--pipe <code>` | string | no | -- | Pipe code (when target is a bundle) |
 | `-i, --inputs <file>` | string | no | -- | Path to JSON inputs file |
 | `-o, --output <file>` | string | no | -- | Path to save output JSON |
 | `--no-output` | flag | no | -- | Skip saving output to file |
 | `--no-pretty-print` | flag | no | -- | Skip pretty printing the output |
+
+With the pipelex runner, additional flags like `--dry-run`, `--mock-inputs`, and `--output-dir` are passed through to pipelex.
 
 **Examples:**
 
@@ -72,21 +80,24 @@ mthds run <target> [OPTIONS]
 # Run by pipe code
 mthds run my_pipe_code
 
-# Run a .plx bundle file
-mthds run ./bundle.plx --pipe my_pipe
+# Run a .mthds bundle file
+mthds run ./bundle.mthds --pipe my_pipe
 
 # Run with inputs and save output
 mthds run my_pipe_code --inputs inputs.json --output result.json
 
 # Run with a specific runner
-mthds --runner pipelex run my_pipe_code
+mthds run my_pipe_code --runner pipelex
+
+# Dry run via pipelex
+mthds run ./bundle.mthds --inputs inputs.json --dry-run
 ```
 
 ---
 
 ## Validate
 
-Validate PLX content via a runner.
+Validate a bundle via a runner.
 
 ### `mthds validate`
 
@@ -96,26 +107,26 @@ mthds validate <target> [OPTIONS]
 
 | Argument / Option | Type | Required | Default | Description |
 |---|---|---|---|---|
-| `target` | string | yes | -- | `.plx` bundle file or pipe code |
+| `target` | string | yes | -- | `.mthds` bundle file or pipe code |
 | `--pipe <code>` | string | no | -- | Pipe code that must exist in the bundle |
 | `--bundle <file>` | string | no | -- | Bundle file path (alternative to positional) |
 
-The target must be a `.plx` bundle file (either as the positional argument or via `--bundle`).
+The target must be a `.mthds` bundle file (either as the positional argument or via `--bundle`).
 
 **Examples:**
 
 ```bash
 # Validate a bundle file
-mthds validate ./bundle.plx
+mthds validate ./bundle.mthds
 
 # Validate a specific pipe within a bundle
-mthds validate ./bundle.plx --pipe my_pipe
+mthds validate ./bundle.mthds --pipe my_pipe
 
 # Validate using --bundle flag
-mthds validate my_pipe --bundle ./bundle.plx
+mthds validate my_pipe --bundle ./bundle.mthds
 
 # Validate with a specific runner
-mthds --runner pipelex validate ./bundle.plx
+mthds validate ./bundle.mthds --runner pipelex
 ```
 
 ---
@@ -123,6 +134,8 @@ mthds --runner pipelex validate ./bundle.plx
 ## Build
 
 Generate pipelines, runner code, inputs, and output schemas. Build operations delegate to a runner.
+
+With the pipelex runner, all build subcommands pass arguments through to the `pipelex build` CLI directly.
 
 ### `mthds build pipe`
 
@@ -135,7 +148,7 @@ mthds build pipe <brief> [OPTIONS]
 | Argument / Option | Type | Required | Default | Description |
 |---|---|---|---|---|
 | `brief` | string | yes | -- | Natural-language description of the pipeline |
-| `-o, --output <file>` | string | no | -- | Path to save the generated `.plx` file |
+| `-o, --output <file>` | string | no | -- | Path to save the generated `.mthds` file |
 
 **Examples:**
 
@@ -144,7 +157,7 @@ mthds build pipe <brief> [OPTIONS]
 mthds build pipe "Extract key facts from a news article"
 
 # Build and save to file
-mthds build pipe "Summarize a document" --output summary.plx
+mthds build pipe "Summarize a document" --output summary.mthds
 ```
 
 ### `mthds build runner`
@@ -157,18 +170,18 @@ mthds build runner <target> [OPTIONS]
 
 | Argument / Option | Type | Required | Default | Description |
 |---|---|---|---|---|
-| `target` | string | yes | -- | `.plx` bundle file |
-| `--pipe <code>` | string | yes (for bundles) | -- | Pipe code to generate runner for |
+| `target` | string | yes | -- | Bundle file path |
+| `--pipe <code>` | string | no | -- | Pipe code to generate runner for (required for API runner) |
 | `-o, --output <file>` | string | no | -- | Path to save the generated Python file |
 
 **Examples:**
 
 ```bash
 # Generate runner code for a pipe in a bundle
-mthds build runner ./bundle.plx --pipe my_pipe
+mthds build runner ./bundle.mthds --pipe my_pipe
 
 # Save to file
-mthds build runner ./bundle.plx --pipe my_pipe --output runner.py
+mthds build runner ./bundle.mthds --pipe my_pipe --output runner.py
 ```
 
 ### `mthds build inputs`
@@ -176,18 +189,18 @@ mthds build runner ./bundle.plx --pipe my_pipe --output runner.py
 Generate example input JSON for a pipe.
 
 ```bash
-mthds build inputs <target> --pipe <code>
+mthds build inputs <target> [OPTIONS]
 ```
 
 | Argument / Option | Type | Required | Default | Description |
 |---|---|---|---|---|
-| `target` | string | yes | -- | `.plx` bundle file |
-| `--pipe <code>` | string | yes | -- | Pipe code to generate inputs for |
+| `target` | string | yes | -- | Bundle file path |
+| `--pipe <code>` | string | no | -- | Pipe code to generate inputs for (required for API runner) |
 
 **Example:**
 
 ```bash
-mthds build inputs ./bundle.plx --pipe my_pipe
+mthds build inputs ./bundle.mthds --pipe my_pipe
 ```
 
 ### `mthds build output`
@@ -195,19 +208,19 @@ mthds build inputs ./bundle.plx --pipe my_pipe
 Generate output representation for a pipe.
 
 ```bash
-mthds build output <target> --pipe <code> [OPTIONS]
+mthds build output <target> [OPTIONS]
 ```
 
 | Argument / Option | Type | Required | Default | Description |
 |---|---|---|---|---|
-| `target` | string | yes | -- | `.plx` bundle file |
-| `--pipe <code>` | string | yes | -- | Pipe code to generate output for |
+| `target` | string | yes | -- | Bundle file path |
+| `--pipe <code>` | string | no | -- | Pipe code to generate output for (required for API runner) |
 | `--format <format>` | string | no | `schema` | Output format: `json`, `python`, or `schema` |
 
 **Example:**
 
 ```bash
-mthds build output ./bundle.plx --pipe my_pipe --format json
+mthds build output ./bundle.mthds --pipe my_pipe --format json
 ```
 
 ---
@@ -287,7 +300,7 @@ Install and configure runners.
 
 ### `mthds setup runner`
 
-Install a runner and optionally set it as the default.
+Set up a runner and optionally set it as the default.
 
 ```bash
 mthds setup runner <name>
@@ -295,13 +308,21 @@ mthds setup runner <name>
 
 | Argument | Type | Required | Description |
 |---|---|---|---|
-| `name` | string | yes | Runner name (currently only `pipelex`) |
+| `name` | string | yes | Runner name (`api` or `pipelex`) |
 
-If pipelex is not already installed, this command installs it. Then it offers to set the runner as the default via an interactive prompt.
+**For `api`:** interactively prompts for the API URL and API key (masked input), then saves them to `~/.mthds/credentials`.
 
-**Example:**
+**For `pipelex`:** installs the pipelex CLI if not already present.
+
+Both options then offer to set the runner as the default.
+
+**Examples:**
 
 ```bash
+# Set up the API runner (enter URL and key interactively)
+mthds setup runner api
+
+# Install and set up the pipelex runner
 mthds setup runner pipelex
 ```
 

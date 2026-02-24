@@ -67,7 +67,16 @@ export function showBanner(): void {
     `    ${chalk.yellow("config list")}                List all config values`
   );
   console.log(
-    `    ${chalk.yellow("setup runner <name>")}       Install a runner\n`
+    `    ${chalk.yellow("setup runner <name>")}       Initialize a runner`
+  );
+  console.log(
+    `    ${chalk.yellow("set-default runner <name>")} Set the default runner`
+  );
+  console.log(
+    `    ${chalk.yellow("runner status")}              Show runner configuration`
+  );
+  console.log(
+    `    ${chalk.yellow("telemetry enable|disable")}  Toggle anonymous telemetry\n`
   );
 
   console.log(chalk.bold("  Installation (JS-only):"));

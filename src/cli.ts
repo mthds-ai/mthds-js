@@ -4,7 +4,7 @@ import { createRequire } from "node:module";
 import * as p from "@clack/prompts";
 import { showBanner } from "./cli/commands/index.js";
 import { printLogo } from "./cli/commands/index.js";
-import { installRunner } from "./cli/commands/setup.js";
+import { setupRunner, setDefaultRunner, runnerStatus } from "./cli/commands/setup.js";
 import { installMethod } from "./cli/commands/install.js";
 import { configSet, configGet, configList } from "./cli/commands/config.js";
 import { runPipeline } from "./cli/commands/run.js";
@@ -24,6 +24,7 @@ import {
   packageUpdate,
 } from "./cli/commands/package/stubs.js";
 import { RUNNER_NAMES } from "./runners/types.js";
+import { isTelemetryEnabled, setTelemetryEnabled, getTelemetrySource } from "./config/credentials.js";
 import type { RunnerType } from "./runners/types.js";
 import type { Command as Cmd } from "commander";
 
@@ -198,10 +199,73 @@ const setup = program.command("setup").exitOverride();
 
 setup
   .command("runner <name>")
-  .description(`Set up a runner (${RUNNER_NAMES.join(", ")})`)
+  .description(`Initialize a runner (${RUNNER_NAMES.join(", ")})`)
   .exitOverride()
   .action(async (name: string) => {
-    await installRunner(name);
+    await setupRunner(name);
+  });
+
+// ── mthds set-default runner <name> ─────────────────────────────────
+const setDefault = program.command("set-default").exitOverride();
+
+setDefault
+  .command("runner <name>")
+  .description(`Set the default runner (${RUNNER_NAMES.join(", ")})`)
+  .exitOverride()
+  .action(async (name: string) => {
+    await setDefaultRunner(name);
+  });
+
+// ── mthds runner status ──────────────────────────────────────────────
+const runnerCmd = program.command("runner").description("Runner information").exitOverride();
+
+runnerCmd
+  .command("status")
+  .description("Show runner configuration and status")
+  .exitOverride()
+  .action(async () => {
+    await runnerStatus();
+  });
+
+// ── mthds telemetry enable|disable ──────────────────────────────────
+const telemetry = program.command("telemetry").description("Manage anonymous usage telemetry").exitOverride();
+
+telemetry
+  .command("enable")
+  .description("Enable anonymous telemetry")
+  .exitOverride()
+  .action(() => {
+    printLogo();
+    p.intro("mthds telemetry");
+    setTelemetryEnabled(true);
+    p.log.success("Telemetry enabled.");
+    p.outro("");
+  });
+
+telemetry
+  .command("disable")
+  .description("Disable anonymous telemetry")
+  .exitOverride()
+  .action(() => {
+    printLogo();
+    p.intro("mthds telemetry");
+    setTelemetryEnabled(false);
+    p.log.success("Telemetry disabled.");
+    p.outro("");
+  });
+
+telemetry
+  .command("status")
+  .description("Show current telemetry status")
+  .exitOverride()
+  .action(() => {
+    printLogo();
+    p.intro("mthds telemetry");
+    const enabled = isTelemetryEnabled();
+    const source = getTelemetrySource();
+    const sourceLabel = source === "env" ? " (from env)" : source === "default" ? " (default)" : "";
+    p.log.info(`Telemetry is ${enabled ? "enabled" : "disabled"}${sourceLabel}`);
+    p.outro("");
   });
 
 // ── mthds package <subcommand> (stubs — use mthds-python) ──────────

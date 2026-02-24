@@ -105,7 +105,7 @@ To execute a method, you need a **runner**. A runner is the engine that takes a 
 
 | Runner | Description |
 |--------|-------------|
-| **Pipelex** (local) | A Python-based runner you install on your machine. Install it with `npx mthds setup runner pipelex`. |
+| **[Pipelex](https://github.com/Pipelex/pipelex)** (local) | A Python-based runner you install on your machine. Install it with `npx mthds setup runner pipelex`. |
 | **Pipelex API** (remote) | An API server that runs methods remotely. You can self-host it using [pipelex-api](https://github.com/Pipelex/pipelex-api) (open source). A public hosted API at `https://api.pipelex.com` is coming soon. |
 
 These are the only runners that exist today. Feel free to create your own runner in a different language!

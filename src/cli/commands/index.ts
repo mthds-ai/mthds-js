@@ -92,10 +92,7 @@ export function showBanner(): void {
     `    ${chalk.yellow("package install")}           Install dependencies`
   );
   console.log(
-    `    ${chalk.yellow("package update")}            Update dependencies`
-  );
-  console.log(
-    `    ${chalk.yellow("package publish")}           Publish package\n`
+    `    ${chalk.yellow("package update")}            Update dependencies\n`
   );
 
   console.log(chalk.bold("  Examples:"));

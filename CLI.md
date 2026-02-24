@@ -39,6 +39,7 @@ mthds setup runner pipelex
 | Option | Description |
 |---|---|
 | `--runner <type>` | Runner to use for the command (`api` or `pipelex`). Applies to `run`, `validate`, and `build` subcommands. |
+| `-d, --directory <path>` | Target package directory (defaults to current directory). Applies to `run`, `validate`, and `build` subcommands. |
 | `--version` | Print the CLI version |
 | `--help` | Show help for any command |
 
@@ -222,8 +223,8 @@ Configuration values are resolved in this order: **environment variables > crede
 | Key | Environment Variable | Default | Description |
 |---|---|---|---|
 | `runner` | `MTHDS_RUNNER` | `api` | Default runner (`api` or `pipelex`) |
-| `api-url` | `MTHDS_API_URL` | `https://api.pipelex.com` | MTHDS API base URL |
-| `api-key` | `MTHDS_API_KEY` | (empty) | API authentication key |
+| `api-url` | `PIPELEX_API_URL` | `https://api.pipelex.com` | MTHDS API base URL |
+| `api-key` | `PIPELEX_API_KEY` | (empty) | API authentication key |
 | `telemetry` | `DISABLE_TELEMETRY` | `0` | Set to `1` to disable telemetry |
 
 ### `mthds config set`
@@ -362,7 +363,6 @@ mthds package add <dep>  # Add a dependency
 mthds package lock       # Resolve and generate methods.lock
 mthds package install    # Install dependencies from methods.lock
 mthds package update     # Re-resolve and update methods.lock
-mthds package publish    # Publish package for distribution
 ```
 
 For full package management, use `mthds` from the Python package (`pip install mthds`).

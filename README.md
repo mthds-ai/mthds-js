@@ -10,6 +10,25 @@ A method is a packaged workflow that an AI agent (like Claude Code) can use. Met
 
 ## CLI Usage
 
+For the full CLI reference, see [CLI.md](./CLI.md).
+
+### Quick Start
+
+```bash
+# Configure the API runner (default)
+mthds config set api-key YOUR_KEY
+mthds config set api-url https://your-api-instance.com
+
+# Run a pipeline
+mthds run my_pipe_code
+
+# Validate a bundle
+mthds validate ./bundle.plx
+
+# Install a method from the hub
+mthds install org/repo
+```
+
 ### Install a method
 
 ```bash
@@ -116,9 +135,23 @@ These are the only runners that exist today. Feel free to create your own runner
 npx mthds setup runner pipelex
 ```
 
-### Use the API runner
+### Configure the API runner
 
-See the [SDK Usage](#sdk-usage) section below to connect to a Pipelex API instance.
+The API runner is the default. Configure it with:
+
+```bash
+# Set your API key
+mthds config set api-key YOUR_KEY
+
+# Set the API URL (defaults to https://api.pipelex.com)
+mthds config set api-url https://your-api-instance.com
+```
+
+Credentials are stored in `~/.mthds/credentials` and shared between mthds-js and mthds-python.
+
+You can also use environment variables (`PIPELEX_API_KEY`, `PIPELEX_API_URL`) which take precedence over the credentials file.
+
+See the [SDK Usage](#sdk-usage) section below to connect to a Pipelex API instance programmatically.
 
 ## SDK Usage
 
@@ -165,11 +198,11 @@ Instead of passing options to the constructor, you can set environment variables
 
 | Variable | Description |
 |----------|-------------|
-| `MTHDS_API_BASE_URL` | Base URL of the API |
-| `MTHDS_API_KEY` | API authentication token |
+| `PIPELEX_API_URL` | Base URL of the API |
+| `PIPELEX_API_KEY` | API authentication token |
 
 ```typescript
-// Reads MTHDS_API_BASE_URL and MTHDS_API_KEY from the environment
+// Reads PIPELEX_API_URL and PIPELEX_API_KEY from the environment
 const client = new MthdsApiClient();
 ```
 

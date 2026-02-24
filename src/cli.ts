@@ -22,7 +22,6 @@ import {
   packageLock,
   packageInstall,
   packageUpdate,
-  packagePublish,
 } from "./cli/commands/package/stubs.js";
 import type { RunnerType } from "./runners/types.js";
 import type { Command as Cmd } from "commander";
@@ -206,7 +205,6 @@ packageCmd.command("add").argument("<dep>", "Dependency address").description("A
 packageCmd.command("lock").description("Resolve and generate methods.lock").action(packageLock);
 packageCmd.command("install").description("Install dependencies from methods.lock").action(packageInstall);
 packageCmd.command("update").description("Re-resolve and update methods.lock").action(packageUpdate);
-packageCmd.command("publish").description("Publish package for distribution").action(packagePublish);
 
 // Default: show banner
 program.action(() => {

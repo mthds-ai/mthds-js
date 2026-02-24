@@ -19,4 +19,3 @@ export const packageAdd = packageStub("add");
 export const packageLock = packageStub("lock");
 export const packageInstall = packageStub("install");
 export const packageUpdate = packageStub("update");
-export const packagePublish = packageStub("publish");

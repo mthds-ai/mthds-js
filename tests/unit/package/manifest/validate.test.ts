@@ -87,6 +87,20 @@ docproc = { address = "github.com/mthds/document-processing", version = "^1.0.0"
     });
   });
 
+  it("accepts dependency with path", () => {
+    const raw = toml(`
+[dependencies]
+scoring = { address = "github.com/mthds/scoring-lib", version = "^0.5.0", path = "../scoring-lib" }
+`);
+    const r = validateManifest(raw);
+    expect(r.valid).toBe(true);
+    expect(r.manifest!.dependencies!["scoring"]).toEqual({
+      address: "github.com/mthds/scoring-lib",
+      version: "^0.5.0",
+      path: "../scoring-lib",
+    });
+  });
+
   it("accepts complete example from spec", () => {
     const raw = `
 [package]
@@ -333,6 +347,30 @@ dep = { address = "github.com/a/b" }
     expect(r.valid).toBe(false);
     expect(r.errors).toContainEqual(
       expect.stringContaining('[dependencies."dep".version]')
+    );
+  });
+
+  it("rejects dependency with empty path", () => {
+    const raw = toml(`
+[dependencies]
+dep = { address = "github.com/a/b", version = "^1.0.0", path = "" }
+`);
+    const r = validateManifest(raw);
+    expect(r.valid).toBe(false);
+    expect(r.errors).toContainEqual(
+      expect.stringContaining('[dependencies."dep".path] must be a non-empty string')
+    );
+  });
+
+  it("rejects dependency with non-string path", () => {
+    const raw = toml(`
+[dependencies]
+dep = { address = "github.com/a/b", version = "^1.0.0", path = 42 }
+`);
+    const r = validateManifest(raw);
+    expect(r.valid).toBe(false);
+    expect(r.errors).toContainEqual(
+      expect.stringContaining('[dependencies."dep".path] must be a non-empty string')
     );
   });
 

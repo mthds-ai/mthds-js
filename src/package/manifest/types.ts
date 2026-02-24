@@ -23,16 +23,17 @@ export interface ExportNode {
 export type Exports = Record<string, ExportNode>;
 
 // --- Dependencies ---
-export interface DependencySpec {
+export interface PackageDependency {
   readonly address: string;
   readonly version: string;
+  readonly path?: string;
 }
 
 // --- Manifest ---
 export interface MethodsManifest {
   readonly package: PackageSection;
   readonly exports?: Exports;
-  readonly dependencies?: Record<string, DependencySpec>;
+  readonly dependencies?: Record<string, PackageDependency>;
 }
 
 export interface MethodsFile {

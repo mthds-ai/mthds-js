@@ -204,6 +204,14 @@ export function validateManifest(raw: string): ValidationResult {
           `[dependencies."${alias}".version] is required.`
         );
       }
+
+      if (d["path"] !== undefined) {
+        if (typeof d["path"] !== "string" || !d["path"]) {
+          errors.push(
+            `[dependencies."${alias}".path] must be a non-empty string.`
+          );
+        }
+      }
     }
   }
 

@@ -160,8 +160,8 @@ program
   .option("--agent <id>", "AI agent to install for (required)")
   .option("--location <loc>", "Install location: local or global (required)")
   .option("--method <slug>", "Install only the specified method (by slug)")
-  .option("--skills <list>", "Comma-separated Pipelex skills to install")
-  .option("--no-runner", "Skip pipelex runner install")
+  .option("--skills <list>", "Install MTHDS skills plugin")
+  .option("--no-runner", "Skip Pipelex runner install")
   .description("Install a method package (non-interactive)")
   .exitOverride()
   .action(async (address: string | undefined, opts: {

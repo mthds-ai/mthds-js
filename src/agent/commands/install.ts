@@ -214,20 +214,17 @@ export async function agentInstall(
   // Optional skills install
   const installedSkills: string[] = [];
   if (options.skills) {
-    const SKILLS_REPO = "https://github.com/pipelex/skills";
-    const skillList = options.skills.split(",").map((s) => s.trim()).filter(Boolean);
+    const SKILLS_REPO = "https://github.com/mthds-ai/skills";
     const globalFlag = selectedLocation === Loc.Global ? " -g" : "";
 
-    for (const skill of skillList) {
-      try {
-        await execAsync(
-          `npx skills add ${SKILLS_REPO} --skill ${skill} --agent ${selectedAgent}${globalFlag} -y`,
-          { cwd: process.cwd() }
-        );
-        installedSkills.push(skill);
-      } catch {
-        // Skills install failures are non-fatal
-      }
+    try {
+      await execAsync(
+        `npx skills add ${SKILLS_REPO} --skill '*' --agent ${selectedAgent}${globalFlag} -y`,
+        { cwd: process.cwd() }
+      );
+      installedSkills.push("*");
+    } catch {
+      // Skills install failures are non-fatal
     }
   }
 

@@ -16,6 +16,7 @@ import {
 } from "./commands/build.js";
 import { validatePlx } from "./commands/validate.js";
 import { runnerSetDefault, runnerList } from "./commands/runner.js";
+import { telemetryDisable, telemetryEnable, telemetryStatus } from "./commands/telemetry.js";
 import type { RunnerType } from "./runners/types.js";
 import type { Command as Cmd } from "commander";
 
@@ -114,14 +115,30 @@ program
     await validatePlx(target, { ...options, runner: getRunner(cmd) });
   });
 
-// ── mthds install <slug> ───────────────────────────────────────────
+// ── mthds install [address] ──────────────────────────────────────────
 program
   .command("install")
-  .argument("<slug>", "Method slug to install")
-  .description("Install a method")
+  .argument("[address]", "Package address (org/repo or org/repo/sub/path)")
+  .option("--dir <path>", "Install from a local directory")
+  .option("--method <slug>", "Install only the specified method (by slug)")
+  .description("Install a method package")
   .exitOverride()
-  .action(async (slug: string) => {
-    await installMethod(slug);
+  .action(async (address: string | undefined, opts: { dir?: string; method?: string }) => {
+    if (address && opts.dir) {
+      printLogo();
+      p.intro("mthds install");
+      p.log.error("Cannot use both an address and --dir at the same time.");
+      p.outro("");
+      process.exit(1);
+    }
+    if (!address && !opts.dir) {
+      printLogo();
+      p.intro("mthds install");
+      p.log.error("Provide an address (org/repo) or use --dir <path>.");
+      p.outro("");
+      process.exit(1);
+    }
+    await installMethod({ address, dir: opts.dir, method: opts.method });
   });
 
 // ── mthds setup runner <name> ──────────────────────────────────────
@@ -186,6 +203,36 @@ config
   .exitOverride()
   .action(async () => {
     await configList();
+  });
+
+// ── mthds telemetry disable|enable|status ───────────────────────────
+const telemetry = program
+  .command("telemetry")
+  .description("Manage anonymous telemetry")
+  .exitOverride();
+
+telemetry
+  .command("disable")
+  .description("Disable anonymous telemetry")
+  .exitOverride()
+  .action(async () => {
+    await telemetryDisable();
+  });
+
+telemetry
+  .command("enable")
+  .description("Enable anonymous telemetry")
+  .exitOverride()
+  .action(async () => {
+    await telemetryEnable();
+  });
+
+telemetry
+  .command("status")
+  .description("Show telemetry status")
+  .exitOverride()
+  .action(async () => {
+    await telemetryStatus();
   });
 
 // Default: show banner

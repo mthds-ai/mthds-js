@@ -9,39 +9,129 @@ import * as p from "@clack/prompts";
 import chalk from "chalk";
 import { isPipelexInstalled } from "../runtime/check.js";
 import { ensureRuntime } from "../runtime/installer.js";
-import { trackMethodInstall, shutdown } from "../telemetry/posthog.js";
+import { trackInstall, shutdown } from "../telemetry/posthog.js";
 import { printLogo } from "./index.js";
 import type { Agent, InstallLocation } from "../agents/types.js";
 import { InstallLocation as Loc } from "../agents/types.js";
 import { getAllAgents, getAgentHandler } from "../agents/registry.js";
-import { fetchMethodBySlug } from "../supabase/methods.js";
+import { parseAddress } from "../resolver/address.js";
+import { resolveFromGitHub } from "../resolver/github.js";
+import { resolveFromLocal } from "../resolver/local.js";
+import type { ResolvedRepo } from "../resolver/types.js";
 
-export async function installMethod(slug: string): Promise<void> {
+export async function installMethod(options: {
+  address?: string;
+  dir?: string;
+  method?: string;
+}): Promise<void> {
   printLogo();
   p.intro("mthds install");
 
-  // Step 0: Check if the method exists
+  const { address, dir, method: methodFilter } = options;
+
+  // Step 0: Resolve repo (multiple methods)
   const s = p.spinner();
-  s.start(`Looking up method "${slug}"...`);
+  let resolved: ResolvedRepo;
 
-  const method = await fetchMethodBySlug(slug);
+  // Derive org/repo for telemetry
+  let orgRepo: string | undefined;
 
-  if (!method) {
-    s.stop(`Method "${slug}" not found.`);
-    p.log.error(`No method with slug "${slug}" exists.`);
-    p.log.info("Check the slug and try again.");
+  if (dir) {
+    s.start(`Resolving methods from ${dir}...`);
+    try {
+      resolved = resolveFromLocal(dir);
+    } catch (err) {
+      s.stop("Failed to resolve local methods.");
+      p.log.error((err as Error).message);
+      p.outro("");
+      process.exit(1);
+    }
+    s.stop(`Scanned methods/ folder in ${dir}`);
+
+    // Derive org/repo from first method's package.address (strip github.com/ prefix)
+    if (resolved.methods.length > 0) {
+      const addr = resolved.methods[0]!.manifest.package.address;
+      orgRepo = addr.replace(/^github\.com\//, "");
+    }
+  } else if (address) {
+    let parsed;
+    try {
+      parsed = parseAddress(address);
+    } catch (err) {
+      p.log.error((err as Error).message);
+      p.outro("");
+      process.exit(1);
+    }
+
+    s.start(`Resolving methods from ${parsed.org}/${parsed.repo}${parsed.subpath ? `/${parsed.subpath}` : ""}...`);
+    try {
+      resolved = await resolveFromGitHub(parsed);
+    } catch (err) {
+      s.stop("Failed to resolve methods.");
+      p.log.error((err as Error).message);
+      p.outro("");
+      process.exit(1);
+    }
+    s.stop(`Scanned methods/ folder in ${parsed.org}/${parsed.repo}`);
+    orgRepo = `${parsed.org}/${parsed.repo}`;
+  } else {
+    p.log.error("Provide an address (org/repo) or use --dir <path>.");
     p.outro("");
     process.exit(1);
   }
 
-  if (!method.content) {
-    s.stop(`Method "${slug}" has no content.`);
-    p.log.error("This method is missing its content and cannot be installed.");
+  // Filter by --method if provided
+  if (methodFilter) {
+    const match = resolved.methods.find((m) => m.slug === methodFilter);
+    if (!match) {
+      const available = resolved.methods.map((m) => m.slug).join(", ");
+      p.log.error(
+        `Method "${methodFilter}" not found. Available slugs: ${available || "(none)"}`
+      );
+      p.outro("");
+      process.exit(1);
+    }
+    resolved = { ...resolved, methods: [match] };
+  }
+
+  // Display summary
+  const validCount = resolved.methods.length;
+  const skippedCount = resolved.skipped.length;
+  const totalCount = validCount + skippedCount;
+
+  p.log.info(
+    [
+      `${chalk.bold("Methods found:")} ${totalCount} total, ${chalk.green(`${validCount} valid`)}, ${skippedCount > 0 ? chalk.yellow(`${skippedCount} skipped`) : `${skippedCount} skipped`}`,
+    ].join("\n")
+  );
+
+  // Show valid methods
+  for (const method of resolved.methods) {
+    const m = method.manifest.package;
+    const fileCount = method.files.length;
+    p.log.success(
+      [
+        `${chalk.bold(method.slug)} — ${m.display_name ?? m.address} v${m.version}`,
+        `  ${m.description}`,
+        `  ${fileCount} .mthds file${fileCount !== 1 ? "s" : ""}`,
+      ].join("\n")
+    );
+  }
+
+  // Show skipped methods with errors
+  for (const skip of resolved.skipped) {
+    const errList = skip.errors.map((e) => `    - ${e}`).join("\n");
+    p.log.warning(
+      `${chalk.bold(skip.slug)} — skipped:\n${errList}`
+    );
+  }
+
+  // If no valid methods, exit
+  if (validCount === 0) {
+    p.log.error("No valid methods to install.");
     p.outro("");
     process.exit(1);
   }
-
-  s.stop(`Found "${method.name}"${method.description ? ` — ${method.description}` : ""}`);
 
   // Step 1: Which AI agent?
   const agents = getAllAgents();
@@ -53,7 +143,7 @@ export async function installMethod(slug: string): Promise<void> {
   }));
 
   const selectedAgent = await p.select<Agent>({
-    message: "Which AI agent do you want to install this method for?",
+    message: "Which AI agent do you want to install these methods for?",
     options: agentOptions,
   });
 
@@ -67,7 +157,7 @@ export async function installMethod(slug: string): Promise<void> {
   const globalDir = join(homedir(), ".claude", "methods");
 
   const selectedLocation = await p.select<InstallLocation>({
-    message: "Where do you want to install this method?",
+    message: "Where do you want to install these methods?",
     options: [
       {
         value: Loc.Local,
@@ -107,7 +197,7 @@ export async function installMethod(slug: string): Promise<void> {
     }
   }
 
-  // Step 4: Install via the agent handler
+  // Step 4: Install all valid methods via the agent handler
   const targetDir =
     selectedLocation === Loc.Global ? globalDir : localDir;
 
@@ -115,11 +205,28 @@ export async function installMethod(slug: string): Promise<void> {
 
   const handler = getAgentHandler(selectedAgent);
 
-  trackMethodInstall(slug);
+  // Track telemetry only for public GitHub repositories
+  if (resolved.source === "github" && resolved.isPublic) {
+    for (const method of resolved.methods) {
+      const pkg = method.manifest.package;
+      trackInstall({
+        address: orgRepo ?? pkg.address.replace(/^github\.com\//, ""),
+        slug: method.slug,
+        version: pkg.version,
+        description: pkg.description,
+        display_name: pkg.display_name,
+        authors: pkg.authors,
+        license: pkg.license,
+        mthds_version: pkg.mthds_version,
+        exports: method.manifest.exports,
+        dependencies: method.manifest.dependencies,
+        manifest_raw: method.rawManifest,
+      });
+    }
+  }
 
   await handler.installMethod({
-    method: slug,
-    content: method.content,
+    repo: resolved,
     agent: selectedAgent,
     location: selectedLocation,
     targetDir,
@@ -144,7 +251,7 @@ export async function installMethod(slug: string): Promise<void> {
       : chalk.dim("  press space to select, enter to confirm");
 
     const result = await p.multiselect({
-      message: `Which Pipelex skills do you want to install?\n${hint}`,
+      message: `For a better experience using the pipelex runner, install the skills:\n${hint}`,
       options: skillChoices,
       required: false,
     });

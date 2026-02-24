@@ -1,4 +1,4 @@
-import { join } from "node:path";
+import { join, dirname } from "node:path";
 import { mkdirSync, writeFileSync } from "node:fs";
 import * as p from "@clack/prompts";
 import type { AgentHandler, InstallContext } from "./types.js";
@@ -11,20 +11,32 @@ export const claudeCodeHandler: AgentHandler = {
 
   async installMethod(ctx: InstallContext): Promise<void> {
     const s = p.spinner();
-    s.start(`Installing method "${ctx.method}" for Claude Code...`);
+    const { repo } = ctx;
 
-    // TODO: When multi-agent support ships, offer symlink vs copy strategy.
-    // Symlink: store method once in a canonical location, symlink from each agent's dir.
-    // Copy: independent copies per agent. Fallback when symlinks aren't supported.
-    const methodDir = join(ctx.targetDir, ctx.method);
-    mkdirSync(methodDir, { recursive: true });
+    for (const method of repo.methods) {
+      const installDir = join(ctx.targetDir, repo.repoName, method.slug);
 
-    writeFileSync(
-      join(methodDir, "METHOD.mthds"),
-      ctx.content,
-      "utf-8"
-    );
+      s.start(`Installing "${method.slug}" to ${installDir}...`);
 
-    s.stop(`Method "${ctx.method}" installed to ${methodDir}`);
+      // Create the install directory
+      mkdirSync(installDir, { recursive: true });
+
+      // Write METHODS.toml (verbatim raw string)
+      writeFileSync(join(installDir, "METHODS.toml"), method.rawManifest, "utf-8");
+
+      // Write all .mthds files, preserving directory structure
+      for (const file of method.files) {
+        const filePath = join(installDir, file.relativePath);
+        mkdirSync(dirname(filePath), { recursive: true });
+        writeFileSync(filePath, file.content, "utf-8");
+      }
+
+      const fileCount = method.files.length;
+      const filesMsg = fileCount === 0
+        ? "(manifest only)"
+        : `(${fileCount} .mthds file${fileCount > 1 ? "s" : ""})`;
+
+      s.stop(`Installed "${method.slug}" to ${installDir} ${filesMsg}`);
+    }
   },
 };

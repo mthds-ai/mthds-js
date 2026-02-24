@@ -1,13 +1,15 @@
 import { supabase } from "./client.js";
-import type { Method } from "./types.js";
+import type { Package } from "./types.js";
 
-export async function fetchMethodBySlug(
+export async function fetchPackageByAddressAndSlug(
+  address: string,
   slug: string
-): Promise<Method | null> {
+): Promise<Package | null> {
   const { data, error } = await supabase
-    .from("methods")
+    .from("packages")
     .select("*")
-    .eq("name", slug)
+    .eq("address", address)
+    .eq("slug", slug)
     .single();
 
   if (error || !data) return null;

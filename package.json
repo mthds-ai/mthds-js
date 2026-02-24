@@ -1,6 +1,6 @@
 {
   "name": "mthds",
-  "version": "0.0.5",
+  "version": "0.0.6",
   "description": "CLI and SDK for MTHDS — the open standard for reusable AI agent methods. Install, execute, and manage methods.",
   "license": "MIT",
   "repository": {
@@ -21,6 +21,7 @@
   },
   "scripts": {
     "build": "tsc",
+    "test": "vitest run",
     "example": "npx tsx examples/call_api.ts"
   },
   "files": [
@@ -35,11 +36,13 @@
     "chalk": "^5.4.1",
     "commander": "^13.1.0",
     "ora": "^8.2.0",
-    "posthog-node": "^4.4.0"
+    "posthog-node": "^4.4.0",
+    "smol-toml": "^1.6.0"
   },
   "devDependencies": {
     "@types/node": "^22.12.0",
     "tsx": "^4.19.0",
-    "typescript": "^5.7.3"
+    "typescript": "^5.7.3",
+    "vitest": "^4.0.18"
   }
 }

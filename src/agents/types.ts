@@ -16,8 +16,7 @@ export type InstallLocation =
   (typeof InstallLocation)[keyof typeof InstallLocation];
 
 export interface InstallContext {
-  readonly method: string;
-  readonly content: string;
+  readonly repo: import("../resolver/types.js").ResolvedRepo;
   readonly agent: Agent;
   readonly location: InstallLocation;
   readonly targetDir: string;

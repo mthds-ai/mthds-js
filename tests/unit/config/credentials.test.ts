@@ -193,6 +193,33 @@ describe("credentials", () => {
       expect(content).toContain("MTHDS_RUNNER=pipelex");
     });
 
+    it("coerces telemetry values correctly when using config set", async () => {
+      const { setCredentialValue, loadCredentials } = await importCredentials();
+
+      // "false" should disable telemetry (write DISABLE_TELEMETRY=1)
+      setCredentialValue("telemetry", "false");
+      const content1 = readFileSync(
+        join(tempHome, ".mthds", "credentials"),
+        "utf-8"
+      );
+      expect(content1).toContain("DISABLE_TELEMETRY=1");
+
+      // Re-import to clear cache and verify round-trip
+      const mod2 = await importCredentials();
+      expect(mod2.loadCredentials().telemetry).toBe(false);
+    });
+
+    it("coerces 'true' telemetry value to DISABLE_TELEMETRY=0", async () => {
+      const { setCredentialValue } = await importCredentials();
+      setCredentialValue("telemetry", "true");
+
+      const content = readFileSync(
+        join(tempHome, ".mthds", "credentials"),
+        "utf-8"
+      );
+      expect(content).toContain("DISABLE_TELEMETRY=0");
+    });
+
     it("preserves existing values when setting a new one", async () => {
       const configDir = join(tempHome, ".mthds");
       mkdirSync(configDir, { recursive: true });

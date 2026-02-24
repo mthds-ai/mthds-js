@@ -8,6 +8,13 @@ import { printLogo } from "./index.js";
 import { getConfigValue, setConfigValue } from "../../config/config.js";
 import { Runners, RUNNER_NAMES } from "../../runners/types.js";
 
+const execFileAsync = promisify(execFile);
+
+function maskApiKey(key: string): string {
+  if (!key) return "(not set)";
+  return `${key.slice(0, 5)}${"*".repeat(Math.max(0, key.length - 5))}`;
+}
+
 // ── mthds setup runner <name> ───────────────────────────────────────
 
 async function initApi(): Promise<void> {
@@ -33,9 +40,7 @@ async function initApi(): Promise<void> {
     process.exit(0);
   }
 
-  const maskedKey = currentKey
-    ? `${currentKey.slice(0, 5)}${"*".repeat(Math.max(0, currentKey.length - 5))}`
-    : undefined;
+  const maskedKey = currentKey ? maskApiKey(currentKey) : undefined;
 
   const apiKey = await p.password({
     message: `API key${maskedKey ? ` (current: ${maskedKey})` : ""}`,
@@ -159,13 +164,6 @@ export async function setDefaultRunner(name: string): Promise<void> {
 }
 
 // ── mthds runner status ─────────────────────────────────────────────
-
-const execFileAsync = promisify(execFile);
-
-function maskApiKey(key: string): string {
-  if (!key) return "(not set)";
-  return `${key.slice(0, 5)}${"*".repeat(Math.max(0, key.length - 5))}`;
-}
 
 async function getPipelexVersion(): Promise<string> {
   try {

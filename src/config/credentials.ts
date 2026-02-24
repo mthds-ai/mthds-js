@@ -254,8 +254,17 @@ export function setCredentialValue(
 ): void {
   const file = readCredentialsFile();
   const fileKey = FILE_KEYS[key];
-  file[fileKey] = value;
+  file[fileKey] = toFileValue(key, key === "telemetry" ? coerceTelemetryInput(value) : value);
   writeCredentialsFile(file);
+}
+
+/**
+ * Normalize user-facing telemetry input to a boolean.
+ * Accepts "true"/"false", "1"/"0", "yes"/"no", "on"/"off".
+ */
+function coerceTelemetryInput(value: string): boolean {
+  const lower = value.toLowerCase();
+  return ["true", "1", "yes", "on"].includes(lower);
 }
 
 export function listCredentials(): Array<{

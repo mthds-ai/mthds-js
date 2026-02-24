@@ -2,41 +2,13 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import * as p from "@clack/prompts";
 import { printLogo } from "./index.js";
+import { isPipelexRunner, extractPassthroughArgs } from "./utils.js";
 import { createRunner } from "../../runners/registry.js";
-import { PipelexRunner } from "../../runners/pipelex-runner.js";
-import { Runners } from "../../runners/types.js";
-import type { ConceptRepresentationFormat, Runner, RunnerType } from "../../runners/types.js";
+import type { ConceptRepresentationFormat, RunnerType } from "../../runners/types.js";
 
 interface WithRunner {
   runner?: RunnerType;
   directory?: string;
-}
-
-function isStreamingRunner(runner: Runner): boolean {
-  return runner.type === Runners.PIPELEX;
-}
-
-function isPipelexRunner(runner: Runner): runner is PipelexRunner {
-  return runner.type === Runners.PIPELEX;
-}
-
-/** Extract raw args after `build <subcommand>`, filtering out --runner and -d/--directory */
-function extractPassthroughArgs(): string[] {
-  const argv = process.argv;
-  const buildIdx = argv.indexOf("build");
-  if (buildIdx === -1) return [];
-  const raw = argv.slice(buildIdx + 2); // skip "build" + subcommand
-  const result: string[] = [];
-  let i = 0;
-  while (i < raw.length) {
-    if (raw[i] === "--runner" || raw[i] === "-d" || raw[i] === "--directory") {
-      i += 2;
-    } else {
-      result.push(raw[i]!);
-      i++;
-    }
-  }
-  return result;
 }
 
 // ── mthds build pipe "PROMPT" [-o file] ─────────────────────────────
@@ -56,7 +28,7 @@ export async function buildPipe(
   if (isPipelexRunner(runner)) {
     p.log.step("Building via pipelex...");
     try {
-      await runner.buildPassthrough("pipe", extractPassthroughArgs());
+      await runner.buildPassthrough("pipe", extractPassthroughArgs("build", 2));
       p.outro("Done");
     } catch (err) {
       p.log.error((err as Error).message);
@@ -111,7 +83,7 @@ export async function buildRunner(
   if (isPipelexRunner(runner)) {
     p.log.step("Building via pipelex...");
     try {
-      await runner.buildPassthrough("runner", extractPassthroughArgs());
+      await runner.buildPassthrough("runner", extractPassthroughArgs("build", 2));
       p.outro("Done");
     } catch (err) {
       p.log.error((err as Error).message);
@@ -186,7 +158,7 @@ export async function buildInputs(
   if (isPipelexRunner(runner)) {
     p.log.step("Building via pipelex...");
     try {
-      await runner.buildPassthrough("inputs", extractPassthroughArgs());
+      await runner.buildPassthrough("inputs", extractPassthroughArgs("build", 2));
       p.outro("Done");
     } catch (err) {
       p.log.error((err as Error).message);
@@ -240,7 +212,7 @@ export async function buildOutput(
   if (isPipelexRunner(runner)) {
     p.log.step("Building via pipelex...");
     try {
-      await runner.buildPassthrough("output", extractPassthroughArgs());
+      await runner.buildPassthrough("output", extractPassthroughArgs("build", 2));
       p.outro("Done");
     } catch (err) {
       p.log.error((err as Error).message);

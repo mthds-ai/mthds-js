@@ -118,26 +118,12 @@ export class ApiRunner implements Runner {
   async executePipeline(
     options: ExecutePipelineOptions
   ): Promise<PipelineExecuteResponse> {
-    return this.post("/api/v1/pipeline/execute", {
-      pipe_code: options.pipe_code,
-      mthds_content: options.mthds_content,
-      inputs: options.inputs,
-      output_name: options.output_name,
-      output_multiplicity: options.output_multiplicity,
-      dynamic_output_concept_code: options.dynamic_output_concept_code,
-    });
+    return this.post("/api/v1/pipeline/execute", options);
   }
 
   async startPipeline(
     options: ExecutePipelineOptions
   ): Promise<PipelineStartResponse> {
-    return this.post("/api/v1/pipeline/start", {
-      pipe_code: options.pipe_code,
-      mthds_content: options.mthds_content,
-      inputs: options.inputs,
-      output_name: options.output_name,
-      output_multiplicity: options.output_multiplicity,
-      dynamic_output_concept_code: options.dynamic_output_concept_code,
-    });
+    return this.post("/api/v1/pipeline/start", options);
   }
 }

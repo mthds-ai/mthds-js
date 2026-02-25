@@ -62,6 +62,10 @@ export async function packageInit(options: { directory?: string }): Promise<void
   const license = await p.text({
     message: "License (e.g. MIT, or leave empty)",
     initialValue: "",
+    validate: (val) => {
+      if (val && !val.trim()) return "License must not be whitespace-only";
+      return undefined;
+    },
   });
   if (p.isCancel(license)) { p.outro("Cancelled."); return; }
 

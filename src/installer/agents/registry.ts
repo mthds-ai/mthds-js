@@ -1,4 +1,4 @@
-import { join, resolve, dirname } from "node:path";
+import { join, resolve, dirname, sep } from "node:path";
 import { mkdirSync, writeFileSync } from "node:fs";
 import type { Agent, AgentHandler, InstallMethodOptions } from "./types.js";
 
@@ -14,7 +14,7 @@ function writeMethodFiles(options: InstallMethodOptions): void {
 
     for (const file of method.files) {
       const filePath = resolve(join(installDir, file.relativePath));
-      if (!filePath.startsWith(installDir + "/")) {
+      if (!filePath.startsWith(installDir + sep)) {
         throw new Error(`Path traversal detected: "${file.relativePath}" escapes install directory.`);
       }
       mkdirSync(dirname(filePath), { recursive: true });

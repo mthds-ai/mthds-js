@@ -22,7 +22,7 @@ export function parseVersion(versionStr: string): semver.SemVer {
 
 /**
  * Parse a constraint string into a semver Range.
- * Supports: "^1.0.0", "~1.0.0", ">=1.0.0,<2.0.0", "*", "1.*", etc.
+ * Supports: "^1.0.0", "~1.0.0", ">=1.0.0 <2.0.0", "*", "1.*", etc.
  */
 export function parseConstraint(constraintStr: string): semver.Range {
   try {

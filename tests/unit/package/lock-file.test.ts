@@ -13,7 +13,6 @@ import {
   LOCK_FILENAME,
 } from "../../../src/package/lock-file.js";
 import { LockFileError, IntegrityError } from "../../../src/package/exceptions.js";
-import type { ParsedManifest } from "../../../src/package/manifest/schema.js";
 
 describe("lock-file", () => {
   let tempDir: string;
@@ -184,17 +183,6 @@ source = "https://github.com/org/repo"
     it("generates lock entries for remote dependencies", () => {
       writeFileSync(join(tempDir, "file.txt"), "content");
 
-      const manifest: ParsedManifest = {
-        address: "github.com/me/pkg",
-        version: "1.0.0",
-        description: "Test",
-        authors: [],
-        dependencies: {
-          dep: { address: "github.com/org/dep", version: "^1.0.0" },
-        },
-        exports: {},
-      };
-
       const resolvedDeps = [{
         alias: "dep",
         address: "github.com/org/dep",
@@ -203,63 +191,19 @@ source = "https://github.com/org/repo"
           version: "1.0.0",
           description: "Dep",
           authors: [],
-          dependencies: {},
           exports: {},
         },
         packageRoot: tempDir,
       }];
 
-      const lock = generateLockFile(manifest, resolvedDeps);
+      const lock = generateLockFile(resolvedDeps);
       expect(lock.packages["github.com/org/dep"]).toBeDefined();
       expect(lock.packages["github.com/org/dep"]!.version).toBe("1.0.0");
       expect(lock.packages["github.com/org/dep"]!.hash).toMatch(/^sha256:/);
       expect(lock.packages["github.com/org/dep"]!.source).toBe("https://github.com/org/dep");
     });
 
-    it("excludes local path dependencies", () => {
-      writeFileSync(join(tempDir, "file.txt"), "content");
-
-      const manifest: ParsedManifest = {
-        address: "github.com/me/pkg",
-        version: "1.0.0",
-        description: "Test",
-        authors: [],
-        dependencies: {
-          local_dep: { address: "github.com/org/local", version: "^1.0.0", path: "../local" },
-        },
-        exports: {},
-      };
-
-      const resolvedDeps = [{
-        alias: "local_dep",
-        address: "github.com/org/local",
-        manifest: {
-          address: "github.com/org/local",
-          version: "1.0.0",
-          description: "Local",
-          authors: [],
-          dependencies: {},
-          exports: {},
-        },
-        packageRoot: tempDir,
-      }];
-
-      const lock = generateLockFile(manifest, resolvedDeps);
-      expect(Object.keys(lock.packages)).toHaveLength(0);
-    });
-
     it("throws LockFileError for remote dep without manifest", () => {
-      const manifest: ParsedManifest = {
-        address: "github.com/me/pkg",
-        version: "1.0.0",
-        description: "Test",
-        authors: [],
-        dependencies: {
-          dep: { address: "github.com/org/dep", version: "^1.0.0" },
-        },
-        exports: {},
-      };
-
       const resolvedDeps = [{
         alias: "dep",
         address: "github.com/org/dep",
@@ -267,7 +211,7 @@ source = "https://github.com/org/repo"
         packageRoot: tempDir,
       }];
 
-      expect(() => generateLockFile(manifest, resolvedDeps)).toThrow(LockFileError);
+      expect(() => generateLockFile(resolvedDeps)).toThrow(LockFileError);
     });
   });
 

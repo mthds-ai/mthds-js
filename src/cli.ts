@@ -237,6 +237,8 @@ validate
   .option("--pipe <code>", "Pipe code that must exist in the bundle")
   .option("--bundle <file>", "Bundle file path (alternative to positional)")
   .description("Validate a pipe by code or bundle file (.mthds)")
+  .allowUnknownOption()
+  .allowExcessArguments(true)
   .exitOverride()
   .action(async (target: string, options: { pipe?: string; bundle?: string }, cmd: Cmd) => {
     await validatePipe(target, { ...options, runner: getRunner(cmd), libraryDir: getLibraryDirs(cmd) });

@@ -9,7 +9,6 @@ function makeManifest(overrides: Partial<ParsedManifest> = {}): ParsedManifest {
     version: "1.0.0",
     description: "Test",
     authors: [],
-    dependencies: {},
     exports: {},
     ...overrides,
   };
@@ -86,29 +85,24 @@ describe("PackageVisibilityChecker", () => {
     expect(errors).toHaveLength(0);
   });
 
-  it("validates cross-package references with known alias", () => {
-    const manifest = makeManifest({
-      dependencies: {
-        mylib: { address: "github.com/org/mylib", version: "^1.0.0" },
-      },
-    });
+  it("rejects all cross-package references (dependencies not supported)", () => {
+    const manifest = makeManifest();
     const checker = new PackageVisibilityChecker(manifest, [
       { domain: "legal", mainPipe: null, pipeReferences: [["mylib->scoring.compute", "pipe ref"]] },
     ]);
     const errors = checker.validateCrossPackageReferences();
-    expect(errors).toHaveLength(0);
+    expect(errors).toHaveLength(1);
+    expect(errors[0]!.message).toContain("not supported");
   });
 
   it("rejects cross-package references with unknown alias", () => {
-    const manifest = makeManifest({
-      dependencies: {},
-    });
+    const manifest = makeManifest();
     const checker = new PackageVisibilityChecker(manifest, [
       { domain: "legal", mainPipe: null, pipeReferences: [["unknown->scoring.compute", "pipe ref"]] },
     ]);
     const errors = checker.validateCrossPackageReferences();
     expect(errors).toHaveLength(1);
-    expect(errors[0]!.message).toContain("unknown");
+    expect(errors[0]!.message).toContain("not supported");
   });
 
   it("validates reserved domains", () => {

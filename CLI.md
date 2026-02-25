@@ -25,7 +25,7 @@ After installation the `mthds` command is available on your PATH.
 mthds install org/repo
 
 # Run a pipeline
-mthds run my_pipe_code
+mthds run pipe my_pipe_code
 
 # Set up the API runner (interactive)
 mthds runner setup api
@@ -528,6 +528,8 @@ mthds package list
 
 ### `mthds package add`
 
+> **Note:** Dependencies are not supported in this version. This command is reserved for future use.
+
 Add a dependency to `METHODS.toml`.
 
 ```bash
@@ -566,9 +568,9 @@ Resolve all dependencies and generate `methods.lock`.
 mthds package lock
 ```
 
-Reads `METHODS.toml`, resolves all remote dependencies transitively (with cycle detection and diamond constraint handling via Minimum Version Selection), and writes `methods.lock` with pinned versions and SHA-256 integrity hashes.
+Validates `METHODS.toml` and writes `methods.lock`. Currently writes an empty lock file since dependencies are not supported in this version.
 
-Local path dependencies are resolved directly but excluded from the lock file.
+When dependency support is added, this command will resolve all remote dependencies transitively (with cycle detection and diamond constraint handling via Minimum Version Selection) and write pinned versions with SHA-256 integrity hashes.
 
 **Example:**
 
@@ -600,7 +602,7 @@ Re-resolve all dependencies and regenerate `methods.lock`.
 mthds package update
 ```
 
-Like `mthds package lock`, but ignores the existing lock file and resolves all dependencies from scratch. Use this to pick up new versions within your constraint ranges.
+Like `mthds package lock`, but ignores the existing lock file and resolves all dependencies from scratch. Currently a no-op since dependencies are not supported in this version.
 
 **Example:**
 

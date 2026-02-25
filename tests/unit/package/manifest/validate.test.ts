@@ -74,18 +74,6 @@ pipes = ["extract_clause", "analyze_nda"]
     expect(contracts.pipes).toEqual(["extract_clause", "analyze_nda"]);
   });
 
-  it("rejects dependencies section", () => {
-    const raw = toml(`
-[dependencies]
-docproc = { address = "github.com/mthds/document-processing", version = "^1.0.0" }
-`);
-    const r = validateManifest(raw);
-    expect(r.valid).toBe(false);
-    expect(r.errors).toContainEqual(
-      expect.stringContaining("not supported")
-    );
-  });
-
   it("accepts complete example from spec", () => {
     const raw = `
 [package]

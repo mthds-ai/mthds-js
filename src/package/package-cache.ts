@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readdirSync, renameSync, rmSync, cpSync } from "node:fs";
 import { homedir } from "node:os";
-import { join, resolve } from "node:path";
+import { join, resolve, sep } from "node:path";
 import { PackageCacheError } from "./exceptions.js";
 
 /**
@@ -21,7 +21,7 @@ export function getCachedPackagePath(
 ): string {
   const root = resolve(cacheRoot ?? getDefaultCacheRoot());
   const resolved = resolve(root, address, version);
-  if (!resolved.startsWith(root)) {
+  if (!resolved.startsWith(root + sep)) {
     throw new PackageCacheError(
       `Path traversal detected: address '${address}' and version '${version}' resolve outside cache root`,
     );

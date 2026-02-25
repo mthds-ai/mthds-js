@@ -189,16 +189,17 @@ export function parseMethodsToml(content: string): ParsedManifest {
       if (!author.trim()) {
         throw new ManifestValidationError(`Author at index ${idx} must not be empty or whitespace`);
       }
-      authors.push(author);
+      authors.push(author.trim());
     }
   }
 
   let license: string | undefined;
   if (pkg.license !== undefined) {
-    if (!pkg.license.trim()) {
+    const trimmedLicense = pkg.license.trim();
+    if (!trimmedLicense) {
       throw new ManifestValidationError("License must not be empty or whitespace when provided");
     }
-    license = pkg.license;
+    license = trimmedLicense;
   }
 
   let mthdsVersion: string | undefined;

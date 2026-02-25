@@ -1,4 +1,4 @@
-import { join, dirname, resolve } from "node:path";
+import { join, dirname, resolve, sep } from "node:path";
 import { homedir } from "node:os";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { exec } from "node:child_process";
@@ -174,7 +174,7 @@ export async function installMethod(options: {
     // Write all .mthds files, preserving directory structure
     for (const file of method.files) {
       const filePath = resolve(join(installDir, file.relativePath));
-      if (!filePath.startsWith(installDir + "/")) {
+      if (!filePath.startsWith(installDir + sep)) {
         throw new Error(`Path traversal detected: "${file.relativePath}" escapes install directory.`);
       }
       mkdirSync(dirname(filePath), { recursive: true });

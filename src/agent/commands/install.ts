@@ -218,7 +218,7 @@ export async function agentInstall(
 
     try {
       await execAsync(
-        `npx skills add ${SKILLS_REPO} --skill '*' --agent ${selectedAgent}${globalFlag} -y`,
+        `npx --yes skills add ${SKILLS_REPO} --skill '*' --agent ${selectedAgent}${globalFlag} -y`,
         { cwd: process.cwd() }
       );
       installedSkills.push("*");

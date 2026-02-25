@@ -8,6 +8,9 @@ function writeMethodFiles(options: InstallMethodOptions): void {
 
   for (const method of repo.methods) {
     const installDir = resolve(join(targetDir, method.slug));
+    if (!installDir.startsWith(targetDir + sep)) {
+      throw new Error(`Path traversal detected: slug "${method.slug}" escapes target directory.`);
+    }
     mkdirSync(installDir, { recursive: true });
 
     writeFileSync(join(installDir, "METHODS.toml"), method.rawManifest, "utf-8");

@@ -447,10 +447,11 @@ You must provide either `address` or `--local`, but not both.
 
 The install flow is interactive:
 1. Resolves methods from the address or local directory
-2. Prompts you to select an AI agent to install the methods for
-3. Prompts for install location (local `.claude/methods/` or global `~/.claude/methods/`)
-4. Optionally installs the pipelex runner
-5. Optionally installs pipelex skills (check, edit, build, fix)
+2. Displays a summary of found methods
+3. Prompts for install location (local `.mthds/methods/` or global `~/.mthds/methods/`)
+4. Writes method files to the selected location
+5. Optionally installs the pipelex runner
+6. Optionally installs MTHDS skills (includes agent selection)
 
 **Examples:**
 

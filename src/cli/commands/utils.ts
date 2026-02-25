@@ -8,7 +8,7 @@ export function isPipelexRunner(runner: Runner): runner is PipelexRunner {
 
 /**
  * Extract raw args after a given command keyword, filtering out
- * --runner / -d / --directory (consumed by mthds, not forwarded).
+ * --runner / -L / --library-dir (consumed by mthds, not forwarded).
  * Handles both `--flag value` and `--flag=value` syntax.
  */
 export function extractPassthroughArgs(command: string, skipCount: number): string[] {

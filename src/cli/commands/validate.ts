@@ -78,6 +78,10 @@ export async function validatePipe(
     process.exit(1);
   }
 
+  if (options.pipe) {
+    p.log.warning("--pipe is not yet supported by the API runner and will be ignored.");
+  }
+
   let mthdsContent: string;
   try {
     mthdsContent = readFileSync(bundlePath, "utf-8");

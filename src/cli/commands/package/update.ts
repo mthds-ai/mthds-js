@@ -26,6 +26,7 @@ export async function packageUpdate(options: { directory?: string }): Promise<vo
     if (err instanceof ManifestError) {
       p.log.error(`Invalid ${MANIFEST_FILENAME}: ${err.message}`);
       p.outro("");
+      process.exitCode = 1;
       return;
     }
     throw err;

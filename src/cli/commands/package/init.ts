@@ -84,7 +84,14 @@ export async function packageInit(options: { directory?: string }): Promise<void
   };
 
   const tomlContent = serializeManifestToToml(manifest);
-  writeFileSync(manifestPath, tomlContent, "utf-8");
+  try {
+    writeFileSync(manifestPath, tomlContent, "utf-8");
+  } catch (err) {
+    p.log.error(`Failed to write ${MANIFEST_FILENAME}: ${(err as Error).message}`);
+    p.outro("");
+    process.exitCode = 1;
+    return;
+  }
 
   p.log.success(`Created ${MANIFEST_FILENAME} in ${targetDir}`);
   p.outro("");

@@ -64,7 +64,7 @@ export function computeDirectoryHash(directory: string): string {
   filePaths.sort((a, b) => {
     const relA = relative(directory, a).split(sep).join(posix.sep);
     const relB = relative(directory, b).split(sep).join(posix.sep);
-    return relA.localeCompare(relB);
+    return relA < relB ? -1 : relA > relB ? 1 : 0;
   });
 
   for (const filePath of filePaths) {

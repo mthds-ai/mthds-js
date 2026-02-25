@@ -164,6 +164,12 @@ export async function installMethod(options: {
   const installSpinner = p.spinner();
   for (const method of resolved.methods) {
     const installDir = resolve(join(targetDir, method.slug));
+    if (!installDir.startsWith(targetDir + sep)) {
+      installSpinner.stop("Installation failed.");
+      p.log.error(`Path traversal detected: slug "${method.slug}" escapes install directory.`);
+      p.outro("");
+      process.exit(1);
+    }
     installSpinner.start(`Installing "${method.slug}" to ${installDir}...`);
 
     mkdirSync(installDir, { recursive: true });
@@ -175,7 +181,10 @@ export async function installMethod(options: {
     for (const file of method.files) {
       const filePath = resolve(join(installDir, file.relativePath));
       if (!filePath.startsWith(installDir + sep)) {
-        throw new Error(`Path traversal detected: "${file.relativePath}" escapes install directory.`);
+        installSpinner.stop("Installation failed.");
+        p.log.error(`Path traversal detected: "${file.relativePath}" escapes install directory.`);
+        p.outro("");
+        process.exit(1);
       }
       mkdirSync(dirname(filePath), { recursive: true });
       writeFileSync(filePath, file.content, "utf-8");

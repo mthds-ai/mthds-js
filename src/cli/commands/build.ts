@@ -237,7 +237,14 @@ export async function buildInputsPipe(
     process.exit(1);
   }
 
-  const mthdsContent = readFileSync(target, "utf-8");
+  let mthdsContent: string;
+  try {
+    mthdsContent = readFileSync(target, "utf-8");
+  } catch (err) {
+    p.log.error((err as Error).message);
+    p.outro("");
+    process.exit(1);
+  }
 
   const s = p.spinner();
   s.start("Generating example inputs...");
@@ -323,7 +330,22 @@ export async function buildOutputPipe(
     process.exit(1);
   }
 
-  const mthdsContent = readFileSync(target, "utf-8");
+  let mthdsContent: string;
+  try {
+    mthdsContent = readFileSync(target, "utf-8");
+  } catch (err) {
+    p.log.error((err as Error).message);
+    p.outro("");
+    process.exit(1);
+  }
+
+  const validFormats: ConceptRepresentationFormat[] = ["json", "python", "schema"];
+  const format = (options.format ?? "schema") as string;
+  if (!validFormats.includes(format as ConceptRepresentationFormat)) {
+    p.log.error(`Invalid format "${format}". Must be one of: ${validFormats.join(", ")}`);
+    p.outro("");
+    process.exit(1);
+  }
 
   const s = p.spinner();
   s.start("Generating output schema...");
@@ -332,7 +354,7 @@ export async function buildOutputPipe(
     const result = await runner.buildOutput({
       mthds_content: mthdsContent,
       pipe_code: options.pipe,
-      format: (options.format as ConceptRepresentationFormat) ?? "schema",
+      format: format as ConceptRepresentationFormat,
     });
     s.stop("Output generated.");
     p.log.info(JSON.stringify(result, null, 2));

@@ -59,8 +59,9 @@ export function scanBundlesForDomainInfo(
       const existingMain = domainMainPipes.get(domain);
       if (!existingMain || existingMain === mainPipe) {
         domainMainPipes.set(domain, mainPipe);
+      } else {
+        errors.push(`${filePath}: conflicting main_pipe for domain '${domain}': '${existingMain}' vs '${mainPipe}' (keeping '${existingMain}')`);
       }
-      // Conflicting main_pipe: keep first (matching Python behavior)
     }
   }
 

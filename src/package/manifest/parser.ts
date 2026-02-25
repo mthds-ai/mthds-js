@@ -65,7 +65,13 @@ function walkExportsTable(
   for (const [key, value] of Object.entries(table)) {
     const currentPath = prefix ? `${prefix}.${key}` : key;
 
-    if (value !== null && typeof value === "object" && !Array.isArray(value)) {
+    if (value === null || typeof value !== "object" || Array.isArray(value)) {
+      throw new ManifestValidationError(
+        `Invalid entry '${key}' in [exports${prefix ? `.${prefix}` : ""}]: expected a table, got ${value === null ? "null" : Array.isArray(value) ? "array" : typeof value}`,
+      );
+    }
+
+    {
       const valueDict = value as Record<string, unknown>;
 
       if ("pipes" in valueDict) {

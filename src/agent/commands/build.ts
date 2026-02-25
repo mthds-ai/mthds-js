@@ -394,11 +394,21 @@ export async function agentBuildOutputPipe(
     );
   }
 
+  const validFormats: ConceptRepresentationFormat[] = ["json", "python", "schema"];
+  const format = (options.format ?? "schema") as string;
+  if (!validFormats.includes(format as ConceptRepresentationFormat)) {
+    agentError(
+      `Invalid format "${format}". Must be one of: ${validFormats.join(", ")}`,
+      "ArgumentError",
+      { error_domain: AGENT_ERROR_DOMAINS.ARGUMENT }
+    );
+  }
+
   try {
     const result = await runner.buildOutput({
       mthds_content: mthdsContent,
       pipe_code: options.pipe,
-      format: (options.format as ConceptRepresentationFormat) ?? "schema",
+      format: format as ConceptRepresentationFormat,
     });
 
     agentSuccess({

@@ -75,8 +75,9 @@ export class PackageVisibilityChecker {
         let ref;
         try {
           ref = parsePipeRef(pipeRefStr);
-        } catch {
-          continue;
+        } catch (err) {
+          if (err instanceof QualifiedRefError) continue;
+          throw err;
         }
 
         if (!this.isPipeAccessibleFrom(ref, metadata.domain)) {

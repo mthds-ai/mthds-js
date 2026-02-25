@@ -52,13 +52,15 @@ export function agentError(
   }
 ): never {
   const payload: Record<string, unknown> = {
-    success: false,
-    error: message,
+    error: true,
     error_type: errorType,
+    message: message,
     hint: extras?.hint ?? AGENT_ERROR_HINTS[errorType] ?? undefined,
     error_domain: extras?.error_domain ?? undefined,
-    retryable: extras?.retryable ?? false,
   };
+  if (extras?.retryable) {
+    payload.retryable = true;
+  }
 
   // Remove undefined values for cleaner output
   for (const key of Object.keys(payload)) {

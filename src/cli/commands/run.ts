@@ -11,8 +11,7 @@ interface RunOptions {
   pipe?: string;
   inputs?: string;
   output?: string;
-  noOutput?: boolean;
-  noPrettyPrint?: boolean;
+  prettyPrint?: boolean;
   runner?: RunnerType;
   directory?: string;
 }
@@ -74,7 +73,7 @@ export async function runPipeline(
     const result = await runner.executePipeline(pipelineOptions);
     s.stop(`Pipeline ${result.pipeline_state.toLowerCase()}.`);
 
-    if (!options.noOutput && options.output) {
+    if (options.output) {
       writeFileSync(
         options.output,
         JSON.stringify(result, null, 2) + "\n",
@@ -83,7 +82,7 @@ export async function runPipeline(
       p.log.success(`Output written to ${options.output}`);
     }
 
-    if (!options.noPrettyPrint && result.pipe_output) {
+    if (options.prettyPrint !== false && result.pipe_output) {
       p.log.info(JSON.stringify(result.pipe_output, null, 2));
     }
 

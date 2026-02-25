@@ -232,15 +232,17 @@ export async function installMethod(options: {
     }
   }
 
-  // Step 6: Optional Pipelex skills (only if user chose to install the runner)
+  // Step 6: Optional MTHDS skills (only if user chose to install the runner)
   if (!wantsRunner) {
     p.outro("Done");
     await shutdown();
     return;
   }
 
+  const SKILLS_REPO = "https://github.com/mthds-ai/skills";
+
   const wantsSkills = await p.confirm({
-    message: "For a better experience using the pipelex runner, do you want to install pipelex skills?",
+    message: "Do you want to install the MTHDS skills?",
     initialValue: true,
   });
 
@@ -249,59 +251,33 @@ export async function installMethod(options: {
     process.exit(0);
   }
 
-  if (!wantsSkills) {
-    p.outro("Done");
-    await shutdown();
-    return;
-  }
+  if (wantsSkills) {
+    const selectedAgent = await p.select<string>({
+      message: "Which agent should the skills be installed for?",
+      options: [
+        { value: "claude", label: "Claude" },
+        { value: "cursor", label: "Cursor" },
+        { value: "codex", label: "Codex" },
+      ],
+    });
 
-  // Prompt for agent — needed for `npx skills add --agent`
-  const selectedAgent = await p.select({
-    message: "Which AI agent do you want to install the pipelex skills for?",
-    options: [
-      { value: "claude-code", label: "Claude Code" },
-    ],
-  });
+    if (p.isCancel(selectedAgent)) {
+      p.cancel("Installation cancelled.");
+      process.exit(0);
+    }
 
-  if (p.isCancel(selectedAgent)) {
-    p.cancel("Installation cancelled.");
-    process.exit(0);
-  }
-
-  const SKILLS_REPO = "https://github.com/pipelex/skills";
-  const skillChoices = [
-    { value: "check", label: "check", hint: "Validate and review Pipelex workflow bundles without making changes" },
-    { value: "edit", label: "edit", hint: "Modify existing Pipelex workflow bundles" },
-    { value: "build", label: "build", hint: "Create new Pipelex workflow bundles from scratch" },
-    { value: "fix", label: "fix", hint: "Automatically fix issues in Pipelex workflow bundles" },
-  ];
-
-  const selectedSkills = await p.multiselect({
-    message: "Which skills do you want to install?",
-    options: skillChoices,
-    required: true,
-  });
-
-  if (p.isCancel(selectedSkills)) {
-    p.cancel("Installation cancelled.");
-    process.exit(0);
-  }
-
-  if (selectedSkills.length > 0) {
     const globalFlag = selectedLocation === "global" ? " -g" : "";
     const locationLabel = selectedLocation === "global" ? "globally" : "locally";
     const sk = p.spinner();
-    for (const skill of selectedSkills) {
-      sk.start(`Installing skill "${skill}" ${locationLabel}...`);
-      try {
-        await execAsync(`npx skills add ${SKILLS_REPO} --skill ${skill} --agent ${selectedAgent}${globalFlag} -y`, {
-          cwd: process.cwd(),
-        });
-        sk.stop(`Skill "${skill}" installed ${locationLabel}.`);
-      } catch {
-        sk.stop(`Failed to install skill "${skill}".`);
-        p.log.warning(`Could not install skill "${skill}". You can retry manually:\n  npx skills add ${SKILLS_REPO} --skill ${skill} --agent ${selectedAgent}${globalFlag}`);
-      }
+    sk.start(`Installing MTHDS skills ${locationLabel} for ${selectedAgent}...`);
+    try {
+      await execAsync(`npx skills add ${SKILLS_REPO} --skill '*' --agent ${selectedAgent}${globalFlag} -y`, {
+        cwd: process.cwd(),
+      });
+      sk.stop(`MTHDS skills installed ${locationLabel} for ${selectedAgent}.`);
+    } catch {
+      sk.stop("Failed to install MTHDS skills.");
+      p.log.warning(`Could not install MTHDS skills. You can retry manually:\n  npx skills add ${SKILLS_REPO} --skill '*' --agent ${selectedAgent}${globalFlag}`);
     }
   }
 

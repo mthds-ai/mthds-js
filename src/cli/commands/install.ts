@@ -231,13 +231,7 @@ export async function installMethod(options: {
     }
   }
 
-  // Step 6: Optional MTHDS skills (only if user chose to install the runner)
-  if (!wantsRunner) {
-    p.outro("Done");
-    await shutdown();
-    return;
-  }
-
+  // Step 6: Optional MTHDS skills
   const SKILLS_REPO = "https://github.com/mthds-ai/skills";
 
   const wantsSkills = await p.confirm({
@@ -251,10 +245,23 @@ export async function installMethod(options: {
   }
 
   if (wantsSkills) {
+    const skillsLocation = await p.select<string>({
+      message: "Where should the skills be installed?",
+      options: [
+        { value: "global", label: "Global", hint: "Available everywhere" },
+        { value: "project", label: "Project", hint: "Current project only" },
+      ],
+    });
+
+    if (p.isCancel(skillsLocation)) {
+      p.cancel("Installation cancelled.");
+      process.exit(0);
+    }
+
     const selectedAgent = await p.select<string>({
       message: "Which agent should the skills be installed for?",
       options: [
-        { value: "claude", label: "Claude" },
+        { value: "claude-code", label: "Claude Code" },
         { value: "cursor", label: "Cursor" },
         { value: "codex", label: "Codex" },
       ],
@@ -265,8 +272,8 @@ export async function installMethod(options: {
       process.exit(0);
     }
 
-    const globalFlag = selectedLocation === "global" ? " -g" : "";
-    const locationLabel = selectedLocation === "global" ? "globally" : "locally";
+    const globalFlag = skillsLocation === "global" ? " -g" : "";
+    const locationLabel = skillsLocation === "global" ? "globally" : "locally";
     const sk = p.spinner();
     sk.start(`Installing MTHDS skills ${locationLabel} for ${selectedAgent}...`);
     try {

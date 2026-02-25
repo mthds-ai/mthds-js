@@ -126,7 +126,7 @@ export async function agentBuildRunnerMethod(
   }
 
   agentError(
-    "Method target is not yet supported for the API runner. Use 'mthds-agent build runner pipe <target>' instead.",
+    "Method target is not yet supported for the API runner. Use 'mthds-agent build runner pipe <target>' instead, or specify a different runner with --runner <name>.",
     "ArgumentError",
     { error_domain: AGENT_ERROR_DOMAINS.ARGUMENT }
   );
@@ -241,7 +241,7 @@ export async function agentBuildInputsMethod(
   }
 
   agentError(
-    "Method target is not yet supported for the API runner. Use 'mthds-agent build inputs pipe <target>' instead.",
+    "Method target is not yet supported for the API runner. Use 'mthds-agent build inputs pipe <target>' instead, or specify a different runner with --runner <name>.",
     "ArgumentError",
     { error_domain: AGENT_ERROR_DOMAINS.ARGUMENT }
   );
@@ -342,7 +342,7 @@ export async function agentBuildOutputMethod(
   }
 
   agentError(
-    "Method target is not yet supported for the API runner. Use 'mthds-agent build output pipe <target>' instead.",
+    "Method target is not yet supported for the API runner. Use 'mthds-agent build output pipe <target>' instead, or specify a different runner with --runner <name>.",
     "ArgumentError",
     { error_domain: AGENT_ERROR_DOMAINS.ARGUMENT }
   );

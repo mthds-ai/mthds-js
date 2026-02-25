@@ -31,7 +31,7 @@ const defaultHandler: (id: Agent) => AgentHandler = (id) => ({
 });
 
 const handlers: Record<Agent, AgentHandler> = {
-  claude: defaultHandler("claude"),
+  "claude-code": defaultHandler("claude-code"),
   cursor: defaultHandler("cursor"),
   codex: defaultHandler("codex"),
 };

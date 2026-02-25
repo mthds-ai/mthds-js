@@ -81,7 +81,7 @@ export async function agentRunMethod(
   }
 
   agentError(
-    "Method target is not yet supported for the API runner. Use 'mthds-agent run pipe <target>' instead.",
+    "Method target is not yet supported for the API runner. Use 'mthds-agent run pipe <target>' instead, or specify a different runner with --runner <name>.",
     "ArgumentError",
     { error_domain: AGENT_ERROR_DOMAINS.ARGUMENT }
   );

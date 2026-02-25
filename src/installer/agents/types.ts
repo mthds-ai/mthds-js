@@ -1,6 +1,6 @@
 import type { ResolvedRepo } from "../../package/manifest/types.js";
 
-export type Agent = "claude" | "cursor" | "codex";
+export type Agent = "claude-code" | "cursor" | "codex";
 
 export enum InstallLocation {
   Local = "local",

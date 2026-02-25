@@ -72,7 +72,7 @@ export async function agentValidateMethod(
   }
 
   agentError(
-    "Method target is not yet supported for the API runner. Use 'mthds-agent validate pipe <target>' instead.",
+    "Method target is not yet supported for the API runner. Use 'mthds-agent validate pipe <target>' instead, or specify a different runner with --runner <name>.",
     "ArgumentError",
     { error_domain: AGENT_ERROR_DOMAINS.ARGUMENT }
   );

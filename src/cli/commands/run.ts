@@ -41,7 +41,7 @@ export async function runMethod(
     return;
   }
 
-  p.log.error("Method target is not yet supported for the API runner. Use 'mthds run pipe <target>' instead.");
+  p.log.error("Method target is not yet supported for the API runner. Use 'mthds run pipe <target>' instead.\nYou can also specify a different runner with --runner <name>, or change the default with 'mthds set-default runner <name>'.");
   p.outro("");
   process.exit(1);
 }

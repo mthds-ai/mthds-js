@@ -23,6 +23,20 @@ describe("parseAddress", () => {
     expect(r.subpath).toBeNull();
   });
 
+  it("strips https://github.com/ prefix", () => {
+    const r = parseAddress("https://github.com/pipelex/cookbook");
+    expect(r.org).toBe("pipelex");
+    expect(r.repo).toBe("cookbook");
+    expect(r.subpath).toBeNull();
+  });
+
+  it("strips https://github.com/ prefix with subpath", () => {
+    const r = parseAddress("https://github.com/acme/monorepo/packages/legal");
+    expect(r.org).toBe("acme");
+    expect(r.repo).toBe("monorepo");
+    expect(r.subpath).toBe("packages/legal");
+  });
+
   it("strips trailing slash", () => {
     const r = parseAddress("pipelex/cookbook/");
     expect(r.org).toBe("pipelex");

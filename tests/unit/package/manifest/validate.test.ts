@@ -1,11 +1,12 @@
 import { describe, it, expect } from "vitest";
-import { validateManifest, validateSlug } from "../../../../src/package/manifest/validate.js";
+import { validateManifest } from "../../../../src/package/manifest/validate.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 const minimal = `
 [package]
+name = "tools"
 address = "github.com/acme/tools"
 version = "1.0.0"
 description = "Useful tools."
@@ -24,6 +25,7 @@ describe("validateManifest — valid", () => {
     expect(r.valid).toBe(true);
     expect(r.errors).toEqual([]);
     expect(r.manifest).toBeDefined();
+    expect(r.manifest!.package.name).toBe("tools");
     expect(r.manifest!.package.address).toBe("github.com/acme/tools");
     expect(r.manifest!.package.version).toBe("1.0.0");
     expect(r.manifest!.package.description).toBe("Useful tools.");
@@ -32,6 +34,7 @@ describe("validateManifest — valid", () => {
   it("accepts all optional package fields", () => {
     const raw = `
 [package]
+name          = "legal-tools"
 address       = "github.com/acme/legal-tools"
 version       = "0.3.0"
 description   = "Legal document analysis methods."
@@ -77,6 +80,7 @@ pipes = ["extract_clause", "analyze_nda"]
   it("accepts complete example from spec", () => {
     const raw = `
 [package]
+name          = "legal-tools"
 address       = "github.com/acme/legal-tools"
 version       = "0.3.0"
 description   = "Legal document analysis methods."
@@ -95,6 +99,19 @@ pipes = ["extract_clause", "analyze_nda"]
     expect(r.valid).toBe(true);
     expect(r.errors).toEqual([]);
   });
+
+  it("accepts valid name", () => {
+    const raw = `
+[package]
+name = "my-tool"
+address = "github.com/a/b"
+version = "1.0.0"
+description = "Test."
+`;
+    const r = validateManifest(raw);
+    expect(r.valid).toBe(true);
+    expect(r.manifest!.package.name).toBe("my-tool");
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -112,6 +129,7 @@ describe("validateManifest — invalid", () => {
   it("rejects missing address", () => {
     const raw = `
 [package]
+name = "tools"
 version = "1.0.0"
 description = "Test."
 `;
@@ -125,6 +143,7 @@ description = "Test."
   it("rejects missing version", () => {
     const raw = `
 [package]
+name = "tools"
 address = "github.com/a/b"
 description = "Test."
 `;
@@ -138,6 +157,7 @@ description = "Test."
   it("rejects missing description", () => {
     const raw = `
 [package]
+name = "tools"
 address = "github.com/a/b"
 version = "1.0.0"
 `;
@@ -148,9 +168,39 @@ version = "1.0.0"
     );
   });
 
+  it("rejects missing name", () => {
+    const raw = `
+[package]
+address = "github.com/a/b"
+version = "1.0.0"
+description = "Test."
+`;
+    const r = validateManifest(raw);
+    expect(r.valid).toBe(false);
+    expect(r.errors).toContainEqual(
+      expect.stringContaining("[package.name]")
+    );
+  });
+
+  it("rejects invalid name", () => {
+    const raw = `
+[package]
+name = "UPPERCASE"
+address = "github.com/a/b"
+version = "1.0.0"
+description = "Test."
+`;
+    const r = validateManifest(raw);
+    expect(r.valid).toBe(false);
+    expect(r.errors).toContainEqual(
+      expect.stringContaining("[package.name]")
+    );
+  });
+
   it("rejects address without hostname dot", () => {
     const raw = `
 [package]
+name = "tools"
 address = "acme/tools"
 version = "1.0.0"
 description = "Test."
@@ -165,6 +215,7 @@ description = "Test."
   it("rejects invalid semver version", () => {
     const raw = `
 [package]
+name = "tools"
 address = "github.com/a/b"
 version = "not-semver"
 description = "Test."
@@ -179,6 +230,7 @@ description = "Test."
   it("rejects empty description", () => {
     const raw = `
 [package]
+name = "tools"
 address = "github.com/a/b"
 version = "1.0.0"
 description = ""
@@ -190,10 +242,11 @@ description = ""
     );
   });
 
-  it("rejects display_name over 128 chars", () => {
-    const longName = "A".repeat(129);
+  it("rejects display_name over 25 chars", () => {
+    const longName = "A".repeat(26);
     const raw = `
 [package]
+name = "tools"
 address = "github.com/a/b"
 version = "1.0.0"
 description = "Test."
@@ -202,13 +255,14 @@ display_name = "${longName}"
     const r = validateManifest(raw);
     expect(r.valid).toBe(false);
     expect(r.errors).toContainEqual(
-      expect.stringContaining("at most 128 characters")
+      expect.stringContaining("at most 25 characters")
     );
   });
 
   it("rejects authors that is not an array", () => {
     const raw = `
 [package]
+name = "tools"
 address = "github.com/a/b"
 version = "1.0.0"
 description = "Test."
@@ -224,6 +278,7 @@ authors = "single-string"
   it("rejects license that is not a string", () => {
     const raw = `
 [package]
+name = "tools"
 address = "github.com/a/b"
 version = "1.0.0"
 description = "Test."
@@ -307,6 +362,7 @@ dep = { address = "github.com/a/b", version = "1.0.0" }
   it("collects multiple errors at once", () => {
     const raw = `
 [package]
+name = "tools"
 address = "no-dot"
 version = "bad"
 description = ""
@@ -314,47 +370,5 @@ description = ""
     const r = validateManifest(raw);
     expect(r.valid).toBe(false);
     expect(r.errors.length).toBeGreaterThanOrEqual(3);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// validateSlug
-// ---------------------------------------------------------------------------
-describe("validateSlug", () => {
-  it("accepts valid slugs", () => {
-    expect(validateSlug("my-method").valid).toBe(true);
-    expect(validateSlug("tool123").valid).toBe(true);
-    expect(validateSlug("a").valid).toBe(true);
-    expect(validateSlug("legal-tools").valid).toBe(true);
-  });
-
-  it("rejects slug starting with digit", () => {
-    const r = validateSlug("1tool");
-    expect(r.valid).toBe(false);
-    expect(r.error).toBeDefined();
-  });
-
-  it("rejects uppercase slug", () => {
-    const r = validateSlug("MyMethod");
-    expect(r.valid).toBe(false);
-    expect(r.error).toBeDefined();
-  });
-
-  it("rejects special characters", () => {
-    const r = validateSlug("my_method");
-    expect(r.valid).toBe(false);
-    expect(r.error).toBeDefined();
-  });
-
-  it("rejects empty slug", () => {
-    const r = validateSlug("");
-    expect(r.valid).toBe(false);
-    expect(r.error).toContain("empty");
-  });
-
-  it("rejects slug over 64 chars", () => {
-    const r = validateSlug("a".repeat(65));
-    expect(r.valid).toBe(false);
-    expect(r.error).toContain("64");
   });
 });

@@ -6,7 +6,7 @@ import {
 } from "../../config/credentials.js";
 import type { CredentialSource } from "../../config/credentials.js";
 
-const POSTHOG_API_KEY = "phc_ylV9FzMiQDyGgtd5nJn0Cc2OkyHAobfj7xDhYloH5IA";
+const POSTHOG_API_KEY = "phc_LRwe2lybfPTNCzAT1ScpnsWznrxAvmc1pmCaXEr1hwJ";
 const POSTHOG_HOST = "https://eu.i.posthog.com";
 
 let client: PostHog | null = null;
@@ -33,7 +33,8 @@ function getClient(): PostHog | null {
 
 export interface InstallEvent {
   address: string;
-  slug: string;
+  name: string;
+  main_pipe?: string;
   version: string;
   description: string;
   display_name?: string;
@@ -53,7 +54,8 @@ export function trackInstall(data: InstallEvent): void {
     event: "install",
     properties: {
       address: data.address,
-      slug: data.slug,
+      name: data.name,
+      main_pipe: data.main_pipe,
       version: data.version,
       description: data.description,
       display_name: data.display_name,

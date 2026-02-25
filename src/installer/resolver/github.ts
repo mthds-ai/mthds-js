@@ -1,7 +1,6 @@
 import { execFileSync } from "node:child_process";
 import type { ParsedAddress, ResolvedRepo, ResolvedMethod, SkippedMethod, MethodsFile } from "../../package/manifest/types.js";
 import { validateManifest } from "../../package/manifest/validate.js";
-import { validateSlug } from "../../package/manifest/validate.js";
 
 type AuthMethod =
   | { type: "token"; token: string }
@@ -29,11 +28,23 @@ async function githubFetch(
   apiPath: string
 ): Promise<unknown> {
   if (auth.type === "gh") {
-    const result = execFileSync("gh", ["api", apiPath], {
-      encoding: "utf-8",
-      maxBuffer: 10 * 1024 * 1024,
-    });
-    return JSON.parse(result);
+    try {
+      const result = execFileSync("gh", ["api", apiPath], {
+        encoding: "utf-8",
+        maxBuffer: 10 * 1024 * 1024,
+        stdio: ["pipe", "pipe", "pipe"],
+      });
+      return JSON.parse(result);
+    } catch (err) {
+      const stderr = (err as { stderr?: Buffer | string })?.stderr?.toString() ?? "";
+      if (stderr.includes("404") || stderr.includes("Not Found")) {
+        throw new Error(`Not found: ${apiPath}.`);
+      }
+      if (stderr.includes("403") || stderr.includes("rate limit")) {
+        throw new Error(`GitHub API rate limit or permission error for ${apiPath}. Try setting GITHUB_TOKEN.`);
+      }
+      throw new Error(`GitHub API error for ${apiPath}: ${stderr.trim() || (err as Error).message}`);
+    }
   }
 
   const url = `https://api.github.com/${apiPath}`;
@@ -178,38 +189,32 @@ async function resolveOneMethod(
   org: string,
   repo: string,
   methodsPath: string,
-  slug: string
+  dirName: string
 ): Promise<{ method?: ResolvedMethod; skipped?: SkippedMethod }> {
-  // Validate slug name
-  const slugResult = validateSlug(slug);
-  if (!slugResult.valid) {
-    return { skipped: { slug, errors: [slugResult.error!] } };
-  }
-
-  const slugDir = `${methodsPath}/${slug}`;
-  const tomlPath = `${slugDir}/METHODS.toml`;
+  const dirPath = `${methodsPath}/${dirName}`;
+  const tomlPath = `${dirPath}/METHODS.toml`;
 
   // Fetch METHODS.toml
   let rawToml: string;
   try {
     rawToml = await fetchFileContent(auth, org, repo, tomlPath);
   } catch {
-    return { skipped: { slug, errors: [`No METHODS.toml found at ${tomlPath}.`] } };
+    return { skipped: { dirName, errors: [`No METHODS.toml found at ${tomlPath}.`] } };
   }
 
   // Validate manifest
   const result = validateManifest(rawToml);
   if (!result.valid || !result.manifest) {
-    return { skipped: { slug, errors: result.errors } };
+    return { skipped: { dirName, errors: result.errors } };
   }
 
   // Find and download .mthds files
-  const mthdPaths = await listMthdFiles(auth, org, repo, slugDir);
-  const files = await downloadFilesParallel(auth, org, repo, mthdPaths, slugDir);
+  const mthdPaths = await listMthdFiles(auth, org, repo, dirPath);
+  const files = await downloadFilesParallel(auth, org, repo, mthdPaths, dirPath);
 
   return {
     method: {
-      slug,
+      name: result.manifest.package.name,
       manifest: result.manifest,
       rawManifest: rawToml,
       files,
@@ -224,8 +229,17 @@ export async function resolveFromGitHub(
   const { org, repo, subpath } = parsed;
   const methodsPath = subpath ? `${subpath}/methods` : "methods";
 
-  // Check if repo is public
-  const repoMeta = (await githubFetch(auth, `repos/${org}/${repo}`)) as { private: boolean };
+  // Check if repo exists and is public
+  let repoMeta: { private: boolean };
+  try {
+    repoMeta = (await githubFetch(auth, `repos/${org}/${repo}`)) as { private: boolean };
+  } catch (err) {
+    const msg = (err as Error).message;
+    if (msg.includes("Not found")) {
+      throw new Error(`Repository "${org}/${repo}" not found on GitHub. Check the address and make sure the repository exists.`);
+    }
+    throw new Error(`Could not connect to GitHub for "${org}/${repo}": ${msg}`);
+  }
   const isPublic = !repoMeta.private;
 
   // List directories inside methods/
@@ -247,9 +261,9 @@ export async function resolveFromGitHub(
     );
   }
 
-  const slugDirs = contents.filter((c) => c.type === "dir").map((c) => c.name);
+  const methodDirs = contents.filter((c) => c.type === "dir").map((c) => c.name);
 
-  if (slugDirs.length === 0) {
+  if (methodDirs.length === 0) {
     throw new Error(
       `No methods found in methods/ of ${org}/${repo}${subpath ? `/${subpath}` : ""}.`
     );
@@ -259,10 +273,10 @@ export async function resolveFromGitHub(
   const methods: ResolvedMethod[] = [];
   const skipped: SkippedMethod[] = [];
 
-  for (let i = 0; i < slugDirs.length; i += 5) {
-    const batch = slugDirs.slice(i, i + 5);
+  for (let i = 0; i < methodDirs.length; i += 5) {
+    const batch = methodDirs.slice(i, i + 5);
     const results = await Promise.all(
-      batch.map((slug) => resolveOneMethod(auth, org, repo, methodsPath, slug))
+      batch.map((dirName) => resolveOneMethod(auth, org, repo, methodsPath, dirName))
     );
     for (const r of results) {
       if (r.method) methods.push(r.method);

@@ -38,22 +38,28 @@ export function showBanner(): void {
 
   console.log(chalk.bold("  Pipeline:"));
   console.log(
-    `    ${chalk.yellow("run <target>")}              Execute a pipeline`
+    `    ${chalk.yellow("run method <name>")}           Run an installed method`
   );
   console.log(
-    `    ${chalk.yellow("build pipe <brief>")}        Build a pipeline from a prompt`
+    `    ${chalk.yellow("run pipe <target>")}           Run a pipe by code or bundle file`
   );
   console.log(
-    `    ${chalk.yellow("build runner <bundle>")}     Generate Python runner code`
+    `    ${chalk.yellow("build pipe <brief>")}          Build a pipeline from a prompt`
   );
   console.log(
-    `    ${chalk.yellow("build inputs <bundle>")}     Generate example input JSON`
+    `    ${chalk.yellow("build runner method|pipe")}    Generate Python runner code`
   );
   console.log(
-    `    ${chalk.yellow("build output <bundle>")}     Generate output schema`
+    `    ${chalk.yellow("build inputs method|pipe")}    Generate example input JSON`
   );
   console.log(
-    `    ${chalk.yellow("validate <target>")}         Validate a bundle\n`
+    `    ${chalk.yellow("build output method|pipe")}    Generate output schema`
+  );
+  console.log(
+    `    ${chalk.yellow("validate method <name>")}      Validate an installed method`
+  );
+  console.log(
+    `    ${chalk.yellow("validate pipe <target>")}      Validate a pipe or bundle\n`
   );
 
   console.log(chalk.bold("  Configuration:"));
@@ -67,51 +73,35 @@ export function showBanner(): void {
     `    ${chalk.yellow("config list")}                List all config values`
   );
   console.log(
-    `    ${chalk.yellow("setup runner <name>")}       Initialize a runner`
+    `    ${chalk.yellow("runner setup <name>")}         Initialize a runner`
   );
   console.log(
-    `    ${chalk.yellow("set-default runner <name>")} Set the default runner`
+    `    ${chalk.yellow("runner set-default <name>")}   Set the default runner`
   );
   console.log(
-    `    ${chalk.yellow("runner status")}              Show runner configuration`
+    `    ${chalk.yellow("runner status")}                Show runner configuration`
   );
   console.log(
-    `    ${chalk.yellow("telemetry enable|disable")}  Toggle anonymous telemetry\n`
+    `    ${chalk.yellow("telemetry enable|disable")}    Toggle anonymous telemetry\n`
   );
 
-  console.log(chalk.bold("  Installation (JS-only):"));
+  console.log(chalk.bold("  Installation:"));
   console.log(
     `    ${chalk.yellow("install <address>")}         Install a method package\n`
   );
 
   console.log(chalk.bold("  Package Management:"));
   console.log(
-    `    ${chalk.yellow("package init")}              Initialize METHODS.toml`
+    `    ${chalk.yellow("package init")}               Initialize METHODS.toml`
   );
   console.log(
-    `    ${chalk.yellow("package list")}              Display the package manifest`
+    `    ${chalk.yellow("package list")}               Display the package manifest`
   );
   console.log(
-    `    ${chalk.yellow("package add <dep>")}         Add a dependency`
-  );
-  console.log(
-    `    ${chalk.yellow("package lock")}              Resolve and generate lock file`
-  );
-  console.log(
-    `    ${chalk.yellow("package install")}           Install dependencies`
-  );
-  console.log(
-    `    ${chalk.yellow("package update")}            Update dependencies\n`
+    `    ${chalk.yellow("package validate")}           Validate METHODS.toml\n`
   );
 
-  console.log(chalk.bold("  Examples:"));
-  console.log(`    ${chalk.dim("$")} mthds run hello_world`);
-  console.log(`    ${chalk.dim("$")} mthds run my_bundle.mthds --inputs data.json`);
-  console.log(`    ${chalk.dim("$")} mthds build pipe "Analyze a CV against a job offer"`);
-  console.log(`    ${chalk.dim("$")} mthds validate my_bundle.mthds`);
-  console.log(`    ${chalk.dim("$")} mthds install pipelex/cookbook\n`);
-
   console.log(
-    chalk.dim("  Docs: https://docs.pipelex.com \n")
+    chalk.dim("  Learn more: https://github.com/mthds-ai/mthds-js/blob/main/CLI.md\n")
   );
 }

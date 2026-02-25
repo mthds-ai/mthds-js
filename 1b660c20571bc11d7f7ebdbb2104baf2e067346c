@@ -1,0 +1,23 @@
+src/agent/output.ts
+  1fb2cfb5cb961ba6 55,57,61-63
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.5",
+  "base_commit_sha": "1b660c20571bc11d7f7ebdbb2104baf2e067346c",
+  "prompts": {
+    "1fb2cfb5cb961ba6": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1e52e363-1265-41a6-8f8d-26afab1083cc",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Louis Choquel <lchoquel@users.noreply.github.com>",
+      "messages": [],
+      "total_additions": 5,
+      "total_deletions": 3,
+      "accepted_lines": 5,
+      "overriden_lines": 0
+    }
+  }
+}

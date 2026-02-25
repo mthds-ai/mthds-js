@@ -15,7 +15,7 @@ function maskApiKey(key: string): string {
   return `${key.slice(0, 5)}${"*".repeat(Math.max(0, key.length - 5))}`;
 }
 
-// ── mthds setup runner <name> ───────────────────────────────────────
+// ── mthds runner setup <name> ───────────────────────────────────────
 
 async function initApi(): Promise<void> {
   const { value: currentUrl, source: urlSource } = getConfigValue("apiUrl");
@@ -114,7 +114,7 @@ async function askSetDefault(name: string): Promise<void> {
 
 export async function setupRunner(name: string): Promise<void> {
   printLogo();
-  p.intro("mthds setup runner");
+  p.intro("mthds runner setup");
 
   if (!RUNNER_NAMES.includes(name as typeof RUNNER_NAMES[number])) {
     p.log.error(`Unknown runner: ${name}`);
@@ -138,11 +138,11 @@ export async function setupRunner(name: string): Promise<void> {
   await shutdown();
 }
 
-// ── mthds set-default runner <name> ─────────────────────────────────
+// ── mthds runner set-default <name> ─────────────────────────────────
 
 export async function setDefaultRunner(name: string): Promise<void> {
   printLogo();
-  p.intro("mthds set-default runner");
+  p.intro("mthds runner set-default");
 
   if (!RUNNER_NAMES.includes(name as typeof RUNNER_NAMES[number])) {
     p.log.error(`Unknown runner: ${name}`);
@@ -163,7 +163,7 @@ export async function setDefaultRunner(name: string): Promise<void> {
   p.outro("Done");
 }
 
-// ── mthds runner status ─────────────────────────────────────────────
+// ── mthds runner status ────────────────────────────────────────────
 
 async function getPipelexVersion(): Promise<string> {
   try {

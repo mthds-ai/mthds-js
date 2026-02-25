@@ -73,7 +73,7 @@ export class PipelexRunner implements Runner {
   private async exec(
     args: string[]
   ): Promise<{ stdout: string; stderr: string }> {
-    return execFileAsync("pipelex", [...this.libraryArgs(), ...args], {
+    return execFileAsync("pipelex", [...args, ...this.libraryArgs()], {
       encoding: "utf-8",
     });
   }
@@ -84,7 +84,7 @@ export class PipelexRunner implements Runner {
    */
   private async execStreaming(args: string[]): Promise<void> {
     return new Promise<void>((resolve, reject) => {
-      const child = spawn("pipelex", [...this.libraryArgs(), ...args], {
+      const child = spawn("pipelex", [...args, ...this.libraryArgs()], {
         stdio: ["ignore", "inherit", "inherit"],
       });
       child.on("error", (err) =>

@@ -1,5 +1,4 @@
 import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
 import * as p from "@clack/prompts";
 import { printLogo } from "./index.js";
 import { isPipelexRunner, extractPassthroughArgs } from "./utils.js";
@@ -10,7 +9,7 @@ interface ValidateOptions {
   pipe?: string;
   bundle?: string;
   runner?: RunnerType;
-  directory?: string;
+  libraryDir?: string[];
 }
 
 export async function validateMethod(
@@ -20,8 +19,8 @@ export async function validateMethod(
   printLogo();
   p.intro("mthds validate method");
 
-  const libraryDirs = options.directory
-    ? [resolve(options.directory)]
+  const libraryDirs = options.libraryDir?.length
+    ? options.libraryDir
     : undefined;
   const runner = createRunner(options.runner, libraryDirs);
 
@@ -50,8 +49,8 @@ export async function validatePipe(
   printLogo();
   p.intro("mthds validate pipe");
 
-  const libraryDirs = options.directory
-    ? [resolve(options.directory)]
+  const libraryDirs = options.libraryDir?.length
+    ? options.libraryDir
     : undefined;
   const runner = createRunner(options.runner, libraryDirs);
 

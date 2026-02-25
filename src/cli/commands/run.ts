@@ -13,7 +13,7 @@ interface RunOptions {
   output?: string;
   prettyPrint?: boolean;
   runner?: RunnerType;
-  directory?: string;
+  libraryDir?: string[];
 }
 
 export async function runMethod(
@@ -23,8 +23,8 @@ export async function runMethod(
   printLogo();
   p.intro("mthds run method");
 
-  const libraryDirs = options.directory
-    ? [resolve(options.directory)]
+  const libraryDirs = options.libraryDir?.length
+    ? options.libraryDir
     : undefined;
   const runner = createRunner(options.runner, libraryDirs);
 
@@ -53,8 +53,8 @@ export async function runPipe(
   printLogo();
   p.intro("mthds run pipe");
 
-  const libraryDirs = options.directory
-    ? [resolve(options.directory)]
+  const libraryDirs = options.libraryDir?.length
+    ? options.libraryDir
     : undefined;
   const runner = createRunner(options.runner, libraryDirs);
 
@@ -71,7 +71,7 @@ export async function runPipe(
     return;
   }
 
-  const packageDir = options.directory ? resolve(options.directory) : process.cwd();
+  const packageDir = options.libraryDir?.length ? options.libraryDir[0]! : process.cwd();
   const resolvedTarget = target.startsWith("/") ? target : resolve(packageDir, target);
   const isBundle = resolvedTarget.endsWith(".mthds");
 

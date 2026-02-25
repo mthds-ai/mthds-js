@@ -1,5 +1,4 @@
 import { readFileSync, writeFileSync } from "node:fs";
-import { resolve } from "node:path";
 import * as p from "@clack/prompts";
 import { printLogo } from "./index.js";
 import { isPipelexRunner, extractPassthroughArgs } from "./utils.js";
@@ -8,7 +7,7 @@ import type { ConceptRepresentationFormat, RunnerType } from "../../runners/type
 
 interface WithRunner {
   runner?: RunnerType;
-  directory?: string;
+  libraryDir?: string[];
 }
 
 // ── mthds build pipe "PROMPT" [-o file] ─────────────────────────────
@@ -20,8 +19,8 @@ export async function buildPipe(
   printLogo();
   p.intro("mthds build pipe");
 
-  const libraryDirs = options.directory
-    ? [resolve(options.directory)]
+  const libraryDirs = options.libraryDir?.length
+    ? options.libraryDir
     : undefined;
   const runner = createRunner(options.runner, libraryDirs);
 
@@ -75,8 +74,8 @@ export async function buildRunnerMethod(
   printLogo();
   p.intro("mthds build runner method");
 
-  const libraryDirs = options.directory
-    ? [resolve(options.directory)]
+  const libraryDirs = options.libraryDir?.length
+    ? options.libraryDir
     : undefined;
   const runner = createRunner(options.runner, libraryDirs);
 
@@ -107,8 +106,8 @@ export async function buildRunnerPipe(
   printLogo();
   p.intro("mthds build runner pipe");
 
-  const libraryDirs = options.directory
-    ? [resolve(options.directory)]
+  const libraryDirs = options.libraryDir?.length
+    ? options.libraryDir
     : undefined;
   const runner = createRunner(options.runner, libraryDirs);
 
@@ -182,8 +181,8 @@ export async function buildInputsMethod(
   printLogo();
   p.intro("mthds build inputs method");
 
-  const libraryDirs = options.directory
-    ? [resolve(options.directory)]
+  const libraryDirs = options.libraryDir?.length
+    ? options.libraryDir
     : undefined;
   const runner = createRunner(options.runner, libraryDirs);
 
@@ -214,8 +213,8 @@ export async function buildInputsPipe(
   printLogo();
   p.intro("mthds build inputs pipe");
 
-  const libraryDirs = options.directory
-    ? [resolve(options.directory)]
+  const libraryDirs = options.libraryDir?.length
+    ? options.libraryDir
     : undefined;
   const runner = createRunner(options.runner, libraryDirs);
 
@@ -268,8 +267,8 @@ export async function buildOutputMethod(
   printLogo();
   p.intro("mthds build output method");
 
-  const libraryDirs = options.directory
-    ? [resolve(options.directory)]
+  const libraryDirs = options.libraryDir?.length
+    ? options.libraryDir
     : undefined;
   const runner = createRunner(options.runner, libraryDirs);
 
@@ -300,8 +299,8 @@ export async function buildOutputPipe(
   printLogo();
   p.intro("mthds build output pipe");
 
-  const libraryDirs = options.directory
-    ? [resolve(options.directory)]
+  const libraryDirs = options.libraryDir?.length
+    ? options.libraryDir
     : undefined;
   const runner = createRunner(options.runner, libraryDirs);
 

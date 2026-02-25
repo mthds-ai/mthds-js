@@ -9,6 +9,7 @@
 
 import { Command, CommanderError } from "commander";
 import { createRequire } from "node:module";
+import { resolve } from "node:path";
 import { agentError, AGENT_ERROR_DOMAINS } from "./agent/output.js";
 import { registerPipelexCommands } from "./agent/commands/pipelex.js";
 import { registerPlxtCommands } from "./agent/commands/plxt.js";
@@ -38,8 +39,12 @@ function getRunner(cmd: Cmd): RunnerType | undefined {
   return cmd.optsWithGlobals().runner as RunnerType | undefined;
 }
 
-function getDirectory(cmd: Cmd): string | undefined {
-  return cmd.optsWithGlobals().directory as string | undefined;
+function collect(val: string, prev: string[]): string[] {
+  return [...prev, resolve(val)];
+}
+
+function getLibraryDirs(cmd: Cmd): string[] {
+  return (cmd.optsWithGlobals().libraryDir ?? []) as string[];
 }
 
 function getLogLevelArgs(cmd: Cmd): string[] {
@@ -54,7 +59,7 @@ program
   .version(`mthds-agent ${pkg.version}`, "-V, --version")
   .description("Machine-oriented CLI for AI agents — JSON output only")
   .option("--runner <type>", `Runner to use (${RUNNER_NAMES.join(", ")})`)
-  .option("-d, --directory <path>", "Target package directory (defaults to current directory)")
+  .option("-L, --library-dir <dir>", "Additional library directory (can be repeated)", collect, [] as string[])
   .option("--log-level <level>", `Log level (${LOG_LEVELS.join(", ")})`)
   .enablePositionalOptions()
   .exitOverride()
@@ -84,7 +89,7 @@ run
     await agentRunMethod(name, {
       ...options,
       runner: getRunner(cmd),
-      directory: getDirectory(cmd),
+      libraryDir: getLibraryDirs(cmd),
     } as Parameters<typeof agentRunMethod>[1]);
   });
 
@@ -103,7 +108,7 @@ run
     await agentRunPipe(target, {
       ...options,
       runner: getRunner(cmd),
-      directory: getDirectory(cmd),
+      libraryDir: getLibraryDirs(cmd),
     } as Parameters<typeof agentRunPipe>[1]);
   });
 
@@ -123,7 +128,7 @@ build
   .allowExcessArguments(true)
   .exitOverride()
   .action(async (brief: string, options: { output?: string }, cmd: Cmd) => {
-    await agentBuildPipe(brief, { ...options, runner: getRunner(cmd), directory: getDirectory(cmd) });
+    await agentBuildPipe(brief, { ...options, runner: getRunner(cmd), libraryDir: getLibraryDirs(cmd) });
   });
 
 const buildRunnerCmd = build
@@ -141,7 +146,7 @@ buildRunnerCmd
   .allowExcessArguments(true)
   .exitOverride()
   .action(async (name: string, options: { pipe?: string; output?: string }, cmd: Cmd) => {
-    await agentBuildRunnerMethod(name, { ...options, runner: getRunner(cmd), directory: getDirectory(cmd) });
+    await agentBuildRunnerMethod(name, { ...options, runner: getRunner(cmd), libraryDir: getLibraryDirs(cmd) });
   });
 
 buildRunnerCmd
@@ -154,7 +159,7 @@ buildRunnerCmd
   .allowExcessArguments(true)
   .exitOverride()
   .action(async (target: string, options: { pipe?: string; output?: string }, cmd: Cmd) => {
-    await agentBuildRunnerPipe(target, { ...options, runner: getRunner(cmd), directory: getDirectory(cmd) });
+    await agentBuildRunnerPipe(target, { ...options, runner: getRunner(cmd), libraryDir: getLibraryDirs(cmd) });
   });
 
 const buildInputsCmd = build
@@ -171,7 +176,7 @@ buildInputsCmd
   .allowExcessArguments(true)
   .exitOverride()
   .action(async (name: string, options: { pipe?: string }, cmd: Cmd) => {
-    await agentBuildInputsMethod(name, { ...options, runner: getRunner(cmd), directory: getDirectory(cmd) });
+    await agentBuildInputsMethod(name, { ...options, runner: getRunner(cmd), libraryDir: getLibraryDirs(cmd) });
   });
 
 buildInputsCmd
@@ -183,7 +188,7 @@ buildInputsCmd
   .allowExcessArguments(true)
   .exitOverride()
   .action(async (target: string, options: { pipe?: string }, cmd: Cmd) => {
-    await agentBuildInputsPipe(target, { ...options, runner: getRunner(cmd), directory: getDirectory(cmd) });
+    await agentBuildInputsPipe(target, { ...options, runner: getRunner(cmd), libraryDir: getLibraryDirs(cmd) });
   });
 
 const buildOutputCmd = build
@@ -201,7 +206,7 @@ buildOutputCmd
   .allowExcessArguments(true)
   .exitOverride()
   .action(async (name: string, options: { pipe?: string; format?: string }, cmd: Cmd) => {
-    await agentBuildOutputMethod(name, { ...options, runner: getRunner(cmd), directory: getDirectory(cmd) });
+    await agentBuildOutputMethod(name, { ...options, runner: getRunner(cmd), libraryDir: getLibraryDirs(cmd) });
   });
 
 buildOutputCmd
@@ -214,7 +219,7 @@ buildOutputCmd
   .allowExcessArguments(true)
   .exitOverride()
   .action(async (target: string, options: { pipe?: string; format?: string }, cmd: Cmd) => {
-    await agentBuildOutputPipe(target, { ...options, runner: getRunner(cmd), directory: getDirectory(cmd) });
+    await agentBuildOutputPipe(target, { ...options, runner: getRunner(cmd), libraryDir: getLibraryDirs(cmd) });
   });
 
 // ── mthds-agent validate method|pipe ────────────────────────────────────
@@ -233,7 +238,7 @@ validateCmd
   .allowExcessArguments(true)
   .exitOverride()
   .action(async (name: string, options: { pipe?: string }, cmd: Cmd) => {
-    await agentValidateMethod(name, { ...options, runner: getRunner(cmd), directory: getDirectory(cmd) });
+    await agentValidateMethod(name, { ...options, runner: getRunner(cmd), libraryDir: getLibraryDirs(cmd) });
   });
 
 validateCmd
@@ -244,7 +249,7 @@ validateCmd
   .description("Validate a pipe by code or bundle file (.mthds)")
   .exitOverride()
   .action(async (target: string, options: { pipe?: string; bundle?: string }, cmd: Cmd) => {
-    await agentValidatePipe(target, { ...options, runner: getRunner(cmd), directory: getDirectory(cmd) });
+    await agentValidatePipe(target, { ...options, runner: getRunner(cmd), libraryDir: getLibraryDirs(cmd) });
   });
 
 // ── mthds-agent install [address] ────────────────────────────────────

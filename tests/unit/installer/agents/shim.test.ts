@@ -69,4 +69,28 @@ describe("generateShim", () => {
     expect(content).toContain("/new/path");
     expect(content).not.toContain("/old/path");
   });
+
+  it("prevents shell injection via single-quoted installDir", () => {
+    const maliciousDir = '/path/to/$(whoami)/methods';
+    generateShim("safe-method", maliciousDir);
+
+    const shimPath = join(tempHome, ".mthds", "bin", "safe-method");
+    const content = readFileSync(shimPath, "utf-8");
+
+    // Must use single quotes around the path (no shell expansion)
+    expect(content).toContain(`-L '${maliciousDir}'`);
+    // Must NOT have $(whoami) inside double quotes
+    expect(content).not.toMatch(/"[^"]*\$\(whoami\)[^"]*"/);
+  });
+
+  it("escapes single quotes in installDir", () => {
+    const dirWithQuote = "/path/it's/here";
+    generateShim("quote-method", dirWithQuote);
+
+    const shimPath = join(tempHome, ".mthds", "bin", "quote-method");
+    const content = readFileSync(shimPath, "utf-8");
+
+    // Single quotes must be escaped with the '\'' pattern
+    expect(content).toContain("-L '/path/it'\\''s/here'");
+  });
 });

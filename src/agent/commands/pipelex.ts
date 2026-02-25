@@ -8,7 +8,6 @@ import { Command } from "commander";
 import { passthrough } from "../passthrough.js";
 
 const PIPELEX_COMMANDS = [
-  "run",
   "validate",
   "inputs",
   "concept",
@@ -17,6 +16,8 @@ const PIPELEX_COMMANDS = [
   "models",
   "doctor",
 ] as const;
+
+const PIPELEX_RUN_SUBCOMMANDS = ["pipe", "method"] as const;
 
 export function registerPipelexCommands(program: Command, logLevelArgs: () => string[]): void {
   const pipelexGroup = program
@@ -35,6 +36,28 @@ export function registerPipelexCommands(program: Command, logLevelArgs: () => st
       .action((_options: Record<string, unknown>, cmd: Command) => {
         const remaining = cmd.args;
         passthrough("pipelex-agent", [...logLevelArgs(), subcmd, ...remaining]);
+      });
+  }
+
+  // Register `run` as a sub-group with `pipe` and `method` subcommands:
+  //   mthds-agent pipelex run pipe <args> -> pipelex-agent run pipe <args>
+  //   mthds-agent pipelex run method <args> -> pipelex-agent run method <args>
+  const runGroup = pipelexGroup
+    .command("run")
+    .description("Forward to pipelex-agent run (pipe or method)")
+    .passThroughOptions()
+    .allowUnknownOption();
+
+  for (const runSub of PIPELEX_RUN_SUBCOMMANDS) {
+    runGroup
+      .command(runSub)
+      .description(`Forward to pipelex-agent run ${runSub}`)
+      .allowUnknownOption()
+      .allowExcessArguments(true)
+      .passThroughOptions()
+      .action((_options: Record<string, unknown>, cmd: Command) => {
+        const remaining = cmd.args;
+        passthrough("pipelex-agent", [...logLevelArgs(), "run", runSub, ...remaining]);
       });
   }
 }

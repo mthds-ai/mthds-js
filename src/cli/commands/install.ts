@@ -1,4 +1,4 @@
-import { join, dirname, resolve, sep } from "node:path";
+import { join, dirname, resolve, sep, delimiter } from "node:path";
 import { homedir } from "node:os";
 import { mkdirSync, writeFileSync, existsSync } from "node:fs";
 import { exec } from "node:child_process";
@@ -18,6 +18,14 @@ import { generateShim } from "../../installer/agents/registry.js";
 import type { ResolvedRepo } from "../../package/manifest/types.js";
 
 type InstallLocation = "project" | "global";
+
+function getShellRcFile(): string {
+  const shell = process.env.SHELL ?? "";
+  if (shell.endsWith("/zsh")) return "~/.zshrc";
+  if (shell.endsWith("/bash")) return "~/.bashrc";
+  if (shell.endsWith("/fish")) return "~/.config/fish/config.fish";
+  return "your shell profile";
+}
 
 export async function installMethod(options: {
   address?: string;
@@ -203,10 +211,11 @@ export async function installMethod(options: {
 
   // PATH advisory for CLI shims
   const shimBinDir = join(homedir(), ".mthds", "bin");
-  if (existsSync(shimBinDir) && !process.env.PATH?.split(":").includes(shimBinDir)) {
+  if (existsSync(shimBinDir) && !process.env.PATH?.split(delimiter).includes(shimBinDir)) {
+    const rcFile = getShellRcFile();
     p.log.warning(
       `Add ${shimBinDir} to your PATH to use methods as CLI commands:\n` +
-      `  echo 'export PATH="${shimBinDir}:$PATH"' >> ~/.zshrc && source ~/.zshrc`
+      `  echo 'export PATH="${shimBinDir}:$PATH"' >> ${rcFile} && source ${rcFile}`
     );
   }
 

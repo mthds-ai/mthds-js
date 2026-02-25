@@ -16,9 +16,10 @@ export function generateShim(slug: string, installDir: string): void {
   mkdirSync(binDir, { recursive: true });
 
   const shimPath = join(binDir, slug);
+  const escapedDir = installDir.replace(/'/g, "'\\''");
   const shimContent = [
     "#!/bin/sh",
-    `exec pipelex-agent run pipe "$@" -L ${JSON.stringify(installDir)}`,
+    `exec pipelex-agent run pipe "$@" -L '${escapedDir}'`,
     "",
   ].join("\n");
 
@@ -27,9 +28,10 @@ export function generateShim(slug: string, installDir: string): void {
   // On Windows, also generate a .cmd shim
   if (process.platform === "win32") {
     const cmdPath = join(binDir, `${slug}.cmd`);
+    const cmdEscapedDir = installDir.replace(/%/g, "%%").replace(/"/g, '""');
     const cmdContent = [
       "@echo off",
-      `pipelex-agent run pipe %* -L ${JSON.stringify(installDir)}`,
+      `pipelex-agent run pipe %* -L "${cmdEscapedDir}"`,
       "",
     ].join("\r\n");
     writeFileSync(cmdPath, cmdContent, "utf-8");

@@ -13,7 +13,6 @@ import { resolve } from "node:path";
 import { agentError, AGENT_ERROR_DOMAINS } from "./agent/output.js";
 import { registerPipelexCommands } from "./agent/commands/pipelex.js";
 import { registerPlxtCommands } from "./agent/commands/plxt.js";
-import { agentRunMethod, agentRunPipe } from "./agent/commands/run.js";
 import {
   agentBuildPipe,
   agentBuildRunnerMethod,
@@ -65,51 +64,6 @@ program
   .exitOverride()
   .configureOutput({
     writeErr: () => {},
-  });
-
-// ── mthds-agent run method|pipe ──────────────────────────────────────────
-
-const run = program
-  .command("run")
-  .description("Execute a pipeline")
-  .exitOverride();
-
-run
-  .command("method")
-  .argument("<name>", "Name of the installed method")
-  .option("--pipe <code>", "Pipe code (overrides method's main_pipe)")
-  .option("-i, --inputs <file>", "Path to JSON inputs file")
-  .option("-o, --output <file>", "Path to save output JSON")
-  .option("--no-output", "Skip saving output to file")
-  .description("Run an installed method by name")
-  .allowUnknownOption()
-  .allowExcessArguments(true)
-  .exitOverride()
-  .action(async (name: string, options: Record<string, string | boolean | undefined>, cmd: Cmd) => {
-    await agentRunMethod(name, {
-      ...options,
-      runner: getRunner(cmd),
-      libraryDir: getLibraryDirs(cmd),
-    } as Parameters<typeof agentRunMethod>[1]);
-  });
-
-run
-  .command("pipe")
-  .argument("<target>", "Pipe code or .mthds bundle file")
-  .option("--pipe <code>", "Pipe code (when target is a bundle)")
-  .option("-i, --inputs <file>", "Path to JSON inputs file")
-  .option("-o, --output <file>", "Path to save output JSON")
-  .option("--no-output", "Skip saving output to file")
-  .description("Run a pipe by code or bundle file (.mthds)")
-  .allowUnknownOption()
-  .allowExcessArguments(true)
-  .exitOverride()
-  .action(async (target: string, options: Record<string, string | boolean | undefined>, cmd: Cmd) => {
-    await agentRunPipe(target, {
-      ...options,
-      runner: getRunner(cmd),
-      libraryDir: getLibraryDirs(cmd),
-    } as Parameters<typeof agentRunPipe>[1]);
   });
 
 // ── mthds-agent build <subcommand> ───────────────────────────────────

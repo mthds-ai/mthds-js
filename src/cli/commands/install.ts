@@ -1,6 +1,6 @@
 import { join, dirname, resolve } from "node:path";
 import { homedir } from "node:os";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, writeFileSync, existsSync } from "node:fs";
 import { exec } from "node:child_process";
 import { promisify } from "node:util";
 
@@ -14,6 +14,7 @@ import { printLogo } from "./index.js";
 import { parseAddress } from "../../installer/resolver/address.js";
 import { resolveFromGitHub } from "../../installer/resolver/github.js";
 import { resolveFromLocal } from "../../installer/resolver/local.js";
+import { generateShim } from "../../installer/agents/registry.js";
 import type { ResolvedRepo } from "../../package/manifest/types.js";
 
 type InstallLocation = "project" | "global";
@@ -187,6 +188,18 @@ export async function installMethod(options: {
       : `(${fileCount} .mthds file${fileCount > 1 ? "s" : ""})`;
 
     installSpinner.stop(`Installed "${method.slug}" to ${installDir} ${filesMsg}`);
+
+    // Generate CLI shim
+    generateShim(method.slug, installDir);
+  }
+
+  // PATH advisory for CLI shims
+  const shimBinDir = join(homedir(), ".mthds", "bin");
+  if (existsSync(shimBinDir) && !process.env.PATH?.split(":").includes(shimBinDir)) {
+    p.log.warning(
+      `Add ${shimBinDir} to your PATH to use methods as CLI commands:\n` +
+      `  echo 'export PATH="${shimBinDir}:$PATH"' >> ~/.zshrc && source ~/.zshrc`
+    );
   }
 
   // Step 4: Track telemetry only for public GitHub repositories

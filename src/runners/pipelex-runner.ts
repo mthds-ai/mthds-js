@@ -82,10 +82,10 @@ export class PipelexRunner implements Runner {
    * Run pipelex with stdout and stderr inherited (streamed to the terminal).
    * Use this for long-running or interactive commands.
    */
-  private async execStreaming(args: string[]): Promise<void> {
+  private async execStreaming(args: string[], inheritStdin = false): Promise<void> {
     return new Promise<void>((resolve, reject) => {
       const child = spawn("pipelex", [...this.libraryArgs(), ...args], {
-        stdio: ["ignore", "inherit", "inherit"],
+        stdio: [inheritStdin ? "inherit" : "ignore", "inherit", "inherit"],
       });
       child.on("error", (err) =>
         reject(new Error(`pipelex not found: ${err.message}`))
@@ -107,7 +107,7 @@ export class PipelexRunner implements Runner {
   }
 
   async runPassthrough(rawArgs: string[]): Promise<void> {
-    await this.execStreaming(["run", ...rawArgs]);
+    await this.execStreaming(["run", ...rawArgs], true);
   }
 
   async validatePassthrough(rawArgs: string[]): Promise<void> {

@@ -5,7 +5,7 @@
 
 import { join } from "node:path";
 import { homedir } from "node:os";
-import { mkdirSync } from "node:fs";
+import { mkdirSync, existsSync } from "node:fs";
 import { exec } from "node:child_process";
 import { promisify } from "node:util";
 import { agentSuccess, agentError, AGENT_ERROR_DOMAINS } from "../output.js";
@@ -229,11 +229,18 @@ export async function agentInstall(
 
   await shutdown();
 
+  const shimDir = join(homedir(), ".mthds", "bin");
+  const shimsGenerated = existsSync(shimDir)
+    ? resolved.methods.map((m) => m.slug)
+    : [];
+
   agentSuccess({
     success: true,
     installed_methods: resolved.methods.map((m) => m.slug),
     location: selectedLocation,
     target_dir: targetDir,
     installed_skills: installedSkills,
+    shim_dir: shimDir,
+    shims_generated: shimsGenerated,
   });
 }

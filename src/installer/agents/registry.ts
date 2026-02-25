@@ -1,28 +1,49 @@
-import type { Agent, AgentHandler } from "./types.js";
-import { claudeCodeHandler } from "./claude-code.js";
-import { cursorHandler } from "./cursor.js";
-import { windsurfHandler } from "./windsurf.js";
-import { githubCopilotHandler } from "./github-copilot.js";
+import { join, resolve, dirname, sep } from "node:path";
+import { mkdirSync, writeFileSync } from "node:fs";
+import type { Agent, AgentHandler, InstallMethodOptions } from "./types.js";
 
-const handlers: ReadonlyMap<Agent, AgentHandler> = new Map([
-  [claudeCodeHandler.id, claudeCodeHandler],
-  [cursorHandler.id, cursorHandler],
-  [windsurfHandler.id, windsurfHandler],
-  [githubCopilotHandler.id, githubCopilotHandler],
-]);
+function writeMethodFiles(options: InstallMethodOptions): void {
+  const { repo, targetDir } = options;
+  mkdirSync(targetDir, { recursive: true });
+
+  for (const method of repo.methods) {
+    const installDir = resolve(join(targetDir, method.slug));
+    mkdirSync(installDir, { recursive: true });
+
+    writeFileSync(join(installDir, "METHODS.toml"), method.rawManifest, "utf-8");
+
+    for (const file of method.files) {
+      const filePath = resolve(join(installDir, file.relativePath));
+      if (!filePath.startsWith(installDir + sep)) {
+        throw new Error(`Path traversal detected: "${file.relativePath}" escapes install directory.`);
+      }
+      mkdirSync(dirname(filePath), { recursive: true });
+      writeFileSync(filePath, file.content, "utf-8");
+    }
+  }
+}
+
+const defaultHandler: (id: Agent) => AgentHandler = (id) => ({
+  id,
+  async installMethod(options: InstallMethodOptions): Promise<void> {
+    writeMethodFiles(options);
+  },
+});
+
+const handlers: Record<Agent, AgentHandler> = {
+  "claude-code": defaultHandler("claude-code"),
+  cursor: defaultHandler("cursor"),
+  codex: defaultHandler("codex"),
+};
+
+export function getAllAgents(): AgentHandler[] {
+  return Object.values(handlers);
+}
 
 export function getAgentHandler(agent: Agent): AgentHandler {
-  const handler = handlers.get(agent);
+  const handler = handlers[agent];
   if (!handler) {
-    throw new Error(`No handler registered for agent: ${agent}`);
+    throw new Error(`Unknown agent: ${agent}`);
   }
   return handler;
-}
-
-export function getAllAgents(): readonly AgentHandler[] {
-  return [...handlers.values()];
-}
-
-export function getSupportedAgents(): readonly AgentHandler[] {
-  return getAllAgents().filter((h) => h.supported);
 }

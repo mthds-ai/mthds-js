@@ -3,7 +3,6 @@ export type {
   PackageSection,
   ExportNode,
   Exports,
-  PackageDependency,
   MethodsManifest,
   MethodsFile,
   PackageSource,

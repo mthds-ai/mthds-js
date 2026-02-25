@@ -74,33 +74,6 @@ pipes = ["extract_clause", "analyze_nda"]
     expect(contracts.pipes).toEqual(["extract_clause", "analyze_nda"]);
   });
 
-  it("accepts dependencies", () => {
-    const raw = toml(`
-[dependencies]
-docproc = { address = "github.com/mthds/document-processing", version = "^1.0.0" }
-`);
-    const r = validateManifest(raw);
-    expect(r.valid).toBe(true);
-    expect(r.manifest!.dependencies!["docproc"]).toEqual({
-      address: "github.com/mthds/document-processing",
-      version: "^1.0.0",
-    });
-  });
-
-  it("accepts dependency with path", () => {
-    const raw = toml(`
-[dependencies]
-scoring = { address = "github.com/mthds/scoring-lib", version = "^0.5.0", path = "../scoring-lib" }
-`);
-    const r = validateManifest(raw);
-    expect(r.valid).toBe(true);
-    expect(r.manifest!.dependencies!["scoring"]).toEqual({
-      address: "github.com/mthds/scoring-lib",
-      version: "^0.5.0",
-      path: "../scoring-lib",
-    });
-  });
-
   it("accepts complete example from spec", () => {
     const raw = `
 [package]
@@ -111,9 +84,6 @@ display_name  = "Legal Tools"
 authors       = ["ACME <legal@acme.com>"]
 license       = "MIT"
 mthds_version = ">=1.0.0"
-
-[dependencies]
-docproc = { address = "github.com/mthds/document-processing", version = "^1.0.0" }
 
 [exports.legal]
 pipes = ["classify_document"]
@@ -314,63 +284,15 @@ pipes = ["BadName"]
     );
   });
 
-  it("rejects non-snake_case dependency alias", () => {
+  it("rejects any dependencies section with generic error", () => {
     const raw = toml(`
 [dependencies]
-BadAlias = { address = "github.com/a/b", version = "1.0.0" }
+dep = { address = "github.com/a/b", version = "1.0.0" }
 `);
     const r = validateManifest(raw);
     expect(r.valid).toBe(false);
     expect(r.errors).toContainEqual(
-      expect.stringContaining('"BadAlias"] alias must be snake_case')
-    );
-  });
-
-  it("rejects dependency missing address", () => {
-    const raw = toml(`
-[dependencies]
-dep = { version = "1.0.0" }
-`);
-    const r = validateManifest(raw);
-    expect(r.valid).toBe(false);
-    expect(r.errors).toContainEqual(
-      expect.stringContaining('[dependencies."dep".address]')
-    );
-  });
-
-  it("rejects dependency missing version", () => {
-    const raw = toml(`
-[dependencies]
-dep = { address = "github.com/a/b" }
-`);
-    const r = validateManifest(raw);
-    expect(r.valid).toBe(false);
-    expect(r.errors).toContainEqual(
-      expect.stringContaining('[dependencies."dep".version]')
-    );
-  });
-
-  it("rejects dependency with empty path", () => {
-    const raw = toml(`
-[dependencies]
-dep = { address = "github.com/a/b", version = "^1.0.0", path = "" }
-`);
-    const r = validateManifest(raw);
-    expect(r.valid).toBe(false);
-    expect(r.errors).toContainEqual(
-      expect.stringContaining('[dependencies."dep".path] must be a non-empty string')
-    );
-  });
-
-  it("rejects dependency with non-string path", () => {
-    const raw = toml(`
-[dependencies]
-dep = { address = "github.com/a/b", version = "^1.0.0", path = 42 }
-`);
-    const r = validateManifest(raw);
-    expect(r.valid).toBe(false);
-    expect(r.errors).toContainEqual(
-      expect.stringContaining('[dependencies."dep".path] must be a non-empty string')
+      expect.stringContaining("not supported")
     );
   });
 

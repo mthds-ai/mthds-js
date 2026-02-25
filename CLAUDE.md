@@ -49,7 +49,6 @@ src/
 │   └── exceptions.ts               # Package error types
 └── installer/                      # JS-only: method installation
     ├── resolver/                   # GitHub/local method resolution
-    ├── agents/                     # AI agent handlers
     ├── telemetry/                  # PostHog tracking
     └── runtime/                    # Pipelex installer
 ```

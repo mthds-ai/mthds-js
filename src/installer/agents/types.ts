@@ -1,22 +1,14 @@
-export const Agent = {
-  ClaudeCode: "claude-code",
-  Cursor: "cursor",
-  Windsurf: "windsurf",
-  GithubCopilot: "github-copilot",
-} as const;
+import type { ResolvedRepo } from "../../package/manifest/types.js";
 
-export type Agent = (typeof Agent)[keyof typeof Agent];
+export type Agent = "claude-code" | "cursor" | "codex";
 
-export const InstallLocation = {
-  Local: "local",
-  Global: "global",
-} as const;
+export enum InstallLocation {
+  Local = "local",
+  Global = "global",
+}
 
-export type InstallLocation =
-  (typeof InstallLocation)[keyof typeof InstallLocation];
-
-export interface InstallContext {
-  readonly repo: import("../../package/manifest/types.js").ResolvedRepo;
+export interface InstallMethodOptions {
+  readonly repo: ResolvedRepo;
   readonly agent: Agent;
   readonly location: InstallLocation;
   readonly targetDir: string;
@@ -24,8 +16,5 @@ export interface InstallContext {
 
 export interface AgentHandler {
   readonly id: Agent;
-  readonly label: string;
-  readonly supported: boolean;
-  readonly hint?: string;
-  installMethod(ctx: InstallContext): Promise<void>;
+  installMethod(options: InstallMethodOptions): Promise<void>;
 }

@@ -13,18 +13,18 @@ interface RunOptions {
   output?: string;
   prettyPrint?: boolean;
   runner?: RunnerType;
-  directory?: string;
+  libraryDir?: string[];
 }
 
-export async function runPipeline(
-  target: string,
+export async function runMethod(
+  name: string,
   options: RunOptions
 ): Promise<void> {
   printLogo();
-  p.intro("mthds run");
+  p.intro("mthds run method");
 
-  const libraryDirs = options.directory
-    ? [resolve(options.directory)]
+  const libraryDirs = options.libraryDir?.length
+    ? options.libraryDir
     : undefined;
   const runner = createRunner(options.runner, libraryDirs);
 
@@ -41,7 +41,37 @@ export async function runPipeline(
     return;
   }
 
-  const packageDir = options.directory ? resolve(options.directory) : process.cwd();
+  p.log.error("Method target is not yet supported for the API runner. Use 'mthds run pipe <target>' instead.\nYou can also specify a different runner with --runner <name>, or change the default with 'mthds set-default runner <name>'.");
+  p.outro("");
+  process.exit(1);
+}
+
+export async function runPipe(
+  target: string,
+  options: RunOptions
+): Promise<void> {
+  printLogo();
+  p.intro("mthds run pipe");
+
+  const libraryDirs = options.libraryDir?.length
+    ? options.libraryDir
+    : undefined;
+  const runner = createRunner(options.runner, libraryDirs);
+
+  if (isPipelexRunner(runner)) {
+    p.log.step("Running via pipelex...");
+    try {
+      await runner.runPassthrough(extractPassthroughArgs("run", 1));
+      p.outro("Done");
+    } catch (err) {
+      p.log.error((err as Error).message);
+      p.outro("");
+      process.exit(1);
+    }
+    return;
+  }
+
+  const packageDir = options.libraryDir?.length ? options.libraryDir[0]! : process.cwd();
   const resolvedTarget = target.startsWith("/") ? target : resolve(packageDir, target);
   const isBundle = resolvedTarget.endsWith(".mthds");
 

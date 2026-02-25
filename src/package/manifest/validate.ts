@@ -1,5 +1,7 @@
 import { parse } from "smol-toml";
 import type { MethodsManifest, ExportNode, Exports } from "./types.js";
+import { METHOD_NAME_RE } from "./schema.js";
+import { isPipeCodeValid } from "./validation.js";
 
 export interface ValidationResult {
   readonly valid: boolean;
@@ -160,6 +162,28 @@ export function validateManifest(raw: string): ValidationResult {
     }
   }
 
+  // package.name (optional)
+  if (pkg["name"] !== undefined) {
+    if (typeof pkg["name"] !== "string") {
+      errors.push('[package.name] must be a string.');
+    } else if (!METHOD_NAME_RE.test(pkg["name"] as string)) {
+      errors.push(
+        `[package.name] "${pkg["name"]}" is invalid: must be 2-25 lowercase chars (letters, digits, hyphens, underscores), starting with a letter.`
+      );
+    }
+  }
+
+  // package.main_pipe (optional)
+  if (pkg["main_pipe"] !== undefined) {
+    if (typeof pkg["main_pipe"] !== "string") {
+      errors.push('[package.main_pipe] must be a string.');
+    } else if (!isPipeCodeValid(pkg["main_pipe"] as string)) {
+      errors.push(
+        `[package.main_pipe] "${pkg["main_pipe"]}" must be a valid snake_case pipe code.`
+      );
+    }
+  }
+
   // --- [exports] section (optional, hierarchical) ---
   const exports = parsed["exports"] as Record<string, unknown> | undefined;
   if (exports && typeof exports === "object") {
@@ -175,44 +199,9 @@ export function validateManifest(raw: string): ValidationResult {
     }
   }
 
-  // --- [dependencies] section (optional) ---
-  const deps = parsed["dependencies"] as Record<string, unknown> | undefined;
-  if (deps && typeof deps === "object") {
-    for (const [alias, dep] of Object.entries(deps)) {
-      if (!SNAKE_CASE_RE.test(alias)) {
-        errors.push(
-          `[dependencies."${alias}"] alias must be snake_case.`
-        );
-      }
-
-      const d = dep as Record<string, unknown> | undefined;
-      if (!d || typeof d !== "object") {
-        errors.push(
-          `[dependencies."${alias}"] must be a table with address and version.`
-        );
-        continue;
-      }
-
-      if (typeof d["address"] !== "string" || !d["address"]) {
-        errors.push(
-          `[dependencies."${alias}".address] is required.`
-        );
-      }
-
-      if (typeof d["version"] !== "string" || !d["version"]) {
-        errors.push(
-          `[dependencies."${alias}".version] is required.`
-        );
-      }
-
-      if (d["path"] !== undefined) {
-        if (typeof d["path"] !== "string" || !d["path"]) {
-          errors.push(
-            `[dependencies."${alias}".path] must be a non-empty string.`
-          );
-        }
-      }
-    }
+  // --- [dependencies] section — not allowed ---
+  if (parsed["dependencies"] !== undefined) {
+    errors.push('[dependencies] section is not supported. Dependencies have been removed from the MTHDS standard.');
   }
 
   if (errors.length > 0) {
@@ -224,16 +213,17 @@ export function validateManifest(raw: string): ValidationResult {
     address: pkg["address"] as string,
     version: pkg["version"] as string,
     description: pkg["description"] as string,
+    ...(pkg["name"] !== undefined ? { name: pkg["name"] as string } : {}),
     ...(pkg["display_name"] !== undefined ? { display_name: pkg["display_name"] as string } : {}),
     ...(pkg["authors"] !== undefined ? { authors: pkg["authors"] as string[] } : {}),
     ...(pkg["license"] !== undefined ? { license: pkg["license"] as string } : {}),
     ...(pkg["mthds_version"] !== undefined ? { mthds_version: pkg["mthds_version"] as string } : {}),
+    ...(pkg["main_pipe"] !== undefined ? { main_pipe: pkg["main_pipe"] as string } : {}),
   };
 
   const manifest: MethodsManifest = {
     package: manifestPkg,
     ...(exports ? { exports: exports as Exports } : {}),
-    ...(deps ? { dependencies: deps as MethodsManifest["dependencies"] } : {}),
   };
 
   return { valid: true, errors: [], manifest };

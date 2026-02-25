@@ -1,6 +1,6 @@
-import { join } from "node:path";
+import { join, dirname, resolve, sep } from "node:path";
 import { homedir } from "node:os";
-import { mkdirSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { exec } from "node:child_process";
 import { promisify } from "node:util";
 
@@ -11,13 +11,12 @@ import { isPipelexInstalled } from "../../installer/runtime/check.js";
 import { ensureRuntime } from "../../installer/runtime/installer.js";
 import { trackInstall, shutdown } from "../../installer/telemetry/posthog.js";
 import { printLogo } from "./index.js";
-import type { Agent, InstallLocation } from "../../installer/agents/types.js";
-import { InstallLocation as Loc } from "../../installer/agents/types.js";
-import { getAllAgents, getAgentHandler } from "../../installer/agents/registry.js";
 import { parseAddress } from "../../installer/resolver/address.js";
 import { resolveFromGitHub } from "../../installer/resolver/github.js";
 import { resolveFromLocal } from "../../installer/resolver/local.js";
 import type { ResolvedRepo } from "../../package/manifest/types.js";
+
+type InstallLocation = "project" | "global";
 
 export async function installMethod(options: {
   address?: string;
@@ -94,7 +93,7 @@ export async function installMethod(options: {
     resolved = { ...resolved, methods: [match] };
   }
 
-  // Display summary
+  // Step 1: Display summary
   const validCount = resolved.methods.length;
   const skippedCount = resolved.skipped.length;
   const totalCount = validCount + skippedCount;
@@ -133,39 +132,20 @@ export async function installMethod(options: {
     process.exit(1);
   }
 
-  // Step 1: Which AI agent?
-  const agents = getAllAgents();
-  const agentOptions = agents.map((a) => ({
-    value: a.id,
-    label: a.label,
-    hint: a.supported ? undefined : (a.hint ?? "not supported"),
-    disabled: !a.supported,
-  }));
-
-  const selectedAgent = await p.select<Agent>({
-    message: "Which AI agent do you want to install these methods for?",
-    options: agentOptions,
-  });
-
-  if (p.isCancel(selectedAgent)) {
-    p.cancel("Installation cancelled.");
-    process.exit(0);
-  }
-
-  // Step 2: Local or global?
-  const localDir = join(process.cwd(), ".claude", "methods");
-  const globalDir = join(homedir(), ".claude", "methods");
+  // Step 2: Install location (project-local or global)
+  const projectDir = join(process.cwd(), ".mthds", "methods");
+  const globalDir = join(homedir(), ".mthds", "methods");
 
   const selectedLocation = await p.select<InstallLocation>({
     message: "Where do you want to install these methods?",
     options: [
       {
-        value: Loc.Local,
-        label: "Local",
-        hint: localDir,
+        value: "project" as const,
+        label: "Project",
+        hint: projectDir,
       },
       {
-        value: Loc.Global,
+        value: "global" as const,
         label: "Global",
         hint: globalDir,
       },
@@ -177,7 +157,58 @@ export async function installMethod(options: {
     process.exit(0);
   }
 
-  // Step 3: Optional runner install
+  // Step 3: Write methods
+  const targetDir = selectedLocation === "global" ? globalDir : projectDir;
+  mkdirSync(targetDir, { recursive: true });
+
+  const installSpinner = p.spinner();
+  for (const method of resolved.methods) {
+    const installDir = resolve(join(targetDir, method.slug));
+    installSpinner.start(`Installing "${method.slug}" to ${installDir}...`);
+
+    mkdirSync(installDir, { recursive: true });
+
+    // Write METHODS.toml (verbatim raw string)
+    writeFileSync(join(installDir, "METHODS.toml"), method.rawManifest, "utf-8");
+
+    // Write all .mthds files, preserving directory structure
+    for (const file of method.files) {
+      const filePath = resolve(join(installDir, file.relativePath));
+      if (!filePath.startsWith(installDir + sep)) {
+        throw new Error(`Path traversal detected: "${file.relativePath}" escapes install directory.`);
+      }
+      mkdirSync(dirname(filePath), { recursive: true });
+      writeFileSync(filePath, file.content, "utf-8");
+    }
+
+    const fileCount = method.files.length;
+    const filesMsg = fileCount === 0
+      ? "(manifest only)"
+      : `(${fileCount} .mthds file${fileCount > 1 ? "s" : ""})`;
+
+    installSpinner.stop(`Installed "${method.slug}" to ${installDir} ${filesMsg}`);
+  }
+
+  // Step 4: Track telemetry only for public GitHub repositories
+  if (resolved.source === "github" && resolved.isPublic) {
+    for (const method of resolved.methods) {
+      const pkg = method.manifest.package;
+      trackInstall({
+        address: orgRepo ?? pkg.address.replace(/^github\.com\//, ""),
+        slug: method.slug,
+        version: pkg.version,
+        description: pkg.description,
+        display_name: pkg.display_name,
+        authors: pkg.authors,
+        license: pkg.license,
+        mthds_version: pkg.mthds_version,
+        exports: method.manifest.exports,
+        manifest_raw: method.rawManifest,
+      });
+    }
+  }
+
+  // Step 5: Optional pipelex runner install
   let hasPipelex = isPipelexInstalled();
 
   const wantsRunner = await p.confirm({
@@ -200,52 +231,11 @@ export async function installMethod(options: {
     }
   }
 
-  // Step 4: Install all valid methods via the agent handler
-  const targetDir =
-    selectedLocation === Loc.Global ? globalDir : localDir;
-
-  mkdirSync(targetDir, { recursive: true });
-
-  const handler = getAgentHandler(selectedAgent);
-
-  // Track telemetry only for public GitHub repositories
-  if (resolved.source === "github" && resolved.isPublic) {
-    for (const method of resolved.methods) {
-      const pkg = method.manifest.package;
-      trackInstall({
-        address: orgRepo ?? pkg.address.replace(/^github\.com\//, ""),
-        slug: method.slug,
-        version: pkg.version,
-        description: pkg.description,
-        display_name: pkg.display_name,
-        authors: pkg.authors,
-        license: pkg.license,
-        mthds_version: pkg.mthds_version,
-        exports: method.manifest.exports,
-        dependencies: method.manifest.dependencies,
-        manifest_raw: method.rawManifest,
-      });
-    }
-  }
-
-  await handler.installMethod({
-    repo: resolved,
-    agent: selectedAgent,
-    location: selectedLocation,
-    targetDir,
-  });
-
-  // Step 5: Optional Pipelex skills (only if user chose to install the runner)
-  if (!wantsRunner) {
-    p.outro("Done");
-    await shutdown();
-    return;
-  }
-
+  // Step 6: Optional MTHDS skills
   const SKILLS_REPO = "https://github.com/mthds-ai/skills";
 
   const wantsSkills = await p.confirm({
-    message: "Do you want to install the MTHDS skills plugin?",
+    message: "Do you want to install the MTHDS skills?",
     initialValue: true,
   });
 
@@ -255,15 +245,42 @@ export async function installMethod(options: {
   }
 
   if (wantsSkills) {
-    const globalFlag = selectedLocation === Loc.Global ? " -g" : "";
-    const locationLabel = selectedLocation === Loc.Global ? "globally" : "locally";
+    const skillsLocation = await p.select<string>({
+      message: "Where should the skills be installed?",
+      options: [
+        { value: "global", label: "Global", hint: "Available everywhere" },
+        { value: "project", label: "Project", hint: "Current project only" },
+      ],
+    });
+
+    if (p.isCancel(skillsLocation)) {
+      p.cancel("Installation cancelled.");
+      process.exit(0);
+    }
+
+    const selectedAgent = await p.select<string>({
+      message: "Which agent should the skills be installed for?",
+      options: [
+        { value: "claude-code", label: "Claude Code" },
+        { value: "cursor", label: "Cursor" },
+        { value: "codex", label: "Codex" },
+      ],
+    });
+
+    if (p.isCancel(selectedAgent)) {
+      p.cancel("Installation cancelled.");
+      process.exit(0);
+    }
+
+    const globalFlag = skillsLocation === "global" ? " -g" : "";
+    const locationLabel = skillsLocation === "global" ? "globally" : "locally";
     const sk = p.spinner();
-    sk.start(`Installing MTHDS skills ${locationLabel}...`);
+    sk.start(`Installing MTHDS skills ${locationLabel} for ${selectedAgent}...`);
     try {
       await execAsync(`npx skills add ${SKILLS_REPO} --skill '*' --agent ${selectedAgent}${globalFlag} -y`, {
         cwd: process.cwd(),
       });
-      sk.stop(`MTHDS skills installed ${locationLabel}.`);
+      sk.stop(`MTHDS skills installed ${locationLabel} for ${selectedAgent}.`);
     } catch {
       sk.stop("Failed to install MTHDS skills.");
       p.log.warning(`Could not install MTHDS skills. You can retry manually:\n  npx skills add ${SKILLS_REPO} --skill '*' --agent ${selectedAgent}${globalFlag}`);

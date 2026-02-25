@@ -10,7 +10,7 @@ import { isPipelexRunner } from "../../cli/commands/utils.js";
 import type { Runner, RunnerType } from "../../runners/types.js";
 import type { ExecutePipelineOptions } from "../../client/pipeline.js";
 
-/** Extract raw args after `run`, filtering out --runner, -d/--directory, and --log-level */
+/** Extract raw args after `run`, filtering out --runner, -L/--library-dir, and --log-level */
 function extractPassthroughArgs(): string[] {
   const argv = process.argv;
   const runIdx = argv.indexOf("run");
@@ -21,14 +21,14 @@ function extractPassthroughArgs(): string[] {
   while (i < raw.length) {
     if (
       raw[i] === "--runner" ||
-      raw[i] === "-d" ||
-      raw[i] === "--directory" ||
+      raw[i] === "-L" ||
+      raw[i] === "--library-dir" ||
       raw[i] === "--log-level"
     ) {
       i += 2; // skip flag + value
     } else if (
       raw[i]!.startsWith("--runner=") ||
-      raw[i]!.startsWith("--directory=") ||
+      raw[i]!.startsWith("--library-dir=") ||
       raw[i]!.startsWith("--log-level=")
     ) {
       i += 1; // skip combined flag=value
@@ -45,15 +45,54 @@ interface AgentRunOptions {
   inputs?: string;
   output?: string;
   runner?: RunnerType;
-  directory?: string;
+  libraryDir?: string[];
 }
 
-export async function agentRun(
+export async function agentRunMethod(
+  name: string,
+  options: AgentRunOptions
+): Promise<void> {
+  const libraryDirs = options.libraryDir?.length
+    ? options.libraryDir
+    : undefined;
+
+  let runner: Runner;
+  try {
+    runner = createRunner(options.runner, libraryDirs);
+  } catch (err) {
+    agentError(
+      (err as Error).message,
+      "RunnerError",
+      { error_domain: AGENT_ERROR_DOMAINS.RUNNER }
+    );
+  }
+
+  if (isPipelexRunner(runner)) {
+    try {
+      await runner.runPassthrough(extractPassthroughArgs());
+    } catch (err) {
+      agentError(
+        (err as Error).message,
+        "PipelineError",
+        { error_domain: AGENT_ERROR_DOMAINS.PIPELINE }
+      );
+    }
+    return;
+  }
+
+  agentError(
+    "Method target is not yet supported for the API runner. Use 'mthds-agent run pipe <target>' instead, or specify a different runner with --runner <name>.",
+    "ArgumentError",
+    { error_domain: AGENT_ERROR_DOMAINS.ARGUMENT }
+  );
+}
+
+export async function agentRunPipe(
   target: string,
   options: AgentRunOptions
 ): Promise<void> {
-  const libraryDirs = options.directory
-    ? [resolve(options.directory)]
+  const libraryDirs = options.libraryDir?.length
+    ? options.libraryDir
     : undefined;
 
   let runner: Runner;
@@ -81,8 +120,8 @@ export async function agentRun(
   }
 
   // API runner path
-  const packageDir = options.directory
-    ? resolve(options.directory)
+  const packageDir = options.libraryDir?.length
+    ? options.libraryDir[0]!
     : process.cwd();
   const resolvedTarget = target.startsWith("/")
     ? target

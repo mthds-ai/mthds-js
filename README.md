@@ -8,28 +8,26 @@ The MTHDS open standard is defined at [mthds.ai](https://mthds.ai). Browse and d
 
 A method is a packaged workflow that an AI agent (like Claude Code) can use. Methods are stored in a registry and installed locally via their unique name.
 
-## CLI Usage
+## Quick Start
+
+1. Browse methods on the hub at [mthds.sh](https://mthds.sh)
+
+2. Install a method:
+```bash
+mthds install org/repo --method my-method
+```
+
+3. Install a runner to execute methods. [Pipelex](https://github.com/Pipelex/pipelex) is the reference runner (Python):
+```bash
+mthds runner setup pipelex
+```
+
+4. Run a method:
+```bash
+mthds run method my-method
+```
 
 For the full CLI reference, see [CLI.md](./CLI.md).
-
-### Quick Start
-
-```bash
-# Set up the API runner (interactive — prompts for URL and key)
-mthds setup runner api
-
-# Or set up the pipelex runner (local)
-mthds setup runner pipelex
-
-# Run a pipeline
-mthds run pipe my_pipe_code
-
-# Validate a bundle
-mthds validate ./bundle.mthds
-
-# Install a method from the hub
-mthds install org/repo
-```
 
 ### Install a method
 

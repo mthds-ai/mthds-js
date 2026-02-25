@@ -165,7 +165,6 @@ export async function installMethod(options: {
   for (const method of resolved.methods) {
     const installDir = resolve(join(targetDir, method.slug));
     if (!installDir.startsWith(targetDir + sep)) {
-      installSpinner.stop("Installation failed.");
       p.log.error(`Path traversal detected: slug "${method.slug}" escapes install directory.`);
       p.outro("");
       process.exit(1);

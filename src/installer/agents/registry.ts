@@ -3,7 +3,8 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import type { Agent, AgentHandler, InstallMethodOptions } from "./types.js";
 
 function writeMethodFiles(options: InstallMethodOptions): void {
-  const { repo, targetDir } = options;
+  const { repo } = options;
+  const targetDir = resolve(options.targetDir);
   mkdirSync(targetDir, { recursive: true });
 
   for (const method of repo.methods) {

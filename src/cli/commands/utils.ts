@@ -1,6 +1,7 @@
 export function maskApiKey(key: string): string {
   if (!key) return "(not set)";
-  return `${key.slice(0, 5)}${"*".repeat(Math.max(0, key.length - 5))}`;
+  if (key.length <= 5) return "*".repeat(key.length);
+  return `${key.slice(0, 4)}${"*".repeat(key.length - 4)}`;
 }
 
 import { PipelexRunner } from "../../runners/pipelex-runner.js";

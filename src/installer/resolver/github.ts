@@ -28,11 +28,23 @@ async function githubFetch(
   apiPath: string
 ): Promise<unknown> {
   if (auth.type === "gh") {
-    const result = execFileSync("gh", ["api", apiPath], {
-      encoding: "utf-8",
-      maxBuffer: 10 * 1024 * 1024,
-    });
-    return JSON.parse(result);
+    try {
+      const result = execFileSync("gh", ["api", apiPath], {
+        encoding: "utf-8",
+        maxBuffer: 10 * 1024 * 1024,
+        stdio: ["pipe", "pipe", "pipe"],
+      });
+      return JSON.parse(result);
+    } catch (err) {
+      const stderr = (err as { stderr?: Buffer | string })?.stderr?.toString() ?? "";
+      if (stderr.includes("404") || stderr.includes("Not Found")) {
+        throw new Error(`Not found: ${apiPath}.`);
+      }
+      if (stderr.includes("403") || stderr.includes("rate limit")) {
+        throw new Error(`GitHub API rate limit or permission error for ${apiPath}. Try setting GITHUB_TOKEN.`);
+      }
+      throw new Error(`GitHub API error for ${apiPath}: ${stderr.trim() || (err as Error).message}`);
+    }
   }
 
   const url = `https://api.github.com/${apiPath}`;
@@ -217,8 +229,17 @@ export async function resolveFromGitHub(
   const { org, repo, subpath } = parsed;
   const methodsPath = subpath ? `${subpath}/methods` : "methods";
 
-  // Check if repo is public
-  const repoMeta = (await githubFetch(auth, `repos/${org}/${repo}`)) as { private: boolean };
+  // Check if repo exists and is public
+  let repoMeta: { private: boolean };
+  try {
+    repoMeta = (await githubFetch(auth, `repos/${org}/${repo}`)) as { private: boolean };
+  } catch (err) {
+    const msg = (err as Error).message;
+    if (msg.includes("Not found")) {
+      throw new Error(`Repository "${org}/${repo}" not found on GitHub. Check the address and make sure the repository exists.`);
+    }
+    throw new Error(`Could not connect to GitHub for "${org}/${repo}": ${msg}`);
+  }
   const isPublic = !repoMeta.private;
 
   // List directories inside methods/

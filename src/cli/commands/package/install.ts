@@ -47,6 +47,7 @@ export async function packageInstall(options: { directory?: string }): Promise<v
 
   let installed = 0;
   let cached = 0;
+  let spinnerStopped = false;
 
   try {
     for (const [address, locked] of entries) {
@@ -74,6 +75,7 @@ export async function packageInstall(options: { directory?: string }): Promise<v
     }
 
     spinner.stop(`Done. ${installed} installed, ${cached} already cached.`);
+    spinnerStopped = true;
 
     // Verify integrity
     try {
@@ -88,7 +90,9 @@ export async function packageInstall(options: { directory?: string }): Promise<v
       throw err;
     }
   } catch (err) {
-    spinner.stop("Installation failed.");
+    if (!spinnerStopped) {
+      spinner.stop("Installation failed.");
+    }
     if (err instanceof MthdsPackageError) {
       p.log.error(err.message);
       p.outro("");

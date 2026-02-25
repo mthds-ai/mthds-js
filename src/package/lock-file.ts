@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
-import { join, relative, posix } from "node:path";
+import { join, relative, posix, sep } from "node:path";
 import { parse, stringify } from "smol-toml";
 import { IntegrityError, LockFileError } from "./exceptions.js";
 import { isValidSemver, type ParsedManifest } from "./manifest/schema.js";
@@ -34,7 +34,7 @@ function collectFilesRecursive(dir: string, baseDir: string, result: string[]): 
   for (const entry of entries) {
     const fullPath = join(dir, entry.name);
     const relPath = relative(baseDir, fullPath);
-    const posixRelPath = relPath.split("/").join(posix.sep);
+    const posixRelPath = relPath.split(sep).join(posix.sep);
 
     // Skip .git
     if (posixRelPath.split(posix.sep).includes(".git")) continue;
@@ -62,13 +62,13 @@ export function computeDirectoryHash(directory: string): string {
 
   // Sort by POSIX relative path
   filePaths.sort((a, b) => {
-    const relA = relative(directory, a).split("/").join(posix.sep);
-    const relB = relative(directory, b).split("/").join(posix.sep);
-    return relA.localeCompare(relB);
+    const relA = relative(directory, a).split(sep).join(posix.sep);
+    const relB = relative(directory, b).split(sep).join(posix.sep);
+    return relA < relB ? -1 : relA > relB ? 1 : 0;
   });
 
   for (const filePath of filePaths) {
-    const relativePosix = relative(directory, filePath).split("/").join(posix.sep);
+    const relativePosix = relative(directory, filePath).split(sep).join(posix.sep);
     hasher.update(relativePosix, "utf-8");
     hasher.update(readFileSync(filePath));
   }
@@ -149,21 +149,11 @@ export interface ResolvedDepForLock {
 }
 
 export function generateLockFile(
-  manifest: ParsedManifest,
   resolvedDeps: ResolvedDepForLock[],
 ): LockFile {
   const packages: Record<string, LockedPackage> = {};
 
-  // Build set of local-override addresses from root manifest
-  const localAddresses = new Set(
-    Object.values((manifest as any).dependencies ?? {})
-      .filter((dep: any) => dep.path !== undefined)
-      .map((dep: any) => dep.address),
-  );
-
   for (const resolved of resolvedDeps) {
-    if (localAddresses.has(resolved.address)) continue;
-
     if (resolved.manifest === null) {
       throw new LockFileError(
         `Remote dependency '${resolved.alias}' (${resolved.address}) has no manifest — cannot generate lock entry`,

@@ -62,6 +62,10 @@ export async function packageInit(options: { directory?: string }): Promise<void
   const license = await p.text({
     message: "License (e.g. MIT, or leave empty)",
     initialValue: "",
+    validate: (val) => {
+      if (val && !val.trim()) return "License must not be whitespace-only";
+      return undefined;
+    },
   });
   if (p.isCancel(license)) { p.outro("Cancelled."); return; }
 
@@ -80,7 +84,14 @@ export async function packageInit(options: { directory?: string }): Promise<void
   };
 
   const tomlContent = serializeManifestToToml(manifest);
-  writeFileSync(manifestPath, tomlContent, "utf-8");
+  try {
+    writeFileSync(manifestPath, tomlContent, "utf-8");
+  } catch (err) {
+    p.log.error(`Failed to write ${MANIFEST_FILENAME}: ${(err as Error).message}`);
+    p.outro("");
+    process.exitCode = 1;
+    return;
+  }
 
   p.log.success(`Created ${MANIFEST_FILENAME} in ${targetDir}`);
   p.outro("");

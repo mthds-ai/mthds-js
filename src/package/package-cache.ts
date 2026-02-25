@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readdirSync, renameSync, rmSync, cpSync } from "node:fs";
 import { homedir } from "node:os";
-import { join, resolve } from "node:path";
+import { join, resolve, sep } from "node:path";
 import { PackageCacheError } from "./exceptions.js";
 
 /**
@@ -21,7 +21,7 @@ export function getCachedPackagePath(
 ): string {
   const root = resolve(cacheRoot ?? getDefaultCacheRoot());
   const resolved = resolve(root, address, version);
-  if (!resolved.startsWith(root)) {
+  if (!resolved.startsWith(root + sep)) {
     throw new PackageCacheError(
       `Path traversal detected: address '${address}' and version '${version}' resolve outside cache root`,
     );
@@ -62,6 +62,10 @@ export function storeInCache(
   const stagingPath = `${finalPath}.staging`;
 
   try {
+    // Ensure parent directory exists before any file operations
+    const parentDir = resolve(finalPath, "..");
+    mkdirSync(parentDir, { recursive: true });
+
     // Clean up any leftover staging dir
     if (existsSync(stagingPath)) {
       rmSync(stagingPath, { recursive: true, force: true });
@@ -76,9 +80,7 @@ export function storeInCache(
       rmSync(gitDir, { recursive: true, force: true });
     }
 
-    // Ensure parent exists and perform rename
-    const parentDir = resolve(finalPath, "..");
-    mkdirSync(parentDir, { recursive: true });
+    // Atomic rename into final location
     if (existsSync(finalPath)) {
       rmSync(finalPath, { recursive: true, force: true });
     }

@@ -75,8 +75,9 @@ export class PackageVisibilityChecker {
         let ref;
         try {
           ref = parsePipeRef(pipeRefStr);
-        } catch {
-          continue;
+        } catch (err) {
+          if (err instanceof QualifiedRefError) continue;
+          throw err;
         }
 
         if (!this.isPipeAccessibleFrom(ref, metadata.domain)) {
@@ -101,7 +102,6 @@ export class PackageVisibilityChecker {
   validateCrossPackageReferences(): VisibilityError[] {
     if (this.manifest === null) return [];
 
-    const knownAliases = new Set(Object.keys((this.manifest as any).dependencies ?? {}));
     const errors: VisibilityError[] = [];
 
     for (const metadata of this.bundleMetadatas) {
@@ -110,18 +110,16 @@ export class PackageVisibilityChecker {
 
         const [alias] = splitCrossPackageRef(pipeRefStr);
 
-        if (!knownAliases.has(alias)) {
-          errors.push({
-            pipeRef: pipeRefStr,
-            sourceDomain: metadata.domain,
-            targetDomain: alias,
-            context,
-            message:
-              `Cross-package reference '${pipeRefStr}' in ${context} ` +
-              `(domain '${metadata.domain}'): alias '${alias}' is not declared ` +
-              "in [dependencies] of METHODS.toml.",
-          });
-        }
+        errors.push({
+          pipeRef: pipeRefStr,
+          sourceDomain: metadata.domain,
+          targetDomain: alias,
+          context,
+          message:
+            `Cross-package reference '${pipeRefStr}' in ${context} ` +
+            `(domain '${metadata.domain}'): dependencies are not supported ` +
+            "in this version of the MTHDS standard.",
+        });
       }
     }
 

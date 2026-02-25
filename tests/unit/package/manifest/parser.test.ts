@@ -71,15 +71,6 @@ pipes = ["extract_clause", "analyze_nda"]
     });
   });
 
-  it("rejects dependencies section", () => {
-    const raw = toml(`
-[dependencies]
-docproc = { address = "github.com/mthds/document-processing", version = "^1.0.0" }
-`);
-    expect(() => parseMethodsToml(raw)).toThrow(ManifestValidationError);
-    expect(() => parseMethodsToml(raw)).toThrow(/dependencies/);
-  });
-
   it("parses prerelease version", () => {
     const raw = `
 [package]

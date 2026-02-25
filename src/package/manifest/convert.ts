@@ -27,9 +27,9 @@ export function parsedManifestToLegacy(parsed: ParsedManifest): MethodsManifest 
       const existing = current[lastSegment];
       if (existing && typeof existing === "object" && !Array.isArray(existing)) {
         // Merge pipes into existing node
-        (existing as Record<string, unknown>)["pipes"] = domainExport.pipes;
+        (existing as Record<string, unknown>)["pipes"] = [...domainExport.pipes];
       } else {
-        current[lastSegment] = { pipes: domainExport.pipes } as ExportNode;
+        current[lastSegment] = { pipes: [...domainExport.pipes] } as ExportNode;
       }
     }
     exports = root as Exports;

@@ -25,13 +25,13 @@ After installation the `mthds` command is available on your PATH.
 mthds install org/repo
 
 # Run a pipeline
-mthds run my_pipe_code
+mthds run pipe my_pipe_code
 
 # Set up the API runner (interactive)
-mthds setup runner api
+mthds runner setup api
 
 # Set up the pipelex runner (local)
-mthds setup runner pipelex
+mthds runner setup pipelex
 ```
 
 ## Global Options
@@ -39,7 +39,7 @@ mthds setup runner pipelex
 | Option | Description |
 |---|---|
 | `--runner <type>` | Runner to use for the command (`api` or `pipelex`). Applies to `run`, `validate`, and `build` subcommands. |
-| `-d, --directory <path>` | Target package directory (defaults to current directory). Applies to `run`, `validate`, `build`, and `package` subcommands. |
+| `-L, --library-dir <dir>` | Additional library directory (can be repeated). Applies to `run`, `validate`, and `build` subcommands. |
 | `--version` | Print the CLI version |
 | `--help` | Show help for any command |
 
@@ -49,7 +49,7 @@ When `--runner` is omitted, the CLI uses the runner configured via `mthds config
 
 When using the **pipelex** runner, the `run`, `build`, and `validate` commands act as thin wrappers: they forward all arguments directly to the `pipelex` CLI. This means any pipelex-specific flags (e.g. `--dry-run`, `--mock-inputs`, `--output-dir`) are passed through transparently.
 
-The `--runner` and `-d/--directory` flags are consumed by mthds and not forwarded.
+The `--runner` flag is consumed by mthds and not forwarded. The `-L/--library-dir` flags are forwarded to pipelex.
 
 ---
 
@@ -57,10 +57,29 @@ The `--runner` and `-d/--directory` flags are consumed by mthds and not forwarde
 
 Execute a pipeline via a runner.
 
-### `mthds run`
+### `mthds run method`
+
+Run an installed method by name.
 
 ```bash
-mthds run <target> [OPTIONS]
+mthds run method <name> [OPTIONS]
+```
+
+| Argument / Option | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `name` | string | yes | -- | Name of the installed method |
+| `--pipe <code>` | string | no | -- | Pipe code (overrides method's main_pipe) |
+| `-i, --inputs <file>` | string | no | -- | Path to JSON inputs file |
+| `-o, --output <file>` | string | no | -- | Path to save output JSON |
+| `--no-output` | flag | no | -- | Skip saving output to file |
+| `--no-pretty-print` | flag | no | -- | Skip pretty printing the output |
+
+### `mthds run pipe`
+
+Run a pipe by code or bundle file.
+
+```bash
+mthds run pipe <target> [OPTIONS]
 ```
 
 | Argument / Option | Type | Required | Default | Description |
@@ -77,32 +96,48 @@ With the pipelex runner, additional flags like `--dry-run`, `--mock-inputs`, and
 **Examples:**
 
 ```bash
+# Run an installed method
+mthds run method my-method
+mthds run method my-method -L methods/
+
 # Run by pipe code
-mthds run my_pipe_code
+mthds run pipe my_pipe_code
 
 # Run a .mthds bundle file
-mthds run ./bundle.mthds --pipe my_pipe
+mthds run pipe ./bundle.mthds --pipe my_pipe
 
 # Run with inputs and save output
-mthds run my_pipe_code --inputs inputs.json --output result.json
-
-# Run with a specific runner
-mthds run my_pipe_code --runner pipelex
+mthds run pipe my_pipe_code --inputs inputs.json --output result.json
 
 # Dry run via pipelex
-mthds run ./bundle.mthds --inputs inputs.json --dry-run
+mthds run pipe ./bundle.mthds --inputs inputs.json --dry-run
 ```
 
 ---
 
 ## Validate
 
-Validate a bundle via a runner.
+Validate a method or bundle via a runner.
 
-### `mthds validate`
+### `mthds validate method`
+
+Validate an installed method by name.
 
 ```bash
-mthds validate <target> [OPTIONS]
+mthds validate method <name> [OPTIONS]
+```
+
+| Argument / Option | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `name` | string | yes | -- | Name of the installed method |
+| `--pipe <code>` | string | no | -- | Pipe code to validate (overrides method's main_pipe) |
+
+### `mthds validate pipe`
+
+Validate a pipe by code or bundle file.
+
+```bash
+mthds validate pipe <target> [OPTIONS]
 ```
 
 | Argument / Option | Type | Required | Default | Description |
@@ -111,22 +146,18 @@ mthds validate <target> [OPTIONS]
 | `--pipe <code>` | string | no | -- | Pipe code that must exist in the bundle |
 | `--bundle <file>` | string | no | -- | Bundle file path (alternative to positional) |
 
-The target must be a `.mthds` bundle file (either as the positional argument or via `--bundle`).
-
 **Examples:**
 
 ```bash
+# Validate an installed method
+mthds validate method my-method
+mthds validate method my-method -L methods/
+
 # Validate a bundle file
-mthds validate ./bundle.mthds
+mthds validate pipe ./bundle.mthds
 
 # Validate a specific pipe within a bundle
-mthds validate ./bundle.mthds --pipe my_pipe
-
-# Validate using --bundle flag
-mthds validate my_pipe --bundle ./bundle.mthds
-
-# Validate with a specific runner
-mthds validate ./bundle.mthds --runner pipelex
+mthds validate pipe ./bundle.mthds --pipe my_pipe
 ```
 
 ---
@@ -160,67 +191,69 @@ mthds build pipe "Extract key facts from a news article"
 mthds build pipe "Summarize a document" --output summary.mthds
 ```
 
-### `mthds build runner`
+### `mthds build runner method|pipe`
 
 Generate Python runner code for a pipe.
 
 ```bash
-mthds build runner <target> [OPTIONS]
+mthds build runner method <name> [OPTIONS]
+mthds build runner pipe <target> [OPTIONS]
 ```
 
 | Argument / Option | Type | Required | Default | Description |
 |---|---|---|---|---|
-| `target` | string | yes | -- | Bundle file path |
+| `name` / `target` | string | yes | -- | Method name or bundle file path |
 | `--pipe <code>` | string | no | -- | Pipe code to generate runner for (required for API runner) |
 | `-o, --output <file>` | string | no | -- | Path to save the generated Python file |
 
 **Examples:**
 
 ```bash
-# Generate runner code for a pipe in a bundle
-mthds build runner ./bundle.mthds --pipe my_pipe
-
-# Save to file
-mthds build runner ./bundle.mthds --pipe my_pipe --output runner.py
+mthds build runner method my-method
+mthds build runner pipe ./bundle.mthds --pipe my_pipe --output runner.py
 ```
 
-### `mthds build inputs`
+### `mthds build inputs method|pipe`
 
 Generate example input JSON for a pipe.
 
 ```bash
-mthds build inputs <target> [OPTIONS]
+mthds build inputs method <name> [OPTIONS]
+mthds build inputs pipe <target> [OPTIONS]
 ```
 
 | Argument / Option | Type | Required | Default | Description |
 |---|---|---|---|---|
-| `target` | string | yes | -- | Bundle file path |
+| `name` / `target` | string | yes | -- | Method name or bundle file path |
 | `--pipe <code>` | string | no | -- | Pipe code to generate inputs for (required for API runner) |
 
-**Example:**
+**Examples:**
 
 ```bash
-mthds build inputs ./bundle.mthds --pipe my_pipe
+mthds build inputs method my-method
+mthds build inputs pipe ./bundle.mthds --pipe my_pipe
 ```
 
-### `mthds build output`
+### `mthds build output method|pipe`
 
 Generate output representation for a pipe.
 
 ```bash
-mthds build output <target> [OPTIONS]
+mthds build output method <name> [OPTIONS]
+mthds build output pipe <target> [OPTIONS]
 ```
 
 | Argument / Option | Type | Required | Default | Description |
 |---|---|---|---|---|
-| `target` | string | yes | -- | Bundle file path |
+| `name` / `target` | string | yes | -- | Method name or bundle file path |
 | `--pipe <code>` | string | no | -- | Pipe code to generate output for (required for API runner) |
 | `--format <format>` | string | no | `schema` | Output format: `json`, `python`, or `schema` |
 
-**Example:**
+**Examples:**
 
 ```bash
-mthds build output ./bundle.mthds --pipe my_pipe --format json
+mthds build output method my-method --format schema
+mthds build output pipe ./bundle.mthds --pipe my_pipe --format json
 ```
 
 ---
@@ -294,16 +327,16 @@ Displays all configuration keys with their current values and sources (env, file
 
 ---
 
-## Setup
+## Runner
 
-Initialize and configure runners.
+Manage runners: setup, set default, and check status.
 
-### `mthds setup runner`
+### `mthds runner setup`
 
 Initialize a runner and optionally set it as the default.
 
 ```bash
-mthds setup runner <name>
+mthds runner setup <name>
 ```
 
 | Argument | Type | Required | Description |
@@ -320,22 +353,18 @@ Both options then offer to set the runner as the default.
 
 ```bash
 # Initialize the API runner (enter URL and key interactively)
-mthds setup runner api
+mthds runner setup api
 
 # Initialize the pipelex runner (install + pipelex init)
-mthds setup runner pipelex
+mthds runner setup pipelex
 ```
 
----
-
-## Set Default
+### `mthds runner set-default`
 
 Change the default runner without running any initialization.
 
-### `mthds set-default runner`
-
 ```bash
-mthds set-default runner <name>
+mthds runner set-default <name>
 ```
 
 | Argument | Type | Required | Description |
@@ -345,17 +374,13 @@ mthds set-default runner <name>
 **Examples:**
 
 ```bash
-mthds set-default runner pipelex
-mthds set-default runner api
+mthds runner set-default pipelex
+mthds runner set-default api
 ```
 
----
-
-## Runner Status
+### `mthds runner status`
 
 Show the current runner configuration: default runner, API URL, masked API key, and pipelex version.
-
-### `mthds runner status`
 
 ```bash
 mthds runner status
@@ -422,10 +447,11 @@ You must provide either `address` or `--local`, but not both.
 
 The install flow is interactive:
 1. Resolves methods from the address or local directory
-2. Prompts you to select an AI agent to install the methods for
-3. Prompts for install location (local `.claude/methods/` or global `~/.claude/methods/`)
-4. Optionally installs the pipelex runner
-5. Optionally installs pipelex skills (check, edit, build, fix)
+2. Displays a summary of found methods
+3. Prompts for install location (local `.mthds/methods/` or global `~/.mthds/methods/`)
+4. Writes method files to the selected location
+5. Optionally installs the pipelex runner
+6. Optionally installs MTHDS skills (includes agent selection)
 
 **Examples:**
 
@@ -447,7 +473,7 @@ mthds install org/repo/methods/specific
 
 ## Package
 
-Manage MTHDS packages: manifests, dependencies, lock files, and installation. All package commands respect the `-d, --directory <path>` global option to target a specific directory.
+Manage MTHDS packages: manifests, dependencies, lock files, and installation. All package commands respect the `-C, --package-dir <path>` option to target a specific directory.
 
 ### `mthds package init`
 
@@ -463,7 +489,7 @@ Prompts for address, version, description, authors, and license, then writes `ME
 
 ```bash
 mthds package init
-mthds package init -d ./my-package
+mthds package init -C ./my-package
 ```
 
 ### `mthds package validate`
@@ -482,7 +508,7 @@ Exits with code 1 on failure.
 
 ```bash
 mthds package validate
-mthds package validate -d ./my-package
+mthds package validate -C ./my-package
 ```
 
 ### `mthds package list`
@@ -502,6 +528,8 @@ mthds package list
 ```
 
 ### `mthds package add`
+
+> **Note:** Dependencies are not supported in this version. This command is reserved for future use.
 
 Add a dependency to `METHODS.toml`.
 
@@ -541,9 +569,9 @@ Resolve all dependencies and generate `methods.lock`.
 mthds package lock
 ```
 
-Reads `METHODS.toml`, resolves all remote dependencies transitively (with cycle detection and diamond constraint handling via Minimum Version Selection), and writes `methods.lock` with pinned versions and SHA-256 integrity hashes.
+Validates `METHODS.toml` and writes `methods.lock`. Currently writes an empty lock file since dependencies are not supported in this version.
 
-Local path dependencies are resolved directly but excluded from the lock file.
+When dependency support is added, this command will resolve all remote dependencies transitively (with cycle detection and diamond constraint handling via Minimum Version Selection) and write pinned versions with SHA-256 integrity hashes.
 
 **Example:**
 
@@ -575,7 +603,7 @@ Re-resolve all dependencies and regenerate `methods.lock`.
 mthds package update
 ```
 
-Like `mthds package lock`, but ignores the existing lock file and resolves all dependencies from scratch. Use this to pick up new versions within your constraint ranges.
+Like `mthds package lock`, but ignores the existing lock file and resolves all dependencies from scratch. Currently a no-op since dependencies are not supported in this version.
 
 **Example:**
 

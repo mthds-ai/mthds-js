@@ -8,7 +8,7 @@ export function isPipelexRunner(runner: Runner): runner is PipelexRunner {
 
 /**
  * Extract raw args after a given command keyword, filtering out
- * --runner / -d / --directory (consumed by mthds, not forwarded).
+ * --runner / -L / --library-dir (consumed by mthds, not forwarded).
  * Handles both `--flag value` and `--flag=value` syntax.
  */
 export function extractPassthroughArgs(command: string, skipCount: number): string[] {
@@ -17,13 +17,13 @@ export function extractPassthroughArgs(command: string, skipCount: number): stri
   if (cmdIdx === -1) return [];
   const raw = argv.slice(cmdIdx + skipCount);
   const result: string[] = [];
-  const ownedFlags = ["--runner", "-d", "--directory"];
+  const ownedFlags = ["--runner", "-L", "--library-dir"];
   let i = 0;
   while (i < raw.length) {
     const arg = raw[i]!;
     if (ownedFlags.includes(arg)) {
       i += 2; // skip flag + value
-    } else if (arg.startsWith("--runner=") || arg.startsWith("--directory=")) {
+    } else if (arg.startsWith("--runner=") || arg.startsWith("--library-dir=")) {
       i += 1; // skip combined flag=value
     } else {
       result.push(arg);

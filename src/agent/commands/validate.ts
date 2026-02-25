@@ -3,13 +3,12 @@
  */
 
 import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
 import { agentSuccess, agentError, AGENT_ERROR_DOMAINS } from "../output.js";
 import { createRunner } from "../../runners/registry.js";
 import { isPipelexRunner } from "../../cli/commands/utils.js";
 import type { RunnerType } from "../../runners/types.js";
 
-/** Extract raw args after `validate`, filtering out --runner, -d/--directory, and --log-level */
+/** Extract raw args after `validate`, filtering out --runner, -L/--library-dir, and --log-level */
 function extractPassthroughArgs(): string[] {
   const argv = process.argv;
   const idx = argv.indexOf("validate");
@@ -20,14 +19,14 @@ function extractPassthroughArgs(): string[] {
   while (i < raw.length) {
     if (
       raw[i] === "--runner" ||
-      raw[i] === "-d" ||
-      raw[i] === "--directory" ||
+      raw[i] === "-L" ||
+      raw[i] === "--library-dir" ||
       raw[i] === "--log-level"
     ) {
       i += 2;
     } else if (
       raw[i]!.startsWith("--runner=") ||
-      raw[i]!.startsWith("--directory=") ||
+      raw[i]!.startsWith("--library-dir=") ||
       raw[i]!.startsWith("--log-level=")
     ) {
       i += 1;
@@ -44,11 +43,11 @@ export async function agentValidateMethod(
   options: {
     pipe?: string;
     runner?: RunnerType;
-    directory?: string;
+    libraryDir?: string[];
   }
 ): Promise<void> {
-  const libraryDirs = options.directory
-    ? [resolve(options.directory)]
+  const libraryDirs = options.libraryDir?.length
+    ? options.libraryDir
     : undefined;
 
   let runner;
@@ -84,11 +83,11 @@ export async function agentValidatePipe(
     pipe?: string;
     bundle?: string;
     runner?: RunnerType;
-    directory?: string;
+    libraryDir?: string[];
   }
 ): Promise<void> {
-  const libraryDirs = options.directory
-    ? [resolve(options.directory)]
+  const libraryDirs = options.libraryDir?.length
+    ? options.libraryDir
     : undefined;
 
   let runner;

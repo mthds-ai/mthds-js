@@ -1,4 +1,4 @@
-import { join, dirname, resolve } from "node:path";
+import { join, dirname, resolve, sep } from "node:path";
 import { homedir } from "node:os";
 import { mkdirSync, writeFileSync, existsSync } from "node:fs";
 import { exec } from "node:child_process";
@@ -165,6 +165,11 @@ export async function installMethod(options: {
   const installSpinner = p.spinner();
   for (const method of resolved.methods) {
     const installDir = resolve(join(targetDir, method.slug));
+    if (!installDir.startsWith(targetDir + sep)) {
+      p.log.error(`Path traversal detected: slug "${method.slug}" escapes install directory.`);
+      p.outro("");
+      process.exit(1);
+    }
     installSpinner.start(`Installing "${method.slug}" to ${installDir}...`);
 
     mkdirSync(installDir, { recursive: true });
@@ -175,8 +180,11 @@ export async function installMethod(options: {
     // Write all .mthds files, preserving directory structure
     for (const file of method.files) {
       const filePath = resolve(join(installDir, file.relativePath));
-      if (!filePath.startsWith(installDir + "/")) {
-        throw new Error(`Path traversal detected: "${file.relativePath}" escapes install directory.`);
+      if (!filePath.startsWith(installDir + sep)) {
+        installSpinner.stop("Installation failed.");
+        p.log.error(`Path traversal detected: "${file.relativePath}" escapes install directory.`);
+        p.outro("");
+        process.exit(1);
       }
       mkdirSync(dirname(filePath), { recursive: true });
       writeFileSync(filePath, file.content, "utf-8");

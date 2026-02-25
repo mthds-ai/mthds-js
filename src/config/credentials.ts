@@ -295,7 +295,7 @@ export function isTelemetryEnabled(): boolean {
 }
 
 export function setTelemetryEnabled(enabled: boolean): void {
-  setCredentialValue("telemetry", toFileValue("telemetry", enabled));
+  setCredentialValue("telemetry", enabled ? "true" : "false");
 }
 
 export function getTelemetrySource(): CredentialSource {

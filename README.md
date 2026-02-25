@@ -22,7 +22,7 @@ mthds setup runner api
 mthds setup runner pipelex
 
 # Run a pipeline
-mthds run my_pipe_code
+mthds run pipe my_pipe_code
 
 # Validate a bundle
 mthds validate ./bundle.mthds

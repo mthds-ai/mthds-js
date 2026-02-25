@@ -19,7 +19,9 @@ export function isDomainCodeValid(code: string): boolean {
   if (!code) return false;
   if (code.includes("->")) {
     const arrowIdx = code.indexOf("->");
+    const alias = code.slice(0, arrowIdx);
     const remainder = code.slice(arrowIdx + 2);
+    if (!isSnakeCase(alias)) return false;
     return isDomainCodeValid(remainder);
   }
   if (code.startsWith(".") || code.endsWith(".") || code.includes("..")) {

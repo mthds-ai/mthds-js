@@ -45,6 +45,9 @@ export async function packageValidate(options: { directory?: string }): Promise<
 
   // Display all fields
   p.log.info(`  Address:       ${manifest.address}`);
+  if (manifest.name !== undefined) {
+    p.log.info(`  Name:          ${manifest.name}`);
+  }
   if (manifest.displayName !== undefined) {
     p.log.info(`  Display name:  ${manifest.displayName}`);
   }
@@ -58,6 +61,9 @@ export async function packageValidate(options: { directory?: string }): Promise<
   }
   if (manifest.mthdsVersion !== undefined) {
     p.log.info(`  MTHDS version: ${manifest.mthdsVersion}`);
+  }
+  if (manifest.mainPipe !== undefined) {
+    p.log.info(`  Main pipe:     ${manifest.mainPipe}`);
   }
 
   // Display exports

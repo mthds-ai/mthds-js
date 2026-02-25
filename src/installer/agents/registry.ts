@@ -1,4 +1,4 @@
-import { join, resolve, dirname } from "node:path";
+import { join, resolve, dirname, sep } from "node:path";
 import { homedir } from "node:os";
 import { mkdirSync, writeFileSync } from "node:fs";
 import type { Agent, AgentHandler, InstallMethodOptions } from "./types.js";
@@ -37,18 +37,22 @@ export function generateShim(slug: string, installDir: string): void {
 }
 
 function writeMethodFiles(options: InstallMethodOptions): void {
-  const { repo, targetDir } = options;
+  const { repo } = options;
+  const targetDir = resolve(options.targetDir);
   mkdirSync(targetDir, { recursive: true });
 
   for (const method of repo.methods) {
     const installDir = resolve(join(targetDir, method.slug));
+    if (!installDir.startsWith(targetDir + sep)) {
+      throw new Error(`Path traversal detected: slug "${method.slug}" escapes target directory.`);
+    }
     mkdirSync(installDir, { recursive: true });
 
     writeFileSync(join(installDir, "METHODS.toml"), method.rawManifest, "utf-8");
 
     for (const file of method.files) {
       const filePath = resolve(join(installDir, file.relativePath));
-      if (!filePath.startsWith(installDir + "/")) {
+      if (!filePath.startsWith(installDir + sep)) {
         throw new Error(`Path traversal detected: "${file.relativePath}" escapes install directory.`);
       }
       mkdirSync(dirname(filePath), { recursive: true });

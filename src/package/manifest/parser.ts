@@ -65,7 +65,13 @@ function walkExportsTable(
   for (const [key, value] of Object.entries(table)) {
     const currentPath = prefix ? `${prefix}.${key}` : key;
 
-    if (value !== null && typeof value === "object" && !Array.isArray(value)) {
+    if (value === null || typeof value !== "object" || Array.isArray(value)) {
+      throw new ManifestValidationError(
+        `Invalid entry '${key}' in [exports${prefix ? `.${prefix}` : ""}]: expected a table, got ${value === null ? "null" : Array.isArray(value) ? "array" : typeof value}`,
+      );
+    }
+
+    {
       const valueDict = value as Record<string, unknown>;
 
       if ("pipes" in valueDict) {
@@ -189,16 +195,17 @@ export function parseMethodsToml(content: string): ParsedManifest {
       if (!author.trim()) {
         throw new ManifestValidationError(`Author at index ${idx} must not be empty or whitespace`);
       }
-      authors.push(author);
+      authors.push(author.trim());
     }
   }
 
   let license: string | undefined;
   if (pkg.license !== undefined) {
-    if (!pkg.license.trim()) {
+    const trimmedLicense = pkg.license.trim();
+    if (!trimmedLicense) {
       throw new ManifestValidationError("License must not be empty or whitespace when provided");
     }
-    license = pkg.license;
+    license = trimmedLicense;
   }
 
   let mthdsVersion: string | undefined;

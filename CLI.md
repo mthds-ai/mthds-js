@@ -39,7 +39,7 @@ mthds setup runner pipelex
 | Option | Description |
 |---|---|
 | `--runner <type>` | Runner to use for the command (`api` or `pipelex`). Applies to `run`, `validate`, and `build` subcommands. |
-| `-d, --directory <path>` | Target package directory (defaults to current directory). Applies to `run`, `validate`, and `build` subcommands. |
+| `-d, --directory <path>` | Target package directory (defaults to current directory). Applies to `run`, `validate`, `build`, and `package` subcommands. |
 | `--version` | Print the CLI version |
 | `--help` | Show help for any command |
 
@@ -445,19 +445,140 @@ mthds install org/repo/methods/specific
 
 ---
 
-## Package (Stubs)
+## Package
 
-Package management commands exist in mthds-js as stubs. They print a message directing you to use mthds-python for full package management functionality.
+Manage MTHDS packages: manifests, dependencies, lock files, and installation. All package commands respect the `-d, --directory <path>` global option to target a specific directory.
 
-Available stub commands:
+### `mthds package init`
+
+Interactively create a `METHODS.toml` manifest.
 
 ```bash
-mthds package init       # Initialize a METHODS.toml manifest
-mthds package list       # Display the package manifest
-mthds package add <dep>  # Add a dependency
-mthds package lock       # Resolve and generate methods.lock
-mthds package install    # Install dependencies from methods.lock
-mthds package update     # Re-resolve and update methods.lock
+mthds package init
 ```
 
-For full package management, use `mthds` from the Python package (`pip install mthds`).
+Prompts for address, version, description, authors, and license, then writes `METHODS.toml` in the target directory. If a manifest already exists, asks for confirmation before overwriting.
+
+**Example:**
+
+```bash
+mthds package init
+mthds package init -d ./my-package
+```
+
+### `mthds package validate`
+
+Validate the `METHODS.toml` manifest.
+
+```bash
+mthds package validate
+```
+
+Checks that the manifest has valid TOML syntax and passes all validation rules: required fields (`address`, `version`, `description`), valid semver version, valid address format, snake\_case dependency aliases, snake\_case pipe names, valid domain paths, no reserved domains in exports, valid version constraints, and no unknown top-level sections.
+
+Exits with code 1 on failure.
+
+**Examples:**
+
+```bash
+mthds package validate
+mthds package validate -d ./my-package
+```
+
+### `mthds package list`
+
+Display the contents of `METHODS.toml`.
+
+```bash
+mthds package list
+```
+
+Shows package metadata (address, version, description, authors, license), dependencies with their version constraints, and exported domains with their pipes.
+
+**Example:**
+
+```bash
+mthds package list
+```
+
+### `mthds package add`
+
+Add a dependency to `METHODS.toml`.
+
+```bash
+mthds package add <dep> [OPTIONS]
+```
+
+| Argument / Option | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `dep` | string | yes | -- | Dependency address (e.g. `github.com/org/repo`) |
+| `--alias <alias>` | string | no | derived from address | snake\_case alias for the dependency |
+| `--version <constraint>` | string | no | `*` | Version constraint (e.g. `^1.0.0`, `>=2.0.0`) |
+| `--path <path>` | string | no | -- | Local path for development (relative to package directory) |
+
+If `--alias` is omitted, the alias is derived from the last segment of the address (hyphens converted to underscores).
+
+When `--path` is provided, the dependency is resolved from the local filesystem instead of being fetched from git. This is useful for developing multiple packages side by side. Local dependencies are excluded from `methods.lock`.
+
+**Examples:**
+
+```bash
+# Add a remote dependency
+mthds package add github.com/mthds/document-processing --version "^1.0.0"
+
+# Add with explicit alias
+mthds package add github.com/mthds/scoring-lib --alias scoring --version ">=0.5.0"
+
+# Add a local dependency for development
+mthds package add github.com/mthds/scoring-lib --path ../scoring-lib --version "^1.0.0"
+```
+
+### `mthds package lock`
+
+Resolve all dependencies and generate `methods.lock`.
+
+```bash
+mthds package lock
+```
+
+Reads `METHODS.toml`, resolves all remote dependencies transitively (with cycle detection and diamond constraint handling via Minimum Version Selection), and writes `methods.lock` with pinned versions and SHA-256 integrity hashes.
+
+Local path dependencies are resolved directly but excluded from the lock file.
+
+**Example:**
+
+```bash
+mthds package lock
+```
+
+### `mthds package install`
+
+Install dependencies from `methods.lock`.
+
+```bash
+mthds package install
+```
+
+Reads `methods.lock`, fetches any packages not already in the local cache (`~/.mthds/packages/`), and verifies integrity of all cached packages against their lock file hashes.
+
+**Example:**
+
+```bash
+mthds package install
+```
+
+### `mthds package update`
+
+Re-resolve all dependencies and regenerate `methods.lock`.
+
+```bash
+mthds package update
+```
+
+Like `mthds package lock`, but ignores the existing lock file and resolves all dependencies from scratch. Use this to pick up new versions within your constraint ranges.
+
+**Example:**
+
+```bash
+mthds package update
+```

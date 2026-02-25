@@ -15,14 +15,13 @@ import {
   buildOutput,
 } from "./cli/commands/build.js";
 import { validateBundle } from "./cli/commands/validate.js";
-import {
-  packageInit,
-  packageList,
-  packageAdd,
-  packageLock,
-  packageInstall,
-  packageUpdate,
-} from "./cli/commands/package/stubs.js";
+import { packageInit } from "./cli/commands/package/init.js";
+import { packageList } from "./cli/commands/package/list.js";
+import { packageAdd } from "./cli/commands/package/add.js";
+import { packageLock } from "./cli/commands/package/lock.js";
+import { packageInstall } from "./cli/commands/package/install.js";
+import { packageUpdate } from "./cli/commands/package/update.js";
+import { packageValidate } from "./cli/commands/package/validate.js";
 import { RUNNER_NAMES } from "./runners/types.js";
 import { isTelemetryEnabled, setTelemetryEnabled, getTelemetrySource } from "./config/credentials.js";
 import type { RunnerType } from "./runners/types.js";
@@ -268,18 +267,71 @@ telemetry
     p.outro("");
   });
 
-// ── mthds package <subcommand> (stubs — use mthds-python) ──────────
+// ── mthds package <subcommand> ──────────────────────────────────────
 const packageCmd = program
   .command("package")
-  .description("Package management (use mthds-python for full implementation)")
+  .description("Package management")
   .exitOverride();
 
-packageCmd.command("init").description("Initialize a METHODS.toml manifest").action(packageInit);
-packageCmd.command("list").description("Display the package manifest").action(packageList);
-packageCmd.command("add").argument("<dep>", "Dependency address").description("Add a dependency").action(packageAdd);
-packageCmd.command("lock").description("Resolve and generate methods.lock").action(packageLock);
-packageCmd.command("install").description("Install dependencies from methods.lock").action(packageInstall);
-packageCmd.command("update").description("Re-resolve and update methods.lock").action(packageUpdate);
+packageCmd
+  .command("init")
+  .description("Initialize a METHODS.toml manifest")
+  .exitOverride()
+  .action(async (_opts: Record<string, unknown>, cmd: Cmd) => {
+    await packageInit({ directory: getDirectory(cmd) });
+  });
+
+packageCmd
+  .command("list")
+  .description("Display the package manifest")
+  .exitOverride()
+  .action((_opts: Record<string, unknown>, cmd: Cmd) => {
+    packageList({ directory: getDirectory(cmd) });
+  });
+
+packageCmd
+  .command("add")
+  .argument("<dep>", "Dependency address")
+  .option("--alias <alias>", "Alias for the dependency")
+  .option("--version <constraint>", "Version constraint (default: *)")
+  .option("--path <path>", "Local path for development (relative to package directory)")
+  .description("Add a dependency")
+  .exitOverride()
+  .action((dep: string, opts: { alias?: string; version?: string; path?: string }, cmd: Cmd) => {
+    packageAdd(dep, { ...opts, directory: getDirectory(cmd) });
+  });
+
+packageCmd
+  .command("lock")
+  .description("Resolve and generate methods.lock")
+  .exitOverride()
+  .action(async (_opts: Record<string, unknown>, cmd: Cmd) => {
+    await packageLock({ directory: getDirectory(cmd) });
+  });
+
+packageCmd
+  .command("install")
+  .description("Install dependencies from methods.lock")
+  .exitOverride()
+  .action(async (_opts: Record<string, unknown>, cmd: Cmd) => {
+    await packageInstall({ directory: getDirectory(cmd) });
+  });
+
+packageCmd
+  .command("update")
+  .description("Re-resolve and update methods.lock")
+  .exitOverride()
+  .action(async (_opts: Record<string, unknown>, cmd: Cmd) => {
+    await packageUpdate({ directory: getDirectory(cmd) });
+  });
+
+packageCmd
+  .command("validate")
+  .description("Validate the METHODS.toml manifest")
+  .exitOverride()
+  .action(async (_opts: Record<string, unknown>, cmd: Cmd) => {
+    await packageValidate({ directory: getDirectory(cmd) });
+  });
 
 // Default: show banner
 program.action(() => {

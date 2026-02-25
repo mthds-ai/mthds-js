@@ -1,5 +1,11 @@
 # Changelog
 
+## [v0.0.10] - 2026-02-25
+
+### Fixed
+
+- Quick start doc
+
 ## [v0.0.9] - 2026-02-25
 
 ### Changed

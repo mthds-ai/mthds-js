@@ -101,7 +101,7 @@ export class PackageVisibilityChecker {
   validateCrossPackageReferences(): VisibilityError[] {
     if (this.manifest === null) return [];
 
-    const knownAliases = new Set(Object.keys(this.manifest.dependencies));
+    const knownAliases = new Set(Object.keys((this.manifest as any).dependencies ?? {}));
     const errors: VisibilityError[] = [];
 
     for (const metadata of this.bundleMetadatas) {

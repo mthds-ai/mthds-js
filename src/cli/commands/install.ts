@@ -203,7 +203,6 @@ export async function installMethod(options: {
         license: pkg.license,
         mthds_version: pkg.mthds_version,
         exports: method.manifest.exports,
-        dependencies: method.manifest.dependencies,
         manifest_raw: method.rawManifest,
       });
     }

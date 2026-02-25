@@ -12,14 +12,17 @@ import { createRequire } from "node:module";
 import { agentError, AGENT_ERROR_DOMAINS } from "./agent/output.js";
 import { registerPipelexCommands } from "./agent/commands/pipelex.js";
 import { registerPlxtCommands } from "./agent/commands/plxt.js";
-import { agentRun } from "./agent/commands/run.js";
+import { agentRunMethod, agentRunPipe } from "./agent/commands/run.js";
 import {
   agentBuildPipe,
-  agentBuildRunner,
-  agentBuildInputs,
-  agentBuildOutput,
+  agentBuildRunnerMethod,
+  agentBuildRunnerPipe,
+  agentBuildInputsMethod,
+  agentBuildInputsPipe,
+  agentBuildOutputMethod,
+  agentBuildOutputPipe,
 } from "./agent/commands/build.js";
-import { agentValidate } from "./agent/commands/validate.js";
+import { agentValidateMethod, agentValidatePipe } from "./agent/commands/validate.js";
 import { agentConfigSet, agentConfigGet, agentConfigList } from "./agent/commands/config.js";
 import { agentInstall } from "./agent/commands/install.js";
 import { RUNNER_NAMES } from "./runners/types.js";
@@ -59,25 +62,49 @@ program
     writeErr: () => {},
   });
 
-// ── mthds-agent run <target> ──────────────────────────────────────────
+// ── mthds-agent run method|pipe ──────────────────────────────────────────
 
-program
+const run = program
   .command("run")
+  .description("Execute a pipeline")
+  .exitOverride();
+
+run
+  .command("method")
+  .argument("<name>", "Name of the installed method")
+  .option("--pipe <code>", "Pipe code (overrides method's main_pipe)")
+  .option("-i, --inputs <file>", "Path to JSON inputs file")
+  .option("-o, --output <file>", "Path to save output JSON")
+  .option("--no-output", "Skip saving output to file")
+  .description("Run an installed method by name")
+  .allowUnknownOption()
+  .allowExcessArguments(true)
+  .exitOverride()
+  .action(async (name: string, options: Record<string, string | boolean | undefined>, cmd: Cmd) => {
+    await agentRunMethod(name, {
+      ...options,
+      runner: getRunner(cmd),
+      directory: getDirectory(cmd),
+    } as Parameters<typeof agentRunMethod>[1]);
+  });
+
+run
+  .command("pipe")
   .argument("<target>", "Pipe code or .mthds bundle file")
   .option("--pipe <code>", "Pipe code (when target is a bundle)")
   .option("-i, --inputs <file>", "Path to JSON inputs file")
   .option("-o, --output <file>", "Path to save output JSON")
   .option("--no-output", "Skip saving output to file")
-  .description("Execute a pipeline")
+  .description("Run a pipe by code or bundle file (.mthds)")
   .allowUnknownOption()
   .allowExcessArguments(true)
   .exitOverride()
   .action(async (target: string, options: Record<string, string | boolean | undefined>, cmd: Cmd) => {
-    await agentRun(target, {
+    await agentRunPipe(target, {
       ...options,
       runner: getRunner(cmd),
       directory: getDirectory(cmd),
-    } as Parameters<typeof agentRun>[1]);
+    } as Parameters<typeof agentRunPipe>[1]);
   });
 
 // ── mthds-agent build <subcommand> ───────────────────────────────────
@@ -99,55 +126,125 @@ build
     await agentBuildPipe(brief, { ...options, runner: getRunner(cmd), directory: getDirectory(cmd) });
   });
 
-build
+const buildRunnerCmd = build
   .command("runner")
+  .description("Generate Python runner code for a pipe")
+  .exitOverride();
+
+buildRunnerCmd
+  .command("method")
+  .argument("<name>", "Name of the installed method")
+  .option("--pipe <code>", "Pipe code to generate runner for")
+  .option("-o, --output <file>", "Path to save the generated Python file")
+  .description("Generate runner for an installed method")
+  .allowUnknownOption()
+  .allowExcessArguments(true)
+  .exitOverride()
+  .action(async (name: string, options: { pipe?: string; output?: string }, cmd: Cmd) => {
+    await agentBuildRunnerMethod(name, { ...options, runner: getRunner(cmd), directory: getDirectory(cmd) });
+  });
+
+buildRunnerCmd
+  .command("pipe")
   .argument("<target>", "Bundle file path")
   .option("--pipe <code>", "Pipe code to generate runner for")
   .option("-o, --output <file>", "Path to save the generated Python file")
-  .description("Generate Python runner code for a pipe")
+  .description("Generate runner for a pipe by bundle path")
   .allowUnknownOption()
   .allowExcessArguments(true)
   .exitOverride()
   .action(async (target: string, options: { pipe?: string; output?: string }, cmd: Cmd) => {
-    await agentBuildRunner(target, { ...options, runner: getRunner(cmd), directory: getDirectory(cmd) });
+    await agentBuildRunnerPipe(target, { ...options, runner: getRunner(cmd), directory: getDirectory(cmd) });
   });
 
-build
+const buildInputsCmd = build
   .command("inputs")
+  .description("Generate example input JSON for a pipe")
+  .exitOverride();
+
+buildInputsCmd
+  .command("method")
+  .argument("<name>", "Name of the installed method")
+  .option("--pipe <code>", "Pipe code to generate inputs for")
+  .description("Generate inputs for an installed method")
+  .allowUnknownOption()
+  .allowExcessArguments(true)
+  .exitOverride()
+  .action(async (name: string, options: { pipe?: string }, cmd: Cmd) => {
+    await agentBuildInputsMethod(name, { ...options, runner: getRunner(cmd), directory: getDirectory(cmd) });
+  });
+
+buildInputsCmd
+  .command("pipe")
   .argument("<target>", "Bundle file path")
   .option("--pipe <code>", "Pipe code to generate inputs for")
-  .description("Generate example input JSON for a pipe")
+  .description("Generate inputs for a pipe by bundle path")
   .allowUnknownOption()
   .allowExcessArguments(true)
   .exitOverride()
   .action(async (target: string, options: { pipe?: string }, cmd: Cmd) => {
-    await agentBuildInputs(target, { ...options, runner: getRunner(cmd), directory: getDirectory(cmd) });
+    await agentBuildInputsPipe(target, { ...options, runner: getRunner(cmd), directory: getDirectory(cmd) });
   });
 
-build
+const buildOutputCmd = build
   .command("output")
+  .description("Generate output representation for a pipe")
+  .exitOverride();
+
+buildOutputCmd
+  .command("method")
+  .argument("<name>", "Name of the installed method")
+  .option("--pipe <code>", "Pipe code to generate output for")
+  .option("--format <format>", "Output format (json, python, schema)", "schema")
+  .description("Generate output for an installed method")
+  .allowUnknownOption()
+  .allowExcessArguments(true)
+  .exitOverride()
+  .action(async (name: string, options: { pipe?: string; format?: string }, cmd: Cmd) => {
+    await agentBuildOutputMethod(name, { ...options, runner: getRunner(cmd), directory: getDirectory(cmd) });
+  });
+
+buildOutputCmd
+  .command("pipe")
   .argument("<target>", "Bundle file path")
   .option("--pipe <code>", "Pipe code to generate output for")
   .option("--format <format>", "Output format (json, python, schema)", "schema")
-  .description("Generate output representation for a pipe")
+  .description("Generate output for a pipe by bundle path")
   .allowUnknownOption()
   .allowExcessArguments(true)
   .exitOverride()
   .action(async (target: string, options: { pipe?: string; format?: string }, cmd: Cmd) => {
-    await agentBuildOutput(target, { ...options, runner: getRunner(cmd), directory: getDirectory(cmd) });
+    await agentBuildOutputPipe(target, { ...options, runner: getRunner(cmd), directory: getDirectory(cmd) });
   });
 
-// ── mthds-agent validate <target> ────────────────────────────────────
+// ── mthds-agent validate method|pipe ────────────────────────────────────
 
-program
+const validateCmd = program
   .command("validate")
+  .description("Validate a method or pipe")
+  .exitOverride();
+
+validateCmd
+  .command("method")
+  .argument("<name>", "Name of the installed method")
+  .option("--pipe <code>", "Pipe code to validate (overrides method's main_pipe)")
+  .description("Validate an installed method")
+  .allowUnknownOption()
+  .allowExcessArguments(true)
+  .exitOverride()
+  .action(async (name: string, options: { pipe?: string }, cmd: Cmd) => {
+    await agentValidateMethod(name, { ...options, runner: getRunner(cmd), directory: getDirectory(cmd) });
+  });
+
+validateCmd
+  .command("pipe")
   .argument("<target>", ".mthds bundle file or pipe code")
   .option("--pipe <code>", "Pipe code that must exist in the bundle")
   .option("--bundle <file>", "Bundle file path (alternative to positional)")
-  .description("Validate a bundle")
+  .description("Validate a pipe by code or bundle file (.mthds)")
   .exitOverride()
   .action(async (target: string, options: { pipe?: string; bundle?: string }, cmd: Cmd) => {
-    await agentValidate(target, { ...options, runner: getRunner(cmd), directory: getDirectory(cmd) });
+    await agentValidatePipe(target, { ...options, runner: getRunner(cmd), directory: getDirectory(cmd) });
   });
 
 // ── mthds-agent install [address] ────────────────────────────────────

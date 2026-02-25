@@ -34,7 +34,7 @@ export async function packageUpdate(options: { directory?: string }): Promise<vo
     throw err;
   }
 
-  const depCount = Object.keys(manifest.dependencies).length;
+  const depCount = 0;
   if (depCount === 0) {
     p.log.info("No dependencies to update.");
     p.outro("");

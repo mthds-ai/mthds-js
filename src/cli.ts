@@ -7,14 +7,17 @@ import { printLogo } from "./cli/commands/index.js";
 import { setupRunner, setDefaultRunner, runnerStatus } from "./cli/commands/setup.js";
 import { installMethod } from "./cli/commands/install.js";
 import { configSet, configGet, configList } from "./cli/commands/config.js";
-import { runPipeline } from "./cli/commands/run.js";
+import { runMethod, runPipe } from "./cli/commands/run.js";
 import {
   buildPipe,
-  buildRunner,
-  buildInputs,
-  buildOutput,
+  buildRunnerMethod,
+  buildRunnerPipe,
+  buildInputsMethod,
+  buildInputsPipe,
+  buildOutputMethod,
+  buildOutputPipe,
 } from "./cli/commands/build.js";
-import { validateBundle } from "./cli/commands/validate.js";
+import { validateMethod, validatePipe } from "./cli/commands/validate.js";
 import { packageInit } from "./cli/commands/package/init.js";
 import { packageList } from "./cli/commands/package/list.js";
 import { packageAdd } from "./cli/commands/package/add.js";
@@ -52,21 +55,42 @@ program
     writeErr: () => {},
   });
 
-// ── mthds run <target> ─────────────────────────────────────────────
-program
+// ── mthds run method|pipe ─────────────────────────────────────────────
+const run = program
   .command("run")
+  .description("Execute a pipeline")
+  .exitOverride();
+
+run
+  .command("method")
+  .argument("<name>", "Name of the installed method")
+  .option("--pipe <code>", "Pipe code (overrides method's main_pipe)")
+  .option("-i, --inputs <file>", "Path to JSON inputs file")
+  .option("-o, --output <file>", "Path to save output JSON")
+  .option("--no-output", "Skip saving output to file")
+  .option("--no-pretty-print", "Skip pretty printing the output")
+  .description("Run an installed method by name")
+  .allowUnknownOption()
+  .allowExcessArguments(true)
+  .exitOverride()
+  .action(async (name: string, options: Record<string, string | boolean | undefined>, cmd: Cmd) => {
+    await runMethod(name, { ...options, runner: getRunner(cmd), directory: getDirectory(cmd) } as Parameters<typeof runMethod>[1]);
+  });
+
+run
+  .command("pipe")
   .argument("<target>", "Pipe code or .mthds bundle file")
   .option("--pipe <code>", "Pipe code (when target is a bundle)")
   .option("-i, --inputs <file>", "Path to JSON inputs file")
   .option("-o, --output <file>", "Path to save output JSON")
   .option("--no-output", "Skip saving output to file")
   .option("--no-pretty-print", "Skip pretty printing the output")
-  .description("Execute a pipeline")
+  .description("Run a pipe by code or bundle file (.mthds)")
   .allowUnknownOption()
   .allowExcessArguments(true)
   .exitOverride()
   .action(async (target: string, options: Record<string, string | boolean | undefined>, cmd: Cmd) => {
-    await runPipeline(target, { ...options, runner: getRunner(cmd), directory: getDirectory(cmd) } as Parameters<typeof runPipeline>[1]);
+    await runPipe(target, { ...options, runner: getRunner(cmd), directory: getDirectory(cmd) } as Parameters<typeof runPipe>[1]);
   });
 
 // ── mthds build <subcommand> ────────────────────────────────────────
@@ -87,54 +111,124 @@ build
     await buildPipe(brief, { ...options, runner: getRunner(cmd), directory: getDirectory(cmd) });
   });
 
-build
+const buildRunnerCmd = build
   .command("runner")
+  .description("Generate Python runner code for a pipe")
+  .exitOverride();
+
+buildRunnerCmd
+  .command("method")
+  .argument("<name>", "Name of the installed method")
+  .option("--pipe <code>", "Pipe code to generate runner for")
+  .option("-o, --output <file>", "Path to save the generated Python file")
+  .description("Generate runner for an installed method")
+  .allowUnknownOption()
+  .allowExcessArguments(true)
+  .exitOverride()
+  .action(async (name: string, options: { pipe?: string; output?: string }, cmd: Cmd) => {
+    await buildRunnerMethod(name, { ...options, runner: getRunner(cmd), directory: getDirectory(cmd) });
+  });
+
+buildRunnerCmd
+  .command("pipe")
   .argument("<target>", "Bundle file path")
   .option("--pipe <code>", "Pipe code to generate runner for")
   .option("-o, --output <file>", "Path to save the generated Python file")
-  .description("Generate Python runner code for a pipe")
+  .description("Generate runner for a pipe by bundle path")
   .allowUnknownOption()
   .allowExcessArguments(true)
   .exitOverride()
   .action(async (target: string, options: { pipe?: string; output?: string }, cmd: Cmd) => {
-    await buildRunner(target, { ...options, runner: getRunner(cmd), directory: getDirectory(cmd) });
+    await buildRunnerPipe(target, { ...options, runner: getRunner(cmd), directory: getDirectory(cmd) });
   });
 
-build
+const buildInputsCmd = build
   .command("inputs")
+  .description("Generate example input JSON for a pipe")
+  .exitOverride();
+
+buildInputsCmd
+  .command("method")
+  .argument("<name>", "Name of the installed method")
+  .option("--pipe <code>", "Pipe code to generate inputs for")
+  .description("Generate inputs for an installed method")
+  .allowUnknownOption()
+  .allowExcessArguments(true)
+  .exitOverride()
+  .action(async (name: string, options: { pipe?: string }, cmd: Cmd) => {
+    await buildInputsMethod(name, { ...options, runner: getRunner(cmd), directory: getDirectory(cmd) });
+  });
+
+buildInputsCmd
+  .command("pipe")
   .argument("<target>", "Bundle file path")
   .option("--pipe <code>", "Pipe code to generate inputs for")
-  .description("Generate example input JSON for a pipe")
+  .description("Generate inputs for a pipe by bundle path")
   .allowUnknownOption()
   .allowExcessArguments(true)
   .exitOverride()
   .action(async (target: string, options: { pipe?: string }, cmd: Cmd) => {
-    await buildInputs(target, { ...options, runner: getRunner(cmd), directory: getDirectory(cmd) });
+    await buildInputsPipe(target, { ...options, runner: getRunner(cmd), directory: getDirectory(cmd) });
   });
 
-build
+const buildOutputCmd = build
   .command("output")
+  .description("Generate output representation for a pipe")
+  .exitOverride();
+
+buildOutputCmd
+  .command("method")
+  .argument("<name>", "Name of the installed method")
+  .option("--pipe <code>", "Pipe code to generate output for")
+  .option("--format <format>", "Output format (json, python, schema)", "schema")
+  .description("Generate output for an installed method")
+  .allowUnknownOption()
+  .allowExcessArguments(true)
+  .exitOverride()
+  .action(async (name: string, options: { pipe?: string; format?: string }, cmd: Cmd) => {
+    await buildOutputMethod(name, { ...options, runner: getRunner(cmd), directory: getDirectory(cmd) });
+  });
+
+buildOutputCmd
+  .command("pipe")
   .argument("<target>", "Bundle file path")
   .option("--pipe <code>", "Pipe code to generate output for")
   .option("--format <format>", "Output format (json, python, schema)", "schema")
-  .description("Generate output representation for a pipe")
+  .description("Generate output for a pipe by bundle path")
   .allowUnknownOption()
   .allowExcessArguments(true)
   .exitOverride()
   .action(async (target: string, options: { pipe?: string; format?: string }, cmd: Cmd) => {
-    await buildOutput(target, { ...options, runner: getRunner(cmd), directory: getDirectory(cmd) });
+    await buildOutputPipe(target, { ...options, runner: getRunner(cmd), directory: getDirectory(cmd) });
   });
 
-// ── mthds validate <target> ────────────────────────────────────────
-program
+// ── mthds validate method|pipe ────────────────────────────────────────
+const validate = program
   .command("validate")
+  .description("Validate a method or pipe")
+  .exitOverride();
+
+validate
+  .command("method")
+  .argument("<name>", "Name of the installed method")
+  .option("--pipe <code>", "Pipe code to validate (overrides method's main_pipe)")
+  .description("Validate an installed method")
+  .allowUnknownOption()
+  .allowExcessArguments(true)
+  .exitOverride()
+  .action(async (name: string, options: { pipe?: string }, cmd: Cmd) => {
+    await validateMethod(name, { ...options, runner: getRunner(cmd), directory: getDirectory(cmd) });
+  });
+
+validate
+  .command("pipe")
   .argument("<target>", ".mthds bundle file or pipe code")
   .option("--pipe <code>", "Pipe code that must exist in the bundle")
   .option("--bundle <file>", "Bundle file path (alternative to positional)")
-  .description("Validate a bundle")
+  .description("Validate a pipe by code or bundle file (.mthds)")
   .exitOverride()
   .action(async (target: string, options: { pipe?: string; bundle?: string }, cmd: Cmd) => {
-    await validateBundle(target, { ...options, runner: getRunner(cmd), directory: getDirectory(cmd) });
+    await validatePipe(target, { ...options, runner: getRunner(cmd), directory: getDirectory(cmd) });
   });
 
 // ── mthds install [address] (JS-only) ──────────────────────────────

@@ -95,9 +95,46 @@ export async function agentBuildPipe(
   }
 }
 
-// ── build runner ──────────────────────────────────────────────────────
+// ── build runner method ──────────────────────────────────────────────
 
-export async function agentBuildRunner(
+export async function agentBuildRunnerMethod(
+  name: string,
+  options: { pipe?: string; output?: string } & WithRunner
+): Promise<void> {
+  const libraryDirs = options.directory
+    ? [resolve(options.directory)]
+    : undefined;
+
+  let runner: Runner;
+  try {
+    runner = createRunner(options.runner, libraryDirs);
+  } catch (err) {
+    agentError((err as Error).message, "RunnerError", {
+      error_domain: AGENT_ERROR_DOMAINS.RUNNER,
+    });
+  }
+
+  if (isPipelexRunner(runner)) {
+    try {
+      await runner.buildPassthrough("runner", extractPassthroughArgs());
+    } catch (err) {
+      agentError((err as Error).message, "RunnerError", {
+        error_domain: AGENT_ERROR_DOMAINS.RUNNER,
+      });
+    }
+    return;
+  }
+
+  agentError(
+    "Method target is not yet supported for the API runner. Use 'mthds-agent build runner pipe <target>' instead.",
+    "ArgumentError",
+    { error_domain: AGENT_ERROR_DOMAINS.ARGUMENT }
+  );
+}
+
+// ── build runner pipe ────────────────────────────────────────────────
+
+export async function agentBuildRunnerPipe(
   target: string,
   options: { pipe?: string; output?: string } & WithRunner
 ): Promise<void> {
@@ -173,9 +210,46 @@ export async function agentBuildRunner(
   }
 }
 
-// ── build inputs ──────────────────────────────────────────────────────
+// ── build inputs method ──────────────────────────────────────────────
 
-export async function agentBuildInputs(
+export async function agentBuildInputsMethod(
+  name: string,
+  options: { pipe?: string } & WithRunner
+): Promise<void> {
+  const libraryDirs = options.directory
+    ? [resolve(options.directory)]
+    : undefined;
+
+  let runner: Runner;
+  try {
+    runner = createRunner(options.runner, libraryDirs);
+  } catch (err) {
+    agentError((err as Error).message, "RunnerError", {
+      error_domain: AGENT_ERROR_DOMAINS.RUNNER,
+    });
+  }
+
+  if (isPipelexRunner(runner)) {
+    try {
+      await runner.buildPassthrough("inputs", extractPassthroughArgs());
+    } catch (err) {
+      agentError((err as Error).message, "RunnerError", {
+        error_domain: AGENT_ERROR_DOMAINS.RUNNER,
+      });
+    }
+    return;
+  }
+
+  agentError(
+    "Method target is not yet supported for the API runner. Use 'mthds-agent build inputs pipe <target>' instead.",
+    "ArgumentError",
+    { error_domain: AGENT_ERROR_DOMAINS.ARGUMENT }
+  );
+}
+
+// ── build inputs pipe ────────────────────────────────────────────────
+
+export async function agentBuildInputsPipe(
   target: string,
   options: { pipe?: string } & WithRunner
 ): Promise<void> {
@@ -237,9 +311,46 @@ export async function agentBuildInputs(
   }
 }
 
-// ── build output ──────────────────────────────────────────────────────
+// ── build output method ──────────────────────────────────────────────
 
-export async function agentBuildOutput(
+export async function agentBuildOutputMethod(
+  name: string,
+  options: { pipe?: string; format?: string } & WithRunner
+): Promise<void> {
+  const libraryDirs = options.directory
+    ? [resolve(options.directory)]
+    : undefined;
+
+  let runner: Runner;
+  try {
+    runner = createRunner(options.runner, libraryDirs);
+  } catch (err) {
+    agentError((err as Error).message, "RunnerError", {
+      error_domain: AGENT_ERROR_DOMAINS.RUNNER,
+    });
+  }
+
+  if (isPipelexRunner(runner)) {
+    try {
+      await runner.buildPassthrough("output", extractPassthroughArgs());
+    } catch (err) {
+      agentError((err as Error).message, "RunnerError", {
+        error_domain: AGENT_ERROR_DOMAINS.RUNNER,
+      });
+    }
+    return;
+  }
+
+  agentError(
+    "Method target is not yet supported for the API runner. Use 'mthds-agent build output pipe <target>' instead.",
+    "ArgumentError",
+    { error_domain: AGENT_ERROR_DOMAINS.ARGUMENT }
+  );
+}
+
+// ── build output pipe ────────────────────────────────────────────────
+
+export async function agentBuildOutputPipe(
   target: string,
   options: { pipe?: string; format?: string } & WithRunner
 ): Promise<void> {

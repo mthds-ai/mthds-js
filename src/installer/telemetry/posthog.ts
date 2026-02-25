@@ -41,7 +41,6 @@ export interface InstallEvent {
   license?: string;
   mthds_version?: string;
   exports?: Record<string, unknown>;
-  dependencies?: Record<string, { address: string; version: string }>;
   manifest_raw: string;
 }
 
@@ -62,7 +61,6 @@ export function trackInstall(data: InstallEvent): void {
       license: data.license,
       mthds_version: data.mthds_version,
       exports: data.exports ? JSON.stringify(data.exports) : undefined,
-      dependencies: data.dependencies ? JSON.stringify(data.dependencies) : undefined,
       manifest_raw: data.manifest_raw,
       timestamp: new Date().toISOString(),
     },

@@ -110,6 +110,10 @@ export class PipelexRunner implements Runner {
     await this.execStreaming(["run", ...rawArgs]);
   }
 
+  async validatePassthrough(rawArgs: string[]): Promise<void> {
+    await this.execStreaming(["validate", ...rawArgs]);
+  }
+
   // ── Health & version ────────────────────────────────────────────
 
   async health(): Promise<Record<string, unknown>> {

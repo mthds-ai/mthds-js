@@ -66,14 +66,46 @@ export async function buildPipe(
   }
 }
 
-// ── mthds build runner <target> [--pipe code] [-o file] ─────────────
+// ── mthds build runner method <name> ─────────────────────────────────
 
-export async function buildRunner(
+export async function buildRunnerMethod(
+  name: string,
+  options: { pipe?: string; output?: string } & WithRunner
+): Promise<void> {
+  printLogo();
+  p.intro("mthds build runner method");
+
+  const libraryDirs = options.directory
+    ? [resolve(options.directory)]
+    : undefined;
+  const runner = createRunner(options.runner, libraryDirs);
+
+  if (isPipelexRunner(runner)) {
+    p.log.step("Building via pipelex...");
+    try {
+      await runner.buildPassthrough("runner", extractPassthroughArgs("build", 2));
+      p.outro("Done");
+    } catch (err) {
+      p.log.error((err as Error).message);
+      p.outro("");
+      process.exit(1);
+    }
+    return;
+  }
+
+  p.log.error("Method target is not yet supported for the API runner. Use 'mthds build runner pipe <target>' instead.");
+  p.outro("");
+  process.exit(1);
+}
+
+// ── mthds build runner pipe <target> ─────────────────────────────────
+
+export async function buildRunnerPipe(
   target: string,
   options: { pipe?: string; output?: string } & WithRunner
 ): Promise<void> {
   printLogo();
-  p.intro("mthds build runner");
+  p.intro("mthds build runner pipe");
 
   const libraryDirs = options.directory
     ? [resolve(options.directory)]
@@ -141,14 +173,46 @@ export async function buildRunner(
   }
 }
 
-// ── mthds build inputs <bundle.mthds> --pipe <code> ─────────────────
+// ── mthds build inputs method <name> ─────────────────────────────────
 
-export async function buildInputs(
+export async function buildInputsMethod(
+  name: string,
+  options: { pipe?: string } & WithRunner
+): Promise<void> {
+  printLogo();
+  p.intro("mthds build inputs method");
+
+  const libraryDirs = options.directory
+    ? [resolve(options.directory)]
+    : undefined;
+  const runner = createRunner(options.runner, libraryDirs);
+
+  if (isPipelexRunner(runner)) {
+    p.log.step("Building via pipelex...");
+    try {
+      await runner.buildPassthrough("inputs", extractPassthroughArgs("build", 2));
+      p.outro("Done");
+    } catch (err) {
+      p.log.error((err as Error).message);
+      p.outro("");
+      process.exit(1);
+    }
+    return;
+  }
+
+  p.log.error("Method target is not yet supported for the API runner. Use 'mthds build inputs pipe <target>' instead.");
+  p.outro("");
+  process.exit(1);
+}
+
+// ── mthds build inputs pipe <target> ─────────────────────────────────
+
+export async function buildInputsPipe(
   target: string,
   options: { pipe?: string } & WithRunner
 ): Promise<void> {
   printLogo();
-  p.intro("mthds build inputs");
+  p.intro("mthds build inputs pipe");
 
   const libraryDirs = options.directory
     ? [resolve(options.directory)]
@@ -195,14 +259,46 @@ export async function buildInputs(
   }
 }
 
-// ── mthds build output <bundle.mthds> --pipe <code> [--format] ──────
+// ── mthds build output method <name> ─────────────────────────────────
 
-export async function buildOutput(
+export async function buildOutputMethod(
+  name: string,
+  options: { pipe?: string; format?: string } & WithRunner
+): Promise<void> {
+  printLogo();
+  p.intro("mthds build output method");
+
+  const libraryDirs = options.directory
+    ? [resolve(options.directory)]
+    : undefined;
+  const runner = createRunner(options.runner, libraryDirs);
+
+  if (isPipelexRunner(runner)) {
+    p.log.step("Building via pipelex...");
+    try {
+      await runner.buildPassthrough("output", extractPassthroughArgs("build", 2));
+      p.outro("Done");
+    } catch (err) {
+      p.log.error((err as Error).message);
+      p.outro("");
+      process.exit(1);
+    }
+    return;
+  }
+
+  p.log.error("Method target is not yet supported for the API runner. Use 'mthds build output pipe <target>' instead.");
+  p.outro("");
+  process.exit(1);
+}
+
+// ── mthds build output pipe <target> ─────────────────────────────────
+
+export async function buildOutputPipe(
   target: string,
   options: { pipe?: string; format?: string } & WithRunner
 ): Promise<void> {
   printLogo();
-  p.intro("mthds build output");
+  p.intro("mthds build output pipe");
 
   const libraryDirs = options.directory
     ? [resolve(options.directory)]

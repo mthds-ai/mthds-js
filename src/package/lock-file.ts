@@ -156,9 +156,9 @@ export function generateLockFile(
 
   // Build set of local-override addresses from root manifest
   const localAddresses = new Set(
-    Object.values(manifest.dependencies)
-      .filter((dep) => dep.path !== undefined)
-      .map((dep) => dep.address),
+    Object.values((manifest as any).dependencies ?? {})
+      .filter((dep: any) => dep.path !== undefined)
+      .map((dep: any) => dep.address),
   );
 
   for (const resolved of resolvedDeps) {

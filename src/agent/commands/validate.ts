@@ -6,9 +6,79 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { agentSuccess, agentError, AGENT_ERROR_DOMAINS } from "../output.js";
 import { createRunner } from "../../runners/registry.js";
+import { isPipelexRunner } from "../../cli/commands/utils.js";
 import type { RunnerType } from "../../runners/types.js";
 
-export async function agentValidate(
+/** Extract raw args after `validate`, filtering out --runner, -d/--directory, and --log-level */
+function extractPassthroughArgs(): string[] {
+  const argv = process.argv;
+  const idx = argv.indexOf("validate");
+  if (idx === -1) return [];
+  const raw = argv.slice(idx + 1);
+  const result: string[] = [];
+  let i = 0;
+  while (i < raw.length) {
+    if (
+      raw[i] === "--runner" ||
+      raw[i] === "-d" ||
+      raw[i] === "--directory" ||
+      raw[i] === "--log-level"
+    ) {
+      i += 2;
+    } else if (
+      raw[i]!.startsWith("--runner=") ||
+      raw[i]!.startsWith("--directory=") ||
+      raw[i]!.startsWith("--log-level=")
+    ) {
+      i += 1;
+    } else {
+      result.push(raw[i]!);
+      i++;
+    }
+  }
+  return result;
+}
+
+export async function agentValidateMethod(
+  name: string,
+  options: {
+    pipe?: string;
+    runner?: RunnerType;
+    directory?: string;
+  }
+): Promise<void> {
+  const libraryDirs = options.directory
+    ? [resolve(options.directory)]
+    : undefined;
+
+  let runner;
+  try {
+    runner = createRunner(options.runner, libraryDirs);
+  } catch (err) {
+    agentError((err as Error).message, "RunnerError", {
+      error_domain: AGENT_ERROR_DOMAINS.RUNNER,
+    });
+  }
+
+  if (isPipelexRunner(runner)) {
+    try {
+      await runner.validatePassthrough(extractPassthroughArgs());
+    } catch (err) {
+      agentError((err as Error).message, "ValidationError", {
+        error_domain: AGENT_ERROR_DOMAINS.VALIDATION,
+      });
+    }
+    return;
+  }
+
+  agentError(
+    "Method target is not yet supported for the API runner. Use 'mthds-agent validate pipe <target>' instead.",
+    "ArgumentError",
+    { error_domain: AGENT_ERROR_DOMAINS.ARGUMENT }
+  );
+}
+
+export async function agentValidatePipe(
   target: string,
   options: {
     pipe?: string;
@@ -28,6 +98,17 @@ export async function agentValidate(
     agentError((err as Error).message, "RunnerError", {
       error_domain: AGENT_ERROR_DOMAINS.RUNNER,
     });
+  }
+
+  if (isPipelexRunner(runner)) {
+    try {
+      await runner.validatePassthrough(extractPassthroughArgs());
+    } catch (err) {
+      agentError((err as Error).message, "ValidationError", {
+        error_domain: AGENT_ERROR_DOMAINS.VALIDATION,
+      });
+    }
+    return;
   }
 
   const bundlePath =

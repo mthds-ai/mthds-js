@@ -74,7 +74,6 @@ export async function packageInit(options: { directory?: string }): Promise<void
     version,
     description: description.trim(),
     authors,
-    dependencies: {},
     exports: {},
     mthdsVersion: `>=${MTHDS_STANDARD_VERSION}`,
     ...(license ? { license } : {}),

@@ -4,7 +4,14 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import type { SemVer } from "semver";
 import { DependencyResolveError, ManifestError, TransitiveDependencyError } from "./exceptions.js";
-import type { ParsedManifest, PackageDependency } from "./manifest/schema.js";
+import type { ParsedManifest } from "./manifest/schema.js";
+
+/** Dependency entry — kept locally for the resolver (dependencies are no longer in the manifest). */
+export interface PackageDependency {
+  readonly address: string;
+  readonly version: string;
+  readonly path?: string;
+}
 import { parseMethodsToml } from "./manifest/parser.js";
 import { MANIFEST_FILENAME } from "./discovery.js";
 import { getCachedPackagePath, isCached, storeInCache } from "./package-cache.js";
@@ -223,9 +230,10 @@ function removeStaleSubdepConstraints(
   resolvedMap: Map<string, ResolvedDependency>,
   constraintsByAddress: Map<string, string[]>,
 ): void {
-  if (!oldManifest || Object.keys(oldManifest.dependencies).length === 0) return;
+  if (!oldManifest || Object.keys((oldManifest as any).dependencies ?? {}).length === 0) return;
 
-  for (const oldSub of Object.values(oldManifest.dependencies)) {
+  for (const oldSubRaw of Object.values((oldManifest as any).dependencies ?? {})) {
+    const oldSub = oldSubRaw as any;
     if (oldSub.path !== undefined) continue;
     const constraintsList = constraintsByAddress.get(oldSub.address);
     if (!constraintsList) continue;
@@ -295,10 +303,10 @@ async function resolveTransitiveTree(
       resolvedMap.set(dep.address, reResolved);
 
       // Recurse into sub-dependencies of the re-resolved version
-      if (reResolved.manifest && Object.keys(reResolved.manifest.dependencies).length > 0) {
+      if (reResolved.manifest && Object.keys((reResolved.manifest as any).dependencies ?? {}).length > 0) {
         const remoteSubs: Record<string, PackageDependency> = {};
-        for (const [subAlias, sub] of Object.entries(reResolved.manifest.dependencies)) {
-          if (sub.path === undefined) remoteSubs[subAlias] = sub;
+        for (const [subAlias, sub] of Object.entries((reResolved.manifest as any).dependencies ?? {})) {
+          if ((sub as any).path === undefined) remoteSubs[subAlias] = sub as PackageDependency;
         }
         if (Object.keys(remoteSubs).length > 0) {
           resolutionStack.add(dep.address);
@@ -334,10 +342,10 @@ async function resolveTransitiveTree(
       resolvedMap.set(dep.address, resolvedDep);
 
       // Recurse into sub-dependencies (remote only)
-      if (resolvedDep.manifest && Object.keys(resolvedDep.manifest.dependencies).length > 0) {
+      if (resolvedDep.manifest && Object.keys((resolvedDep.manifest as any).dependencies ?? {}).length > 0) {
         const remoteSubs: Record<string, PackageDependency> = {};
-        for (const [subAlias, sub] of Object.entries(resolvedDep.manifest.dependencies)) {
-          if (sub.path === undefined) remoteSubs[subAlias] = sub;
+        for (const [subAlias, sub] of Object.entries((resolvedDep.manifest as any).dependencies ?? {})) {
+          if ((sub as any).path === undefined) remoteSubs[subAlias] = sub as PackageDependency;
         }
         if (Object.keys(remoteSubs).length > 0) {
           await resolveTransitiveTree(
@@ -369,11 +377,11 @@ export async function resolveAllDependencies(
   const localResolved: ResolvedDependency[] = [];
   const remoteDeps: Record<string, PackageDependency> = {};
 
-  for (const [alias, dep] of Object.entries(manifest.dependencies)) {
-    if (dep.path !== undefined) {
-      localResolved.push(resolveLocalDependency(alias, dep, packageRoot));
+  for (const [alias, dep] of Object.entries((manifest as any).dependencies ?? {})) {
+    if ((dep as any).path !== undefined) {
+      localResolved.push(resolveLocalDependency(alias, dep as PackageDependency, packageRoot));
     } else {
-      remoteDeps[alias] = dep;
+      remoteDeps[alias] = dep as PackageDependency;
     }
   }
 

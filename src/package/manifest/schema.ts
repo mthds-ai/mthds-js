@@ -64,8 +64,16 @@ export function isValidAddress(address: string): boolean {
 // Zod schemas — source of truth for allowed TOML keys
 // ---------------------------------------------------------------------------
 
+/** Method name: lowercase alphanumeric + hyphens/underscores, 2-25 chars, starts with a letter */
+export const METHOD_NAME_RE = /^[a-z][a-z0-9_-]{1,24}$/;
+
+export function isValidMethodName(name: string): boolean {
+  return METHOD_NAME_RE.test(name);
+}
+
 /** Raw [package] section in METHODS.toml */
 export const PackageSectionSchema = z.object({
+  name: z.string().optional(),
   address: z.string(),
   version: z.string(),
   description: z.string(),
@@ -73,13 +81,7 @@ export const PackageSectionSchema = z.object({
   authors: z.array(z.string()).optional(),
   license: z.string().optional(),
   mthds_version: z.string().optional(),
-}).strict();
-
-/** Raw dependency entry in [dependencies.<alias>] */
-export const DependencyEntrySchema = z.object({
-  address: z.string(),
-  version: z.string(),
-  path: z.string().optional(),
+  main_pipe: z.string().optional(),
 }).strict();
 
 /** Flattened domain exports (after walkExportsTable) */
@@ -90,19 +92,12 @@ export const DomainExportsSchema = z.object({
 /** Top-level METHODS.toml structure */
 export const MethodsTomlSchema = z.object({
   package: PackageSectionSchema,
-  dependencies: z.record(z.string(), DependencyEntrySchema).optional(),
   exports: z.record(z.string(), z.unknown()).optional(),
 }).strict();
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
-
-export interface PackageDependency {
-  readonly address: string;
-  readonly version: string;
-  readonly path?: string;
-}
 
 export interface DomainExports {
   readonly pipes: string[];
@@ -114,6 +109,7 @@ export interface DomainExports {
  * All export domains are flattened to dotted paths (e.g. "legal.contracts").
  */
 export interface ParsedManifest {
+  readonly name?: string;
   readonly address: string;
   readonly displayName?: string;
   readonly version: string;
@@ -121,6 +117,6 @@ export interface ParsedManifest {
   readonly authors: string[];
   readonly license?: string;
   readonly mthdsVersion?: string;
-  readonly dependencies: Record<string, PackageDependency>;
+  readonly mainPipe?: string;
   readonly exports: Record<string, DomainExports>;
 }

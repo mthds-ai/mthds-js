@@ -16,12 +16,42 @@ interface RunOptions {
   directory?: string;
 }
 
-export async function runPipeline(
+export async function runMethod(
+  name: string,
+  options: RunOptions
+): Promise<void> {
+  printLogo();
+  p.intro("mthds run method");
+
+  const libraryDirs = options.directory
+    ? [resolve(options.directory)]
+    : undefined;
+  const runner = createRunner(options.runner, libraryDirs);
+
+  if (isPipelexRunner(runner)) {
+    p.log.step("Running via pipelex...");
+    try {
+      await runner.runPassthrough(extractPassthroughArgs("run", 1));
+      p.outro("Done");
+    } catch (err) {
+      p.log.error((err as Error).message);
+      p.outro("");
+      process.exit(1);
+    }
+    return;
+  }
+
+  p.log.error("Method target is not yet supported for the API runner. Use 'mthds run pipe <target>' instead.");
+  p.outro("");
+  process.exit(1);
+}
+
+export async function runPipe(
   target: string,
   options: RunOptions
 ): Promise<void> {
   printLogo();
-  p.intro("mthds run");
+  p.intro("mthds run pipe");
 
   const libraryDirs = options.directory
     ? [resolve(options.directory)]

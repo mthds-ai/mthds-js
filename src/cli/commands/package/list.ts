@@ -50,19 +50,6 @@ export function packageList(options: { directory?: string }): void {
     p.log.info(`MTHDS Version: ${manifest.mthdsVersion}`);
   }
 
-  // Dependencies
-  const depEntries = Object.entries(manifest.dependencies);
-  if (depEntries.length > 0) {
-    p.log.info("");
-    p.log.info(`Dependencies (${depEntries.length}):`);
-    for (const [alias, dep] of depEntries) {
-      const pathNote = dep.path ? ` (local: ${dep.path})` : "";
-      p.log.info(`  ${alias}: ${dep.address} ${dep.version}${pathNote}`);
-    }
-  } else {
-    p.log.info("\nNo dependencies.");
-  }
-
   // Exports
   const exportEntries = Object.entries(manifest.exports);
   if (exportEntries.length > 0) {

@@ -3,7 +3,7 @@
  * MethodsManifest (installer/validate) types.
  */
 import type { MethodsManifest, ExportNode, Exports } from "./types.js";
-import type { ParsedManifest, DomainExports, PackageDependency } from "./schema.js";
+import type { ParsedManifest, DomainExports } from "./schema.js";
 
 /**
  * Convert a flat ParsedManifest to the nested MethodsManifest used by installer code.
@@ -35,21 +35,9 @@ export function parsedManifestToLegacy(parsed: ParsedManifest): MethodsManifest 
     exports = root as Exports;
   }
 
-  // Build dependencies
-  let dependencies: Record<string, { address: string; version: string; path?: string }> | undefined;
-  if (Object.keys(parsed.dependencies).length > 0) {
-    dependencies = {};
-    for (const [alias, dep] of Object.entries(parsed.dependencies)) {
-      dependencies[alias] = {
-        address: dep.address,
-        version: dep.version,
-        ...(dep.path !== undefined ? { path: dep.path } : {}),
-      };
-    }
-  }
-
   return {
     package: {
+      ...(parsed.name !== undefined ? { name: parsed.name } : {}),
       address: parsed.address,
       version: parsed.version,
       description: parsed.description,
@@ -57,9 +45,9 @@ export function parsedManifestToLegacy(parsed: ParsedManifest): MethodsManifest 
       ...(parsed.authors.length > 0 ? { authors: parsed.authors } : {}),
       ...(parsed.license !== undefined ? { license: parsed.license } : {}),
       ...(parsed.mthdsVersion !== undefined ? { mthds_version: parsed.mthdsVersion } : {}),
+      ...(parsed.mainPipe !== undefined ? { main_pipe: parsed.mainPipe } : {}),
     },
     ...(exports !== undefined ? { exports } : {}),
-    ...(dependencies !== undefined ? { dependencies } : {}),
   };
 }
 
@@ -73,28 +61,17 @@ export function legacyToParsedManifest(legacy: MethodsManifest): ParsedManifest 
     flattenExports(legacy.exports, "", exports);
   }
 
-  // Flatten dependencies
-  const dependencies: Record<string, PackageDependency> = {};
-  if (legacy.dependencies) {
-    for (const [alias, dep] of Object.entries(legacy.dependencies)) {
-      dependencies[alias] = {
-        address: dep.address,
-        version: dep.version,
-        ...(dep.path !== undefined ? { path: dep.path } : {}),
-      };
-    }
-  }
-
   return {
     address: legacy.package.address,
     version: legacy.package.version,
     description: legacy.package.description,
     authors: legacy.package.authors ?? [],
-    dependencies,
     exports,
+    ...(legacy.package.name !== undefined ? { name: legacy.package.name } : {}),
     ...(legacy.package.display_name !== undefined ? { displayName: legacy.package.display_name } : {}),
     ...(legacy.package.license !== undefined ? { license: legacy.package.license } : {}),
     ...(legacy.package.mthds_version !== undefined ? { mthdsVersion: legacy.package.mthds_version } : {}),
+    ...(legacy.package.main_pipe !== undefined ? { mainPipe: legacy.package.main_pipe } : {}),
   };
 }
 

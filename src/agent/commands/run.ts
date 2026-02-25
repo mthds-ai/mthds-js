@@ -48,7 +48,46 @@ interface AgentRunOptions {
   directory?: string;
 }
 
-export async function agentRun(
+export async function agentRunMethod(
+  name: string,
+  options: AgentRunOptions
+): Promise<void> {
+  const libraryDirs = options.directory
+    ? [resolve(options.directory)]
+    : undefined;
+
+  let runner: Runner;
+  try {
+    runner = createRunner(options.runner, libraryDirs);
+  } catch (err) {
+    agentError(
+      (err as Error).message,
+      "RunnerError",
+      { error_domain: AGENT_ERROR_DOMAINS.RUNNER }
+    );
+  }
+
+  if (isPipelexRunner(runner)) {
+    try {
+      await runner.runPassthrough(extractPassthroughArgs());
+    } catch (err) {
+      agentError(
+        (err as Error).message,
+        "PipelineError",
+        { error_domain: AGENT_ERROR_DOMAINS.PIPELINE }
+      );
+    }
+    return;
+  }
+
+  agentError(
+    "Method target is not yet supported for the API runner. Use 'mthds-agent run pipe <target>' instead.",
+    "ArgumentError",
+    { error_domain: AGENT_ERROR_DOMAINS.ARGUMENT }
+  );
+}
+
+export async function agentRunPipe(
   target: string,
   options: AgentRunOptions
 ): Promise<void> {

@@ -5,14 +5,14 @@ import {
   isValidSemver,
   isValidVersionConstraint,
   isValidAddress,
+  isValidMethodName,
   isReservedDomainPath,
   MethodsTomlSchema,
   DomainExportsSchema,
   type ParsedManifest,
-  type PackageDependency,
   type DomainExports,
 } from "./schema.js";
-import { isDomainCodeValid, isPipeCodeValid, isSnakeCase } from "./validation.js";
+import { isDomainCodeValid, isPipeCodeValid } from "./validation.js";
 
 // ---------------------------------------------------------------------------
 // Zod error formatting
@@ -211,32 +211,27 @@ export function parseMethodsToml(content: string): ParsedManifest {
     mthdsVersion = pkg.mthds_version;
   }
 
-  // Step 3: Process and validate dependencies
-  const dependencies: Record<string, PackageDependency> = {};
-  if (validated.dependencies) {
-    for (const [alias, dep] of Object.entries(validated.dependencies)) {
-      if (!isSnakeCase(alias)) {
-        throw new ManifestValidationError(`Invalid dependency alias '${alias}'. Must be snake_case.`);
-      }
-      if (!isValidAddress(dep.address)) {
-        throw new ManifestValidationError(
-          `Invalid package address '${dep.address}' in dependency '${alias}'.`,
-        );
-      }
-      if (!isValidVersionConstraint(dep.version)) {
-        throw new ManifestValidationError(
-          `Invalid version constraint '${dep.version}' in dependency '${alias}'.`,
-        );
-      }
-      dependencies[alias] = {
-        address: dep.address,
-        version: dep.version,
-        ...(dep.path !== undefined ? { path: dep.path } : {}),
-      };
+  let name: string | undefined;
+  if (pkg.name !== undefined) {
+    if (!isValidMethodName(pkg.name)) {
+      throw new ManifestValidationError(
+        `Invalid method name '${pkg.name}'. Must be 2-25 lowercase chars (letters, digits, hyphens, underscores), starting with a letter.`,
+      );
     }
+    name = pkg.name;
   }
 
-  // Step 4: Process and validate exports
+  let mainPipe: string | undefined;
+  if (pkg.main_pipe !== undefined) {
+    if (!isPipeCodeValid(pkg.main_pipe)) {
+      throw new ManifestValidationError(
+        `Invalid main_pipe '${pkg.main_pipe}'. Must be a valid snake_case pipe code.`,
+      );
+    }
+    mainPipe = pkg.main_pipe;
+  }
+
+  // Step 3: Process and validate exports
   let exports: Record<string, DomainExports> = {};
   if (validated.exports) {
     exports = walkExportsTable(validated.exports as Record<string, unknown>, "");
@@ -269,11 +264,12 @@ export function parseMethodsToml(content: string): ParsedManifest {
     version: pkg.version,
     description: pkg.description.trim(),
     authors,
-    dependencies,
     exports,
+    ...(name !== undefined ? { name } : {}),
     ...(displayName !== undefined ? { displayName } : {}),
     ...(license !== undefined ? { license } : {}),
     ...(mthdsVersion !== undefined ? { mthdsVersion } : {}),
+    ...(mainPipe !== undefined ? { mainPipe } : {}),
   };
 }
 
@@ -288,9 +284,11 @@ export function serializeManifestToToml(manifest: ParsedManifest): string {
   const doc: Record<string, unknown> = {};
 
   // [package] section
-  const packageSection: Record<string, unknown> = {
-    address: manifest.address,
-  };
+  const packageSection: Record<string, unknown> = {};
+  if (manifest.name !== undefined) {
+    packageSection["name"] = manifest.name;
+  }
+  packageSection["address"] = manifest.address;
   if (manifest.displayName !== undefined) {
     packageSection["display_name"] = manifest.displayName;
   }
@@ -305,23 +303,10 @@ export function serializeManifestToToml(manifest: ParsedManifest): string {
   if (manifest.mthdsVersion !== undefined) {
     packageSection["mthds_version"] = manifest.mthdsVersion;
   }
-  doc["package"] = packageSection;
-
-  // [dependencies] section
-  if (Object.keys(manifest.dependencies).length > 0) {
-    const deps: Record<string, Record<string, string>> = {};
-    for (const [alias, dep] of Object.entries(manifest.dependencies)) {
-      const entry: Record<string, string> = {
-        address: dep.address,
-        version: dep.version,
-      };
-      if (dep.path !== undefined) {
-        entry["path"] = dep.path;
-      }
-      deps[alias] = entry;
-    }
-    doc["dependencies"] = deps;
+  if (manifest.mainPipe !== undefined) {
+    packageSection["main_pipe"] = manifest.mainPipe;
   }
+  doc["package"] = packageSection;
 
   // [exports] section — rebuild nested structure from dotted paths
   if (Object.keys(manifest.exports).length > 0) {

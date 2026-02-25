@@ -26,7 +26,6 @@ describe("parseMethodsToml — valid", () => {
     expect(manifest.version).toBe("1.0.0");
     expect(manifest.description).toBe("Useful tools.");
     expect(manifest.authors).toEqual([]);
-    expect(manifest.dependencies).toEqual({});
     expect(manifest.exports).toEqual({});
   });
 
@@ -72,29 +71,13 @@ pipes = ["extract_clause", "analyze_nda"]
     });
   });
 
-  it("parses dependencies without path", () => {
+  it("rejects dependencies section", () => {
     const raw = toml(`
 [dependencies]
 docproc = { address = "github.com/mthds/document-processing", version = "^1.0.0" }
 `);
-    const manifest = parseMethodsToml(raw);
-    expect(manifest.dependencies["docproc"]).toEqual({
-      address: "github.com/mthds/document-processing",
-      version: "^1.0.0",
-    });
-  });
-
-  it("parses dependencies with path", () => {
-    const raw = toml(`
-[dependencies]
-scoring = { address = "github.com/mthds/scoring-lib", version = "^0.5.0", path = "../scoring-lib" }
-`);
-    const manifest = parseMethodsToml(raw);
-    expect(manifest.dependencies["scoring"]).toEqual({
-      address: "github.com/mthds/scoring-lib",
-      version: "^0.5.0",
-      path: "../scoring-lib",
-    });
+    expect(() => parseMethodsToml(raw)).toThrow(ManifestValidationError);
+    expect(() => parseMethodsToml(raw)).toThrow(/dependencies/);
   });
 
   it("parses prerelease version", () => {
@@ -130,9 +113,6 @@ authors       = ["ACME <legal@acme.com>"]
 license       = "MIT"
 mthds_version = ">=1.0.0"
 
-[dependencies]
-docproc = { address = "github.com/mthds/document-processing", version = "^1.0.0" }
-
 [exports.legal]
 pipes = ["classify_document"]
 
@@ -141,7 +121,6 @@ pipes = ["extract_clause", "analyze_nda"]
 `;
     const manifest = parseMethodsToml(raw);
     expect(manifest.address).toBe("github.com/acme/legal-tools");
-    expect(Object.keys(manifest.dependencies)).toEqual(["docproc"]);
     expect(Object.keys(manifest.exports)).toContain("legal");
     expect(Object.keys(manifest.exports)).toContain("legal.contracts");
   });
@@ -284,37 +263,13 @@ pipes = ["BadName"]
     expect(() => parseMethodsToml(raw)).toThrow(/snake_case/);
   });
 
-  it("throws ManifestValidationError for non-snake_case dependency alias", () => {
+  it("throws ManifestValidationError for any dependencies section", () => {
     const raw = toml(`
 [dependencies]
-BadAlias = { address = "github.com/a/b", version = "1.0.0" }
+dep = { address = "github.com/a/b", version = "1.0.0" }
 `);
     expect(() => parseMethodsToml(raw)).toThrow(ManifestValidationError);
-    expect(() => parseMethodsToml(raw)).toThrow(/snake_case/);
-  });
-
-  it("throws ManifestValidationError for dependency missing address", () => {
-    const raw = toml(`
-[dependencies.dep]
-version = "1.0.0"
-`);
-    expect(() => parseMethodsToml(raw)).toThrow(ManifestValidationError);
-  });
-
-  it("throws ManifestValidationError for dependency missing version", () => {
-    const raw = toml(`
-[dependencies.dep]
-address = "github.com/a/b"
-`);
-    expect(() => parseMethodsToml(raw)).toThrow(ManifestValidationError);
-  });
-
-  it("throws ManifestValidationError for invalid dependency address", () => {
-    const raw = toml(`
-[dependencies]
-dep = { address = "no-dot", version = "^1.0.0" }
-`);
-    expect(() => parseMethodsToml(raw)).toThrow(ManifestValidationError);
+    expect(() => parseMethodsToml(raw)).toThrow(/dependencies/);
   });
 
   it("throws ManifestValidationError for unknown top-level section", () => {
@@ -358,7 +313,7 @@ homepage = "https://example.com"
     expect(() => parseMethodsToml(raw)).toThrow(/licence/);
   });
 
-  it("throws ManifestValidationError for unknown keys in dependency entry", () => {
+  it("throws ManifestValidationError for dependencies even with extra keys", () => {
     const raw = toml(`
 [dependencies.dep]
 address = "github.com/a/b"
@@ -366,8 +321,7 @@ version = "^1.0.0"
 branch = "main"
 `);
     expect(() => parseMethodsToml(raw)).toThrow(ManifestValidationError);
-    expect(() => parseMethodsToml(raw)).toThrow(/Unknown keys in \[dependencies\.dep\]/);
-    expect(() => parseMethodsToml(raw)).toThrow(/branch/);
+    expect(() => parseMethodsToml(raw)).toThrow(/dependencies/);
   });
 
   it("throws ManifestValidationError for invalid domain path in exports", () => {
@@ -391,16 +345,19 @@ describe("serializeManifestToToml", () => {
     expect(output).toContain("Useful tools.");
   });
 
-  it("serializes dependencies as inline tables", () => {
-    const raw = toml(`
-[dependencies]
-docproc = { address = "github.com/mthds/document-processing", version = "^1.0.0" }
-`);
+  it("serializes name and main_pipe when present", () => {
+    const raw = `
+[package]
+address = "github.com/acme/tools"
+version = "1.0.0"
+description = "Useful tools."
+name = "acme-tools"
+main_pipe = "classify_document"
+`;
     const manifest = parseMethodsToml(raw);
     const output = serializeManifestToToml(manifest);
-    expect(output).toContain("dependencies");
-    expect(output).toContain("docproc");
-    expect(output).toContain("github.com/mthds/document-processing");
+    expect(output).toContain('name = "acme-tools"');
+    expect(output).toContain('main_pipe = "classify_document"');
   });
 
   it("serializes exports as nested TOML tables", () => {
@@ -423,9 +380,8 @@ description   = "Legal document analysis methods."
 display_name  = "Legal Tools"
 authors       = ["ACME <legal@acme.com>"]
 license       = "MIT"
-
-[dependencies]
-docproc = { address = "github.com/mthds/document-processing", version = "^1.0.0" }
+name          = "legal-tools"
+main_pipe     = "classify_document"
 
 [exports.legal]
 pipes = ["classify_document"]
@@ -443,7 +399,8 @@ pipes = ["extract_clause", "analyze_nda"]
     expect(second.displayName).toBe(first.displayName);
     expect(second.authors).toEqual(first.authors);
     expect(second.license).toBe(first.license);
-    expect(second.dependencies).toEqual(first.dependencies);
+    expect(second.name).toBe(first.name);
+    expect(second.mainPipe).toBe(first.mainPipe);
     expect(second.exports).toEqual(first.exports);
   });
 });

@@ -34,7 +34,7 @@ export async function packageLock(options: { directory?: string }): Promise<void
     throw err;
   }
 
-  const depCount = Object.keys(manifest.dependencies).length;
+  const depCount = 0;
   if (depCount === 0) {
     p.log.info("No dependencies to resolve.");
     writeFileSync(join(targetDir, LOCK_FILENAME), "", "utf-8");

@@ -6,6 +6,7 @@ export interface ParsedAddress {
 
 // --- Package section ---
 export interface PackageSection {
+  readonly name?: string;
   readonly address: string;
   readonly version: string;
   readonly description: string;
@@ -13,6 +14,7 @@ export interface PackageSection {
   readonly authors?: string[];
   readonly license?: string;
   readonly mthds_version?: string;
+  readonly main_pipe?: string;
 }
 
 // --- Exports: hierarchical with pipes arrays ---
@@ -22,18 +24,10 @@ export interface ExportNode {
 }
 export type Exports = Record<string, ExportNode>;
 
-// --- Dependencies ---
-export interface PackageDependency {
-  readonly address: string;
-  readonly version: string;
-  readonly path?: string;
-}
-
 // --- Manifest ---
 export interface MethodsManifest {
   readonly package: PackageSection;
   readonly exports?: Exports;
-  readonly dependencies?: Record<string, PackageDependency>;
 }
 
 export interface MethodsFile {

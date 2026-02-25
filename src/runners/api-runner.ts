@@ -1,4 +1,5 @@
 import { loadConfig } from "../config/config.js";
+import { Runners } from "./types.js";
 import type {
   Runner,
   RunnerType,
@@ -13,9 +14,14 @@ import type {
   ValidateRequest,
   ValidateResponse,
 } from "./types.js";
+import type {
+  ExecutePipelineOptions,
+  PipelineExecuteResponse,
+  PipelineStartResponse,
+} from "../client/pipeline.js";
 
 export class ApiRunner implements Runner {
-  readonly type: RunnerType = "api";
+  readonly type: RunnerType = Runners.API;
 
   private readonly baseUrl: string;
   private readonly apiKey: string;
@@ -105,5 +111,19 @@ export class ApiRunner implements Runner {
 
   async validate(request: ValidateRequest): Promise<ValidateResponse> {
     return this.post("/api/v1/validate", request);
+  }
+
+  // ── RunnerProtocol implementation ─────────────────────────────────
+
+  async executePipeline(
+    options: ExecutePipelineOptions
+  ): Promise<PipelineExecuteResponse> {
+    return this.post("/api/v1/pipeline/execute", options);
+  }
+
+  async startPipeline(
+    options: ExecutePipelineOptions
+  ): Promise<PipelineStartResponse> {
+    return this.post("/api/v1/pipeline/start", options);
   }
 }

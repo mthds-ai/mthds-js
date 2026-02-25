@@ -10,6 +10,27 @@ A method is a packaged workflow that an AI agent (like Claude Code) can use. Met
 
 ## CLI Usage
 
+For the full CLI reference, see [CLI.md](./CLI.md).
+
+### Quick Start
+
+```bash
+# Set up the API runner (interactive — prompts for URL and key)
+mthds setup runner api
+
+# Or set up the pipelex runner (local)
+mthds setup runner pipelex
+
+# Run a pipeline
+mthds run pipe my_pipe_code
+
+# Validate a bundle
+mthds validate ./bundle.mthds
+
+# Install a method from the hub
+mthds install org/repo
+```
+
 ### Install a method
 
 ```bash
@@ -116,9 +137,28 @@ These are the only runners that exist today. Feel free to create your own runner
 npx mthds setup runner pipelex
 ```
 
-### Use the API runner
+### Configure the API runner
 
-See the [SDK Usage](#sdk-usage) section below to connect to a Pipelex API instance.
+The API runner is the default. Set it up interactively:
+
+```bash
+mthds setup runner api
+```
+
+This prompts for the API URL and API key (masked input) and saves them to `~/.mthds/credentials`.
+
+You can also set values directly:
+
+```bash
+mthds config set api-key YOUR_KEY
+mthds config set api-url https://your-api-instance.com
+```
+
+Credentials are stored in `~/.mthds/credentials` and shared between mthds-js and mthds-python.
+
+You can also use environment variables (`PIPELEX_API_KEY`, `PIPELEX_API_URL`) which take precedence over the credentials file.
+
+See the [SDK Usage](#sdk-usage) section below to connect to a Pipelex API instance programmatically.
 
 ## SDK Usage
 
@@ -165,11 +205,11 @@ Instead of passing options to the constructor, you can set environment variables
 
 | Variable | Description |
 |----------|-------------|
-| `MTHDS_API_BASE_URL` | Base URL of the API |
-| `MTHDS_API_KEY` | API authentication token |
+| `PIPELEX_API_URL` | Base URL of the API |
+| `PIPELEX_API_KEY` | API authentication token |
 
 ```typescript
-// Reads MTHDS_API_BASE_URL and MTHDS_API_KEY from the environment
+// Reads PIPELEX_API_URL and PIPELEX_API_KEY from the environment
 const client = new MthdsApiClient();
 ```
 
@@ -200,7 +240,7 @@ Anonymous usage data is collected to help rank methods on the leaderboard. Each 
 To opt out:
 
 ```bash
-DISABLE_TELEMETRY=1 npx mthds install <slug>
+mthds telemetry disable
 ```
 
 ## Development

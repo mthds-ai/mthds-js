@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help install check clean rebuild run dev pack
+.PHONY: help install check c test t clean build rebuild run dev pack
 
 # Colors
 BLUE := \033[0;34m
@@ -25,22 +25,22 @@ help:
 	@echo ""
 	@echo "$(YELLOW)Quick Start:$(NC)"
 	@echo "  $(GREEN)make install$(NC)        Install dependencies"
-	@echo "  $(GREEN)make check$(NC)          Run quality checks (typecheck + build)"
+	@echo "  $(GREEN)make check$(NC)          Run quality checks (typecheck + tests)"
+	@echo "  $(GREEN)make test$(NC)           Run the test suite"
 	@echo "  $(GREEN)make dev$(NC)            Watch mode — auto rebuild on changes"
 	@echo ""
 	@echo "$(YELLOW)Development:$(NC)"
+	@echo "  $(GREEN)make build$(NC)          Build the project"
 	@echo "  $(GREEN)make rebuild$(NC)        Clean and rebuild"
 	@echo "  $(GREEN)make clean$(NC)          Remove build artifacts"
 	@echo "  $(GREEN)make run$(NC)            Build and run the CLI (banner)"
 	@echo ""
-	@echo "$(YELLOW)Testing:$(NC)"
-	@echo "  $(GREEN)make pack$(NC)           Create tarball for local npx testing"
+	@echo "$(YELLOW)Shorthands:$(NC)"
+	@echo "  $(GREEN)make c$(NC)              Alias for check"
+	@echo "  $(GREEN)make t$(NC)              Alias for test"
 	@echo ""
-	@echo "$(YELLOW)Publishing:$(NC)"
-	@echo "  npm version patch    Bump patch version (0.0.x)"
-	@echo "  npm version minor    Bump minor version (0.x.0)"
-	@echo "  npm version major    Bump major version (x.0.0)"
-	@echo "  npm publish          Publish to npm"
+	@echo "$(YELLOW)Packaging:$(NC)"
+	@echo "  $(GREEN)make pack$(NC)           Create tarball for local npx testing"
 	@echo ""
 	@echo "$(BLUE)━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━$(NC)"
 	@echo "$(YELLOW)Tip:$(NC) Run $(GREEN)make <command>$(NC) to execute any command above"
@@ -51,9 +51,19 @@ install:
 	@npm install
 	@echo "$(GREEN)✓ Installation complete$(NC)"
 
-check:
-	$(call PRINT_TITLE,"Running Quality Checks")
+build:
+	$(call PRINT_TITLE,"Building Project")
 	@npm run build
+	@echo "$(GREEN)✓ Build complete$(NC)"
+
+test:
+	$(call PRINT_TITLE,"Running Tests")
+	@npx vitest run
+	@echo "$(GREEN)✓ All tests passed$(NC)"
+
+check:
+	$(MAKE) build
+	$(MAKE) test
 	@echo "$(GREEN)✓ All checks passed$(NC)"
 
 clean:
@@ -62,10 +72,7 @@ clean:
 	@rm -rf *.tsbuildinfo
 	@echo "$(GREEN)✓ Clean complete$(NC)"
 
-rebuild: clean
-	$(call PRINT_TITLE,"Rebuilding Project")
-	@npm run build
-	@echo "$(GREEN)✓ Build complete$(NC)"
+rebuild: clean build
 
 run: rebuild
 	@node dist/cli.js
@@ -80,3 +87,7 @@ pack: rebuild
 	@echo ""
 	@echo "$(GREEN)✓ Tarball created$(NC)"
 	@echo "$(YELLOW)Test with: npx ./$(PACKAGE_NAME)-$$(node -p \"require('./package.json').version\").tgz$(NC)"
+
+# Shorthands
+c: check
+t: test

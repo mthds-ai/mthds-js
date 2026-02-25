@@ -1,6 +1,6 @@
 {
   "name": "mthds",
-  "version": "0.0.7",
+  "version": "0.0.8",
   "description": "CLI and SDK for MTHDS — the open standard for reusable AI agent methods. Install, execute, and manage methods.",
   "license": "MIT",
   "repository": {
@@ -17,7 +17,8 @@
     }
   },
   "bin": {
-    "mthds": "./dist/cli.js"
+    "mthds": "./dist/cli.js",
+    "mthds-agent": "./dist/agent-cli.js"
   },
   "scripts": {
     "build": "tsc",
@@ -32,15 +33,17 @@
   },
   "dependencies": {
     "@clack/prompts": "^1.0.0",
-    "@supabase/supabase-js": "^2.95.3",
     "chalk": "^5.4.1",
     "commander": "^13.1.0",
     "ora": "^8.2.0",
     "posthog-node": "^4.4.0",
-    "smol-toml": "^1.6.0"
+    "semver": "^7.7.4",
+    "smol-toml": "^1.6.0",
+    "zod": "^4.3.6"
   },
   "devDependencies": {
     "@types/node": "^22.12.0",
+    "@types/semver": "^7.7.1",
     "tsx": "^4.19.0",
     "typescript": "^5.7.3",
     "vitest": "^4.0.18"

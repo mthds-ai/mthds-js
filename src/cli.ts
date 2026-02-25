@@ -1,27 +1,52 @@
 #!/usr/bin/env node
 import { Command, CommanderError } from "commander";
 import { createRequire } from "node:module";
+import { resolve } from "node:path";
 import * as p from "@clack/prompts";
-import { showBanner } from "./commands/index.js";
-import { printLogo } from "./commands/index.js";
-import { installRunner } from "./commands/setup.js";
-import { installMethod } from "./commands/install.js";
-import { configSet, configGet, configList } from "./commands/config.js";
-import { runPipeline } from "./commands/run.js";
+import { showBanner } from "./cli/commands/index.js";
+import { printLogo } from "./cli/commands/index.js";
+import { setupRunner, setDefaultRunner, runnerStatus } from "./cli/commands/setup.js";
+import { installMethod } from "./cli/commands/install.js";
+import { configSet, configGet, configList } from "./cli/commands/config.js";
+import { runMethod, runPipe } from "./cli/commands/run.js";
 import {
   buildPipe,
-  buildRunner,
-  buildInputs,
-  buildOutput,
-} from "./commands/build.js";
-import { validatePlx } from "./commands/validate.js";
-import { runnerSetDefault, runnerList } from "./commands/runner.js";
-import { telemetryDisable, telemetryEnable, telemetryStatus } from "./commands/telemetry.js";
+  buildRunnerMethod,
+  buildRunnerPipe,
+  buildInputsMethod,
+  buildInputsPipe,
+  buildOutputMethod,
+  buildOutputPipe,
+} from "./cli/commands/build.js";
+import { validateMethod, validatePipe } from "./cli/commands/validate.js";
+import { packageInit } from "./cli/commands/package/init.js";
+import { packageList } from "./cli/commands/package/list.js";
+import { packageAdd } from "./cli/commands/package/add.js";
+import { packageLock } from "./cli/commands/package/lock.js";
+import { packageInstall } from "./cli/commands/package/install.js";
+import { packageUpdate } from "./cli/commands/package/update.js";
+import { packageValidate } from "./cli/commands/package/validate.js";
+import { RUNNER_NAMES } from "./runners/types.js";
+import { isTelemetryEnabled, setTelemetryEnabled, getTelemetrySource } from "./config/credentials.js";
 import type { RunnerType } from "./runners/types.js";
 import type { Command as Cmd } from "commander";
 
 function getRunner(cmd: Cmd): RunnerType | undefined {
   return cmd.optsWithGlobals().runner as RunnerType | undefined;
+}
+
+function collect(val: string, prev: string[]): string[] {
+  return [...prev, resolve(val)];
+}
+
+function getLibraryDirs(cmd: Cmd): string[] {
+  return (cmd.optsWithGlobals().libraryDir ?? []) as string[];
+}
+
+function getPackageDir(cmd: Cmd): string | undefined {
+  // Package dir comes from `mthds package -C <path>`, available via optsWithGlobals
+  const packageDir = cmd.optsWithGlobals().packageDir as string | undefined;
+  return packageDir ? resolve(packageDir) : undefined;
 }
 
 const require = createRequire(import.meta.url);
@@ -32,27 +57,51 @@ const program = new Command();
 program
   .name("mthds")
   .version(pkg.version)
-  .description("CLI bridge to the Pipelex runtime")
-  .option("--runner <type>", "Runner to use (api, pipelex)")
+  .description("CLI for the MTHDS open standard")
+  .option("--runner <type>", `Runner to use (${RUNNER_NAMES.join(", ")})`)
+  .option("-L, --library-dir <dir>", "Additional library directory (can be repeated)", collect, [] as string[])
   .exitOverride()
   .configureOutput({
     writeOut: () => {},
     writeErr: () => {},
   });
 
-// ── mthds run <target> ─────────────────────────────────────────────
-program
+// ── mthds run method|pipe ─────────────────────────────────────────────
+const run = program
   .command("run")
-  .argument("<target>", "Pipe code or .plx bundle file")
+  .description("Execute a pipeline")
+  .exitOverride();
+
+run
+  .command("method")
+  .argument("<name>", "Name of the installed method")
+  .option("--pipe <code>", "Pipe code (overrides method's main_pipe)")
+  .option("-i, --inputs <file>", "Path to JSON inputs file")
+  .option("-o, --output <file>", "Path to save output JSON")
+  .option("--no-output", "Skip saving output to file")
+  .option("--no-pretty-print", "Skip pretty printing the output")
+  .description("Run an installed method by name")
+  .allowUnknownOption()
+  .allowExcessArguments(true)
+  .exitOverride()
+  .action(async (name: string, options: Record<string, string | boolean | undefined>, cmd: Cmd) => {
+    await runMethod(name, { ...options, runner: getRunner(cmd), libraryDir: getLibraryDirs(cmd) } as Parameters<typeof runMethod>[1]);
+  });
+
+run
+  .command("pipe")
+  .argument("<target>", "Pipe code or .mthds bundle file")
   .option("--pipe <code>", "Pipe code (when target is a bundle)")
   .option("-i, --inputs <file>", "Path to JSON inputs file")
   .option("-o, --output <file>", "Path to save output JSON")
   .option("--no-output", "Skip saving output to file")
   .option("--no-pretty-print", "Skip pretty printing the output")
-  .description("Execute a pipeline")
+  .description("Run a pipe by code or bundle file (.mthds)")
+  .allowUnknownOption()
+  .allowExcessArguments(true)
   .exitOverride()
   .action(async (target: string, options: Record<string, string | boolean | undefined>, cmd: Cmd) => {
-    await runPipeline(target, { ...options, runner: getRunner(cmd) } as Parameters<typeof runPipeline>[1]);
+    await runPipe(target, { ...options, runner: getRunner(cmd), libraryDir: getLibraryDirs(cmd) } as Parameters<typeof runPipe>[1]);
   });
 
 // ── mthds build <subcommand> ────────────────────────────────────────
@@ -64,58 +113,138 @@ const build = program
 build
   .command("pipe")
   .argument("<brief>", "Natural-language description of the pipeline")
-  .option("-o, --output <file>", "Path to save the generated .plx file")
+  .option("-o, --output <file>", "Path to save the generated .mthds file")
   .description("Build a pipeline from a prompt")
+  .allowUnknownOption()
+  .allowExcessArguments(true)
   .exitOverride()
   .action(async (brief: string, options: { output?: string }, cmd: Cmd) => {
-    await buildPipe(brief, { ...options, runner: getRunner(cmd) });
+    await buildPipe(brief, { ...options, runner: getRunner(cmd), libraryDir: getLibraryDirs(cmd) });
   });
 
-build
+const buildRunnerCmd = build
   .command("runner")
-  .argument("<target>", ".plx bundle file")
+  .description("Generate Python runner code for a pipe")
+  .exitOverride();
+
+buildRunnerCmd
+  .command("method")
+  .argument("<name>", "Name of the installed method")
   .option("--pipe <code>", "Pipe code to generate runner for")
   .option("-o, --output <file>", "Path to save the generated Python file")
-  .description("Generate Python runner code for a pipe")
+  .description("Generate runner for an installed method")
+  .allowUnknownOption()
+  .allowExcessArguments(true)
+  .exitOverride()
+  .action(async (name: string, options: { pipe?: string; output?: string }, cmd: Cmd) => {
+    await buildRunnerMethod(name, { ...options, runner: getRunner(cmd), libraryDir: getLibraryDirs(cmd) });
+  });
+
+buildRunnerCmd
+  .command("pipe")
+  .argument("<target>", "Bundle file path")
+  .option("--pipe <code>", "Pipe code to generate runner for")
+  .option("-o, --output <file>", "Path to save the generated Python file")
+  .description("Generate runner for a pipe by bundle path")
+  .allowUnknownOption()
+  .allowExcessArguments(true)
   .exitOverride()
   .action(async (target: string, options: { pipe?: string; output?: string }, cmd: Cmd) => {
-    await buildRunner(target, { ...options, runner: getRunner(cmd) });
+    await buildRunnerPipe(target, { ...options, runner: getRunner(cmd), libraryDir: getLibraryDirs(cmd) });
   });
 
-build
+const buildInputsCmd = build
   .command("inputs")
-  .argument("<target>", ".plx bundle file")
-  .requiredOption("--pipe <code>", "Pipe code to generate inputs for")
   .description("Generate example input JSON for a pipe")
+  .exitOverride();
+
+buildInputsCmd
+  .command("method")
+  .argument("<name>", "Name of the installed method")
+  .option("--pipe <code>", "Pipe code to generate inputs for")
+  .description("Generate inputs for an installed method")
+  .allowUnknownOption()
+  .allowExcessArguments(true)
   .exitOverride()
-  .action(async (target: string, options: { pipe: string }, cmd: Cmd) => {
-    await buildInputs(target, { ...options, runner: getRunner(cmd) });
+  .action(async (name: string, options: { pipe?: string }, cmd: Cmd) => {
+    await buildInputsMethod(name, { ...options, runner: getRunner(cmd), libraryDir: getLibraryDirs(cmd) });
   });
 
-build
+buildInputsCmd
+  .command("pipe")
+  .argument("<target>", "Bundle file path")
+  .option("--pipe <code>", "Pipe code to generate inputs for")
+  .description("Generate inputs for a pipe by bundle path")
+  .allowUnknownOption()
+  .allowExcessArguments(true)
+  .exitOverride()
+  .action(async (target: string, options: { pipe?: string }, cmd: Cmd) => {
+    await buildInputsPipe(target, { ...options, runner: getRunner(cmd), libraryDir: getLibraryDirs(cmd) });
+  });
+
+const buildOutputCmd = build
   .command("output")
-  .argument("<target>", ".plx bundle file")
-  .requiredOption("--pipe <code>", "Pipe code to generate output for")
-  .option("--format <format>", "Output format (json, python, schema)", "schema")
   .description("Generate output representation for a pipe")
+  .exitOverride();
+
+buildOutputCmd
+  .command("method")
+  .argument("<name>", "Name of the installed method")
+  .option("--pipe <code>", "Pipe code to generate output for")
+  .option("--format <format>", "Output format (json, python, schema)", "schema")
+  .description("Generate output for an installed method")
+  .allowUnknownOption()
+  .allowExcessArguments(true)
   .exitOverride()
-  .action(async (target: string, options: { pipe: string; format?: string }, cmd: Cmd) => {
-    await buildOutput(target, { ...options, runner: getRunner(cmd) });
+  .action(async (name: string, options: { pipe?: string; format?: string }, cmd: Cmd) => {
+    await buildOutputMethod(name, { ...options, runner: getRunner(cmd), libraryDir: getLibraryDirs(cmd) });
   });
 
-// ── mthds validate <target> ────────────────────────────────────────
-program
+buildOutputCmd
+  .command("pipe")
+  .argument("<target>", "Bundle file path")
+  .option("--pipe <code>", "Pipe code to generate output for")
+  .option("--format <format>", "Output format (json, python, schema)", "schema")
+  .description("Generate output for a pipe by bundle path")
+  .allowUnknownOption()
+  .allowExcessArguments(true)
+  .exitOverride()
+  .action(async (target: string, options: { pipe?: string; format?: string }, cmd: Cmd) => {
+    await buildOutputPipe(target, { ...options, runner: getRunner(cmd), libraryDir: getLibraryDirs(cmd) });
+  });
+
+// ── mthds validate method|pipe ────────────────────────────────────────
+const validate = program
   .command("validate")
-  .argument("<target>", ".plx bundle file or pipe code")
+  .description("Validate a method or pipe")
+  .exitOverride();
+
+validate
+  .command("method")
+  .argument("<name>", "Name of the installed method")
+  .option("--pipe <code>", "Pipe code to validate (overrides method's main_pipe)")
+  .description("Validate an installed method")
+  .allowUnknownOption()
+  .allowExcessArguments(true)
+  .exitOverride()
+  .action(async (name: string, options: { pipe?: string }, cmd: Cmd) => {
+    await validateMethod(name, { ...options, runner: getRunner(cmd), libraryDir: getLibraryDirs(cmd) });
+  });
+
+validate
+  .command("pipe")
+  .argument("<target>", ".mthds bundle file or pipe code")
   .option("--pipe <code>", "Pipe code that must exist in the bundle")
   .option("--bundle <file>", "Bundle file path (alternative to positional)")
-  .description("Validate PLX content")
+  .description("Validate a pipe by code or bundle file (.mthds)")
+  .allowUnknownOption()
+  .allowExcessArguments(true)
   .exitOverride()
   .action(async (target: string, options: { pipe?: string; bundle?: string }, cmd: Cmd) => {
-    await validatePlx(target, { ...options, runner: getRunner(cmd) });
+    await validatePipe(target, { ...options, runner: getRunner(cmd), libraryDir: getLibraryDirs(cmd) });
   });
 
-// ── mthds install [address] ──────────────────────────────────────────
+// ── mthds install [address] (JS-only) ──────────────────────────────
 program
   .command("install")
   .argument("[address]", "Package address (org/repo or org/repo/sub/path)")
@@ -141,46 +270,12 @@ program
     await installMethod({ address, dir: opts.local, method: opts.method });
   });
 
-// ── mthds setup runner <name> ──────────────────────────────────────
-const setup = program.command("setup").exitOverride();
-
-setup
-  .command("runner <name>")
-  .description("Install a runner (e.g. pipelex)")
-  .exitOverride()
-  .action(async (name: string) => {
-    await installRunner(name);
-  });
-
-// ── mthds runner set-default|list ───────────────────────────────────
-const runnerCmd = program
-  .command("runner")
-  .description("Manage runners")
-  .exitOverride();
-
-runnerCmd
-  .command("set-default")
-  .argument("<name>", "Runner name (api, pipelex)")
-  .description("Set the default runner")
-  .exitOverride()
-  .action(async (name: string) => {
-    await runnerSetDefault(name);
-  });
-
-runnerCmd
-  .command("list")
-  .description("List available runners")
-  .exitOverride()
-  .action(async () => {
-    await runnerList();
-  });
-
 // ── mthds config set|get|list ──────────────────────────────────────
 const config = program.command("config").description("Manage configuration").exitOverride();
 
 config
   .command("set")
-  .argument("<key>", "Config key (runner, api-url, api-key)")
+  .argument("<key>", "Config key (runner, api-url, api-key, telemetry)")
   .argument("<value>", "Value to set")
   .description("Set a config value")
   .exitOverride()
@@ -190,7 +285,7 @@ config
 
 config
   .command("get")
-  .argument("<key>", "Config key (runner, api-url, api-key)")
+  .argument("<key>", "Config key (runner, api-url, api-key, telemetry)")
   .description("Get a config value")
   .exitOverride()
   .action(async (key: string) => {
@@ -205,34 +300,141 @@ config
     await configList();
   });
 
-// ── mthds telemetry disable|enable|status ───────────────────────────
-const telemetry = program
-  .command("telemetry")
-  .description("Manage anonymous telemetry")
-  .exitOverride();
+// ── mthds runner setup|set-default|status ────────────────────────────
+const runnerCmd = program.command("runner").description("Runner management").exitOverride();
 
-telemetry
-  .command("disable")
-  .description("Disable anonymous telemetry")
+runnerCmd
+  .command("setup")
+  .argument("<name>", `Runner name (${RUNNER_NAMES.join(", ")})`)
+  .description(`Initialize a runner (${RUNNER_NAMES.join(", ")})`)
+  .exitOverride()
+  .action(async (name: string) => {
+    await setupRunner(name);
+  });
+
+runnerCmd
+  .command("set-default")
+  .argument("<name>", `Runner name (${RUNNER_NAMES.join(", ")})`)
+  .description(`Set the default runner (${RUNNER_NAMES.join(", ")})`)
+  .exitOverride()
+  .action(async (name: string) => {
+    await setDefaultRunner(name);
+  });
+
+runnerCmd
+  .command("status")
+  .description("Show runner configuration and status")
   .exitOverride()
   .action(async () => {
-    await telemetryDisable();
+    await runnerStatus();
   });
+
+// ── mthds telemetry enable|disable ──────────────────────────────────
+const telemetry = program.command("telemetry").description("Manage anonymous usage telemetry").exitOverride();
 
 telemetry
   .command("enable")
   .description("Enable anonymous telemetry")
   .exitOverride()
-  .action(async () => {
-    await telemetryEnable();
+  .action(() => {
+    printLogo();
+    p.intro("mthds telemetry");
+    setTelemetryEnabled(true);
+    p.log.success("Telemetry enabled.");
+    p.outro("");
+  });
+
+telemetry
+  .command("disable")
+  .description("Disable anonymous telemetry")
+  .exitOverride()
+  .action(() => {
+    printLogo();
+    p.intro("mthds telemetry");
+    setTelemetryEnabled(false);
+    p.log.success("Telemetry disabled.");
+    p.outro("");
   });
 
 telemetry
   .command("status")
-  .description("Show telemetry status")
+  .description("Show current telemetry status")
   .exitOverride()
-  .action(async () => {
-    await telemetryStatus();
+  .action(() => {
+    printLogo();
+    p.intro("mthds telemetry");
+    const enabled = isTelemetryEnabled();
+    const source = getTelemetrySource();
+    const sourceLabel = source === "env" ? " (from env)" : source === "default" ? " (default)" : "";
+    p.log.info(`Telemetry is ${enabled ? "enabled" : "disabled"}${sourceLabel}`);
+    p.outro("");
+  });
+
+// ── mthds package <subcommand> ──────────────────────────────────────
+const packageCmd = program
+  .command("package")
+  .description("Package management")
+  .option("-C, --package-dir <path>", "Package directory (defaults to current directory)")
+  .exitOverride();
+
+packageCmd
+  .command("init")
+  .description("Initialize a METHODS.toml manifest")
+  .exitOverride()
+  .action(async (_opts: Record<string, unknown>, cmd: Cmd) => {
+    await packageInit({ directory: getPackageDir(cmd) });
+  });
+
+packageCmd
+  .command("list")
+  .description("Display the package manifest")
+  .exitOverride()
+  .action((_opts: Record<string, unknown>, cmd: Cmd) => {
+    packageList({ directory: getPackageDir(cmd) });
+  });
+
+packageCmd
+  .command("add")
+  .argument("<dep>", "Dependency address")
+  .option("--alias <alias>", "Alias for the dependency")
+  .option("--version <constraint>", "Version constraint (default: *)")
+  .option("--path <path>", "Local path for development (relative to package directory)")
+  .description("Add a dependency")
+  .exitOverride()
+  .action((dep: string, opts: { alias?: string; version?: string; path?: string }, cmd: Cmd) => {
+    packageAdd(dep, { ...opts, directory: getPackageDir(cmd) });
+  });
+
+packageCmd
+  .command("lock")
+  .description("Resolve and generate methods.lock")
+  .exitOverride()
+  .action(async (_opts: Record<string, unknown>, cmd: Cmd) => {
+    await packageLock({ directory: getPackageDir(cmd) });
+  });
+
+packageCmd
+  .command("install")
+  .description("Install dependencies from methods.lock")
+  .exitOverride()
+  .action(async (_opts: Record<string, unknown>, cmd: Cmd) => {
+    await packageInstall({ directory: getPackageDir(cmd) });
+  });
+
+packageCmd
+  .command("update")
+  .description("Re-resolve and update methods.lock")
+  .exitOverride()
+  .action(async (_opts: Record<string, unknown>, cmd: Cmd) => {
+    await packageUpdate({ directory: getPackageDir(cmd) });
+  });
+
+packageCmd
+  .command("validate")
+  .description("Validate the METHODS.toml manifest")
+  .exitOverride()
+  .action(async (_opts: Record<string, unknown>, cmd: Cmd) => {
+    await packageValidate({ directory: getPackageDir(cmd) });
   });
 
 // Default: show banner
@@ -242,8 +444,15 @@ program.action(() => {
 
 program.parseAsync(process.argv).catch((err: unknown) => {
   if (err instanceof CommanderError) {
-    // --help and --version exit with code 0
+    // --version: print version and exit
+    if (err.code === "commander.version") {
+      console.log(pkg.version);
+      process.exit(0);
+    }
+
+    // --help: show banner and exit
     if (err.exitCode === 0) {
+      showBanner();
       process.exit(0);
     }
 
@@ -255,15 +464,7 @@ program.parseAsync(process.argv).catch((err: unknown) => {
       .replace(/^Error: /, "");
 
     p.log.error(message);
-
-    if (err.code === "commander.missingArgument") {
-      const args = process.argv.slice(2);
-      if (args.includes("runner") && args.includes("set-default")) {
-        p.log.info("Run mthds runner list to see available runners.");
-      } else {
-        p.log.info("Run mthds --help to see usage.");
-      }
-    }
+    p.log.info("Run mthds --help to see usage.");
 
     p.outro("");
     process.exit(1);

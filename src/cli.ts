@@ -243,7 +243,7 @@ validate
 // ── mthds install [address] (JS-only) ──────────────────────────────
 program
   .command("install")
-  .argument("[address]", "Package address (org/repo or org/repo/sub/path)")
+  .argument("[address]", "GitHub repo (org/repo or https://github.com/org/repo)")
   .option("--local <path>", "Install from a local directory")
   .option("--method <name>", "Install only the specified method (by name)")
   .description("Install a method package")

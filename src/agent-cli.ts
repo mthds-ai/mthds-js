@@ -210,7 +210,7 @@ validateCmd
 
 program
   .command("install")
-  .argument("[address]", "Package address (org/repo or org/repo/sub/path)")
+  .argument("[address]", "GitHub repo (org/repo or https://github.com/org/repo)")
   .option("--local <path>", "Install from a local directory")
   .option("--agent <id>", "AI agent to install for (required)")
   .option("--location <loc>", "Install location: local or global (required)")

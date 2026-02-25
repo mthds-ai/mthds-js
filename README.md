@@ -87,7 +87,7 @@ org/repo-name (or user-name/repo-name)
 
 ### Rules
 
-1. The repository must be **public** on GitHub, with the address format `org/repo-name` or `user-name/repo-name`
+1. The repository must be **public** on GitHub. You can use `org/repo-name`, `user-name/repo-name`, or the full URL `https://github.com/org/repo-name`
 2. The repository must contain a `methods/` folder at its root
 3. Inside `methods/`, each subfolder is a **method package**
 4. Each method package folder must contain a `METHODS.toml` file that follows the [manifest specification](https://mthds.ai/latest/packages/manifest/)

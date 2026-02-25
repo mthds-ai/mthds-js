@@ -439,7 +439,7 @@ mthds install [address] [OPTIONS]
 
 | Argument / Option | Type | Required | Default | Description |
 |---|---|---|---|---|
-| `address` | string | no | -- | Package address (`org/repo` or `org/repo/sub/path`) |
+| `address` | string | no | -- | GitHub repo (`org/repo`, `org/repo/sub/path`, or full `https://github.com/...` URL) |
 | `--local <path>` | string | no | -- | Install from a local directory |
 | `--method <name>` | string | no | -- | Install only the specified method (by name) |
 

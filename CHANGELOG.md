@@ -1,23 +1,11 @@
 # Changelog
 
-## [Unreleased]
+## [v0.0.8] - 2026-02-24
 
 ### Breaking Changes
 
 - **CLI restructure: `method` / `pipe` subcommands** — `mthds run`, `mthds validate`, and all `mthds build` subcommands (`runner`, `inputs`, `output`) now require an explicit `method` or `pipe` keyword. For example: `mthds run method my-method` or `mthds run pipe scoring.compute`. The old `mthds run <target>` form is no longer supported.
 - **`[dependencies]` removed from METHODS.toml** — the `dependencies` field has been removed from the Zod schema and TypeScript types. A `[dependencies]` section in METHODS.toml now causes a validation error.
-
-### Added
-
-- **`name` field in manifest** — optional method identifier (2-25 lowercase chars, regex `^[a-z][a-z0-9_-]{1,24}$`).
-- **`main_pipe` field in manifest** — optional default pipe code (must be snake_case).
-- **Agent CLI restructure** — `mthds-agent run`, `validate`, and `build` commands mirror the same `method`/`pipe` subcommand structure with JSON output.
-- **`validatePassthrough()`** — new method on `PipelexRunner` for forwarding validate commands to the pipelex CLI.
-
-## [v0.0.8] - 2026-02-24
-
-### Breaking Changes
-
 - **`.plx` → `.mthds`** — all file extensions, variable names, and user-facing strings now use `.mthds` instead of `.plx`. Bundle detection (`target.endsWith(...)`) updated across `run`, `build`, and `validate` commands.
 - **`plx_content` → `mthds_content`** — all request/response interfaces and runner implementations renamed.
 - **`validatePlx` → `validateBundle`** — function renamed.
@@ -30,6 +18,10 @@
 - **`buildPassthrough()`** — new method on `PipelexRunner` that forwards `build <subcommand> <args>` to pipelex.
 - **`runPassthrough()`** — new method on `PipelexRunner` that forwards `run <args>` to pipelex.
 - **`.allowUnknownOption()` + `.allowExcessArguments(true)`** — on `run` and all `build` subcommands so runner-specific flags pass through Commander.js without error.
+- **`name` field in manifest** — optional method identifier (2-25 lowercase chars, regex `^[a-z][a-z0-9_-]{1,24}$`).
+- **`main_pipe` field in manifest** — optional default pipe code (must be snake_case).
+- **Agent CLI restructure** — `mthds-agent run`, `validate`, and `build` commands mirror the same `method`/`pipe` subcommand structure with JSON output.
+- **`validatePassthrough()`** — new method on `PipelexRunner` for forwarding validate commands to the pipelex CLI.
 
 ### Changed
 

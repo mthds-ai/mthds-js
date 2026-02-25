@@ -1,6 +1,6 @@
 {
   "name": "mthds",
-  "version": "0.0.7",
+  "version": "0.0.8",
   "description": "CLI and SDK for MTHDS — the open standard for reusable AI agent methods. Install, execute, and manage methods.",
   "license": "MIT",
   "repository": {

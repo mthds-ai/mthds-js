@@ -1,5 +1,21 @@
 # Changelog
 
+## [Unreleased]
+
+### Changed
+
+- **Mask API key in `config list` / `config get`** — API key now shows only the first 5 characters followed by stars instead of the full value.
+- **`maskApiKey` moved to shared utils** — extracted from `setup.ts` to `cli/commands/utils.ts` so it can be reused across commands.
+- **Banner updated** — reflects actual CLI commands (`run method|pipe`, `validate method|pipe`, `runner setup|set-default|status`); removed stale examples; added link to CLI.md.
+
+### Removed
+
+- **`package add`, `package lock`, `package install`, `package update`** — removed unimplemented dependency management commands and their source files. Only `package init`, `package list`, and `package validate` remain.
+
+### Docs
+
+- **CLI.md** — removed `package add/lock/install/update` sections; updated Package section intro.
+
 ## [v0.0.8] - 2026-02-24
 
 ### Breaking Changes

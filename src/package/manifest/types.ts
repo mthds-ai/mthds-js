@@ -6,7 +6,7 @@ export interface ParsedAddress {
 
 // --- Package section ---
 export interface PackageSection {
-  readonly name?: string;
+  readonly name: string;
   readonly address: string;
   readonly version: string;
   readonly description: string;
@@ -39,7 +39,7 @@ export type PackageSource = "github" | "local";
 
 // --- Single resolved method ---
 export interface ResolvedMethod {
-  readonly slug: string;
+  readonly name: string;
   readonly manifest: MethodsManifest;
   readonly rawManifest: string;
   readonly files: MethodsFile[];
@@ -47,7 +47,7 @@ export interface ResolvedMethod {
 
 // --- Skipped method ---
 export interface SkippedMethod {
-  readonly slug: string;
+  readonly dirName: string;
   readonly errors: string[];
 }
 

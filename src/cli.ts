@@ -21,10 +21,6 @@ import {
 import { validateMethod, validatePipe } from "./cli/commands/validate.js";
 import { packageInit } from "./cli/commands/package/init.js";
 import { packageList } from "./cli/commands/package/list.js";
-import { packageAdd } from "./cli/commands/package/add.js";
-import { packageLock } from "./cli/commands/package/lock.js";
-import { packageInstall } from "./cli/commands/package/install.js";
-import { packageUpdate } from "./cli/commands/package/update.js";
 import { packageValidate } from "./cli/commands/package/validate.js";
 import { RUNNER_NAMES } from "./runners/types.js";
 import { isTelemetryEnabled, setTelemetryEnabled, getTelemetrySource } from "./config/credentials.js";
@@ -249,7 +245,7 @@ program
   .command("install")
   .argument("[address]", "Package address (org/repo or org/repo/sub/path)")
   .option("--local <path>", "Install from a local directory")
-  .option("--method <slug>", "Install only the specified method (by slug)")
+  .option("--method <name>", "Install only the specified method (by name)")
   .description("Install a method package")
   .exitOverride()
   .action(async (address: string | undefined, opts: { local?: string; method?: string }) => {
@@ -391,42 +387,6 @@ packageCmd
   .exitOverride()
   .action((_opts: Record<string, unknown>, cmd: Cmd) => {
     packageList({ directory: getPackageDir(cmd) });
-  });
-
-packageCmd
-  .command("add")
-  .argument("<dep>", "Dependency address")
-  .option("--alias <alias>", "Alias for the dependency")
-  .option("--version <constraint>", "Version constraint (default: *)")
-  .option("--path <path>", "Local path for development (relative to package directory)")
-  .description("Add a dependency")
-  .exitOverride()
-  .action((dep: string, opts: { alias?: string; version?: string; path?: string }, cmd: Cmd) => {
-    packageAdd(dep, { ...opts, directory: getPackageDir(cmd) });
-  });
-
-packageCmd
-  .command("lock")
-  .description("Resolve and generate methods.lock")
-  .exitOverride()
-  .action(async (_opts: Record<string, unknown>, cmd: Cmd) => {
-    await packageLock({ directory: getPackageDir(cmd) });
-  });
-
-packageCmd
-  .command("install")
-  .description("Install dependencies from methods.lock")
-  .exitOverride()
-  .action(async (_opts: Record<string, unknown>, cmd: Cmd) => {
-    await packageInstall({ directory: getPackageDir(cmd) });
-  });
-
-packageCmd
-  .command("update")
-  .description("Re-resolve and update methods.lock")
-  .exitOverride()
-  .action(async (_opts: Record<string, unknown>, cmd: Cmd) => {
-    await packageUpdate({ directory: getPackageDir(cmd) });
   });
 
 packageCmd

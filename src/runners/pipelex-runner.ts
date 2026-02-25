@@ -1,13 +1,16 @@
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
 import {
+  existsSync,
+  mkdirSync,
   writeFileSync,
   readFileSync,
   mkdtempSync,
   rmSync,
 } from "node:fs";
 import { join } from "node:path";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
+import { Runners } from "./types.js";
 import type {
   Runner,
   RunnerType,
@@ -17,31 +20,98 @@ import type {
   BuildPipeResponse,
   BuildRunnerRequest,
   BuildRunnerResponse,
+  DictPipeOutput,
   ExecuteRequest,
   PipelineResponse,
   ValidateRequest,
   ValidateResponse,
 } from "./types.js";
+import type {
+  ExecutePipelineOptions,
+  PipelineExecuteResponse,
+  PipelineStartResponse,
+} from "../client/pipeline.js";
 
 const execFileAsync = promisify(execFile);
-
-function notSupported(method: string): never {
-  throw new Error(
-    `PipelexRunner.${method}() has no CLI equivalent. Use the API runner instead.`
-  );
-}
 
 function makeTmpDir(): string {
   return mkdtempSync(join(tmpdir(), "mthds-"));
 }
 
+/**
+ * Return the default methods directory (~/.mthds/methods).
+ */
+function getMethodsDir(): string {
+  return join(homedir(), ".mthds", "methods");
+}
+
+/**
+ * Ensure the output directory exists and return the pipelex `-o` base path.
+ * Pipelex treats `-o <path>` as a base name and creates `<path>_NN/`,
+ * so we pass `<dir>/bundle` to get output inside `<dir>/`.
+ */
+function resolveOutputBase(output: string | undefined): string {
+  const dir = output ?? getMethodsDir();
+  if (!existsSync(dir)) {
+    mkdirSync(dir, { recursive: true });
+  }
+  return join(dir, "bundle");
+}
+
 export class PipelexRunner implements Runner {
-  readonly type: RunnerType = "pipelex";
+  readonly type: RunnerType = Runners.PIPELEX;
+  private readonly libraryDirs: string[];
+
+  constructor(libraryDirs?: string[]) {
+    this.libraryDirs = libraryDirs ?? [];
+  }
+
+  private libraryArgs(): string[] {
+    return this.libraryDirs.flatMap((dir) => ["-L", dir]);
+  }
 
   private async exec(
     args: string[]
   ): Promise<{ stdout: string; stderr: string }> {
-    return execFileAsync("pipelex", args, { encoding: "utf-8" });
+    return execFileAsync("pipelex", [...args, ...this.libraryArgs()], {
+      encoding: "utf-8",
+    });
+  }
+
+  /**
+   * Run pipelex with stdout and stderr inherited (streamed to the terminal).
+   * Use this for long-running or interactive commands.
+   */
+  private async execStreaming(args: string[]): Promise<void> {
+    return new Promise<void>((resolve, reject) => {
+      const child = spawn("pipelex", [...args, ...this.libraryArgs()], {
+        stdio: ["ignore", "inherit", "inherit"],
+      });
+      child.on("error", (err) =>
+        reject(new Error(`pipelex not found: ${err.message}`))
+      );
+      child.on("close", (code) => {
+        if (code === 0) {
+          resolve();
+        } else {
+          reject(new Error(`pipelex exited with code ${code}`));
+        }
+      });
+    });
+  }
+
+  // ── CLI passthrough ──────────────────────────────────────────
+
+  async buildPassthrough(subcommand: string, rawArgs: string[]): Promise<void> {
+    await this.execStreaming(["build", subcommand, ...rawArgs]);
+  }
+
+  async runPassthrough(rawArgs: string[]): Promise<void> {
+    await this.execStreaming(["run", ...rawArgs]);
+  }
+
+  async validatePassthrough(rawArgs: string[]): Promise<void> {
+    await this.execStreaming(["validate", ...rawArgs]);
   }
 
   // ── Health & version ────────────────────────────────────────────
@@ -63,43 +133,82 @@ export class PipelexRunner implements Runner {
   // ── Build ───────────────────────────────────────────────────────
   // buildInputs and buildOutput have no CLI equivalent.
 
-  async buildInputs(_request: BuildInputsRequest): Promise<unknown> {
-    notSupported("buildInputs");
-  }
-
-  async buildOutput(_request: BuildOutputRequest): Promise<unknown> {
-    notSupported("buildOutput");
-  }
-
-  // pipelex build pipe "PROMPT" -o <file>
-  async buildPipe(request: BuildPipeRequest): Promise<BuildPipeResponse> {
+  // pipelex build inputs <bundle.mthds> --pipe <pipe_code>
+  async buildInputs(request: BuildInputsRequest): Promise<unknown> {
     const tmp = makeTmpDir();
     try {
-      const outPath = join(tmp, "bundle.plx");
-      await this.exec(["build", "pipe", request.brief, "-o", outPath]);
-      const plxContent = readFileSync(outPath, "utf-8");
-      return {
-        plx_content: plxContent,
-        pipelex_bundle_blueprint: {},
-        success: true,
-        message: "Pipeline generated via local CLI",
-      };
+      const bundlePath = join(tmp, "bundle.mthds");
+      writeFileSync(bundlePath, request.mthds_content, "utf-8");
+
+      const { stdout } = await this.exec([
+        "build",
+        "inputs",
+        bundlePath,
+        "--pipe",
+        request.pipe_code,
+      ]);
+
+      return JSON.parse(stdout) as unknown;
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }
   }
 
-  // pipelex build runner <bundle.plx> --pipe <pipe_code> -o <file>
+  // pipelex build output <bundle.mthds> --pipe <pipe_code> [--format <fmt>]
+  async buildOutput(request: BuildOutputRequest): Promise<unknown> {
+    const tmp = makeTmpDir();
+    try {
+      const bundlePath = join(tmp, "bundle.mthds");
+      writeFileSync(bundlePath, request.mthds_content, "utf-8");
+
+      const args = [
+        "build",
+        "output",
+        bundlePath,
+        "--pipe",
+        request.pipe_code,
+      ];
+      if (request.format) {
+        args.push("--format", request.format);
+      }
+
+      const { stdout } = await this.exec(args);
+
+      return JSON.parse(stdout) as unknown;
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  }
+
+  // pipelex build pipe "PROMPT" -o <dir>
+  async buildPipe(request: BuildPipeRequest): Promise<BuildPipeResponse> {
+    const outputDir = resolveOutputBase(request.output);
+    await this.execStreaming([
+      "build",
+      "pipe",
+      request.brief,
+      "-o",
+      outputDir,
+    ]);
+    return {
+      mthds_content: "",
+      pipelex_bundle_blueprint: {},
+      success: true,
+      message: `Pipeline built successfully — saved to ${outputDir}`,
+    };
+  }
+
+  // pipelex build runner <bundle.mthds> --pipe <pipe_code> -o <file>
   async buildRunner(
     request: BuildRunnerRequest
   ): Promise<BuildRunnerResponse> {
     const tmp = makeTmpDir();
     try {
-      const bundlePath = join(tmp, "bundle.plx");
-      writeFileSync(bundlePath, request.plx_content, "utf-8");
+      const bundlePath = join(tmp, "bundle.mthds");
+      writeFileSync(bundlePath, request.mthds_content, "utf-8");
 
       const outPath = join(tmp, "runner.py");
-      await this.exec([
+      await this.execStreaming([
         "build",
         "runner",
         bundlePath,
@@ -129,9 +238,9 @@ export class PipelexRunner implements Runner {
     try {
       const args: string[] = ["run"];
 
-      if (request.plx_content) {
-        const bundlePath = join(tmp, "bundle.plx");
-        writeFileSync(bundlePath, request.plx_content, "utf-8");
+      if (request.mthds_content) {
+        const bundlePath = join(tmp, "bundle.mthds");
+        writeFileSync(bundlePath, request.mthds_content, "utf-8");
         args.push(bundlePath);
         if (request.pipe_code) {
           args.push("--pipe", request.pipe_code);
@@ -150,14 +259,14 @@ export class PipelexRunner implements Runner {
         args.push("--inputs", inputsPath);
       }
 
-      const outputPath = join(tmp, "output.json");
-      args.push("--output", outputPath);
+      args.push("--output-dir", tmp);
 
-      await this.exec(args);
+      await this.execStreaming(args);
 
-      const raw = JSON.parse(
-        readFileSync(outputPath, "utf-8")
-      ) as Record<string, unknown>;
+      const wmPath = join(tmp, "working_memory.json");
+      const raw = existsSync(wmPath)
+        ? (JSON.parse(readFileSync(wmPath, "utf-8")) as Record<string, unknown>)
+        : {};
 
       // The CLI output is working memory JSON. Wrap it in PipelineResponse shape.
       return {
@@ -177,29 +286,29 @@ export class PipelexRunner implements Runner {
   }
 
   // ── Validation ──────────────────────────────────────────────────
-  // pipelex validate --bundle <file.plx>
+  // pipelex validate --bundle <file.mthds>
 
   async validate(request: ValidateRequest): Promise<ValidateResponse> {
     const tmp = makeTmpDir();
     try {
-      const bundlePath = join(tmp, "bundle.plx");
-      writeFileSync(bundlePath, request.plx_content, "utf-8");
+      const bundlePath = join(tmp, "bundle.mthds");
+      writeFileSync(bundlePath, request.mthds_content, "utf-8");
 
       await this.exec(["validate", "--bundle", bundlePath]);
 
       return {
-        plx_content: request.plx_content,
+        mthds_content: request.mthds_content,
         pipelex_bundle_blueprint: {
           domain: "local",
         },
         success: true,
-        message: "PLX content validated via local CLI",
+        message: "Bundle validated via local CLI",
       };
     } catch (err) {
       const message =
         err instanceof Error ? err.message : "Validation failed";
       return {
-        plx_content: request.plx_content,
+        mthds_content: request.mthds_content,
         pipelex_bundle_blueprint: { domain: "local" },
         success: false,
         message,
@@ -207,5 +316,38 @@ export class PipelexRunner implements Runner {
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }
+  }
+
+  // ── RunnerProtocol implementation ─────────────────────────────────
+
+  async executePipeline(
+    options: ExecutePipelineOptions
+  ): Promise<PipelineExecuteResponse> {
+    const request: ExecuteRequest = {
+      mthds_content: options.mthds_content ?? undefined,
+      pipe_code: options.pipe_code ?? undefined,
+      inputs: options.inputs
+        ? Object.fromEntries(
+            Object.entries(options.inputs).map(([k, v]) => [k, v])
+          )
+        : undefined,
+    };
+    const response = await this.execute(request);
+    return {
+      pipeline_run_id: response.pipeline_run_id,
+      created_at: response.created_at,
+      pipeline_state: response.pipeline_state,
+      finished_at: response.finished_at,
+      main_stuff_name: response.main_stuff_name,
+      pipe_output: response.pipe_output as unknown as DictPipeOutput,
+    };
+  }
+
+  async startPipeline(
+    _options: ExecutePipelineOptions
+  ): Promise<PipelineStartResponse> {
+    throw new Error(
+      "startPipeline is not supported by the pipelex CLI runner. Use the API runner instead."
+    );
   }
 }

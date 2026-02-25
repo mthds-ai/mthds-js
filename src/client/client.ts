@@ -20,10 +20,10 @@ export class MthdsApiClient implements RunnerProtocol {
   private readonly apiBaseUrl: string;
 
   constructor(options: MthdsApiClientOptions = {}) {
-    this.apiToken = options.apiToken ?? process.env.MTHDS_API_KEY;
+    this.apiToken = options.apiToken ?? process.env.PIPELEX_API_KEY;
 
     const resolvedBaseUrl =
-      options.apiBaseUrl ?? process.env.MTHDS_API_BASE_URL;
+      options.apiBaseUrl ?? process.env.PIPELEX_API_URL;
     if (!resolvedBaseUrl) {
       throw new ClientAuthenticationError(
         "API base URL is required for API execution"

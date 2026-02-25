@@ -5,12 +5,12 @@ const VALID_SEGMENT = /^[a-zA-Z0-9._-]+$/;
 export function parseAddress(input: string): ParsedAddress {
   let raw = input.trim();
 
-  // Strip github.com/ prefix with warning
-  if (raw.startsWith("github.com/")) {
-    raw = raw.slice("github.com/".length);
-    console.warn(
-      `Warning: stripped "github.com/" prefix — use "${raw}" directly.`
-    );
+  // Strip full GitHub URL prefixes
+  for (const prefix of ["https://github.com/", "http://github.com/", "github.com/"]) {
+    if (raw.startsWith(prefix)) {
+      raw = raw.slice(prefix.length);
+      break;
+    }
   }
 
   // Strip trailing slash

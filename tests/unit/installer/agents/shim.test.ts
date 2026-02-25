@@ -33,7 +33,7 @@ describe("generateShim", () => {
     expect(content).toContain("-L");
   });
 
-  it("uses the slug as the filename", () => {
+  it("uses the name as the filename", () => {
     generateShim("assess-risk", "/path/to/methods/assess-risk");
 
     const shimPath = join(tempHome, ".mthds", "bin", "assess-risk");

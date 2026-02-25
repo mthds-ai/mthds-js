@@ -134,11 +134,11 @@ export async function agentInstall(
 
   // Filter by --method
   if (methodFilter) {
-    const match = resolved.methods.find((m) => m.slug === methodFilter);
+    const match = resolved.methods.find((m) => m.name === methodFilter);
     if (!match) {
-      const available = resolved.methods.map((m) => m.slug).join(", ");
+      const available = resolved.methods.map((m) => m.name).join(", ");
       agentError(
-        `Method "${methodFilter}" not found. Available slugs: ${available || "(none)"}`,
+        `Method "${methodFilter}" not found. Available methods: ${available || "(none)"}`,
         "InstallError",
         { error_domain: AGENT_ERROR_DOMAINS.INSTALL }
       );
@@ -180,7 +180,8 @@ export async function agentInstall(
       const pkg = method.manifest.package;
       trackInstall({
         address: orgRepo ?? pkg.address.replace(/^github\.com\//, ""),
-        slug: method.slug,
+        name: pkg.name,
+        main_pipe: pkg.main_pipe,
         version: pkg.version,
         description: pkg.description,
         display_name: pkg.display_name,
@@ -231,12 +232,12 @@ export async function agentInstall(
 
   const shimDir = join(homedir(), ".mthds", "bin");
   const shimsGenerated = existsSync(shimDir)
-    ? resolved.methods.map((m) => m.slug)
+    ? resolved.methods.map((m) => m.name)
     : [];
 
   agentSuccess({
     success: true,
-    installed_methods: resolved.methods.map((m) => m.slug),
+    installed_methods: resolved.methods.map((m) => m.name),
     location: selectedLocation,
     target_dir: targetDir,
     installed_skills: installedSkills,

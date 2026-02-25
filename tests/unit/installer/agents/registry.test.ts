@@ -8,18 +8,19 @@ import { rmSync } from "node:fs";
 import { getAgentHandler } from "../../../../src/installer/agents/registry.js";
 import type { ResolvedRepo } from "../../../../src/package/manifest/types.js";
 
-function makeRepo(slugs: string[], files: { relativePath: string; content: string }[] = []): ResolvedRepo {
+function makeRepo(names: string[], files: { relativePath: string; content: string }[] = []): ResolvedRepo {
   return {
-    methods: slugs.map((slug) => ({
-      slug,
+    methods: names.map((name) => ({
+      name,
       manifest: {
         package: {
+          name,
           address: "github.com/test/repo",
           version: "1.0.0",
           description: "test",
         },
       },
-      rawManifest: "[package]\naddress = \"github.com/test/repo\"\nversion = \"1.0.0\"\ndescription = \"test\"",
+      rawManifest: `[package]\nname = "${name}"\naddress = "github.com/test/repo"\nversion = "1.0.0"\ndescription = "test"`,
       files: files.length ? files : [{ relativePath: "main.mthds", content: "test content" }],
     })),
     skipped: [],
@@ -41,7 +42,7 @@ describe("writeMethodFiles path traversal checks", () => {
     rmSync(testDir, { recursive: true, force: true });
   });
 
-  it("rejects slugs that traverse outside targetDir", async () => {
+  it("rejects names that traverse outside targetDir", async () => {
     const handler = getAgentHandler("claude-code");
     const repo = makeRepo(["../../escape"]);
 
@@ -93,7 +94,7 @@ describe("writeMethodFiles path traversal checks", () => {
     }
   });
 
-  it("allows valid slugs", async () => {
+  it("allows valid names", async () => {
     const handler = getAgentHandler("claude-code");
     const repo = makeRepo(["valid-method"]);
 

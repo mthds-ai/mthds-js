@@ -37,7 +37,7 @@ export function parsedManifestToLegacy(parsed: ParsedManifest): MethodsManifest 
 
   return {
     package: {
-      ...(parsed.name !== undefined ? { name: parsed.name } : {}),
+      name: parsed.name as string,
       address: parsed.address,
       version: parsed.version,
       description: parsed.description,
@@ -67,7 +67,7 @@ export function legacyToParsedManifest(legacy: MethodsManifest): ParsedManifest 
     description: legacy.package.description,
     authors: legacy.package.authors ?? [],
     exports,
-    ...(legacy.package.name !== undefined ? { name: legacy.package.name } : {}),
+    name: legacy.package.name,
     ...(legacy.package.display_name !== undefined ? { displayName: legacy.package.display_name } : {}),
     ...(legacy.package.license !== undefined ? { license: legacy.package.license } : {}),
     ...(legacy.package.mthds_version !== undefined ? { mthdsVersion: legacy.package.mthds_version } : {}),

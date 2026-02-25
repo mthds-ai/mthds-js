@@ -9,35 +9,12 @@ export interface ValidationResult {
   readonly manifest?: MethodsManifest;
 }
 
-export interface SlugValidationResult {
-  readonly valid: boolean;
-  readonly error?: string;
-}
-
 const SEMVER_RE =
   /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+([0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$/;
 
 const SNAKE_CASE_RE = /^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$/;
 
-const SLUG_RE = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
-
 const RESERVED_PREFIXES = ["native", "mthds", "pipelex"];
-
-export function validateSlug(name: string): SlugValidationResult {
-  if (!name) {
-    return { valid: false, error: "Slug cannot be empty." };
-  }
-  if (name.length > 64) {
-    return { valid: false, error: `Slug must be at most 64 characters (got ${name.length}).` };
-  }
-  if (!SLUG_RE.test(name)) {
-    return {
-      valid: false,
-      error: `Slug "${name}" is invalid: must be lowercase alphanumeric with hyphens, starting with a letter.`,
-    };
-  }
-  return { valid: true };
-}
 
 function validateExportNode(
   node: unknown,
@@ -129,8 +106,8 @@ export function validateManifest(raw: string): ValidationResult {
   if (pkg["display_name"] !== undefined) {
     if (typeof pkg["display_name"] !== "string") {
       errors.push('[package.display_name] must be a string.');
-    } else if ((pkg["display_name"] as string).length > 128) {
-      errors.push('[package.display_name] must be at most 128 characters.');
+    } else if ((pkg["display_name"] as string).length > 25) {
+      errors.push('[package.display_name] must be at most 25 characters.');
     }
   }
 
@@ -162,15 +139,13 @@ export function validateManifest(raw: string): ValidationResult {
     }
   }
 
-  // package.name (optional)
-  if (pkg["name"] !== undefined) {
-    if (typeof pkg["name"] !== "string") {
-      errors.push('[package.name] must be a string.');
-    } else if (!METHOD_NAME_RE.test(pkg["name"] as string)) {
-      errors.push(
-        `[package.name] "${pkg["name"]}" is invalid: must be 2-25 lowercase chars (letters, digits, hyphens, underscores), starting with a letter.`
-      );
-    }
+  // package.name (required)
+  if (typeof pkg["name"] !== "string" || !pkg["name"]) {
+    errors.push('[package.name] is required and must be a non-empty string.');
+  } else if (!METHOD_NAME_RE.test(pkg["name"] as string)) {
+    errors.push(
+      `[package.name] "${pkg["name"]}" is invalid: must be 2-25 lowercase chars (letters, digits, hyphens, underscores), starting with a letter.`
+    );
   }
 
   // package.main_pipe (optional)
@@ -213,7 +188,7 @@ export function validateManifest(raw: string): ValidationResult {
     address: pkg["address"] as string,
     version: pkg["version"] as string,
     description: pkg["description"] as string,
-    ...(pkg["name"] !== undefined ? { name: pkg["name"] as string } : {}),
+    name: pkg["name"] as string,
     ...(pkg["display_name"] !== undefined ? { display_name: pkg["display_name"] as string } : {}),
     ...(pkg["authors"] !== undefined ? { authors: pkg["authors"] as string[] } : {}),
     ...(pkg["license"] !== undefined ? { license: pkg["license"] as string } : {}),

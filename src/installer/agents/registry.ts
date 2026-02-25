@@ -6,16 +6,16 @@ import type { Agent, AgentHandler, InstallMethodOptions } from "./types.js";
 /**
  * Generate an executable CLI shim for a method in ~/.mthds/bin/.
  *
- * The shim allows invoking a method directly by slug, e.g.:
+ * The shim allows invoking a method directly by name, e.g.:
  *   extract-contract-terms --inputs '{"text": "..."}'
  *
  * On Windows, a .cmd shim is also generated.
  */
-export function generateShim(slug: string, installDir: string): void {
+export function generateShim(name: string, installDir: string): void {
   const binDir = join(homedir(), ".mthds", "bin");
   mkdirSync(binDir, { recursive: true });
 
-  const shimPath = join(binDir, slug);
+  const shimPath = join(binDir, name);
   const escapedDir = installDir.replace(/'/g, "'\\''");
   const shimContent = [
     "#!/bin/sh",
@@ -27,7 +27,7 @@ export function generateShim(slug: string, installDir: string): void {
 
   // On Windows, also generate a .cmd shim
   if (process.platform === "win32") {
-    const cmdPath = join(binDir, `${slug}.cmd`);
+    const cmdPath = join(binDir, `${name}.cmd`);
     const cmdEscapedDir = installDir.replace(/%/g, "%%").replace(/"/g, '""');
     const cmdContent = [
       "@echo off",
@@ -44,9 +44,9 @@ function writeMethodFiles(options: InstallMethodOptions): void {
   mkdirSync(targetDir, { recursive: true });
 
   for (const method of repo.methods) {
-    const installDir = resolve(join(targetDir, method.slug));
+    const installDir = resolve(join(targetDir, method.name));
     if (!installDir.startsWith(targetDir + sep)) {
-      throw new Error(`Path traversal detected: slug "${method.slug}" escapes target directory.`);
+      throw new Error(`Path traversal detected: name "${method.name}" escapes target directory.`);
     }
     mkdirSync(installDir, { recursive: true });
 
@@ -61,7 +61,7 @@ function writeMethodFiles(options: InstallMethodOptions): void {
       writeFileSync(filePath, file.content, "utf-8");
     }
 
-    generateShim(method.slug, installDir);
+    generateShim(method.name, installDir);
   }
 }
 

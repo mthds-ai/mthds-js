@@ -17,7 +17,8 @@
     }
   },
   "bin": {
-    "mthds": "./dist/cli.js"
+    "mthds": "./dist/cli.js",
+    "mthds-agent": "./dist/agent-cli.js"
   },
   "scripts": {
     "build": "tsc",

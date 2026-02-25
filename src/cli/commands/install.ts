@@ -242,61 +242,31 @@ export async function installMethod(options: {
     return;
   }
 
-  const SKILLS_REPO = "https://github.com/pipelex/skills";
-  const skillChoices = [
-    { value: "check", label: "check", hint: "Validate and review Pipelex workflow bundles without making changes" },
-    { value: "edit", label: "edit", hint: "Modify existing Pipelex workflow bundles" },
-    { value: "build", label: "build", hint: "Create new Pipelex workflow bundles from scratch" },
-    { value: "fix", label: "fix", hint: "Automatically fix issues in Pipelex workflow bundles" },
-  ];
+  const SKILLS_REPO = "https://github.com/mthds-ai/skills";
 
-  let selectedSkills: string[] = [];
-  let emptyAttempts = 0;
+  const wantsSkills = await p.confirm({
+    message: "Do you want to install the MTHDS skills plugin?",
+    initialValue: true,
+  });
 
-  // eslint-disable-next-line no-constant-condition
-  while (true) {
-    const hint = emptyAttempts > 0
-      ? chalk.yellow("  press space to select, enter to confirm")
-      : chalk.dim("  press space to select, enter to confirm");
-
-    const result = await p.multiselect({
-      message: `For a better experience using the pipelex runner, install the skills:\n${hint}`,
-      options: skillChoices,
-      required: false,
-    });
-
-    if (p.isCancel(result)) {
-      p.cancel("Installation cancelled.");
-      process.exit(0);
-    }
-
-    if (result.length === 0) {
-      emptyAttempts++;
-      if (emptyAttempts >= 2) {
-        break;
-      }
-      continue;
-    }
-
-    selectedSkills = result;
-    break;
+  if (p.isCancel(wantsSkills)) {
+    p.cancel("Installation cancelled.");
+    process.exit(0);
   }
 
-  if (selectedSkills.length > 0) {
+  if (wantsSkills) {
     const globalFlag = selectedLocation === Loc.Global ? " -g" : "";
     const locationLabel = selectedLocation === Loc.Global ? "globally" : "locally";
     const sk = p.spinner();
-    for (const skill of selectedSkills) {
-      sk.start(`Installing skill "${skill}" ${locationLabel}...`);
-      try {
-        await execAsync(`npx skills add ${SKILLS_REPO} --skill ${skill} --agent ${selectedAgent}${globalFlag} -y`, {
-          cwd: process.cwd(),
-        });
-        sk.stop(`Skill "${skill}" installed ${locationLabel}.`);
-      } catch {
-        sk.stop(`Failed to install skill "${skill}".`);
-        p.log.warning(`Could not install skill "${skill}". You can retry manually:\n  npx skills add ${SKILLS_REPO} --skill ${skill} --agent ${selectedAgent}${globalFlag}`);
-      }
+    sk.start(`Installing MTHDS skills ${locationLabel}...`);
+    try {
+      await execAsync(`npx skills add ${SKILLS_REPO} --skill '*' --agent ${selectedAgent}${globalFlag} -y`, {
+        cwd: process.cwd(),
+      });
+      sk.stop(`MTHDS skills installed ${locationLabel}.`);
+    } catch {
+      sk.stop("Failed to install MTHDS skills.");
+      p.log.warning(`Could not install MTHDS skills. You can retry manually:\n  npx skills add ${SKILLS_REPO} --skill '*' --agent ${selectedAgent}${globalFlag}`);
     }
   }
 

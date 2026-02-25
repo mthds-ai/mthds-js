@@ -6,14 +6,9 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { agentSuccess, agentError, AGENT_ERROR_DOMAINS } from "../output.js";
 import { createRunner } from "../../runners/registry.js";
-import { PipelexRunner } from "../../runners/pipelex-runner.js";
-import { Runners } from "../../runners/types.js";
+import { isPipelexRunner } from "../../cli/commands/utils.js";
 import type { Runner, RunnerType } from "../../runners/types.js";
 import type { ExecutePipelineOptions } from "../../client/pipeline.js";
-
-function isPipelexRunner(runner: Runner): runner is PipelexRunner {
-  return runner.type === Runners.PIPELEX;
-}
 
 /** Extract raw args after `run`, filtering out --runner, -d/--directory, and --log-level */
 function extractPassthroughArgs(): string[] {
@@ -49,7 +44,6 @@ interface AgentRunOptions {
   pipe?: string;
   inputs?: string;
   output?: string;
-  noOutput?: boolean;
   runner?: RunnerType;
   directory?: string;
 }
@@ -131,7 +125,7 @@ export async function agentRun(
   try {
     const result = await runner.executePipeline(pipelineOptions);
 
-    if (!options.noOutput && options.output) {
+    if (options.output) {
       writeFileSync(
         options.output,
         JSON.stringify(result, null, 2) + "\n",

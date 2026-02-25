@@ -7,13 +7,8 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { agentSuccess, agentError, AGENT_ERROR_DOMAINS } from "../output.js";
 import { createRunner } from "../../runners/registry.js";
-import { PipelexRunner } from "../../runners/pipelex-runner.js";
-import { Runners } from "../../runners/types.js";
+import { isPipelexRunner } from "../../cli/commands/utils.js";
 import type { ConceptRepresentationFormat, Runner, RunnerType } from "../../runners/types.js";
-
-function isPipelexRunner(runner: Runner): runner is PipelexRunner {
-  return runner.type === Runners.PIPELEX;
-}
 
 interface WithRunner {
   runner?: RunnerType;

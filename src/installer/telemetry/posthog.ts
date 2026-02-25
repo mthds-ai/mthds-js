@@ -6,7 +6,7 @@ import {
 } from "../../config/credentials.js";
 import type { CredentialSource } from "../../config/credentials.js";
 
-const POSTHOG_API_KEY = "phc_ylV9FzMiQDyGgtd5nJn0Cc2OkyHAobfj7xDhYloH5IA";
+const POSTHOG_API_KEY = "phc_LRwe2lybfPTNCzAT1ScpnsWznrxAvmc1pmCaXEr1hwJ";
 const POSTHOG_HOST = "https://eu.i.posthog.com";
 
 let client: PostHog | null = null;

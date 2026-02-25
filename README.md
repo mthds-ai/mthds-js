@@ -6,7 +6,7 @@ The MTHDS open standard is defined at [mthds.ai](https://mthds.ai). Browse and d
 
 ## What is a method?
 
-A method is a packaged workflow that an AI agent (like Claude Code) can use. Methods are stored in a registry and installed locally via their unique slug.
+A method is a packaged workflow that an AI agent (like Claude Code) can use. Methods are stored in a registry and installed locally via their unique name.
 
 ## CLI Usage
 
@@ -47,11 +47,11 @@ The CLI will:
 
 1. Fetch the `methods/` folder from the GitHub repository
 2. Validate each method's `METHODS.toml` manifest
-3. If `--method <slug>` is provided, install only that method (errors if slug not found)
+3. If `--method <name>` is provided, install only that method (errors if name not found)
 4. Ask which AI agent to install it for (Claude Code, with more coming soon)
 5. Ask where to install — **local** (current project) or **global** (your machine)
 6. Optionally install a [runner](#runners)
-7. Copy all `.mthds` files to `.claude/methods/<slug>/`
+7. Copy all `.mthds` files to `.claude/methods/<name>/`
 
 You can also install from a local directory:
 
@@ -63,8 +63,8 @@ npx mthds install --local /path/to/repo
 
 | Location | Path |
 |----------|------|
-| Local | `<cwd>/.claude/methods/<slug>/` |
-| Global | `~/.claude/methods/<slug>/` |
+| Local | `<cwd>/.claude/methods/<name>/` |
+| Global | `~/.claude/methods/<name>/` |
 
 ## Publishing a method
 
@@ -87,9 +87,9 @@ org/repo-name (or user-name/repo-name)
 
 ### Rules
 
-1. The repository must be **public** on GitHub, with the address format `org/repo-name` or `user-name/repo-name`
+1. The repository must be **public** on GitHub. You can use `org/repo-name`, `user-name/repo-name`, or the full URL `https://github.com/org/repo-name`
 2. The repository must contain a `methods/` folder at its root
-3. Inside `methods/`, each subfolder is a **method package**. The folder name is the **slug** and **must be kebab-case** (e.g. `my-method`, `legal-tools`)
+3. Inside `methods/`, each subfolder is a **method package**
 4. Each method package folder must contain a `METHODS.toml` file that follows the [manifest specification](https://mthds.ai/latest/packages/manifest/)
 5. Each method package folder should contain one or more `.mthds` files (the actual method definitions)
 
@@ -99,6 +99,7 @@ The `METHODS.toml` manifest is validated during installation. A minimal valid ma
 
 ```toml
 [package]
+name = "your-method"
 address = "github.com/your-org/your-repo"
 version = "1.0.0"
 description = "A short description of what this method does"
@@ -112,9 +113,8 @@ See the full specification at [mthds.ai/latest/packages/manifest](https://mthds.
 
 The CLI validates everything during install:
 
-- Slug must be kebab-case, start with a letter, max 64 characters
 - `METHODS.toml` must parse as valid TOML
-- `[package]` section with `address`, `version` (semver), and `description` are required
+- `[package]` section with `name`, `address`, `version` (semver), and `description` are required
 - `address` must include a hostname with a dot (e.g. `github.com/...`)
 - Invalid methods are skipped with detailed error messages; valid ones proceed to install
 
@@ -235,7 +235,7 @@ Either `pipe_code` or `mthds_content` must be provided.
 
 ## Telemetry
 
-Anonymous usage data is collected to help rank methods on the leaderboard. Each `install` event includes the package address, slug, version, and manifest metadata. No personal or device information is collected.
+Anonymous usage data is collected to help rank methods on the leaderboard. Each `install` event includes the package address, name, version, and manifest metadata. No personal or device information is collected.
 
 To opt out:
 

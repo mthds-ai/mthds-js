@@ -439,9 +439,9 @@ mthds install [address] [OPTIONS]
 
 | Argument / Option | Type | Required | Default | Description |
 |---|---|---|---|---|
-| `address` | string | no | -- | Package address (`org/repo` or `org/repo/sub/path`) |
+| `address` | string | no | -- | GitHub repo (`org/repo`, `org/repo/sub/path`, or full `https://github.com/...` URL) |
 | `--local <path>` | string | no | -- | Install from a local directory |
-| `--method <slug>` | string | no | -- | Install only the specified method (by slug) |
+| `--method <name>` | string | no | -- | Install only the specified method (by name) |
 
 You must provide either `address` or `--local`, but not both.
 
@@ -462,7 +462,7 @@ mthds install org/repo
 # Install from a local directory
 mthds install --local ./my-methods
 
-# Install a specific method by slug
+# Install a specific method by name
 mthds install org/repo --method my-method
 
 # Install from a subpath within a repo
@@ -473,7 +473,7 @@ mthds install org/repo/methods/specific
 
 ## Package
 
-Manage MTHDS packages: manifests, dependencies, lock files, and installation. All package commands respect the `-C, --package-dir <path>` option to target a specific directory.
+Manage MTHDS packages: manifests and validation. All package commands respect the `-C, --package-dir <path>` option to target a specific directory.
 
 ### `mthds package init`
 
@@ -527,86 +527,3 @@ Shows package metadata (address, version, description, authors, license), depend
 mthds package list
 ```
 
-### `mthds package add`
-
-> **Note:** Dependencies are not supported in this version. This command is reserved for future use.
-
-Add a dependency to `METHODS.toml`.
-
-```bash
-mthds package add <dep> [OPTIONS]
-```
-
-| Argument / Option | Type | Required | Default | Description |
-|---|---|---|---|---|
-| `dep` | string | yes | -- | Dependency address (e.g. `github.com/org/repo`) |
-| `--alias <alias>` | string | no | derived from address | snake\_case alias for the dependency |
-| `--version <constraint>` | string | no | `*` | Version constraint (e.g. `^1.0.0`, `>=2.0.0`) |
-| `--path <path>` | string | no | -- | Local path for development (relative to package directory) |
-
-If `--alias` is omitted, the alias is derived from the last segment of the address (hyphens converted to underscores).
-
-When `--path` is provided, the dependency is resolved from the local filesystem instead of being fetched from git. This is useful for developing multiple packages side by side. Local dependencies are excluded from `methods.lock`.
-
-**Examples:**
-
-```bash
-# Add a remote dependency
-mthds package add github.com/mthds/document-processing --version "^1.0.0"
-
-# Add with explicit alias
-mthds package add github.com/mthds/scoring-lib --alias scoring --version ">=0.5.0"
-
-# Add a local dependency for development
-mthds package add github.com/mthds/scoring-lib --path ../scoring-lib --version "^1.0.0"
-```
-
-### `mthds package lock`
-
-Resolve all dependencies and generate `methods.lock`.
-
-```bash
-mthds package lock
-```
-
-Validates `METHODS.toml` and writes `methods.lock`. Currently writes an empty lock file since dependencies are not supported in this version.
-
-When dependency support is added, this command will resolve all remote dependencies transitively (with cycle detection and diamond constraint handling via Minimum Version Selection) and write pinned versions with SHA-256 integrity hashes.
-
-**Example:**
-
-```bash
-mthds package lock
-```
-
-### `mthds package install`
-
-Install dependencies from `methods.lock`.
-
-```bash
-mthds package install
-```
-
-Reads `methods.lock`, fetches any packages not already in the local cache (`~/.mthds/packages/`), and verifies integrity of all cached packages against their lock file hashes.
-
-**Example:**
-
-```bash
-mthds package install
-```
-
-### `mthds package update`
-
-Re-resolve all dependencies and regenerate `methods.lock`.
-
-```bash
-mthds package update
-```
-
-Like `mthds package lock`, but ignores the existing lock file and resolves all dependencies from scratch. Currently a no-op since dependencies are not supported in this version.
-
-**Example:**
-
-```bash
-mthds package update
-```

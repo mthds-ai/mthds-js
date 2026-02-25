@@ -90,11 +90,11 @@ export async function installMethod(options: {
 
   // Filter by --method if provided
   if (methodFilter) {
-    const match = resolved.methods.find((m) => m.slug === methodFilter);
+    const match = resolved.methods.find((m) => m.name === methodFilter);
     if (!match) {
-      const available = resolved.methods.map((m) => m.slug).join(", ");
+      const available = resolved.methods.map((m) => m.name).join(", ");
       p.log.error(
-        `Method "${methodFilter}" not found. Available slugs: ${available || "(none)"}`
+        `Method "${methodFilter}" not found. Available methods: ${available || "(none)"}`
       );
       p.outro("");
       process.exit(1);
@@ -119,7 +119,7 @@ export async function installMethod(options: {
     const fileCount = method.files.length;
     p.log.success(
       [
-        `${chalk.bold(method.slug)} — ${m.display_name ?? m.address} v${m.version}`,
+        `${chalk.bold(method.name)} — ${m.display_name ?? m.address} v${m.version}`,
         `  ${m.description}`,
         `  ${fileCount} .mthds file${fileCount !== 1 ? "s" : ""}`,
       ].join("\n")
@@ -130,7 +130,7 @@ export async function installMethod(options: {
   for (const skip of resolved.skipped) {
     const errList = skip.errors.map((e) => `    - ${e}`).join("\n");
     p.log.warning(
-      `${chalk.bold(skip.slug)} — skipped:\n${errList}`
+      `${chalk.bold(skip.dirName)} — skipped:\n${errList}`
     );
   }
 
@@ -172,13 +172,13 @@ export async function installMethod(options: {
 
   const installSpinner = p.spinner();
   for (const method of resolved.methods) {
-    const installDir = resolve(join(targetDir, method.slug));
+    const installDir = resolve(join(targetDir, method.name));
     if (!installDir.startsWith(targetDir + sep)) {
-      p.log.error(`Path traversal detected: slug "${method.slug}" escapes install directory.`);
+      p.log.error(`Path traversal detected: name "${method.name}" escapes install directory.`);
       p.outro("");
       process.exit(1);
     }
-    installSpinner.start(`Installing "${method.slug}" to ${installDir}...`);
+    installSpinner.start(`Installing "${method.name}" to ${installDir}...`);
 
     mkdirSync(installDir, { recursive: true });
 
@@ -203,10 +203,10 @@ export async function installMethod(options: {
       ? "(manifest only)"
       : `(${fileCount} .mthds file${fileCount > 1 ? "s" : ""})`;
 
-    installSpinner.stop(`Installed "${method.slug}" to ${installDir} ${filesMsg}`);
+    installSpinner.stop(`Installed "${method.name}" to ${installDir} ${filesMsg}`);
 
     // Generate CLI shim
-    generateShim(method.slug, installDir);
+    generateShim(method.name, installDir);
   }
 
   // PATH advisory for CLI shims
@@ -225,7 +225,8 @@ export async function installMethod(options: {
       const pkg = method.manifest.package;
       trackInstall({
         address: orgRepo ?? pkg.address.replace(/^github\.com\//, ""),
-        slug: method.slug,
+        name: pkg.name,
+        main_pipe: pkg.main_pipe,
         version: pkg.version,
         description: pkg.description,
         display_name: pkg.display_name,

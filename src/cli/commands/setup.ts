@@ -7,13 +7,9 @@ import { shutdown } from "../../installer/telemetry/posthog.js";
 import { printLogo } from "./index.js";
 import { getConfigValue, setConfigValue } from "../../config/config.js";
 import { Runners, RUNNER_NAMES } from "../../runners/types.js";
+import { maskApiKey } from "./utils.js";
 
 const execFileAsync = promisify(execFile);
-
-function maskApiKey(key: string): string {
-  if (!key) return "(not set)";
-  return `${key.slice(0, 5)}${"*".repeat(Math.max(0, key.length - 5))}`;
-}
 
 // ── mthds runner setup <name> ───────────────────────────────────────
 

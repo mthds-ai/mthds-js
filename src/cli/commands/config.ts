@@ -9,6 +9,7 @@ import {
 } from "../../config/config.js";
 import { RUNNER_NAMES } from "../../runners/types.js";
 import type { RunnerType } from "../../runners/types.js";
+import { maskApiKey } from "./utils.js";
 
 function isValidUrl(s: string): boolean {
   try {
@@ -64,7 +65,8 @@ export async function configGet(cliKey: string): Promise<void> {
 
   const { value, source } = getConfigValue(configKey);
   const sourceLabel = source === "env" ? " (from env)" : source === "default" ? " (default)" : "";
-  p.log.info(`${cliKey} = ${value}${sourceLabel}`);
+  const display = cliKey === "api-key" ? maskApiKey(value) : value;
+  p.log.info(`${cliKey} = ${display}${sourceLabel}`);
   p.outro("");
 }
 
@@ -80,7 +82,8 @@ export async function configList(): Promise<void> {
         : entry.source === "default"
           ? " (default)"
           : "";
-    p.log.info(`${entry.cliKey} = ${entry.value}${sourceLabel}`);
+    const display = entry.cliKey === "api-key" ? maskApiKey(entry.value) : entry.value;
+    p.log.info(`${entry.cliKey} = ${display}${sourceLabel}`);
   }
   p.outro("");
 }

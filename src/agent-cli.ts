@@ -210,11 +210,11 @@ validateCmd
 
 program
   .command("install")
-  .argument("[address]", "Package address (org/repo or org/repo/sub/path)")
+  .argument("[address]", "GitHub repo (org/repo or https://github.com/org/repo)")
   .option("--local <path>", "Install from a local directory")
   .option("--agent <id>", "AI agent to install for (required)")
   .option("--location <loc>", "Install location: local or global (required)")
-  .option("--method <slug>", "Install only the specified method (by slug)")
+  .option("--method <name>", "Install only the specified method (by name)")
   .option("--skills", "Install MTHDS skills plugin")
   .option("--no-runner", "Skip Pipelex runner install")
   .description("Install a method package (non-interactive)")

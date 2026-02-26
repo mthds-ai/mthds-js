@@ -13,20 +13,32 @@ async function installPipelex(): Promise<void> {
   try {
     if (process.platform === "win32") {
       execSync(
-        'powershell -Command "irm https://pipelex.com/install.ps1 | iex"',
-        { stdio: "ignore" }
+        'powershell -Command "irm https://pipelex-website.vercel.app/install.ps1 | iex"',
+        { stdio: "pipe" }
       );
     } else {
-      execSync("curl -fsSL https://pipelex.com/install.sh | sh", {
-        stdio: "ignore",
-        shell: "/bin/sh",
-      });
+      execSync(
+        "curl -fsSL https://pipelex-website.vercel.app/install.sh | sh",
+        { stdio: "pipe", shell: "/bin/sh" }
+      );
     }
-    spinner.succeed("pipelex installed");
   } catch (error) {
     spinner.fail("Failed to install pipelex");
+    const msg =
+      error instanceof Error ? error.message : String(error);
     throw new Error(
-      "Could not install pipelex. Please install it manually: https://pipelex.com"
+      `Could not install pipelex: ${msg}\n` +
+        "Install manually: https://pipelex-website.vercel.app"
     );
   }
+
+  if (!isPipelexInstalled()) {
+    spinner.fail("pipelex was installed but is not reachable");
+    throw new Error(
+      "pipelex was installed but is not found in PATH.\n" +
+        "You may need to restart your shell or add the install directory to your PATH."
+    );
+  }
+
+  spinner.succeed("pipelex installed");
 }

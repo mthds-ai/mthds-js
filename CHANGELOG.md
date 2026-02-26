@@ -1,5 +1,14 @@
 # Changelog
 
+## [v0.0.11] - 2026-02-25
+
+### Fixed
+
+- **Pipelex installation URL** — updated install scripts from `pipelex.com` to `pipelex-website.vercel.app`
+- **Pipelex install verification** — installation now verifies that `pipelex` is actually available in PATH after running the install script, instead of silently reporting success
+- **Pipelex install error visibility** — changed `stdio` from `"ignore"` to `"pipe"` so install script errors are captured and reported
+- **Runner setup resilience** — `mthds runner setup pipelex` now re-checks availability after installation and exits with a clear error if pipelex is still not reachable
+
 ## [v0.0.10] - 2026-02-25
 
 ### Fixed

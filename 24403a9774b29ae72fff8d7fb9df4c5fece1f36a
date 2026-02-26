@@ -1,0 +1,47 @@
+tests/e2e/agent/package.test.ts
+  502c9a770195c4ed 1-430
+src/agent-cli.ts
+  06819a0926c01234 29,271-286,288-298,300-324
+  502c9a770195c4ed 287,299
+src/agent/commands/package.ts
+  502c9a770195c4ed 9-10,22-23,48,60,68,76,80-113,118,134,170,182,188,196,214,242
+  06819a0926c01234 1-8,11-21,24-47,49-59,61-67,69-75,77-79,114-117,119-133,135-169,171-181,183-187,189-195,197-213,215-241,243-245
+tests/unit/agent/package.test.ts
+  502c9a770195c4ed 40,42,49-76,94-96,106-107,118-163,166-168,173-174,181-182,186-283,286-288,295-296,299,305,308,314-323,326-351,353,355,358-374,378-380,383-385,387,393-395,399-441,444-476,482-483,486,493-494,497,504-505,509-511,514-516,518,525-571,574-576,582,603-653
+  06819a0926c01234 1-39,41,43-48,77-93,97-105,108-117,164-165,169-172,175-180,183-185,284-285,289-294,297-298,300-304,306-307,309-313,324-325,352,354,356-357,375-377,381-382,386,388-392,396-398,442-443,477-481,484-485,487-492,495-496,498-503,506-508,512-513,517,519-524,572-573,577-581,583-602,654-655
+src/agent/output.ts
+  06819a0926c01234 22,38-39
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.5",
+  "base_commit_sha": "24403a9774b29ae72fff8d7fb9df4c5fece1f36a",
+  "prompts": {
+    "06819a0926c01234": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5ec0ecc9-6bfe-473f-a8a8-509d2a135b04",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Louis Choquel <lchoquel@users.noreply.github.com>",
+      "messages": [],
+      "total_additions": 509,
+      "total_deletions": 0,
+      "accepted_lines": 454,
+      "overriden_lines": 0
+    },
+    "502c9a770195c4ed": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1e129301-8217-4d3a-a951-c4b22062ad1e",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Louis Choquel <lchoquel@users.noreply.github.com>",
+      "messages": [],
+      "total_additions": 1094,
+      "total_deletions": 215,
+      "accepted_lines": 934,
+      "overriden_lines": 0
+    }
+  }
+}

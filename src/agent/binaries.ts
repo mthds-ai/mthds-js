@@ -14,7 +14,9 @@ export const BINARY_RECOVERY: Record<string, BinaryRecoveryInfo> = {
   "pipelex-agent": {
     binary: "pipelex-agent",
     package: "pipelex",
-    install_command: "curl -fsSL https://pipelex.com/install.sh | sh",
+    install_command: process.platform === "win32"
+      ? 'powershell -Command "irm https://pipelex.com/install.ps1 | iex"'
+      : "curl -fsSL https://pipelex.com/install.sh | sh",
     install_url: "https://pipelex.com",
     auto_installable: true,
   },

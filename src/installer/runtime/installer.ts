@@ -66,5 +66,6 @@ export function installPipelexSync(): void {
  * Throws on failure.
  */
 export function installPlxtSync(): void {
-  execSync("python3 -m pip install --quiet pipelex-tools", { stdio: "pipe" });
+  const pythonCmd = process.platform === "win32" ? "python" : "python3";
+  execSync(`${pythonCmd} -m pip install --quiet pipelex-tools`, { stdio: "pipe" });
 }

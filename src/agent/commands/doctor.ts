@@ -58,28 +58,7 @@ export async function agentDoctor(): Promise<void> {
   const dependencies: DependencyCheck[] = [];
   const issues: Issue[] = [];
 
-  // Check each known binary
-  for (const recovery of Object.values(BINARY_RECOVERY)) {
-    const installed = isBinaryInstalled(recovery.binary);
-    dependencies.push({
-      binary: recovery.binary,
-      installed,
-      version: installed ? getBinaryVersion(recovery.binary) : null,
-      path: installed ? getBinaryPath(recovery.binary) : null,
-      install_command: recovery.install_command,
-      install_url: recovery.install_url,
-    });
-
-    if (!installed) {
-      issues.push({
-        severity: "warning",
-        message: `${recovery.binary} is not installed.`,
-        recovery,
-      });
-    }
-  }
-
-  // Config checks
+  // Config checks (parsed first so runner value is available during binary loop)
   const configEntries: ConfigEntry[] = [];
   const rawConfig = listConfig();
   let runnerValue: string | undefined;
@@ -97,6 +76,32 @@ export async function agentDoctor(): Promise<void> {
 
     if (entry.cliKey === "runner") runnerValue = entry.value;
     if (entry.cliKey === "api-key" && entry.value) apiKeyConfigured = true;
+  }
+
+  // Check each known binary
+  for (const recovery of Object.values(BINARY_RECOVERY)) {
+    const installed = isBinaryInstalled(recovery.binary);
+    dependencies.push({
+      binary: recovery.binary,
+      installed,
+      version: installed ? getBinaryVersion(recovery.binary) : null,
+      path: installed ? getBinaryPath(recovery.binary) : null,
+      install_command: recovery.install_command,
+      install_url: recovery.install_url,
+    });
+
+    if (!installed) {
+      // Skip generic warning for pipelex-agent when runner=pipelex;
+      // the runner-specific block below will emit a more specific error.
+      if (runnerValue === "pipelex" && recovery.binary === "pipelex-agent") {
+        continue;
+      }
+      issues.push({
+        severity: "warning",
+        message: `${recovery.binary} is not installed.`,
+        recovery,
+      });
+    }
   }
 
   // Runner-specific warnings

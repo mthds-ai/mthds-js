@@ -83,6 +83,9 @@ describe("agentDoctor", () => {
     const errorIssue = issues.find((i) => i.severity === "error");
     expect(errorIssue).toBeDefined();
     expect(errorIssue!.message).toContain("pipelex-agent");
+    // Ensure no duplicate: only the error, no extra warning for pipelex-agent
+    const pipelexAgentIssues = issues.filter((i) => i.message.includes("pipelex-agent"));
+    expect(pipelexAgentIssues).toHaveLength(1);
     expect(capturedResult!.healthy).toBe(false);
   });
 

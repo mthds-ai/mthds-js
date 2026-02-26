@@ -9,7 +9,7 @@ import { passthrough } from "../passthrough.js";
 
 const PLXT_COMMANDS = ["fmt", "lint"] as const;
 
-export function registerPlxtCommands(program: Command): void {
+export function registerPlxtCommands(program: Command, autoInstall: () => boolean): void {
   const plxtGroup = program
     .command("plxt")
     .description("Forward commands to plxt")
@@ -25,7 +25,7 @@ export function registerPlxtCommands(program: Command): void {
       .passThroughOptions()
       .action((_options: Record<string, unknown>, cmd: Command) => {
         const remaining = cmd.args;
-        passthrough("plxt", [subcmd, ...remaining]);
+        passthrough("plxt", [subcmd, ...remaining], { autoInstall: autoInstall() });
       });
   }
 }

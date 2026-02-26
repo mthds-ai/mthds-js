@@ -13,6 +13,7 @@ import { resolve } from "node:path";
 import { agentError, AGENT_ERROR_DOMAINS } from "./agent/output.js";
 import { registerPipelexCommands } from "./agent/commands/pipelex.js";
 import { registerPlxtCommands } from "./agent/commands/plxt.js";
+import { agentDoctor } from "./agent/commands/doctor.js";
 import {
   agentBuildPipe,
   agentBuildRunnerMethod,
@@ -25,6 +26,7 @@ import {
 import { agentValidateMethod, agentValidatePipe } from "./agent/commands/validate.js";
 import { agentConfigSet, agentConfigGet, agentConfigList } from "./agent/commands/config.js";
 import { agentInstall } from "./agent/commands/install.js";
+import { agentPackageInit, agentPackageList, agentPackageValidate } from "./agent/commands/package.js";
 import { RUNNER_NAMES } from "./runners/types.js";
 import type { RunnerType } from "./runners/types.js";
 import type { Command as Cmd } from "commander";
@@ -46,6 +48,10 @@ function getLibraryDirs(cmd: Cmd): string[] {
   return (cmd.optsWithGlobals().libraryDir ?? []) as string[];
 }
 
+function getAutoInstall(cmd: Cmd): boolean {
+  return (cmd.optsWithGlobals().autoInstall as boolean) ?? false;
+}
+
 function getLogLevelArgs(cmd: Cmd): string[] {
   const logLevel = cmd.optsWithGlobals().logLevel as string | undefined;
   return logLevel ? ["--log-level", logLevel] : [];
@@ -60,6 +66,7 @@ program
   .option("--runner <type>", `Runner to use (${RUNNER_NAMES.join(", ")})`)
   .option("-L, --library-dir <dir>", "Additional library directory (can be repeated)", collect, [] as string[])
   .option("--log-level <level>", `Log level (${LOG_LEVELS.join(", ")})`)
+  .option("--auto-install", "Automatically install missing binaries before running")
   .enablePositionalOptions()
   .exitOverride()
   .configureOutput({
@@ -261,13 +268,77 @@ config
     await agentConfigList();
   });
 
+// ── mthds-agent package init|list|validate ───────────────────────────
+
+const packageCmd = program
+  .command("package")
+  .description("Manage method packages (METHODS.toml)")
+  .option("-C, --package-dir <path>", "Package directory (defaults to current directory)")
+  .exitOverride();
+
+packageCmd
+  .command("init")
+  .requiredOption("--address <address>", "Package address (e.g. github.com/org/repo)")
+  .requiredOption("--version <version>", "Package version (semver)")
+  .requiredOption("--description <desc>", "Package description")
+  .option("--authors <authors>", "Comma-separated list of authors")
+  .option("--license <license>", "License identifier (e.g. MIT)")
+  .option("--name <name>", "Method name")
+  .option("--display-name <displayName>", "Display name (human-readable, max 128 chars)")
+  .option("--main-pipe <pipe>", "Main pipe code")
+  .option("--force", "Overwrite existing METHODS.toml")
+  .description("Initialize a new METHODS.toml")
+  .exitOverride()
+  .action(async (opts: {
+    address: string;
+    version: string;
+    description: string;
+    authors?: string;
+    license?: string;
+    name?: string;
+    displayName?: string;
+    mainPipe?: string;
+    force?: boolean;
+  }, cmd: Cmd) => {
+    const dir = cmd.optsWithGlobals().packageDir as string | undefined;
+    await agentPackageInit({ ...opts, directory: dir });
+  });
+
+packageCmd
+  .command("list")
+  .description("List package manifest contents")
+  .exitOverride()
+  .action(async (_opts: Record<string, never>, cmd: Cmd) => {
+    const dir = cmd.optsWithGlobals().packageDir as string | undefined;
+    await agentPackageList({ directory: dir });
+  });
+
+packageCmd
+  .command("validate")
+  .description("Validate METHODS.toml")
+  .exitOverride()
+  .action(async (_opts: Record<string, never>, cmd: Cmd) => {
+    const dir = cmd.optsWithGlobals().packageDir as string | undefined;
+    await agentPackageValidate({ directory: dir });
+  });
+
 // ── mthds-agent pipelex <cmd> [args...] ──────────────────────────────
 
-registerPipelexCommands(program, () => getLogLevelArgs(program));
+registerPipelexCommands(program, () => getLogLevelArgs(program), () => getAutoInstall(program));
 
 // ── mthds-agent plxt <cmd> [args...] ─────────────────────────────────
 
-registerPlxtCommands(program);
+registerPlxtCommands(program, () => getAutoInstall(program));
+
+// ── mthds-agent doctor ───────────────────────────────────────────────
+
+program
+  .command("doctor")
+  .description("Check binary dependencies, configuration, and overall health")
+  .exitOverride()
+  .action(async () => {
+    await agentDoctor();
+  });
 
 // ── Default: show version ────────────────────────────────────────────
 

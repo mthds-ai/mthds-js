@@ -17,7 +17,7 @@ const PIPELEX_COMMANDS = [
   "doctor",
 ] as const;
 
-const PIPELEX_RUN_SUBCOMMANDS = ["pipe", "method"] as const;
+const PIPELEX_RUN_SUBCOMMANDS = ["pipe", "method", "bundle"] as const;
 
 export function registerPipelexCommands(
   program: Command,

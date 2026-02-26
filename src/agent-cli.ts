@@ -13,6 +13,7 @@ import { resolve } from "node:path";
 import { agentError, AGENT_ERROR_DOMAINS } from "./agent/output.js";
 import { registerPipelexCommands } from "./agent/commands/pipelex.js";
 import { registerPlxtCommands } from "./agent/commands/plxt.js";
+import { agentDoctor } from "./agent/commands/doctor.js";
 import {
   agentBuildPipe,
   agentBuildRunnerMethod,
@@ -46,6 +47,10 @@ function getLibraryDirs(cmd: Cmd): string[] {
   return (cmd.optsWithGlobals().libraryDir ?? []) as string[];
 }
 
+function getAutoInstall(cmd: Cmd): boolean {
+  return (cmd.optsWithGlobals().autoInstall as boolean) ?? false;
+}
+
 function getLogLevelArgs(cmd: Cmd): string[] {
   const logLevel = cmd.optsWithGlobals().logLevel as string | undefined;
   return logLevel ? ["--log-level", logLevel] : [];
@@ -60,6 +65,7 @@ program
   .option("--runner <type>", `Runner to use (${RUNNER_NAMES.join(", ")})`)
   .option("-L, --library-dir <dir>", "Additional library directory (can be repeated)", collect, [] as string[])
   .option("--log-level <level>", `Log level (${LOG_LEVELS.join(", ")})`)
+  .option("--auto-install", "Automatically install missing binaries before running")
   .enablePositionalOptions()
   .exitOverride()
   .configureOutput({
@@ -263,11 +269,21 @@ config
 
 // ── mthds-agent pipelex <cmd> [args...] ──────────────────────────────
 
-registerPipelexCommands(program, () => getLogLevelArgs(program));
+registerPipelexCommands(program, () => getLogLevelArgs(program), () => getAutoInstall(program));
 
 // ── mthds-agent plxt <cmd> [args...] ─────────────────────────────────
 
-registerPlxtCommands(program);
+registerPlxtCommands(program, () => getAutoInstall(program));
+
+// ── mthds-agent doctor ───────────────────────────────────────────────
+
+program
+  .command("doctor")
+  .description("Check binary dependencies, configuration, and overall health")
+  .exitOverride()
+  .action(async () => {
+    await agentDoctor();
+  });
 
 // ── Default: show version ────────────────────────────────────────────
 

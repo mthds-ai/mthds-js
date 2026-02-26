@@ -13,12 +13,12 @@ async function installPipelex(): Promise<void> {
   try {
     if (process.platform === "win32") {
       execSync(
-        'powershell -Command "irm https://pipelex-website.vercel.app/install.ps1 | iex"',
+        'powershell -Command "irm https://pipelex.com/install.ps1 | iex"',
         { stdio: "pipe" }
       );
     } else {
       execSync(
-        "curl -fsSL https://pipelex-website.vercel.app/install.sh | sh",
+        "curl -fsSL https://pipelex.com/install.sh | sh",
         { stdio: "pipe", shell: "/bin/sh" }
       );
     }
@@ -28,7 +28,7 @@ async function installPipelex(): Promise<void> {
       error instanceof Error ? error.message : String(error);
     throw new Error(
       `Could not install pipelex: ${msg}\n` +
-        "Install manually: https://pipelex-website.vercel.app"
+        "Install manually: https://pipelex.com"
     );
   }
 
@@ -41,4 +41,32 @@ async function installPipelex(): Promise<void> {
   }
 
   spinner.succeed("pipelex installed");
+}
+
+// ── Sync silent install functions (for mthds-agent --auto-install) ──
+
+/**
+ * Install pipelex synchronously without interactive output (no spinner).
+ * Throws on failure.
+ */
+export function installPipelexSync(): void {
+  if (process.platform === "win32") {
+    execSync(
+      'powershell -Command "irm https://pipelex.com/install.ps1 | iex"',
+      { stdio: "pipe" }
+    );
+  } else {
+    execSync(
+      "curl -fsSL https://pipelex.com/install.sh | sh",
+      { stdio: "pipe", shell: "/bin/sh" }
+    );
+  }
+}
+
+/**
+ * Install pipelex-tools (plxt) synchronously without interactive output.
+ * Throws on failure.
+ */
+export function installPlxtSync(): void {
+  execSync("pip install --quiet pipelex-tools", { stdio: "pipe" });
 }

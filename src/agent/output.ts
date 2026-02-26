@@ -6,6 +6,8 @@
  * - Error: JSON to stderr + process.exit(1)
  */
 
+import type { BinaryRecoveryInfo } from "./binaries.js";
+
 // ── Error domains ────────────────────────────────────────────────────
 
 export const AGENT_ERROR_DOMAINS = {
@@ -34,6 +36,9 @@ export const AGENT_ERROR_HINTS: Record<string, string> = {
   InstallError: "Check the address and try again.",
 };
 
+// ── Re-export BinaryRecoveryInfo for callers ────────────────────────
+export type { BinaryRecoveryInfo };
+
 // ── Success output ───────────────────────────────────────────────────
 
 export function agentSuccess(result: Record<string, unknown>): void {
@@ -49,6 +54,7 @@ export function agentError(
     hint?: string;
     error_domain?: AgentErrorDomain;
     retryable?: boolean;
+    recovery?: BinaryRecoveryInfo;
   }
 ): never {
   const payload: Record<string, unknown> = {
@@ -60,6 +66,9 @@ export function agentError(
   };
   if (extras?.retryable) {
     payload.retryable = true;
+  }
+  if (extras?.recovery) {
+    payload.recovery = extras.recovery;
   }
 
   // Remove undefined values for cleaner output

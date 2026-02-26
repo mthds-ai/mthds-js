@@ -14,6 +14,34 @@ import type { ParsedManifest } from "../../package/manifest/schema.js";
 
 // ── Helpers ─────────────────────────────────────────────────────────
 
+function readManifest(manifestPath: string, notFoundMessage: string): ParsedManifest {
+  if (!existsSync(manifestPath)) {
+    agentError(notFoundMessage, "PackageError", {
+      error_domain: AGENT_ERROR_DOMAINS.PACKAGE,
+      hint: "Run 'mthds-agent package init' to create a METHODS.toml, or use -C to specify the correct directory.",
+    });
+  }
+
+  try {
+    const content = readFileSync(manifestPath, "utf-8");
+    return parseMethodsToml(content);
+  } catch (err) {
+    if (err instanceof ManifestParseError) {
+      agentError(`TOML syntax error: ${err.message}`, "PackageError", {
+        error_domain: AGENT_ERROR_DOMAINS.PACKAGE,
+        hint: "Fix the TOML syntax in METHODS.toml and try again.",
+      });
+    }
+    if (err instanceof ManifestValidationError) {
+      agentError(`Validation error: ${err.message}`, "PackageError", {
+        error_domain: AGENT_ERROR_DOMAINS.PACKAGE,
+        hint: "Fix the validation errors in METHODS.toml and try again.",
+      });
+    }
+    throw err;
+  }
+}
+
 function manifestToJson(manifest: ParsedManifest): Record<string, unknown> {
   const result: Record<string, unknown> = {
     address: manifest.address,
@@ -162,34 +190,7 @@ export interface AgentPackageListOptions {
 
 export async function agentPackageList(options: AgentPackageListOptions): Promise<void> {
   const manifestPath = resolveManifestPath(options.directory);
-
-  if (!existsSync(manifestPath)) {
-    agentError(
-      `No ${MANIFEST_FILENAME} found at ${manifestPath}. Run 'mthds-agent package init' first.`,
-      "PackageError",
-      { error_domain: AGENT_ERROR_DOMAINS.PACKAGE, hint: "Run 'mthds-agent package init' to create a METHODS.toml, or use -C to specify the correct directory." },
-    );
-  }
-
-  let manifest: ParsedManifest;
-  try {
-    const content = readFileSync(manifestPath, "utf-8");
-    manifest = parseMethodsToml(content);
-  } catch (err) {
-    if (err instanceof ManifestParseError) {
-      agentError(`TOML syntax error: ${err.message}`, "PackageError", {
-        error_domain: AGENT_ERROR_DOMAINS.PACKAGE,
-        hint: "Fix the TOML syntax in METHODS.toml and try again.",
-      });
-    }
-    if (err instanceof ManifestValidationError) {
-      agentError(`Validation error: ${err.message}`, "PackageError", {
-        error_domain: AGENT_ERROR_DOMAINS.PACKAGE,
-        hint: "Fix the validation errors in METHODS.toml and try again.",
-      });
-    }
-    throw err;
-  }
+  const manifest = readManifest(manifestPath, `No ${MANIFEST_FILENAME} found at ${manifestPath}. Run 'mthds-agent package init' first.`);
 
   agentSuccess({
     success: true,
@@ -206,34 +207,7 @@ export interface AgentPackageValidateOptions {
 
 export async function agentPackageValidate(options: AgentPackageValidateOptions): Promise<void> {
   const manifestPath = resolveManifestPath(options.directory);
-
-  if (!existsSync(manifestPath)) {
-    agentError(
-      `No ${MANIFEST_FILENAME} found at ${manifestPath}.`,
-      "PackageError",
-      { error_domain: AGENT_ERROR_DOMAINS.PACKAGE, hint: "Run 'mthds-agent package init' to create a METHODS.toml, or use -C to specify the correct directory." },
-    );
-  }
-
-  let manifest: ParsedManifest;
-  try {
-    const content = readFileSync(manifestPath, "utf-8");
-    manifest = parseMethodsToml(content);
-  } catch (err) {
-    if (err instanceof ManifestParseError) {
-      agentError(`TOML syntax error: ${err.message}`, "PackageError", {
-        error_domain: AGENT_ERROR_DOMAINS.PACKAGE,
-        hint: "Fix the TOML syntax in METHODS.toml and try again.",
-      });
-    }
-    if (err instanceof ManifestValidationError) {
-      agentError(`Validation error: ${err.message}`, "PackageError", {
-        error_domain: AGENT_ERROR_DOMAINS.PACKAGE,
-        hint: "Fix the validation errors in METHODS.toml and try again.",
-      });
-    }
-    throw err;
-  }
+  const manifest = readManifest(manifestPath, `No ${MANIFEST_FILENAME} found at ${manifestPath}.`);
 
   agentSuccess({
     success: true,

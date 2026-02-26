@@ -62,6 +62,14 @@ async function initPipelex(): Promise<void> {
   if (!isPipelexInstalled()) {
     p.log.step("pipelex is not installed. Installing...");
     await ensureRuntime();
+
+    if (!isPipelexInstalled()) {
+      p.log.error(
+        "pipelex was installed but is not reachable. Make sure the uv tools bin directory is in your PATH."
+      );
+      process.exit(1);
+    }
+
     p.log.success("pipelex installed successfully.");
   }
 

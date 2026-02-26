@@ -1,0 +1,27 @@
+tests/unit/installer/runtime/check.test.ts
+  0735dc3b98ce2f20 1,16-19
+src/installer/runtime/installer.ts
+  0735dc3b98ce2f20 5-7,18-22,32,61,69
+src/agent/commands/package.ts
+  0735dc3b98ce2f20 220
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.5",
+  "base_commit_sha": "6d059fbe0eabe5df86aab34a6be49dda6bf2cc83",
+  "prompts": {
+    "0735dc3b98ce2f20": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "87079023-2063-454c-986d-97de6d58c6ee",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Louis Choquel <lchoquel@users.noreply.github.com>",
+      "messages": [],
+      "total_additions": 27,
+      "total_deletions": 26,
+      "accepted_lines": 17,
+      "overriden_lines": 0
+    }
+  }
+}

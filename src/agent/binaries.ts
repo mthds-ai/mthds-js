@@ -21,7 +21,7 @@ export const BINARY_RECOVERY: Record<string, BinaryRecoveryInfo> = {
   plxt: {
     binary: "plxt",
     package: "pipelex-tools",
-    install_command: "pip install pipelex-tools",
+    install_command: "python3 -m pip install pipelex-tools",
     install_url: "https://pypi.org/project/pipelex-tools/",
     auto_installable: true,
   },

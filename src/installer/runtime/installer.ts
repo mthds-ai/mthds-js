@@ -2,6 +2,24 @@ import { execSync } from "node:child_process";
 import ora from "ora";
 import { isPipelexInstalled } from "./check.js";
 
+// ── Shared helpers ───────────────────────────────────────────────────
+
+function runPipelexInstallSync(): void {
+  if (process.platform === "win32") {
+    execSync(
+      'powershell -Command "irm https://pipelex.com/install.ps1 | iex"',
+      { stdio: "pipe" }
+    );
+  } else {
+    execSync(
+      "curl -fsSL https://pipelex.com/install.sh | sh",
+      { stdio: "pipe", shell: "/bin/sh" }
+    );
+  }
+}
+
+// ── Async install (interactive, with spinner) ────────────────────────
+
 export async function ensureRuntime(): Promise<void> {
   if (!isPipelexInstalled()) {
     await installPipelex();
@@ -11,17 +29,7 @@ export async function ensureRuntime(): Promise<void> {
 async function installPipelex(): Promise<void> {
   const spinner = ora("Installing pipelex...").start();
   try {
-    if (process.platform === "win32") {
-      execSync(
-        'powershell -Command "irm https://pipelex.com/install.ps1 | iex"',
-        { stdio: "pipe" }
-      );
-    } else {
-      execSync(
-        "curl -fsSL https://pipelex.com/install.sh | sh",
-        { stdio: "pipe", shell: "/bin/sh" }
-      );
-    }
+    runPipelexInstallSync();
   } catch (error) {
     spinner.fail("Failed to install pipelex");
     const msg =
@@ -50,17 +58,7 @@ async function installPipelex(): Promise<void> {
  * Throws on failure.
  */
 export function installPipelexSync(): void {
-  if (process.platform === "win32") {
-    execSync(
-      'powershell -Command "irm https://pipelex.com/install.ps1 | iex"',
-      { stdio: "pipe" }
-    );
-  } else {
-    execSync(
-      "curl -fsSL https://pipelex.com/install.sh | sh",
-      { stdio: "pipe", shell: "/bin/sh" }
-    );
-  }
+  runPipelexInstallSync();
 }
 
 /**
@@ -68,5 +66,5 @@ export function installPipelexSync(): void {
  * Throws on failure.
  */
 export function installPlxtSync(): void {
-  execSync("pip install --quiet pipelex-tools", { stdio: "pipe" });
+  execSync("python3 -m pip install --quiet pipelex-tools", { stdio: "pipe" });
 }

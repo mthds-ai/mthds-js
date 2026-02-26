@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 
 vi.mock("node:child_process", () => ({
   execFileSync: vi.fn(),
@@ -12,6 +12,10 @@ import {
 } from "../../../../src/installer/runtime/check.js";
 
 const mockedExecFileSync = vi.mocked(execFileSync);
+
+beforeEach(() => {
+  vi.clearAllMocks();
+});
 
 describe("isBinaryInstalled", () => {
   it("returns true when execFileSync succeeds", () => {

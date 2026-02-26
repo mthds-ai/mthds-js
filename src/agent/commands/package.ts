@@ -215,10 +215,9 @@ export async function agentPackageValidate(options: AgentPackageValidateOptions)
     );
   }
 
-  const content = readFileSync(manifestPath, "utf-8");
-
   let manifest: ParsedManifest;
   try {
+    const content = readFileSync(manifestPath, "utf-8");
     manifest = parseMethodsToml(content);
   } catch (err) {
     if (err instanceof ManifestParseError) {

@@ -6,6 +6,8 @@
  * - Error: JSON to stderr + process.exit(1)
  */
 
+import type { BinaryRecoveryInfo } from "./binaries.js";
+
 // ── Error domains ────────────────────────────────────────────────────
 
 export const AGENT_ERROR_DOMAINS = {
@@ -17,6 +19,7 @@ export const AGENT_ERROR_DOMAINS = {
   INSTALL: "install",
   IO: "io",
   BINARY: "binary",
+  PACKAGE: "package",
 } as const;
 
 export type AgentErrorDomain =
@@ -32,7 +35,12 @@ export const AGENT_ERROR_HINTS: Record<string, string> = {
   RunnerError: "Check that the runner is properly configured.",
   ValidationError: "Check the .mthds bundle for syntax or schema errors.",
   InstallError: "Check the address and try again.",
+  PackageError:
+    "Check the METHODS.toml file and try again.",
 };
+
+// ── Re-export BinaryRecoveryInfo for callers ────────────────────────
+export type { BinaryRecoveryInfo };
 
 // ── Success output ───────────────────────────────────────────────────
 
@@ -49,6 +57,7 @@ export function agentError(
     hint?: string;
     error_domain?: AgentErrorDomain;
     retryable?: boolean;
+    recovery?: BinaryRecoveryInfo;
   }
 ): never {
   const payload: Record<string, unknown> = {
@@ -60,6 +69,9 @@ export function agentError(
   };
   if (extras?.retryable) {
     payload.retryable = true;
+  }
+  if (extras?.recovery) {
+    payload.recovery = extras.recovery;
   }
 
   // Remove undefined values for cleaner output

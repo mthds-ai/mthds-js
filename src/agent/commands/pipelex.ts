@@ -19,7 +19,11 @@ const PIPELEX_COMMANDS = [
 
 const PIPELEX_RUN_SUBCOMMANDS = ["pipe", "method"] as const;
 
-export function registerPipelexCommands(program: Command, logLevelArgs: () => string[]): void {
+export function registerPipelexCommands(
+  program: Command,
+  logLevelArgs: () => string[],
+  autoInstall: () => boolean
+): void {
   const pipelexGroup = program
     .command("pipelex")
     .description("Forward commands to pipelex-agent")
@@ -35,7 +39,9 @@ export function registerPipelexCommands(program: Command, logLevelArgs: () => st
       .passThroughOptions()
       .action((_options: Record<string, unknown>, cmd: Command) => {
         const remaining = cmd.args;
-        passthrough("pipelex-agent", [...logLevelArgs(), subcmd, ...remaining]);
+        passthrough("pipelex-agent", [...logLevelArgs(), subcmd, ...remaining], {
+          autoInstall: autoInstall(),
+        });
       });
   }
 
@@ -57,7 +63,9 @@ export function registerPipelexCommands(program: Command, logLevelArgs: () => st
       .passThroughOptions()
       .action((_options: Record<string, unknown>, cmd: Command) => {
         const remaining = cmd.args;
-        passthrough("pipelex-agent", [...logLevelArgs(), "run", runSub, ...remaining]);
+        passthrough("pipelex-agent", [...logLevelArgs(), "run", runSub, ...remaining], {
+          autoInstall: autoInstall(),
+        });
       });
   }
 }

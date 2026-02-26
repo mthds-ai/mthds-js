@@ -12,7 +12,3 @@ export function isBinaryInstalled(bin: string): boolean {
 export function isPipelexInstalled(): boolean {
   return isBinaryInstalled("pipelex");
 }
-
-export function isPlxtInstalled(): boolean {
-  return isBinaryInstalled("plxt");
-}

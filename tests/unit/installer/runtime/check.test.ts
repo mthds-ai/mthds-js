@@ -8,7 +8,6 @@ import { execFileSync } from "node:child_process";
 import {
   isBinaryInstalled,
   isPipelexInstalled,
-  isPlxtInstalled,
 } from "../../../../src/installer/runtime/check.js";
 
 const mockedExecFileSync = vi.mocked(execFileSync);
@@ -46,12 +45,3 @@ describe("isPipelexInstalled", () => {
   });
 });
 
-describe("isPlxtInstalled", () => {
-  it("checks for plxt binary", () => {
-    mockedExecFileSync.mockReturnValue(Buffer.from(""));
-    isPlxtInstalled();
-    expect(mockedExecFileSync).toHaveBeenCalledWith("plxt", ["--version"], {
-      stdio: "ignore",
-    });
-  });
-});

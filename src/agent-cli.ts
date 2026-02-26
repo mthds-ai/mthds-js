@@ -26,6 +26,7 @@ import {
 import { agentValidateMethod, agentValidatePipe } from "./agent/commands/validate.js";
 import { agentConfigSet, agentConfigGet, agentConfigList } from "./agent/commands/config.js";
 import { agentInstall } from "./agent/commands/install.js";
+import { agentPackageInit, agentPackageList, agentPackageValidate } from "./agent/commands/package.js";
 import { RUNNER_NAMES } from "./runners/types.js";
 import type { RunnerType } from "./runners/types.js";
 import type { Command as Cmd } from "commander";
@@ -265,6 +266,60 @@ config
   .exitOverride()
   .action(async () => {
     await agentConfigList();
+  });
+
+// ── mthds-agent package init|list|validate ───────────────────────────
+
+const packageCmd = program
+  .command("package")
+  .description("Manage method packages (METHODS.toml)")
+  .option("-C, --package-dir <path>", "Package directory (defaults to current directory)")
+  .exitOverride();
+
+packageCmd
+  .command("init")
+  .requiredOption("--address <address>", "Package address (e.g. github.com/org/repo)")
+  .requiredOption("--version <version>", "Package version (semver)")
+  .requiredOption("--description <desc>", "Package description")
+  .option("--authors <authors>", "Comma-separated list of authors")
+  .option("--license <license>", "License identifier (e.g. MIT)")
+  .option("--name <name>", "Method name")
+  .option("--display-name <displayName>", "Display name (human-readable, max 128 chars)")
+  .option("--main-pipe <pipe>", "Main pipe code")
+  .option("--force", "Overwrite existing METHODS.toml")
+  .description("Initialize a new METHODS.toml")
+  .exitOverride()
+  .action(async (opts: {
+    address: string;
+    version: string;
+    description: string;
+    authors?: string;
+    license?: string;
+    name?: string;
+    displayName?: string;
+    mainPipe?: string;
+    force?: boolean;
+  }, cmd: Cmd) => {
+    const dir = cmd.optsWithGlobals().packageDir as string | undefined;
+    await agentPackageInit({ ...opts, directory: dir });
+  });
+
+packageCmd
+  .command("list")
+  .description("List package manifest contents")
+  .exitOverride()
+  .action(async (_opts: Record<string, never>, cmd: Cmd) => {
+    const dir = cmd.optsWithGlobals().packageDir as string | undefined;
+    await agentPackageList({ directory: dir });
+  });
+
+packageCmd
+  .command("validate")
+  .description("Validate METHODS.toml")
+  .exitOverride()
+  .action(async (_opts: Record<string, never>, cmd: Cmd) => {
+    const dir = cmd.optsWithGlobals().packageDir as string | undefined;
+    await agentPackageValidate({ directory: dir });
   });
 
 // ── mthds-agent pipelex <cmd> [args...] ──────────────────────────────

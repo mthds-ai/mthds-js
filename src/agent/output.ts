@@ -19,6 +19,7 @@ export const AGENT_ERROR_DOMAINS = {
   INSTALL: "install",
   IO: "io",
   BINARY: "binary",
+  PACKAGE: "package",
 } as const;
 
 export type AgentErrorDomain =
@@ -34,6 +35,8 @@ export const AGENT_ERROR_HINTS: Record<string, string> = {
   RunnerError: "Check that the runner is properly configured.",
   ValidationError: "Check the .mthds bundle for syntax or schema errors.",
   InstallError: "Check the address and try again.",
+  PackageError:
+    "Check the METHODS.toml file and try again.",
 };
 
 // ── Re-export BinaryRecoveryInfo for callers ────────────────────────

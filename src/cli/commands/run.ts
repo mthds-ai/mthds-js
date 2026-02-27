@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import * as p from "@clack/prompts";
 import { printLogo } from "./index.js";
@@ -71,15 +71,13 @@ export async function runPipe(
     return;
   }
 
-  const packageDir = options.libraryDir?.length ? options.libraryDir[0]! : process.cwd();
-  const resolvedTarget = target.startsWith("/") ? target : resolve(packageDir, target);
-  const isBundle = resolvedTarget.endsWith(".mthds");
-
+  // API runner: target is a pipe code or a .mthds bundle file
+  const isBundlePath = target.endsWith(".mthds") || existsSync(target);
   const pipelineOptions: ExecutePipelineOptions = {};
 
   try {
-    if (isBundle) {
-      pipelineOptions.mthds_content = readFileSync(resolvedTarget, "utf-8");
+    if (isBundlePath) {
+      pipelineOptions.mthds_content = readFileSync(resolve(target), "utf-8");
       if (options.pipe) {
         pipelineOptions.pipe_code = options.pipe;
       }

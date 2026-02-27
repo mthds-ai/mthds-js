@@ -40,6 +40,7 @@ mthds runner setup pipelex
 |---|---|
 | `--runner <type>` | Runner to use for the command (`api` or `pipelex`). Applies to `run`, `validate`, and `build` subcommands. |
 | `-L, --library-dir <dir>` | Additional library directory (can be repeated). Applies to `run`, `validate`, and `build` subcommands. |
+| `--no-logo` | Suppress the ASCII logo |
 | `--version` | Print the CLI version |
 | `--help` | Show help for any command |
 
@@ -525,5 +526,74 @@ Shows package metadata (address, version, description, authors, license), depend
 
 ```bash
 mthds package list
+```
+
+---
+
+## Agent CLI (`mthds-agent`)
+
+Machine-oriented CLI for AI agents. All output is structured JSON to stdout (success) and stderr (errors). No interactive prompts.
+
+### `mthds-agent runner setup pipelex`
+
+Install the Pipelex runtime. Does **not** initialize configuration — use `mthds-agent pipelex init` for that.
+
+```bash
+mthds-agent runner setup pipelex
+```
+
+Installs pipelex via `curl -fsSL https://pipelex.com/install.sh | sh` (macOS/Linux) or `irm https://pipelex.com/install.ps1 | iex` (Windows). Returns JSON indicating whether pipelex was already installed or freshly installed.
+
+**Example output:**
+
+```json
+{ "success": true, "already_installed": true, "message": "pipelex is already installed" }
+```
+
+### `mthds-agent runner setup api`
+
+Set up the API runner (non-interactive).
+
+```bash
+mthds-agent runner setup api --api-key <key> [--api-url <url>]
+```
+
+| Option | Type | Required | Description |
+|---|---|---|---|
+| `--api-key <key>` | string | yes | API key for the MTHDS API |
+| `--api-url <url>` | string | no | API URL (uses default if omitted) |
+
+**Example:**
+
+```bash
+mthds-agent runner setup api --api-key sk-my-api-key
+```
+
+### `mthds-agent pipelex init`
+
+Initialize Pipelex configuration (non-interactive). Forwards to `pipelex-agent init`.
+
+```bash
+mthds-agent pipelex init [OPTIONS]
+```
+
+All options are forwarded directly to `pipelex-agent init`:
+
+| Option | Description |
+|---|---|
+| `--config, -c <json>` | Inline JSON string or path to a JSON file. Schema: `{"backends": list[str], "primary_backend": str, "accept_gateway_terms": bool, "telemetry_mode": str}`. All fields optional. |
+| `--global, -g` | Force global `~/.pipelex/` directory. Without this flag, targets project-level `.pipelex/`. |
+
+**Typical agent workflow:**
+
+```bash
+# Step 1: Install pipelex if needed
+mthds-agent runner setup pipelex
+
+# Step 2: Initialize configuration
+mthds-agent pipelex init --config '{"backends": ["openai"], "telemetry_mode": "off"}'
+
+# Step 2 (global variant):
+mthds-agent pipelex init -g --config '{"backends": ["pipelex_gateway"], "accept_gateway_terms": true}'
 ```
 

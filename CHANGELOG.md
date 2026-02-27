@@ -1,5 +1,24 @@
 # Changelog
 
+## [v0.0.13] - 2026-02-27
+
+### Added
+
+- **`mthds-agent runner setup pipelex`** — Non-interactive command to install the Pipelex runtime binary. Returns structured JSON. Does not initialize configuration — use `mthds-agent pipelex init` for that.
+- **`mthds-agent runner setup api`** — Non-interactive command to set up the API runner with `--api-key` and optional `--api-url`.
+- **`mthds-agent pipelex init`** — Passthrough to `pipelex-agent init` for non-interactive Pipelex configuration (backends, gateway terms, telemetry).
+- **`--no-logo` global option** — Suppress the ASCII logo on the `mthds` CLI. Applies to all commands.
+- **Agent CLI docs in CLI.md** — Added `mthds-agent` section documenting `runner setup pipelex`, `runner setup api`, and `pipelex init`.
+
+### Changed
+
+- **New ASCII logo** — Updated the `mthds` CLI banner with a new block-style logo.
+- **`mthds-agent package` `-C` option** — Moved `-C, --package-dir` from the parent `package` command to each subcommand (`init`, `list`, `validate`) for correct option parsing.
+
+### Removed
+
+- **`mthds run bundle`** — Reverted the `run bundle` subcommand. `mthds run pipe` accepts both pipe codes and `.mthds` bundle files again (auto-detected). `PipelexRunner.execute()` reverted to `run <target>` form.
+
 ## [v0.0.12] - 2026-02-26
 
 ### Added

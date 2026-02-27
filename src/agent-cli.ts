@@ -273,7 +273,6 @@ config
 const packageCmd = program
   .command("package")
   .description("Manage method packages (METHODS.toml)")
-  .option("-C, --package-dir <path>", "Package directory (defaults to current directory)")
   .exitOverride();
 
 packageCmd
@@ -287,6 +286,7 @@ packageCmd
   .option("--display-name <displayName>", "Display name (human-readable, max 128 chars)")
   .option("--main-pipe <pipe>", "Main pipe code")
   .option("--force", "Overwrite existing METHODS.toml")
+  .option("-C, --package-dir <path>", "Package directory (defaults to current directory)")
   .description("Initialize a new METHODS.toml")
   .exitOverride()
   .action(async (opts: {
@@ -299,27 +299,27 @@ packageCmd
     displayName?: string;
     mainPipe?: string;
     force?: boolean;
-  }, cmd: Cmd) => {
-    const dir = cmd.optsWithGlobals().packageDir as string | undefined;
-    await agentPackageInit({ ...opts, directory: dir });
+    packageDir?: string;
+  }) => {
+    await agentPackageInit({ ...opts, directory: opts.packageDir });
   });
 
 packageCmd
   .command("list")
+  .option("-C, --package-dir <path>", "Package directory (defaults to current directory)")
   .description("List package manifest contents")
   .exitOverride()
-  .action(async (_opts: Record<string, never>, cmd: Cmd) => {
-    const dir = cmd.optsWithGlobals().packageDir as string | undefined;
-    await agentPackageList({ directory: dir });
+  .action(async (opts: { packageDir?: string }) => {
+    await agentPackageList({ directory: opts.packageDir });
   });
 
 packageCmd
   .command("validate")
+  .option("-C, --package-dir <path>", "Package directory (defaults to current directory)")
   .description("Validate METHODS.toml")
   .exitOverride()
-  .action(async (_opts: Record<string, never>, cmd: Cmd) => {
-    const dir = cmd.optsWithGlobals().packageDir as string | undefined;
-    await agentPackageValidate({ directory: dir });
+  .action(async (opts: { packageDir?: string }) => {
+    await agentPackageValidate({ directory: opts.packageDir });
   });
 
 // ── mthds-agent pipelex <cmd> [args...] ──────────────────────────────

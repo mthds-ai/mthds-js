@@ -14,14 +14,16 @@ export const BINARY_RECOVERY: Record<string, BinaryRecoveryInfo> = {
   "pipelex-agent": {
     binary: "pipelex-agent",
     package: "pipelex",
-    install_command: "curl -fsSL https://pipelex.com/install.sh | sh",
+    install_command: process.platform === "win32"
+      ? 'powershell -Command "irm https://pipelex.com/install.ps1 | iex"'
+      : "curl -fsSL https://pipelex.com/install.sh | sh",
     install_url: "https://pipelex.com",
     auto_installable: true,
   },
   plxt: {
     binary: "plxt",
     package: "pipelex-tools",
-    install_command: "pip install pipelex-tools",
+    install_command: `${process.platform === "win32" ? "python" : "python3"} -m pip install pipelex-tools`,
     install_url: "https://pypi.org/project/pipelex-tools/",
     auto_installable: true,
   },

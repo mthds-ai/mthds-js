@@ -1,5 +1,26 @@
 # Changelog
 
+## [v0.0.12] - 2026-02-26
+
+### Added
+
+- **Binary recovery metadata** — shared `BINARY_RECOVERY` registry (`binaries.ts`) with install commands and URLs for `pipelex-agent` and `plxt`
+- **Enriched error output** — missing-binary errors now include recovery hints (install command, documentation URL) in structured JSON output
+- **`--auto-install` flag** — passthrough commands (`pipelex-agent`, `plxt`) automatically install missing binaries when this flag is set
+- **`mthds-agent doctor`** — health-check command that reports binary dependencies (installed, version, path), configuration state, and actionable issues with severity levels
+- **`mthds-agent package init`** — initialize a METHODS.toml manifest with name, display name, and main pipe validation; supports `--display-name` flag
+- **`mthds-agent package list`** — list all methods in a package directory with structured JSON output
+- **`mthds-agent package validate`** — validate METHODS.toml with actionable error hints and consistent manifest shape (authors/exports always present)
+
+### Fixed
+
+- **Duplicate doctor diagnostic** — when `runner=pipelex` and `pipelex-agent` is missing, doctor now emits a single error instead of both a warning and an error
+- **Windows Python compatibility** — `installPlxtSync()` uses `python` on Windows instead of hardcoded `python3` which doesn't exist on that platform
+- **Shared install helper** — extracted `runPipelexInstallSync()` to deduplicate pipelex installation logic between interactive and sync paths
+- **Portable pip invocation** — use `python3 -m pip` instead of bare `pip` for plxt installation
+- **Package validate error handling** — `readFileSync` moved inside try block for proper error reporting when METHODS.toml is missing
+- **Test isolation** — added `beforeEach` mock reset in `check.test.ts` to prevent cross-block state leakage
+
 ## [v0.0.11] - 2026-02-25
 
 ### Fixed

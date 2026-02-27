@@ -12,14 +12,23 @@ function getVersion(): string {
 }
 
 const LOGO = [
-  "                    __  __              __",
-  "   ____ ___  ___  / /_/ /_  ____  ____/ /____",
-  "  / __ `__ \\/ _ \\/ __/ __ \\/ __ \\/ __  / ___/",
-  " / / / / / /  __/ /_/ / / / /_/ / /_/ (__  )",
-  "/_/ /_/ /_/\\___/\\__/_/ /_/\\____/\\__,_/____/",
+  "  ████                                        ████",
+  "  ██   ██   ██ ████████ ██   ██ █████  ██████   ██",
+  "  ██   ███ ███    ██    ██   ██ ██  ██ ██       ██",
+  "  ██   ██ █ ██    ██    ███████ ██  ██  ████    ██",
+  "  ██   ██   ██    ██    ██   ██ ██  ██     ██   ██",
+  "  ██   ██   ██    ██    ██   ██ █████  ██████   ██",
+  "  ████                                        ████",
 ];
 
+let _logoEnabled = true;
+
+export function setLogoEnabled(enabled: boolean): void {
+  _logoEnabled = enabled;
+}
+
 export function printLogo(): void {
+  if (!_logoEnabled) return;
   console.log();
   for (const line of LOGO) {
     console.log(chalk.white(line));

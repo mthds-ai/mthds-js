@@ -3,8 +3,7 @@ import { Command, CommanderError } from "commander";
 import { createRequire } from "node:module";
 import { resolve } from "node:path";
 import * as p from "@clack/prompts";
-import { showBanner } from "./cli/commands/index.js";
-import { printLogo } from "./cli/commands/index.js";
+import { showBanner, printLogo, setLogoEnabled } from "./cli/commands/index.js";
 import { setupRunner, setDefaultRunner, runnerStatus } from "./cli/commands/setup.js";
 import { installMethod } from "./cli/commands/install.js";
 import { configSet, configGet, configList } from "./cli/commands/config.js";
@@ -56,10 +55,16 @@ program
   .description("CLI for the MTHDS open standard")
   .option("--runner <type>", `Runner to use (${RUNNER_NAMES.join(", ")})`)
   .option("-L, --library-dir <dir>", "Additional library directory (can be repeated)", collect, [] as string[])
+  .option("--no-logo", "Suppress the ASCII logo")
   .exitOverride()
   .configureOutput({
     writeOut: () => {},
     writeErr: () => {},
+  })
+  .hook("preAction", (thisCommand) => {
+    if (thisCommand.opts().logo === false) {
+      setLogoEnabled(false);
+    }
   });
 
 // ── mthds run method|pipe ─────────────────────────────────────────────
@@ -92,7 +97,7 @@ run
   .option("-o, --output <file>", "Path to save output JSON")
   .option("--no-output", "Skip saving output to file")
   .option("--no-pretty-print", "Skip pretty printing the output")
-  .description("Run a pipe by code or bundle file (.mthds)")
+  .description("Run a pipe by code or bundle file")
   .allowUnknownOption()
   .allowExcessArguments(true)
   .exitOverride()

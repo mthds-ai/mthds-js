@@ -38,7 +38,7 @@ describe("mthds-agent package (e2e)", () => {
   describe("init", () => {
     it("creates METHODS.toml with minimal required fields", () => {
       const { stdout, status } = runAgent(
-        "package", "-C", tmpDir, "init",
+        "package", "init", "-C", tmpDir,
         "--address", "github.com/test/pkg",
         "--version", "0.1.0",
         "--description", "Test package",
@@ -71,7 +71,7 @@ describe("mthds-agent package (e2e)", () => {
 
     it("creates METHODS.toml with all optional fields", () => {
       const { stdout, status } = runAgent(
-        "package", "-C", tmpDir, "init",
+        "package", "init", "-C", tmpDir,
         "--address", "github.com/acme/full",
         "--version", "2.0.0",
         "--description", "Full package",
@@ -95,7 +95,7 @@ describe("mthds-agent package (e2e)", () => {
     it("--force overwrites existing file", () => {
       // First init
       runAgent(
-        "package", "-C", tmpDir, "init",
+        "package", "init", "-C", tmpDir,
         "--address", "github.com/test/first",
         "--version", "1.0.0",
         "--description", "First",
@@ -103,7 +103,7 @@ describe("mthds-agent package (e2e)", () => {
 
       // Overwrite with --force
       const { stdout, status } = runAgent(
-        "package", "-C", tmpDir, "init",
+        "package", "init", "-C", tmpDir,
         "--address", "github.com/test/second",
         "--version", "2.0.0",
         "--description", "Second",
@@ -123,7 +123,7 @@ describe("mthds-agent package (e2e)", () => {
     it("errors without --force when file exists", () => {
       // First init
       runAgent(
-        "package", "-C", tmpDir, "init",
+        "package", "init", "-C", tmpDir,
         "--address", "github.com/test/first",
         "--version", "1.0.0",
         "--description", "First",
@@ -131,7 +131,7 @@ describe("mthds-agent package (e2e)", () => {
 
       // Second init without --force
       const { stderr, status } = runAgent(
-        "package", "-C", tmpDir, "init",
+        "package", "init", "-C", tmpDir,
         "--address", "github.com/test/second",
         "--version", "2.0.0",
         "--description", "Second",
@@ -152,7 +152,7 @@ describe("mthds-agent package (e2e)", () => {
   describe("init validation errors", () => {
     it("rejects invalid address with hint", () => {
       const { stderr, status } = runAgent(
-        "package", "-C", tmpDir, "init",
+        "package", "init", "-C", tmpDir,
         "--address", "bad",
         "--version", "1.0.0",
         "--description", "Test",
@@ -169,7 +169,7 @@ describe("mthds-agent package (e2e)", () => {
 
     it("rejects invalid version with hint", () => {
       const { stderr, status } = runAgent(
-        "package", "-C", tmpDir, "init",
+        "package", "init", "-C", tmpDir,
         "--address", "github.com/test/pkg",
         "--version", "not-semver",
         "--description", "Test",
@@ -183,7 +183,7 @@ describe("mthds-agent package (e2e)", () => {
 
     it("rejects invalid name with hint", () => {
       const { stderr, status } = runAgent(
-        "package", "-C", tmpDir, "init",
+        "package", "init", "-C", tmpDir,
         "--address", "github.com/test/pkg",
         "--version", "1.0.0",
         "--description", "Test",
@@ -198,7 +198,7 @@ describe("mthds-agent package (e2e)", () => {
 
     it("rejects invalid main-pipe with hint", () => {
       const { stderr, status } = runAgent(
-        "package", "-C", tmpDir, "init",
+        "package", "init", "-C", tmpDir,
         "--address", "github.com/test/pkg",
         "--version", "1.0.0",
         "--description", "Test",
@@ -220,7 +220,7 @@ describe("mthds-agent package (e2e)", () => {
     it("init → list → validate preserves all data", () => {
       // Init with all fields
       const initResult = runAgent(
-        "package", "-C", tmpDir, "init",
+        "package", "init", "-C", tmpDir,
         "--address", "github.com/acme/round-trip",
         "--version", "2.0.0",
         "--description", "Round-trip test",
@@ -234,7 +234,7 @@ describe("mthds-agent package (e2e)", () => {
       const initManifest = (parseJson(initResult.stdout).manifest) as Record<string, unknown>;
 
       // List — should return identical manifest
-      const listResult = runAgent("package", "-C", tmpDir, "list");
+      const listResult = runAgent("package", "list", "-C", tmpDir);
       expect(listResult.status).toBe(0);
 
       const listJson = parseJson(listResult.stdout);
@@ -243,7 +243,7 @@ describe("mthds-agent package (e2e)", () => {
       expect(listJson.manifest).toEqual(initManifest);
 
       // Validate — should return identical manifest with valid: true
-      const valResult = runAgent("package", "-C", tmpDir, "validate");
+      const valResult = runAgent("package", "validate", "-C", tmpDir);
       expect(valResult.status).toBe(0);
 
       const valJson = parseJson(valResult.stdout);
@@ -260,7 +260,7 @@ describe("mthds-agent package (e2e)", () => {
 
   describe("list errors", () => {
     it("errors when METHODS.toml is missing with hint", () => {
-      const { stderr, status } = runAgent("package", "-C", tmpDir, "list");
+      const { stderr, status } = runAgent("package", "list", "-C", tmpDir);
 
       expect(status).toBe(1);
       const errJson = parseJson(stderr);
@@ -273,7 +273,7 @@ describe("mthds-agent package (e2e)", () => {
     it("errors on corrupt TOML syntax with hint", () => {
       writeFileSync(join(tmpDir, "METHODS.toml"), "[package\nbroken = true", "utf-8");
 
-      const { stderr, status } = runAgent("package", "-C", tmpDir, "list");
+      const { stderr, status } = runAgent("package", "list", "-C", tmpDir);
 
       expect(status).toBe(1);
       const errJson = parseJson(stderr);
@@ -288,7 +288,7 @@ version = "1.0.0"
 description = "Test"
 `, "utf-8");
 
-      const { stderr, status } = runAgent("package", "-C", tmpDir, "list");
+      const { stderr, status } = runAgent("package", "list", "-C", tmpDir);
 
       expect(status).toBe(1);
       const errJson = parseJson(stderr);
@@ -303,7 +303,7 @@ description = "Test"
 
   describe("validate errors", () => {
     it("errors when METHODS.toml is missing", () => {
-      const { stderr, status } = runAgent("package", "-C", tmpDir, "validate");
+      const { stderr, status } = runAgent("package", "validate", "-C", tmpDir);
 
       expect(status).toBe(1);
       const errJson = parseJson(stderr);
@@ -314,7 +314,7 @@ description = "Test"
     it("errors on corrupt TOML with hint", () => {
       writeFileSync(join(tmpDir, "METHODS.toml"), "[package\nbroken = true", "utf-8");
 
-      const { stderr, status } = runAgent("package", "-C", tmpDir, "validate");
+      const { stderr, status } = runAgent("package", "validate", "-C", tmpDir);
 
       expect(status).toBe(1);
       const errJson = parseJson(stderr);
@@ -329,7 +329,7 @@ version = "1.0.0"
 description = "Test"
 `, "utf-8");
 
-      const { stderr, status } = runAgent("package", "-C", tmpDir, "validate");
+      const { stderr, status } = runAgent("package", "validate", "-C", tmpDir);
 
       expect(status).toBe(1);
       const errJson = parseJson(stderr);
@@ -346,7 +346,7 @@ description = "Test"
     it("agent can iterate: init → corrupt → validate error → fix → validate success", () => {
       // Step 1: init a valid package
       const initResult = runAgent(
-        "package", "-C", tmpDir, "init",
+        "package", "init", "-C", tmpDir,
         "--address", "github.com/test/iterate",
         "--version", "1.0.0",
         "--description", "Iterate test",
@@ -362,7 +362,7 @@ description = "Iterate test"
 `, "utf-8");
 
       // Step 3: validate catches the error with actionable details
-      const valBadResult = runAgent("package", "-C", tmpDir, "validate");
+      const valBadResult = runAgent("package", "validate", "-C", tmpDir);
       expect(valBadResult.status).toBe(1);
 
       const errJson = parseJson(valBadResult.stderr);
@@ -379,7 +379,7 @@ mthds_version = ">=1.0.0"
 `, "utf-8");
 
       // Step 5: validate succeeds
-      const valGoodResult = runAgent("package", "-C", tmpDir, "validate");
+      const valGoodResult = runAgent("package", "validate", "-C", tmpDir);
       expect(valGoodResult.status).toBe(0);
 
       const successJson = parseJson(valGoodResult.stdout);
@@ -395,7 +395,7 @@ mthds_version = ">=1.0.0"
   describe("output format", () => {
     it("success output is valid JSON on stdout, nothing on stderr", () => {
       const { stdout, stderr, status } = runAgent(
-        "package", "-C", tmpDir, "init",
+        "package", "init", "-C", tmpDir,
         "--address", "github.com/test/json",
         "--version", "1.0.0",
         "--description", "JSON test",
@@ -411,7 +411,7 @@ mthds_version = ">=1.0.0"
 
     it("error output is valid JSON on stderr", () => {
       const { stderr, status } = runAgent(
-        "package", "-C", tmpDir, "init",
+        "package", "init", "-C", tmpDir,
         "--address", "bad",
         "--version", "1.0.0",
         "--description", "Test",

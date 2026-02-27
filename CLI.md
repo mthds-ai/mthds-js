@@ -527,3 +527,63 @@ Shows package metadata (address, version, description, authors, license), depend
 mthds package list
 ```
 
+---
+
+## Agent CLI (`mthds-agent`)
+
+Machine-oriented CLI for AI agents. All output is structured JSON to stdout (success) and stderr (errors). No interactive prompts.
+
+### `mthds-agent runner setup pipelex`
+
+Set up the Pipelex runner (non-interactive). Forwards to `pipelex-agent init`.
+
+```bash
+mthds-agent runner setup pipelex [OPTIONS]
+```
+
+All options are passed through to `pipelex-agent init`:
+
+| Option | Description |
+|---|---|
+| `--config, -c <json>` | Inline JSON string or path to a JSON file. Schema: `{"backends": list[str], "primary_backend": str, "accept_gateway_terms": bool, "telemetry_mode": str}`. All fields optional. |
+| `--global, -g` | Force global `~/.pipelex/` directory. Without this flag, targets project-level `.pipelex/`. |
+
+**Examples:**
+
+```bash
+# Set up pipelex with OpenAI backend (project-level)
+mthds-agent runner setup pipelex --config '{"backends": ["openai"], "telemetry_mode": "off"}'
+
+# Set up pipelex globally with gateway
+mthds-agent runner setup pipelex -g --config '{"backends": ["pipelex_gateway"], "accept_gateway_terms": true}'
+```
+
+### `mthds-agent runner setup api`
+
+Set up the API runner (non-interactive).
+
+```bash
+mthds-agent runner setup api --api-key <key> [--api-url <url>]
+```
+
+| Option | Type | Required | Description |
+|---|---|---|---|
+| `--api-key <key>` | string | yes | API key for the MTHDS API |
+| `--api-url <url>` | string | no | API URL (uses default if omitted) |
+
+**Example:**
+
+```bash
+mthds-agent runner setup api --api-key sk-my-api-key
+```
+
+### `mthds-agent pipelex init`
+
+Direct passthrough to `pipelex-agent init`. Equivalent to `mthds-agent runner setup pipelex`.
+
+```bash
+mthds-agent pipelex init [OPTIONS]
+```
+
+All options are forwarded directly to `pipelex-agent init`.
+

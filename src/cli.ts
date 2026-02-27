@@ -8,7 +8,7 @@ import { printLogo } from "./cli/commands/index.js";
 import { setupRunner, setDefaultRunner, runnerStatus } from "./cli/commands/setup.js";
 import { installMethod } from "./cli/commands/install.js";
 import { configSet, configGet, configList } from "./cli/commands/config.js";
-import { runMethod, runPipe, runBundle } from "./cli/commands/run.js";
+import { runMethod, runPipe } from "./cli/commands/run.js";
 import {
   buildPipe,
   buildRunnerMethod,
@@ -86,33 +86,18 @@ run
 
 run
   .command("pipe")
-  .argument("<code>", "Pipe code to run")
+  .argument("<target>", "Pipe code or .mthds bundle file")
+  .option("--pipe <code>", "Pipe code (when target is a bundle)")
   .option("-i, --inputs <file>", "Path to JSON inputs file")
   .option("-o, --output <file>", "Path to save output JSON")
   .option("--no-output", "Skip saving output to file")
   .option("--no-pretty-print", "Skip pretty printing the output")
-  .description("Run a pipe by code")
+  .description("Run a pipe by code or bundle file")
   .allowUnknownOption()
   .allowExcessArguments(true)
   .exitOverride()
-  .action(async (code: string, options: Record<string, string | boolean | undefined>, cmd: Cmd) => {
-    await runPipe(code, { ...options, runner: getRunner(cmd), libraryDir: getLibraryDirs(cmd) } as Parameters<typeof runPipe>[1]);
-  });
-
-run
-  .command("bundle")
-  .argument("<path>", "Path to .mthds bundle file or pipeline directory")
-  .option("--pipe <code>", "Pipe code (overrides bundle's main_pipe)")
-  .option("-i, --inputs <file>", "Path to JSON inputs file")
-  .option("-o, --output <file>", "Path to save output JSON")
-  .option("--no-output", "Skip saving output to file")
-  .option("--no-pretty-print", "Skip pretty printing the output")
-  .description("Run a pipeline from a bundle file (.mthds) or directory")
-  .allowUnknownOption()
-  .allowExcessArguments(true)
-  .exitOverride()
-  .action(async (path: string, options: Record<string, string | boolean | undefined>, cmd: Cmd) => {
-    await runBundle(path, { ...options, runner: getRunner(cmd), libraryDir: getLibraryDirs(cmd) } as Parameters<typeof runBundle>[1]);
+  .action(async (target: string, options: Record<string, string | boolean | undefined>, cmd: Cmd) => {
+    await runPipe(target, { ...options, runner: getRunner(cmd), libraryDir: getLibraryDirs(cmd) } as Parameters<typeof runPipe>[1]);
   });
 
 // ── mthds build <subcommand> ────────────────────────────────────────

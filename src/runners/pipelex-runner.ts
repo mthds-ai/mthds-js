@@ -231,7 +231,7 @@ export class PipelexRunner implements Runner {
   }
 
   // ── Pipeline execution ──────────────────────────────────────────
-  // pipelex run bundle <path> [--pipe code] | pipelex run pipe <code>
+  // pipelex run <target> [--pipe code]
 
   async execute(request: ExecuteRequest): Promise<PipelineResponse> {
     const tmp = makeTmpDir();
@@ -241,12 +241,12 @@ export class PipelexRunner implements Runner {
       if (request.mthds_content) {
         const bundlePath = join(tmp, "bundle.mthds");
         writeFileSync(bundlePath, request.mthds_content, "utf-8");
-        args.push("bundle", bundlePath);
+        args.push(bundlePath);
         if (request.pipe_code) {
           args.push("--pipe", request.pipe_code);
         }
       } else if (request.pipe_code) {
-        args.push("pipe", request.pipe_code);
+        args.push(request.pipe_code);
       }
 
       if (request.inputs) {

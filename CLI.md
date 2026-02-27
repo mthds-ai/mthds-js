@@ -40,6 +40,7 @@ mthds runner setup pipelex
 |---|---|
 | `--runner <type>` | Runner to use for the command (`api` or `pipelex`). Applies to `run`, `validate`, and `build` subcommands. |
 | `-L, --library-dir <dir>` | Additional library directory (can be repeated). Applies to `run`, `validate`, and `build` subcommands. |
+| `--no-logo` | Suppress the ASCII logo |
 | `--version` | Print the CLI version |
 | `--help` | Show help for any command |
 

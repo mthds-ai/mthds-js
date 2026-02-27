@@ -21,7 +21,14 @@ const LOGO = [
   "  ████                                        ████",
 ];
 
+let _logoEnabled = true;
+
+export function setLogoEnabled(enabled: boolean): void {
+  _logoEnabled = enabled;
+}
+
 export function printLogo(): void {
+  if (!_logoEnabled) return;
   console.log();
   for (const line of LOGO) {
     console.log(chalk.white(line));

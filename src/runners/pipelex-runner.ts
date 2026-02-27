@@ -231,7 +231,7 @@ export class PipelexRunner implements Runner {
   }
 
   // ── Pipeline execution ──────────────────────────────────────────
-  // pipelex run <target> [--pipe code]
+  // pipelex run <target> [--pipe code] [--inputs file] [--output-dir dir]
 
   async execute(request: ExecuteRequest): Promise<PipelineResponse> {
     const tmp = makeTmpDir();

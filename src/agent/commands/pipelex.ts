@@ -8,6 +8,7 @@ import { Command } from "commander";
 import { passthrough } from "../passthrough.js";
 
 const PIPELEX_COMMANDS = [
+  "init",
   "validate",
   "inputs",
   "concept",

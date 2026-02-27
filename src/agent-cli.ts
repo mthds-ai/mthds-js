@@ -11,6 +11,7 @@ import { Command, CommanderError } from "commander";
 import { createRequire } from "node:module";
 import { resolve } from "node:path";
 import { agentError, AGENT_ERROR_DOMAINS } from "./agent/output.js";
+import { passthrough } from "./agent/passthrough.js";
 import { registerPipelexCommands } from "./agent/commands/pipelex.js";
 import { registerPlxtCommands } from "./agent/commands/plxt.js";
 import { agentDoctor } from "./agent/commands/doctor.js";
@@ -24,7 +25,7 @@ import {
   agentBuildOutputPipe,
 } from "./agent/commands/build.js";
 import { agentValidateMethod, agentValidatePipe } from "./agent/commands/validate.js";
-import { agentConfigSet, agentConfigGet, agentConfigList } from "./agent/commands/config.js";
+import { agentConfigGet, agentConfigList, agentConfigSet } from "./agent/commands/config.js";
 import { agentInstall } from "./agent/commands/install.js";
 import { agentPackageInit, agentPackageList, agentPackageValidate } from "./agent/commands/package.js";
 import { RUNNER_NAMES } from "./runners/types.js";
@@ -320,6 +321,45 @@ packageCmd
   .action(async (_opts: Record<string, never>, cmd: Cmd) => {
     const dir = cmd.optsWithGlobals().packageDir as string | undefined;
     await agentPackageValidate({ directory: dir });
+  });
+
+// ── mthds-agent runner setup <name> ──────────────────────────────────
+
+const runner = program
+  .command("runner")
+  .description("Manage runner configuration")
+  .exitOverride();
+
+const runnerSetup = runner
+  .command("setup")
+  .description("Set up a runner")
+  .exitOverride();
+
+runnerSetup
+  .command("pipelex")
+  .description("Set up the Pipelex runner (forwards to pipelex-agent init)")
+  .allowUnknownOption()
+  .allowExcessArguments(true)
+  .passThroughOptions()
+  .exitOverride()
+  .action((_options: Record<string, unknown>, cmd: Cmd) => {
+    const remaining = cmd.args;
+    passthrough("pipelex-agent", [...getLogLevelArgs(program), "init", ...remaining], {
+      autoInstall: getAutoInstall(program),
+    });
+  });
+
+runnerSetup
+  .command("api")
+  .description("Set up the API runner")
+  .requiredOption("--api-key <key>", "API key for the MTHDS API")
+  .option("--api-url <url>", "API URL (optional, uses default if omitted)")
+  .exitOverride()
+  .action(async (options: { apiKey: string; apiUrl?: string }) => {
+    if (options.apiUrl) {
+      await agentConfigSet("api-url", options.apiUrl);
+    }
+    await agentConfigSet("api-key", options.apiKey);
   });
 
 // ── mthds-agent pipelex <cmd> [args...] ──────────────────────────────

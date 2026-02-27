@@ -10,8 +10,7 @@
 import { Command, CommanderError } from "commander";
 import { createRequire } from "node:module";
 import { resolve } from "node:path";
-import { agentError, AGENT_ERROR_DOMAINS } from "./agent/output.js";
-import { passthrough } from "./agent/passthrough.js";
+import { agentError, agentSuccess, AGENT_ERROR_DOMAINS } from "./agent/output.js";
 import { registerPipelexCommands } from "./agent/commands/pipelex.js";
 import { registerPlxtCommands } from "./agent/commands/plxt.js";
 import { agentDoctor } from "./agent/commands/doctor.js";
@@ -27,6 +26,8 @@ import {
 import { agentValidateMethod, agentValidatePipe } from "./agent/commands/validate.js";
 import { agentConfigGet, agentConfigList, agentConfigSet } from "./agent/commands/config.js";
 import { agentInstall } from "./agent/commands/install.js";
+import { isPipelexInstalled } from "./installer/runtime/check.js";
+import { installPipelexSync } from "./installer/runtime/installer.js";
 import { agentPackageInit, agentPackageList, agentPackageValidate } from "./agent/commands/package.js";
 import { RUNNER_NAMES } from "./runners/types.js";
 import type { RunnerType } from "./runners/types.js";
@@ -337,16 +338,33 @@ const runnerSetup = runner
 
 runnerSetup
   .command("pipelex")
-  .description("Set up the Pipelex runner (forwards to pipelex-agent init)")
-  .allowUnknownOption()
-  .allowExcessArguments(true)
-  .passThroughOptions()
+  .description("Install the Pipelex runner (does not initialize config — use 'mthds-agent pipelex init' for that)")
   .exitOverride()
-  .action((_options: Record<string, unknown>, cmd: Cmd) => {
-    const remaining = cmd.args;
-    passthrough("pipelex-agent", [...getLogLevelArgs(program), "init", ...remaining], {
-      autoInstall: getAutoInstall(program),
-    });
+  .action(() => {
+    if (isPipelexInstalled()) {
+      agentSuccess({ success: true, already_installed: true, message: "pipelex is already installed" });
+      return;
+    }
+    try {
+      installPipelexSync();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      agentError(`Failed to install pipelex: ${msg}`, "InstallError", {
+        error_domain: AGENT_ERROR_DOMAINS.INSTALL,
+        hint: "Install manually: https://pipelex.com",
+      });
+    }
+    if (!isPipelexInstalled()) {
+      agentError(
+        "pipelex was installed but is not reachable in PATH.",
+        "InstallError",
+        {
+          error_domain: AGENT_ERROR_DOMAINS.INSTALL,
+          hint: "Restart your shell or add the install directory to your PATH.",
+        }
+      );
+    }
+    agentSuccess({ success: true, already_installed: false, message: "pipelex installed successfully" });
   });
 
 runnerSetup

@@ -535,27 +535,18 @@ Machine-oriented CLI for AI agents. All output is structured JSON to stdout (suc
 
 ### `mthds-agent runner setup pipelex`
 
-Set up the Pipelex runner (non-interactive). Forwards to `pipelex-agent init`.
+Install the Pipelex runtime. Does **not** initialize configuration — use `mthds-agent pipelex init` for that.
 
 ```bash
-mthds-agent runner setup pipelex [OPTIONS]
+mthds-agent runner setup pipelex
 ```
 
-All options are passed through to `pipelex-agent init`:
+Installs pipelex via `curl -fsSL https://pipelex.com/install.sh | sh` (macOS/Linux) or `irm https://pipelex.com/install.ps1 | iex` (Windows). Returns JSON indicating whether pipelex was already installed or freshly installed.
 
-| Option | Description |
-|---|---|
-| `--config, -c <json>` | Inline JSON string or path to a JSON file. Schema: `{"backends": list[str], "primary_backend": str, "accept_gateway_terms": bool, "telemetry_mode": str}`. All fields optional. |
-| `--global, -g` | Force global `~/.pipelex/` directory. Without this flag, targets project-level `.pipelex/`. |
+**Example output:**
 
-**Examples:**
-
-```bash
-# Set up pipelex with OpenAI backend (project-level)
-mthds-agent runner setup pipelex --config '{"backends": ["openai"], "telemetry_mode": "off"}'
-
-# Set up pipelex globally with gateway
-mthds-agent runner setup pipelex -g --config '{"backends": ["pipelex_gateway"], "accept_gateway_terms": true}'
+```json
+{ "success": true, "already_installed": true, "message": "pipelex is already installed" }
 ```
 
 ### `mthds-agent runner setup api`
@@ -579,11 +570,29 @@ mthds-agent runner setup api --api-key sk-my-api-key
 
 ### `mthds-agent pipelex init`
 
-Direct passthrough to `pipelex-agent init`. Equivalent to `mthds-agent runner setup pipelex`.
+Initialize Pipelex configuration (non-interactive). Forwards to `pipelex-agent init`.
 
 ```bash
 mthds-agent pipelex init [OPTIONS]
 ```
 
-All options are forwarded directly to `pipelex-agent init`.
+All options are forwarded directly to `pipelex-agent init`:
+
+| Option | Description |
+|---|---|
+| `--config, -c <json>` | Inline JSON string or path to a JSON file. Schema: `{"backends": list[str], "primary_backend": str, "accept_gateway_terms": bool, "telemetry_mode": str}`. All fields optional. |
+| `--global, -g` | Force global `~/.pipelex/` directory. Without this flag, targets project-level `.pipelex/`. |
+
+**Typical agent workflow:**
+
+```bash
+# Step 1: Install pipelex if needed
+mthds-agent runner setup pipelex
+
+# Step 2: Initialize configuration
+mthds-agent pipelex init --config '{"backends": ["openai"], "telemetry_mode": "off"}'
+
+# Step 2 (global variant):
+mthds-agent pipelex init -g --config '{"backends": ["pipelex_gateway"], "accept_gateway_terms": true}'
+```
 

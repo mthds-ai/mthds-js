@@ -1,5 +1,11 @@
 # Changelog
 
+## [v0.0.14] - 2026-02-27
+
+### Changed
+
+- **`mthds-agent pipelex run`** — Added `bundle` as a recognized subcommand alongside `pipe` and `method`.
+
 ## [v0.0.13] - 2026-02-27
 
 ### Added

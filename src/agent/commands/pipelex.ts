@@ -18,7 +18,7 @@ const PIPELEX_COMMANDS = [
   "doctor",
 ] as const;
 
-const PIPELEX_RUN_SUBCOMMANDS = ["pipe", "method"] as const;
+const PIPELEX_RUN_SUBCOMMANDS = ["pipe", "bundle", "method"] as const;
 
 export function registerPipelexCommands(
   program: Command,
@@ -51,7 +51,7 @@ export function registerPipelexCommands(
   //   mthds-agent pipelex run method <args> -> pipelex-agent run method <args>
   const runGroup = pipelexGroup
     .command("run")
-    .description("Forward to pipelex-agent run (pipe or method)")
+    .description("Forward to pipelex-agent run (pipe, bundle, or method)")
     .passThroughOptions()
     .allowUnknownOption();
 

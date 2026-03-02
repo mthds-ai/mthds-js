@@ -37,16 +37,18 @@ function extractPassthroughArgs(): string[] {
   return result;
 }
 
-export async function agentRunMethod(
-  name: string,
-  options: {
-    pipe?: string;
-    inputs?: string;
-    output?: string;
-    prettyPrint?: boolean;
-    runner?: RunnerType;
-    libraryDir?: string[];
-  }
+interface AgentRunOptions {
+  pipe?: string;
+  inputs?: string;
+  output?: string;
+  prettyPrint?: boolean;
+  runner?: RunnerType;
+  libraryDir?: string[];
+}
+
+async function agentRunTarget(
+  options: AgentRunOptions,
+  fallbackMsg: string
 ): Promise<void> {
   const libraryDirs = options.libraryDir?.length
     ? options.libraryDir
@@ -72,93 +74,37 @@ export async function agentRunMethod(
     return;
   }
 
-  agentError(
-    "Method target is not yet supported for the API runner. Use 'mthds-agent run pipe <target>' instead, or specify a different runner with --runner <name>.",
-    "ArgumentError",
-    { error_domain: AGENT_ERROR_DOMAINS.ARGUMENT }
+  agentError(fallbackMsg, "ArgumentError", {
+    error_domain: AGENT_ERROR_DOMAINS.ARGUMENT,
+  });
+}
+
+export async function agentRunMethod(
+  _name: string,
+  options: AgentRunOptions
+): Promise<void> {
+  return agentRunTarget(
+    options,
+    "Method target is not yet supported for the API runner. Use 'mthds-agent run pipe <target>' instead, or specify a different runner with --runner <name>."
   );
 }
 
 export async function agentRunPipe(
-  target: string,
-  options: {
-    pipe?: string;
-    inputs?: string;
-    output?: string;
-    prettyPrint?: boolean;
-    runner?: RunnerType;
-    libraryDir?: string[];
-  }
+  _target: string,
+  options: AgentRunOptions
 ): Promise<void> {
-  const libraryDirs = options.libraryDir?.length
-    ? options.libraryDir
-    : undefined;
-
-  let runner;
-  try {
-    runner = createRunner(options.runner, libraryDirs);
-  } catch (err) {
-    agentError((err as Error).message, "RunnerError", {
-      error_domain: AGENT_ERROR_DOMAINS.RUNNER,
-    });
-  }
-
-  if (isPipelexRunner(runner)) {
-    try {
-      await runner.runPassthrough(extractPassthroughArgs());
-    } catch (err) {
-      agentError((err as Error).message, "RunError", {
-        error_domain: AGENT_ERROR_DOMAINS.RUNNER,
-      });
-    }
-    return;
-  }
-
-  agentError(
-    "Pipe target is not yet supported for the API runner via mthds-agent. Use the pipelex runner with --runner pipelex.",
-    "ArgumentError",
-    { error_domain: AGENT_ERROR_DOMAINS.ARGUMENT }
+  return agentRunTarget(
+    options,
+    "Pipe target is not yet supported for the API runner via mthds-agent. Use the pipelex runner with --runner pipelex."
   );
 }
 
 export async function agentRunBundle(
-  target: string,
-  options: {
-    pipe?: string;
-    inputs?: string;
-    output?: string;
-    prettyPrint?: boolean;
-    runner?: RunnerType;
-    libraryDir?: string[];
-  }
+  _target: string,
+  options: AgentRunOptions
 ): Promise<void> {
-  const libraryDirs = options.libraryDir?.length
-    ? options.libraryDir
-    : undefined;
-
-  let runner;
-  try {
-    runner = createRunner(options.runner, libraryDirs);
-  } catch (err) {
-    agentError((err as Error).message, "RunnerError", {
-      error_domain: AGENT_ERROR_DOMAINS.RUNNER,
-    });
-  }
-
-  if (isPipelexRunner(runner)) {
-    try {
-      await runner.runPassthrough(extractPassthroughArgs());
-    } catch (err) {
-      agentError((err as Error).message, "RunError", {
-        error_domain: AGENT_ERROR_DOMAINS.RUNNER,
-      });
-    }
-    return;
-  }
-
-  agentError(
-    "Bundle target is only supported with the pipelex runner. Specify --runner pipelex.",
-    "ArgumentError",
-    { error_domain: AGENT_ERROR_DOMAINS.ARGUMENT }
+  return agentRunTarget(
+    options,
+    "Bundle target is only supported with the pipelex runner. Specify --runner pipelex."
   );
 }

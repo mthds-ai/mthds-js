@@ -12,12 +12,13 @@ interface ValidateOptions {
   libraryDir?: string[];
 }
 
-export async function validateMethod(
-  target: string,
+async function validateWithPipelexPassthrough(
+  introLabel: string,
+  fallbackMsg: string,
   options: ValidateOptions
 ): Promise<void> {
   printLogo();
-  p.intro("mthds validate method");
+  p.intro(introLabel);
 
   const libraryDirs = options.libraryDir?.length
     ? options.libraryDir
@@ -37,39 +38,31 @@ export async function validateMethod(
     return;
   }
 
-  p.log.error("Method target is not yet supported for the API runner. Use 'mthds validate pipe <target>' instead.\nYou can also specify a different runner with --runner <name>, or change the default with 'mthds set-default runner <name>'.");
+  p.log.error(fallbackMsg);
   p.outro("");
   process.exit(1);
+}
+
+export async function validateMethod(
+  target: string,
+  options: ValidateOptions
+): Promise<void> {
+  return validateWithPipelexPassthrough(
+    "mthds validate method",
+    "Method target is not yet supported for the API runner. Use 'mthds validate pipe <target>' instead.\nYou can also specify a different runner with --runner <name>, or change the default with 'mthds set-default runner <name>'.",
+    options
+  );
 }
 
 export async function validateBundle(
   target: string,
   options: ValidateOptions
 ): Promise<void> {
-  printLogo();
-  p.intro("mthds validate bundle");
-
-  const libraryDirs = options.libraryDir?.length
-    ? options.libraryDir
-    : undefined;
-  const runner = createRunner(options.runner, libraryDirs);
-
-  if (isPipelexRunner(runner)) {
-    p.log.step("Validating via pipelex...");
-    try {
-      await runner.validatePassthrough(extractPassthroughArgs("validate", 1));
-      p.outro("Done");
-    } catch (err) {
-      p.log.error((err as Error).message);
-      p.outro("");
-      process.exit(1);
-    }
-    return;
-  }
-
-  p.log.error("Bundle target is only supported with the pipelex runner.\nYou can specify a different runner with --runner <name>, or change the default with 'mthds set-default runner <name>'.");
-  p.outro("");
-  process.exit(1);
+  return validateWithPipelexPassthrough(
+    "mthds validate bundle",
+    "Bundle target is only supported with the pipelex runner.\nYou can specify a different runner with --runner <name>, or change the default with 'mthds set-default runner <name>'.",
+    options
+  );
 }
 
 export async function validatePipe(

@@ -51,7 +51,7 @@ export function trackInstall(data: InstallEvent): void {
 
   posthog.capture({
     distinctId: "anonymous",
-    event: "install",
+    event: "method_install",
     properties: {
       address: data.address,
       name: data.name,

@@ -665,7 +665,7 @@ All arguments are forwarded to `pipelex run`. Requires the pipelex runner.
 **Examples:**
 
 ```bash
-mthds-agent run method my-method
+mthds-agent run method my_method
 mthds-agent run pipe my_pipe_code --inputs inputs.json
 mthds-agent run bundle ./bundle.mthds --pipe my_pipe
 ```

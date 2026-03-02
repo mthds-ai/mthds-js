@@ -222,7 +222,7 @@ export function parseMethodsToml(content: string): ParsedManifest {
   if (pkg.name !== undefined) {
     if (!isValidMethodName(pkg.name)) {
       throw new ManifestValidationError(
-        `Invalid method name '${pkg.name}'. Must be 2-25 lowercase chars (letters, digits, hyphens, underscores), starting with a letter.`,
+        `Invalid method name '${pkg.name}'. Must be 2-25 lowercase snake_case chars (letters, digits, underscores), starting with a letter.`,
       );
     }
     name = pkg.name;

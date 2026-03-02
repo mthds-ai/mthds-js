@@ -210,6 +210,23 @@ async function resolveOneMethod(
     return { skipped: { dirName, errors: result.errors } };
   }
 
+  // Ensure directory name matches the expected snake_case form of package.name
+  const manifestName = result.manifest.package.name;
+  if (manifestName) {
+    const expectedDir = manifestName;
+    if (expectedDir !== dirName) {
+      return {
+        skipped: {
+          dirName,
+          errors: [
+            `Directory "${dirName}" does not match [package.name] "${manifestName}". ` +
+              `Expected directory name: "${expectedDir}".`,
+          ],
+        },
+      };
+    }
+  }
+
   // Find and download .mthds files
   const mthdPaths = await listMthdFiles(auth, org, repo, dirPath);
   const files = await downloadFilesParallel(auth, org, repo, mthdPaths, dirPath);

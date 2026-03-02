@@ -173,7 +173,7 @@ export function validateManifest(raw: string): ValidationResult {
     errors.push('[package.name] is required and must be a non-empty string.');
   } else if (!METHOD_NAME_RE.test(pkg["name"] as string)) {
     errors.push(
-      `[package.name] "${pkg["name"]}" is invalid: must be 2-25 lowercase chars (letters, digits, hyphens, underscores), starting with a letter.`
+      `[package.name] "${pkg["name"]}" is invalid: must be 2-25 lowercase snake_case chars (letters, digits, underscores), starting with a letter.`
     );
   }
 

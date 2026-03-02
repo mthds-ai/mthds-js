@@ -46,7 +46,7 @@ describe("validateManifest — valid", () => {
   it("accepts all optional package fields", () => {
     const raw = `
 [package]
-name          = "legal-tools"
+name          = "legal_tools"
 address       = "github.com/acme/legal-tools"
 version       = "0.3.0"
 description   = "Legal document analysis methods."
@@ -95,7 +95,7 @@ pipes = ["extract_clause", "analyze_nda"]
   it("accepts complete example from spec", () => {
     const raw = `
 [package]
-name          = "legal-tools"
+name          = "legal_tools"
 address       = "github.com/acme/legal-tools"
 version       = "0.3.0"
 description   = "Legal document analysis methods."
@@ -118,7 +118,7 @@ pipes = ["extract_clause", "analyze_nda"]
   it("accepts valid name", () => {
     const raw = `
 [package]
-name = "my-tool"
+name = "my_tool"
 address = "github.com/a/b"
 version = "1.0.0"
 description = "Test."
@@ -128,7 +128,7 @@ pipes = ["do_thing"]
 `;
     const r = validateManifest(raw);
     expect(r.valid).toBe(true);
-    expect(r.manifest!.package.name).toBe("my-tool");
+    expect(r.manifest!.package.name).toBe("my_tool");
   });
 
   it("accepts main_pipe that is listed in exports", () => {

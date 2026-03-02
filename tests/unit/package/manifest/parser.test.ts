@@ -342,12 +342,12 @@ describe("serializeManifestToToml", () => {
 address = "github.com/acme/tools"
 version = "1.0.0"
 description = "Useful tools."
-name = "acme-tools"
+name = "acme_tools"
 main_pipe = "classify_document"
 `;
     const manifest = parseMethodsToml(raw);
     const output = serializeManifestToToml(manifest);
-    expect(output).toContain('name = "acme-tools"');
+    expect(output).toContain('name = "acme_tools"');
     expect(output).toContain('main_pipe = "classify_document"');
   });
 
@@ -371,7 +371,7 @@ description   = "Legal document analysis methods."
 display_name  = "Legal Tools"
 authors       = ["ACME <legal@acme.com>"]
 license       = "MIT"
-name          = "legal-tools"
+name          = "legal_tools"
 main_pipe     = "classify_document"
 
 [exports.legal]

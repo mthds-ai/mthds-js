@@ -1,6 +1,11 @@
 # Changelog
 
-## [v0.0.16] - 2026-03-01
+## [v0.1.0] - 2026-03-02
+
+### Breaking Changes
+
+- **Method names: strict snake_case** — the `name` field now enforces snake_case only (pattern `[a-z][a-z0-9_]{1,24}`). Hyphens are no longer allowed — names like `my-method` must become `my_method`.
+- **`methodNameToDir()` removed** — method name is now used directly as the directory name with no conversion. The resolver expects the directory name to match the `name` field exactly.
 
 ### Changed
 

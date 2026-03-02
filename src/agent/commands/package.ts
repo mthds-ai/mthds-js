@@ -107,9 +107,9 @@ export async function agentPackageInit(options: AgentPackageInitOptions): Promis
 
   if (options.name !== undefined && !isValidMethodName(options.name)) {
     agentError(
-      `Invalid method name '${options.name}'. Must be 2-25 lowercase chars (letters, digits, hyphens, underscores), starting with a letter.`,
+      `Invalid method name '${options.name}'. Must be 2-25 lowercase snake_case chars (letters, digits, underscores), starting with a letter.`,
       "PackageError",
-      { error_domain: AGENT_ERROR_DOMAINS.PACKAGE, hint: "Provide a valid --name: 2-25 lowercase chars, starting with a letter (e.g. 'my-tool')." },
+      { error_domain: AGENT_ERROR_DOMAINS.PACKAGE, hint: "Provide a valid --name: 2-25 lowercase snake_case chars, starting with a letter (e.g. 'my_tool')." },
     );
   }
 

@@ -16,6 +16,35 @@ const SNAKE_CASE_RE = /^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$/;
 
 const RESERVED_PREFIXES = ["native", "mthds", "pipelex"];
 
+/**
+ * Recursively walk the hierarchical ExportNode tree and collect all pipe codes.
+ */
+export function collectAllExportedPipes(exports: Exports): string[] {
+  const pipes: string[] = [];
+
+  function walk(node: ExportNode): void {
+    if (node.pipes && Array.isArray(node.pipes)) {
+      for (const pipe of node.pipes) {
+        if (typeof pipe === "string") {
+          pipes.push(pipe);
+        }
+      }
+    }
+    for (const [key, value] of Object.entries(node)) {
+      if (key === "pipes") continue;
+      if (value && typeof value === "object" && !Array.isArray(value)) {
+        walk(value as ExportNode);
+      }
+    }
+  }
+
+  for (const node of Object.values(exports)) {
+    walk(node);
+  }
+
+  return pipes;
+}
+
 function validateExportNode(
   node: unknown,
   path: string,
@@ -159,9 +188,11 @@ export function validateManifest(raw: string): ValidationResult {
     }
   }
 
-  // --- [exports] section (optional, hierarchical) ---
+  // --- [exports] section (required, hierarchical) ---
   const exports = parsed["exports"] as Record<string, unknown> | undefined;
-  if (exports && typeof exports === "object") {
+  if (!exports || typeof exports !== "object" || Object.keys(exports).length === 0) {
+    errors.push('[exports] section is required: at least one export domain with pipes must be defined.');
+  } else {
     for (const [domain, node] of Object.entries(exports)) {
       const domainLower = domain.toLowerCase();
       const matchedPrefix = RESERVED_PREFIXES.find((prefix) => domainLower.startsWith(prefix));
@@ -171,6 +202,14 @@ export function validateManifest(raw: string): ValidationResult {
         );
       }
       validateExportNode(node, domain, errors);
+    }
+  }
+
+  // --- main_pipe must be listed in exports ---
+  if (pkg["main_pipe"] && typeof pkg["main_pipe"] === "string" && exports && typeof exports === "object" && Object.keys(exports).length > 0) {
+    const allPipes = collectAllExportedPipes(exports as Exports);
+    if (!allPipes.includes(pkg["main_pipe"] as string)) {
+      errors.push(`[package.main_pipe] "${pkg["main_pipe"]}" must be listed in one of the [exports] domains.`);
     }
   }
 

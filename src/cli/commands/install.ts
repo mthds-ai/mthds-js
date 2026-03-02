@@ -15,7 +15,11 @@ import { parseAddress } from "../../installer/resolver/address.js";
 import { resolveFromGitHub } from "../../installer/resolver/github.js";
 import { resolveFromLocal } from "../../installer/resolver/local.js";
 import { generateShim } from "../../installer/agents/registry.js";
+import { createRunner } from "../../runners/registry.js";
+import { Runners } from "../../runners/types.js";
+import { collectAllExportedPipes } from "../../package/manifest/validate.js";
 import type { ResolvedRepo } from "../../package/manifest/types.js";
+import type { Runner, RunnerType } from "../../runners/types.js";
 
 type InstallLocation = "project" | "global";
 
@@ -31,6 +35,7 @@ export async function installMethod(options: {
   address?: string;
   dir?: string;
   method?: string;
+  runner?: RunnerType;
 }): Promise<void> {
   printLogo();
   p.intro("mthds install");
@@ -39,13 +44,14 @@ export async function installMethod(options: {
 
   // Step 0: Resolve repo (multiple methods)
   const s = p.spinner();
+  s.start("Resolving methods...");
   let resolved: ResolvedRepo;
 
   // Derive org/repo for telemetry
   let orgRepo: string | undefined;
 
   if (dir) {
-    s.start(`Resolving methods from ${dir}...`);
+    s.message(`Resolving methods from ${dir}...`);
     try {
       resolved = resolveFromLocal(dir);
     } catch (err) {
@@ -66,12 +72,13 @@ export async function installMethod(options: {
     try {
       parsed = parseAddress(address);
     } catch (err) {
+      s.stop("");
       p.log.error((err as Error).message);
       p.outro("");
       process.exit(1);
     }
 
-    s.start(`Resolving methods from ${parsed.org}/${parsed.repo}${parsed.subpath ? `/${parsed.subpath}` : ""}...`);
+    s.message(`Resolving methods from ${parsed.org}/${parsed.repo}${parsed.subpath ? `/${parsed.subpath}` : ""}...`);
     try {
       resolved = await resolveFromGitHub(parsed);
     } catch (err) {
@@ -83,6 +90,7 @@ export async function installMethod(options: {
     s.stop(`Scanned methods/ folder in ${parsed.org}/${parsed.repo}`);
     orgRepo = `${parsed.org}/${parsed.repo}`;
   } else {
+    s.stop("");
     p.log.error("Provide an address (org/repo) or use --dir <path>.");
     p.outro("");
     process.exit(1);
@@ -139,6 +147,115 @@ export async function installMethod(options: {
     p.log.error("No valid methods to install.");
     p.outro("");
     process.exit(1);
+  }
+
+  // Step 1b: Ensure runner is configured
+  let runner: Runner | null = null;
+  try {
+    runner = createRunner(options.runner);
+    const healthSpinner = p.spinner();
+    healthSpinner.start("Checking runner health...");
+    await runner.health();
+    const ver = await runner.version().catch(() => ({}));
+    const versionStr = Object.values(ver).join(" ") || "unknown";
+    healthSpinner.stop(`Runner ${chalk.bold(runner.type)} is healthy (${versionStr})`);
+  } catch {
+    p.log.warning(
+      `No runner configured — skipping pipe validation and mermaid generation.\n` +
+      `  Set up a runner with: ${chalk.cyan("npx mthds runner setup pipelex")}`
+    );
+    runner = null;
+  }
+
+  // Step 1c: Validate each method with the runner
+  if (runner) {
+    const valSpinner = p.spinner();
+    let allValid = true;
+    for (const method of resolved.methods) {
+      // Construct method URL: GitHub URL or local path
+      let methodUrl: string;
+      if (dir) {
+        methodUrl = resolve(dir, "methods", method.name);
+      } else {
+        methodUrl = `https://github.com/${orgRepo}/methods/${method.name}/`;
+      }
+
+      valSpinner.start(`Validating ${method.name}...`);
+      const result = await runner.validate({ method_url: methodUrl });
+      if (!result.success) {
+        valSpinner.stop(`Validation failed: ${method.name}`);
+        p.log.error(`${method.name}: ${result.message}`);
+        allValid = false;
+      } else {
+        valSpinner.stop(`Validated ${method.name}`);
+      }
+    }
+    if (!allValid) {
+      p.log.error("One or more methods failed validation. Aborting install.");
+      p.outro("");
+      process.exit(1);
+    }
+  }
+
+  // Step 1d: Mermaid generation (pipelex runner only)
+  if (runner && runner.type === Runners.PIPELEX) {
+    for (const method of resolved.methods) {
+      if (method.files.length === 0) continue;
+
+      const mainPipe = method.manifest.package.main_pipe;
+      let pipeCode: string | null = null;
+
+      if (mainPipe) {
+        pipeCode = mainPipe;
+      } else {
+        // Collect all exported pipes and prompt user
+        const allPipes = method.manifest.exports
+          ? collectAllExportedPipes(method.manifest.exports)
+          : [];
+
+        if (allPipes.length > 0) {
+          const pipeOptions = [
+            { value: "__skip__" as const, label: "Skip", hint: "Don't generate a diagram" },
+            ...allPipes.map((pipe) => ({ value: pipe, label: pipe })),
+          ];
+          const selected = await p.select({
+            message: `Generate a pipeline diagram for "${method.name}"? Pick a pipe:`,
+            options: pipeOptions,
+          });
+          if (p.isCancel(selected)) {
+            p.cancel("Installation cancelled.");
+            process.exit(0);
+          }
+          if (selected !== "__skip__") {
+            pipeCode = selected;
+          }
+        }
+      }
+
+      if (pipeCode) {
+        // Construct method URL: GitHub URL or local path
+        let mermaidMethodUrl: string;
+        if (dir) {
+          mermaidMethodUrl = resolve(dir, "methods", method.name);
+        } else {
+          mermaidMethodUrl = `https://github.com/${orgRepo}/methods/${method.name}/`;
+        }
+
+        const mermaidSpinner = p.spinner();
+        mermaidSpinner.start(`Generating pipeline diagram for ${method.name}:${pipeCode}...`);
+        const mermaidResult = await runner.generateMermaid({
+          method_url: mermaidMethodUrl,
+          pipe_code: pipeCode,
+        });
+        if (mermaidResult.success) {
+          mermaidSpinner.stop(`Pipeline diagram for ${method.name}:${pipeCode}`);
+          p.log.info(mermaidResult.mermaid_code);
+        } else {
+          mermaidSpinner.stop(`Mermaid generation failed for ${method.name}:${pipeCode}`);
+          p.log.warning(mermaidResult.message);
+        }
+      }
+    }
   }
 
   // Step 2: Install location (project-local or global)
@@ -239,26 +356,24 @@ export async function installMethod(options: {
     }
   }
 
-  // Step 5: Optional pipelex runner install
+  // Step 5: Optional pipelex runner install (only if not already available)
   let hasPipelex = isPipelexInstalled();
 
-  const wantsRunner = await p.confirm({
-    message: "Do you want to install the pipelex runner? (https://github.com/Pipelex/pipelex)",
-    initialValue: false,
-  });
+  if (!hasPipelex) {
+    const wantsRunner = await p.confirm({
+      message: "Do you want to install the pipelex runner? (https://github.com/Pipelex/pipelex)",
+      initialValue: false,
+    });
 
-  if (p.isCancel(wantsRunner)) {
-    p.cancel("Installation cancelled.");
-    process.exit(0);
-  }
+    if (p.isCancel(wantsRunner)) {
+      p.cancel("Installation cancelled.");
+      process.exit(0);
+    }
 
-  if (wantsRunner) {
-    if (!hasPipelex) {
+    if (wantsRunner) {
       await ensureRuntime();
       p.log.success("pipelex installed.");
       hasPipelex = true;
-    } else {
-      p.log.success("pipelex is already installed.");
     }
   }
 

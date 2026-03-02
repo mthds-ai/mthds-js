@@ -1,5 +1,26 @@
 # Changelog
 
+## [v0.0.15] - 2026-03-01
+
+### Added
+
+- **Method validation during install** — `mthds install` now validates each method using `pipelex validate method <url>` before installing. Validation runs against the GitHub URL or local path directly (no temp files). If any method fails validation, install is aborted.
+- **Mermaid diagram generation during install** — after validation, generates a pipeline diagram using `pipelex mermaid method <url> --pipe <pipe_code>`. If `main_pipe` is set, it's used automatically; otherwise the user picks from exported pipes or skips.
+- **Runner health check before install** — verifies the configured runner is reachable before proceeding. If no runner is available, validation and mermaid steps are skipped with a warning.
+- **Immediate spinner on install** — spinner starts right after `mthds install` banner, before address parsing, so there's no blank pause while resolving methods from GitHub.
+- **`--runner <type>` option** — pass `--runner pipelex` or `--runner api` to override the configured runner for install.
+- **Manifest validation: exports required** — `[exports]` section must define at least one domain with pipes; manifests with no exports now fail validation.
+- **Manifest validation: main_pipe in exports** — if `main_pipe` is set, it must be listed in one of the `[exports]` domains.
+- **`collectAllExportedPipes()` helper** — recursively walks the hierarchical `ExportNode` tree to collect all pipe names from exports.
+- **`method_url` on `ValidateRequest` and `GenerateMermaidRequest`** — runner interface now accepts a GitHub URL or local path for validation and mermaid generation.
+
+### Changed
+
+- **Pipelex runner: validate uses `pipelex validate method <url>`** — replaced the broken `pipelex validate --bundle <tmpfile>` with the correct CLI command.
+- **Pipelex runner: mermaid uses `pipelex mermaid method <url>`** — replaced the broken `pipelex mermaid --bundle <tmpfile>` with the correct CLI command.
+- **Pipelex runner: validation streams output** — validation uses `execStreaming` so pipelex progress (clone, validation steps) is visible in real-time.
+- **"Install pipelex?" prompt only when not installed** — no longer asks to install pipelex if it's already available and was just used for validation.
+
 ## [v0.0.14] - 2026-02-27
 
 ### Changed

@@ -251,9 +251,10 @@ program
   .argument("[address]", "GitHub repo (org/repo or https://github.com/org/repo)")
   .option("--local <path>", "Install from a local directory")
   .option("--method <name>", "Install only the specified method (by name)")
+  .option("--runner <type>", `Runner for validation & mermaid (${RUNNER_NAMES.join(", ")})`)
   .description("Install a method package")
   .exitOverride()
-  .action(async (address: string | undefined, opts: { local?: string; method?: string }) => {
+  .action(async (address: string | undefined, opts: { local?: string; method?: string; runner?: string }, cmd: Cmd) => {
     if (address && opts.local) {
       printLogo();
       p.intro("mthds install");
@@ -268,7 +269,8 @@ program
       p.outro("");
       process.exit(1);
     }
-    await installMethod({ address, dir: opts.local, method: opts.method });
+    const runner = (opts.runner ?? getRunner(cmd)) as RunnerType | undefined;
+    await installMethod({ address, dir: opts.local, method: opts.method, runner });
   });
 
 // ── mthds config set|get|list ──────────────────────────────────────

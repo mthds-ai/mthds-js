@@ -150,17 +150,18 @@ export async function installMethod(options: {
 
   // Step 1b: Ensure runner is configured
   let runner: Runner | null = null;
+  const healthSpinner = p.spinner();
   try {
     runner = createRunner(options.runner);
-    const healthSpinner = p.spinner();
     healthSpinner.start("Checking runner health...");
     await runner.health();
     const ver = await runner.version().catch(() => ({}));
     const versionStr = Object.values(ver).join(" ") || "unknown";
     healthSpinner.stop(`Runner ${chalk.bold(runner.type)} is healthy (${versionStr})`);
   } catch {
+    healthSpinner.stop("Runner not available.");
     p.log.warning(
-      `No runner configured — skipping pipe validation and mermaid generation.\n` +
+      `No runner configured — skipping pipe validation.\n` +
       `  Set up a runner with: ${chalk.cyan("npx mthds runner setup pipelex")}`
     );
     runner = null;

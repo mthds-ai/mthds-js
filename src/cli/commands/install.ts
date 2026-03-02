@@ -152,8 +152,8 @@ export async function installMethod(options: {
   let runner: Runner | null = null;
   const healthSpinner = p.spinner();
   try {
-    runner = createRunner(options.runner);
     healthSpinner.start("Checking runner health...");
+    runner = createRunner(options.runner);
     await runner.health();
     const ver = await runner.version().catch(() => ({}));
     const versionStr = Object.values(ver).join(" ") || "unknown";

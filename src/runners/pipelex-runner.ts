@@ -22,8 +22,6 @@ import type {
   BuildRunnerResponse,
   DictPipeOutput,
   ExecuteRequest,
-  GenerateMermaidRequest,
-  GenerateMermaidResponse,
   PipelineResponse,
   ValidateRequest,
   ValidateResponse,
@@ -316,47 +314,6 @@ export class PipelexRunner implements Runner {
       return {
         mthds_content: request.mthds_content ?? "",
         pipelex_bundle_blueprint: { domain: "local" },
-        success: false,
-        message,
-      };
-    }
-  }
-
-  // ── Mermaid diagram generation ─────────────────────────────────────
-  // pipelex mermaid method <github-url-or-local-path> --pipe <pipe_code>
-
-  async generateMermaid(request: GenerateMermaidRequest): Promise<GenerateMermaidResponse> {
-    const url = request.method_url;
-    if (!url) {
-      return {
-        mermaid_code: "",
-        pipe_code: request.pipe_code,
-        success: false,
-        message: "method_url is required for pipelex mermaid generation",
-      };
-    }
-
-    try {
-      const { stdout } = await this.exec([
-        "mermaid",
-        "method",
-        url,
-        "--pipe",
-        request.pipe_code,
-      ]);
-
-      return {
-        mermaid_code: stdout.trim(),
-        pipe_code: request.pipe_code,
-        success: true,
-        message: "Mermaid diagram generated via local CLI",
-      };
-    } catch (err) {
-      const message =
-        err instanceof Error ? err.message : "Mermaid generation failed";
-      return {
-        mermaid_code: "",
-        pipe_code: request.pipe_code,
         success: false,
         message,
       };

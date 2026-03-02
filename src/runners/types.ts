@@ -60,23 +60,6 @@ export interface ValidateRequest {
   mthds_content?: string;
 }
 
-export interface GenerateMermaidRequest {
-  /** GitHub URL or local path to the method directory (preferred). */
-  method_url?: string;
-  /** Raw .mthds file content (legacy, used by API runner). */
-  mthds_content?: string;
-  pipe_code: string;
-}
-
-// ── Mermaid response ───────────────────────────────────────────────
-
-export interface GenerateMermaidResponse {
-  mermaid_code: string;
-  pipe_code: string;
-  success: boolean;
-  message: string;
-}
-
 // ── Response types ──────────────────────────────────────────────────
 
 export interface BuildPipeResponse {
@@ -156,7 +139,4 @@ export interface Runner extends RunnerProtocol {
 
   // Validation
   validate(request: ValidateRequest): Promise<ValidateResponse>;
-
-  // Mermaid diagram generation
-  generateMermaid(request: GenerateMermaidRequest): Promise<GenerateMermaidResponse>;
 }

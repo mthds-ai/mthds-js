@@ -16,8 +16,6 @@ import { resolveFromGitHub } from "../../installer/resolver/github.js";
 import { resolveFromLocal } from "../../installer/resolver/local.js";
 import { generateShim } from "../../installer/agents/registry.js";
 import { createRunner } from "../../runners/registry.js";
-import { Runners } from "../../runners/types.js";
-import { collectAllExportedPipes } from "../../package/manifest/validate.js";
 import type { ResolvedRepo } from "../../package/manifest/types.js";
 import type { Runner, RunnerType } from "../../runners/types.js";
 
@@ -181,13 +179,19 @@ export async function installMethod(options: {
       }
 
       valSpinner.start(`Validating ${method.name}...`);
-      const result = await runner.validate({ method_url: methodUrl });
-      if (!result.success) {
+      try {
+        const result = await runner.validate({ method_url: methodUrl });
+        if (!result.success) {
+          valSpinner.stop(`Validation failed: ${method.name}`);
+          p.log.error(`${method.name}: ${result.message}`);
+          allValid = false;
+        } else {
+          valSpinner.stop(`Validated ${method.name}`);
+        }
+      } catch (err) {
         valSpinner.stop(`Validation failed: ${method.name}`);
-        p.log.error(`${method.name}: ${result.message}`);
+        p.log.error(`${method.name}: ${(err as Error).message}`);
         allValid = false;
-      } else {
-        valSpinner.stop(`Validated ${method.name}`);
       }
     }
     if (!allValid) {
@@ -197,66 +201,6 @@ export async function installMethod(options: {
     }
   }
 
-  // Step 1d: Mermaid generation (pipelex runner only)
-  if (runner && runner.type === Runners.PIPELEX) {
-    for (const method of resolved.methods) {
-      if (method.files.length === 0) continue;
-
-      const mainPipe = method.manifest.package.main_pipe;
-      let pipeCode: string | null = null;
-
-      if (mainPipe) {
-        pipeCode = mainPipe;
-      } else {
-        // Collect all exported pipes and prompt user
-        const allPipes = method.manifest.exports
-          ? collectAllExportedPipes(method.manifest.exports)
-          : [];
-
-        if (allPipes.length > 0) {
-          const pipeOptions = [
-            { value: "__skip__" as const, label: "Skip", hint: "Don't generate a diagram" },
-            ...allPipes.map((pipe) => ({ value: pipe, label: pipe })),
-          ];
-          const selected = await p.select({
-            message: `Generate a pipeline diagram for "${method.name}"? Pick a pipe:`,
-            options: pipeOptions,
-          });
-          if (p.isCancel(selected)) {
-            p.cancel("Installation cancelled.");
-            process.exit(0);
-          }
-          if (selected !== "__skip__") {
-            pipeCode = selected;
-          }
-        }
-      }
-
-      if (pipeCode) {
-        // Construct method URL: GitHub URL or local path
-        let mermaidMethodUrl: string;
-        if (dir) {
-          mermaidMethodUrl = resolve(dir, "methods", method.name);
-        } else {
-          mermaidMethodUrl = `https://github.com/${orgRepo}/methods/${method.name}/`;
-        }
-
-        const mermaidSpinner = p.spinner();
-        mermaidSpinner.start(`Generating pipeline diagram for ${method.name}:${pipeCode}...`);
-        const mermaidResult = await runner.generateMermaid({
-          method_url: mermaidMethodUrl,
-          pipe_code: pipeCode,
-        });
-        if (mermaidResult.success) {
-          mermaidSpinner.stop(`Pipeline diagram for ${method.name}:${pipeCode}`);
-          p.log.info(mermaidResult.mermaid_code);
-        } else {
-          mermaidSpinner.stop(`Mermaid generation failed for ${method.name}:${pipeCode}`);
-          p.log.warning(mermaidResult.message);
-        }
-      }
-    }
-  }
 
   // Step 2: Install location (project-local or global)
   const projectDir = join(process.cwd(), ".mthds", "methods");

@@ -56,6 +56,8 @@ export interface ExecuteRequest {
 export interface ValidateRequest {
   /** GitHub URL or local path to the method directory (preferred). */
   method_url?: string;
+  /** Pipe code to validate (optional — validates a specific pipe). */
+  pipe_code?: string;
   /** Raw .mthds file content (legacy, used by API runner). */
   mthds_content?: string;
 }

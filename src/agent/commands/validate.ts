@@ -38,13 +38,15 @@ function extractPassthroughArgs(): string[] {
   return result;
 }
 
-export async function agentValidateMethod(
-  target: string,
-  options: {
-    pipe?: string;
-    runner?: RunnerType;
-    libraryDir?: string[];
-  }
+interface AgentValidateOptions {
+  pipe?: string;
+  runner?: RunnerType;
+  libraryDir?: string[];
+}
+
+async function agentValidateTarget(
+  options: AgentValidateOptions,
+  fallbackMsg: string
 ): Promise<void> {
   const libraryDirs = options.libraryDir?.length
     ? options.libraryDir
@@ -70,10 +72,28 @@ export async function agentValidateMethod(
     return;
   }
 
-  agentError(
-    "Method target is not yet supported for the API runner. Use 'mthds-agent validate pipe <target>' instead, or specify a different runner with --runner <name>.",
-    "ArgumentError",
-    { error_domain: AGENT_ERROR_DOMAINS.ARGUMENT }
+  agentError(fallbackMsg, "ArgumentError", {
+    error_domain: AGENT_ERROR_DOMAINS.ARGUMENT,
+  });
+}
+
+export async function agentValidateMethod(
+  _target: string,
+  options: AgentValidateOptions
+): Promise<void> {
+  return agentValidateTarget(
+    options,
+    "Method target is not yet supported for the API runner. Use 'mthds-agent validate pipe <target>' instead, or specify a different runner with --runner <name>."
+  );
+}
+
+export async function agentValidateBundle(
+  _target: string,
+  options: AgentValidateOptions
+): Promise<void> {
+  return agentValidateTarget(
+    options,
+    "Bundle target is only supported with the pipelex runner. Specify --runner pipelex."
   );
 }
 

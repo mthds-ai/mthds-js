@@ -47,7 +47,7 @@ mthds_version = ">=1.0.0"
 `;
 
 const RICH_TOML = `[package]
-name = "my-tools"
+name = "my_tools"
 address = "github.com/acme/tools"
 display_name = "My Awesome Tools"
 version = "1.0.0"
@@ -450,7 +450,7 @@ describe("agentPackageList", () => {
     await agentPackageList({});
 
     const manifest = capturedResult!.manifest as Record<string, unknown>;
-    expect(manifest.name).toBe("my-tools");
+    expect(manifest.name).toBe("my_tools");
     expect(manifest.display_name).toBe("My Awesome Tools");
     expect(manifest.authors).toEqual(["Alice", "Bob"]);
     expect(manifest.license).toBe("MIT");
@@ -563,7 +563,7 @@ describe("agentPackageValidate", () => {
 
     expect(capturedResult!.valid).toBe(true);
     const manifest = capturedResult!.manifest as Record<string, unknown>;
-    expect(manifest.name).toBe("my-tools");
+    expect(manifest.name).toBe("my_tools");
     expect(manifest.display_name).toBe("My Awesome Tools");
     expect(manifest.authors).toEqual(["Alice", "Bob"]);
     expect(manifest.license).toBe("MIT");

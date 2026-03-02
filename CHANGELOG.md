@@ -1,25 +1,44 @@
 # Changelog
 
+## [v0.1.0] - 2026-03-02
+
+### Breaking Changes
+
+- **Method names: strict snake_case** — the `name` field now enforces snake_case only (pattern `[a-z][a-z0-9_]{1,24}`). Hyphens are no longer allowed — names like `my-method` must become `my_method`.
+- **`methodNameToDir()` removed** — method name is now used directly as the directory name with no conversion. The resolver expects the directory name to match the `name` field exactly.
+
+### Changed
+
+- **Pipelex runner: health uses `pipelex doctor -g`** — replaced `pipelex --version` (which could hang on fresh installs) with `pipelex doctor -g`, with a 10s timeout.
+- **GitHub resolver uses async `gh api` calls** — replaced `execFileSync` with `execFileAsync` for `gh api` to stop blocking the event loop (which froze spinners during install).
+- **Telemetry: `version` renamed to `package_version`** — avoids PostHog's reserved `version` property mapping that hid the method version under "App version".
+
+### Added
+
+- **`mthds run bundle`** — new subcommand to run a `.mthds` bundle file directly via the pipelex runner (passthrough to `pipelex run bundle`).
+- **`mthds validate bundle`** — new subcommand to validate a `.mthds` bundle file directly via the pipelex runner (passthrough to `pipelex validate bundle`).
+- **`mthds-agent run method|pipe|bundle`** — new `run` command group for the agent CLI. All three subcommands are pipelex-only passthroughs.
+- **`mthds-agent validate bundle`** — new subcommand for the agent CLI to validate bundles via pipelex.
+
 ## [v0.0.15] - 2026-03-01
 
 ### Added
 
-- **Method validation during install** — `mthds install` now validates each method using `pipelex validate method <url>` before installing. Validation runs against the GitHub URL or local path directly (no temp files). If any method fails validation, install is aborted.
-- **Mermaid diagram generation during install** — after validation, generates a pipeline diagram using `pipelex mermaid method <url> --pipe <pipe_code>`. If `main_pipe` is set, it's used automatically; otherwise the user picks from exported pipes or skips.
-- **Runner health check before install** — verifies the configured runner is reachable before proceeding. If no runner is available, validation and mermaid steps are skipped with a warning.
+- **Method validation during install** — `mthds install` now validates each method's pipes using `pipelex validate method <url> --pipe <pipe_code>` before installing. If `main_pipe` is set, only that pipe is validated; otherwise all exported pipes are validated individually. If any pipe fails, install is aborted.
+- **Runner health check before install** — verifies the configured runner before proceeding. If no runner is available, validation is skipped with a warning.
 - **Immediate spinner on install** — spinner starts right after `mthds install` banner, before address parsing, so there's no blank pause while resolving methods from GitHub.
-- **`--runner <type>` option** — pass `--runner pipelex` or `--runner api` to override the configured runner for install.
+- **`--runner <type>` option on install** — pass `--runner pipelex` or `--runner api` to override the configured runner.
 - **Manifest validation: exports required** — `[exports]` section must define at least one domain with pipes; manifests with no exports now fail validation.
 - **Manifest validation: main_pipe in exports** — if `main_pipe` is set, it must be listed in one of the `[exports]` domains.
 - **`collectAllExportedPipes()` helper** — recursively walks the hierarchical `ExportNode` tree to collect all pipe names from exports.
-- **`method_url` on `ValidateRequest` and `GenerateMermaidRequest`** — runner interface now accepts a GitHub URL or local path for validation and mermaid generation.
+- **`method_url` and `pipe_code` on `ValidateRequest`** — runner interface now accepts a GitHub URL or local path for validation, with optional pipe targeting.
+- **`mthds validate method` accepts URLs** — `<target>` can now be a GitHub URL, local path, or method name.
 
 ### Changed
 
 - **Pipelex runner: validate uses `pipelex validate method <url>`** — replaced the broken `pipelex validate --bundle <tmpfile>` with the correct CLI command.
-- **Pipelex runner: mermaid uses `pipelex mermaid method <url>`** — replaced the broken `pipelex mermaid --bundle <tmpfile>` with the correct CLI command.
-- **Pipelex runner: validation streams output** — validation uses `execStreaming` so pipelex progress (clone, validation steps) is visible in real-time.
-- **"Install pipelex?" prompt only when not installed** — no longer asks to install pipelex if it's already available and was just used for validation.
+- **Pipelex runner: validation streams output** — validation uses `execStreaming` so pipelex progress is visible in real-time.
+- **"Install pipelex?" prompt only when not installed** — no longer asks to install pipelex if it's already available.
 
 ## [v0.0.14] - 2026-02-27
 

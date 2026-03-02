@@ -64,8 +64,8 @@ export function isValidAddress(address: string): boolean {
 // Zod schemas — source of truth for allowed TOML keys
 // ---------------------------------------------------------------------------
 
-/** Method name: lowercase alphanumeric + hyphens/underscores, 2-25 chars, starts with a letter */
-export const METHOD_NAME_RE = /^[a-z][a-z0-9_-]{1,24}$/;
+/** Method name: snake_case, 2-25 chars, starts with a letter */
+export const METHOD_NAME_RE = /^[a-z][a-z0-9_]{1,24}$/;
 
 export function isValidMethodName(name: string): boolean {
   return METHOD_NAME_RE.test(name);

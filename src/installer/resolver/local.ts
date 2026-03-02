@@ -103,6 +103,22 @@ export function resolveFromLocal(dirPath: string): ResolvedRepo {
       continue;
     }
 
+    // Ensure directory name matches the expected snake_case form of package.name
+    const manifestName = result.manifest.package.name;
+    if (manifestName) {
+      const expectedDir = manifestName;
+      if (expectedDir !== dirName) {
+        skipped.push({
+          dirName,
+          errors: [
+            `Directory "${dirName}" does not match [package.name] "${manifestName}". ` +
+              `Expected directory name: "${expectedDir}".`,
+          ],
+        });
+        continue;
+      }
+    }
+
     // Collect .mthds files
     const files = collectMthdFiles(dirPath);
 

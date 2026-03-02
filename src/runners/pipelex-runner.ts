@@ -118,7 +118,10 @@ export class PipelexRunner implements Runner {
 
   async health(): Promise<Record<string, unknown>> {
     try {
-      await this.exec(["show", "config"]);
+      const timeout = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error("pipelex health check timed out after 10s")), 10_000)
+      );
+      await Promise.race([this.exec(["doctor", "-g"]), timeout]);
       return { status: "ok" };
     } catch {
       throw new Error("pipelex CLI is not installed or not in PATH");
@@ -300,7 +303,11 @@ export class PipelexRunner implements Runner {
     }
 
     try {
-      await this.execStreaming(["validate", "method", url]);
+      const args = ["validate", "method", url];
+      if (request.pipe_code) {
+        args.push("--pipe", request.pipe_code);
+      }
+      await this.execStreaming(args);
 
       return {
         mthds_content: request.mthds_content ?? "",

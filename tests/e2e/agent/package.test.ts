@@ -75,7 +75,7 @@ describe("mthds-agent package (e2e)", () => {
         "--address", "github.com/acme/full",
         "--version", "2.0.0",
         "--description", "Full package",
-        "--name", "my-tool",
+        "--name", "my_tool",
         "--display-name", "My Tool",
         "--authors", "Alice,Bob",
         "--license", "MIT",
@@ -85,7 +85,7 @@ describe("mthds-agent package (e2e)", () => {
       expect(status).toBe(0);
 
       const manifest = (parseJson(stdout).manifest) as Record<string, unknown>;
-      expect(manifest.name).toBe("my-tool");
+      expect(manifest.name).toBe("my_tool");
       expect(manifest.display_name).toBe("My Tool");
       expect(manifest.authors).toEqual(["Alice", "Bob"]);
       expect(manifest.license).toBe("MIT");
@@ -224,7 +224,7 @@ describe("mthds-agent package (e2e)", () => {
         "--address", "github.com/acme/round-trip",
         "--version", "2.0.0",
         "--description", "Round-trip test",
-        "--name", "round-trip",
+        "--name", "round_trip",
         "--display-name", "Round Trip Test",
         "--main-pipe", "run_it",
         "--authors", "Alice,Bob",

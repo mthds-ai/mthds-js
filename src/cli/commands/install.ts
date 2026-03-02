@@ -16,6 +16,7 @@ import { resolveFromGitHub } from "../../installer/resolver/github.js";
 import { resolveFromLocal } from "../../installer/resolver/local.js";
 import { generateShim } from "../../installer/agents/registry.js";
 import { createRunner } from "../../runners/registry.js";
+import { collectAllExportedPipes } from "../../package/manifest/validate.js";
 import type { ResolvedRepo } from "../../package/manifest/types.js";
 import type { Runner, RunnerType } from "../../runners/types.js";
 
@@ -149,17 +150,18 @@ export async function installMethod(options: {
 
   // Step 1b: Ensure runner is configured
   let runner: Runner | null = null;
+  const healthSpinner = p.spinner();
   try {
-    runner = createRunner(options.runner);
-    const healthSpinner = p.spinner();
     healthSpinner.start("Checking runner health...");
+    runner = createRunner(options.runner);
     await runner.health();
     const ver = await runner.version().catch(() => ({}));
     const versionStr = Object.values(ver).join(" ") || "unknown";
     healthSpinner.stop(`Runner ${chalk.bold(runner.type)} is healthy (${versionStr})`);
   } catch {
+    healthSpinner.stop("Runner not available.");
     p.log.warning(
-      `No runner configured — skipping pipe validation and mermaid generation.\n` +
+      `No runner configured — skipping pipe validation.\n` +
       `  Set up a runner with: ${chalk.cyan("npx mthds runner setup pipelex")}`
     );
     runner = null;
@@ -178,20 +180,34 @@ export async function installMethod(options: {
         methodUrl = `https://github.com/${orgRepo}/methods/${method.name}/`;
       }
 
-      valSpinner.start(`Validating ${method.name}...`);
-      try {
-        const result = await runner.validate({ method_url: methodUrl });
-        if (!result.success) {
-          valSpinner.stop(`Validation failed: ${method.name}`);
-          p.log.error(`${method.name}: ${result.message}`);
+      // Determine which pipes to validate
+      const mainPipe = method.manifest.package.main_pipe;
+      const pipesToValidate: string[] = mainPipe
+        ? [mainPipe]
+        : method.manifest.exports
+          ? collectAllExportedPipes(method.manifest.exports)
+          : [];
+
+      if (pipesToValidate.length === 0) {
+        continue; // No pipes to validate
+      }
+
+      for (const pipeCode of pipesToValidate) {
+        valSpinner.start(`Validating ${method.name}:${pipeCode}...`);
+        try {
+          const result = await runner.validate({ method_url: methodUrl, pipe_code: pipeCode });
+          if (!result.success) {
+            valSpinner.stop(`Validation failed: ${method.name}:${pipeCode}`);
+            p.log.error(`${method.name}:${pipeCode}: ${result.message}`);
+            allValid = false;
+          } else {
+            valSpinner.stop(`Validated ${method.name}:${pipeCode}`);
+          }
+        } catch (err) {
+          valSpinner.stop(`Validation failed: ${method.name}:${pipeCode}`);
+          p.log.error(`${method.name}:${pipeCode}: ${(err as Error).message}`);
           allValid = false;
-        } else {
-          valSpinner.stop(`Validated ${method.name}`);
         }
-      } catch (err) {
-        valSpinner.stop(`Validation failed: ${method.name}`);
-        p.log.error(`${method.name}: ${(err as Error).message}`);
-        allValid = false;
       }
     }
     if (!allValid) {

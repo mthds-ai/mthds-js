@@ -1,6 +1,9 @@
-import { execFileSync } from "node:child_process";
+import { execFile, execFileSync } from "node:child_process";
+import { promisify } from "node:util";
 import type { ParsedAddress, ResolvedRepo, ResolvedMethod, SkippedMethod, MethodsFile } from "../../package/manifest/types.js";
 import { validateManifest } from "../../package/manifest/validate.js";
+
+const execFileAsync = promisify(execFile);
 
 type AuthMethod =
   | { type: "token"; token: string }
@@ -29,14 +32,13 @@ async function githubFetch(
 ): Promise<unknown> {
   if (auth.type === "gh") {
     try {
-      const result = execFileSync("gh", ["api", apiPath], {
+      const { stdout } = await execFileAsync("gh", ["api", apiPath], {
         encoding: "utf-8",
         maxBuffer: 10 * 1024 * 1024,
-        stdio: ["pipe", "pipe", "pipe"],
       });
-      return JSON.parse(result);
+      return JSON.parse(stdout);
     } catch (err) {
-      const stderr = (err as { stderr?: Buffer | string })?.stderr?.toString() ?? "";
+      const stderr = (err as { stderr?: string })?.stderr ?? "";
       if (stderr.includes("404") || stderr.includes("Not Found")) {
         throw new Error(`Not found: ${apiPath}.`);
       }

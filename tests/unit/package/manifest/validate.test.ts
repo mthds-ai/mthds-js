@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { validateManifest } from "../../../../src/package/manifest/validate.js";
+import { validateManifest, collectAllExportedPipes } from "../../../../src/package/manifest/validate.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -10,10 +10,22 @@ name = "tools"
 address = "github.com/acme/tools"
 version = "1.0.0"
 description = "Useful tools."
+
+[exports.default]
+pipes = ["do_thing"]
+`;
+
+/** Package fields only — no exports (for testing missing exports) */
+const packageOnly = `
+[package]
+name = "tools"
+address = "github.com/acme/tools"
+version = "1.0.0"
+description = "Useful tools."
 `;
 
 function toml(extra: string): string {
-  return `${minimal}\n${extra}`;
+  return `${packageOnly}\n${extra}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -42,6 +54,9 @@ display_name  = "Legal Tools"
 authors       = ["ACME <legal@acme.com>", "Bob"]
 license       = "MIT"
 mthds_version = ">=1.0.0"
+
+[exports.legal]
+pipes = ["classify_document"]
 `;
     const r = validateManifest(raw);
     expect(r.valid).toBe(true);
@@ -107,10 +122,49 @@ name = "my-tool"
 address = "github.com/a/b"
 version = "1.0.0"
 description = "Test."
+
+[exports.tools]
+pipes = ["do_thing"]
 `;
     const r = validateManifest(raw);
     expect(r.valid).toBe(true);
     expect(r.manifest!.package.name).toBe("my-tool");
+  });
+
+  it("accepts main_pipe that is listed in exports", () => {
+    const raw = `
+[package]
+name = "tools"
+address = "github.com/a/b"
+version = "1.0.0"
+description = "Test."
+main_pipe = "classify_document"
+
+[exports.legal]
+pipes = ["classify_document", "summarize"]
+`;
+    const r = validateManifest(raw);
+    expect(r.valid).toBe(true);
+    expect(r.manifest!.package.main_pipe).toBe("classify_document");
+  });
+
+  it("accepts main_pipe in nested exports", () => {
+    const raw = `
+[package]
+name = "tools"
+address = "github.com/a/b"
+version = "1.0.0"
+description = "Test."
+main_pipe = "extract_clause"
+
+[exports.legal]
+pipes = ["classify_document"]
+
+[exports.legal.contracts]
+pipes = ["extract_clause"]
+`;
+    const r = validateManifest(raw);
+    expect(r.valid).toBe(true);
   });
 });
 
@@ -341,6 +395,9 @@ pipes = ["BadName"]
 
   it("rejects any dependencies section with generic error", () => {
     const raw = toml(`
+[exports.legal]
+pipes = ["do_thing"]
+
 [dependencies]
 dep = { address = "github.com/a/b", version = "1.0.0" }
 `);
@@ -370,5 +427,65 @@ description = ""
     const r = validateManifest(raw);
     expect(r.valid).toBe(false);
     expect(r.errors.length).toBeGreaterThanOrEqual(3);
+  });
+
+  it("rejects manifest with no exports", () => {
+    const raw = `
+[package]
+name = "tools"
+address = "github.com/a/b"
+version = "1.0.0"
+description = "Test."
+`;
+    const r = validateManifest(raw);
+    expect(r.valid).toBe(false);
+    expect(r.errors).toContainEqual(
+      expect.stringContaining("[exports] section is required")
+    );
+  });
+
+  it("rejects main_pipe not in exports", () => {
+    const raw = `
+[package]
+name = "tools"
+address = "github.com/a/b"
+version = "1.0.0"
+description = "Test."
+main_pipe = "nonexistent_pipe"
+
+[exports.legal]
+pipes = ["classify_document"]
+`;
+    const r = validateManifest(raw);
+    expect(r.valid).toBe(false);
+    expect(r.errors).toContainEqual(
+      expect.stringContaining('[package.main_pipe] "nonexistent_pipe" must be listed')
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// collectAllExportedPipes
+// ---------------------------------------------------------------------------
+describe("collectAllExportedPipes", () => {
+  it("collects pipes from flat exports", () => {
+    const exports = {
+      legal: { pipes: ["classify", "summarize"] },
+    };
+    expect(collectAllExportedPipes(exports)).toEqual(["classify", "summarize"]);
+  });
+
+  it("collects pipes from nested exports", () => {
+    const exports = {
+      legal: {
+        pipes: ["classify"],
+        contracts: { pipes: ["extract_clause", "analyze_nda"] },
+      },
+    };
+    const pipes = collectAllExportedPipes(exports);
+    expect(pipes).toContain("classify");
+    expect(pipes).toContain("extract_clause");
+    expect(pipes).toContain("analyze_nda");
+    expect(pipes).toHaveLength(3);
   });
 });

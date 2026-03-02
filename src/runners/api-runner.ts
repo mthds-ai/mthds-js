@@ -10,6 +10,8 @@ import type {
   BuildRunnerRequest,
   BuildRunnerResponse,
   ExecuteRequest,
+  GenerateMermaidRequest,
+  GenerateMermaidResponse,
   PipelineResponse,
   ValidateRequest,
   ValidateResponse,
@@ -111,6 +113,12 @@ export class ApiRunner implements Runner {
 
   async validate(request: ValidateRequest): Promise<ValidateResponse> {
     return this.post("/api/v1/validate", request);
+  }
+
+  async generateMermaid(_request: GenerateMermaidRequest): Promise<GenerateMermaidResponse> {
+    throw new Error(
+      "Mermaid generation is not supported by the API runner. Use the pipelex runner (--runner pipelex)."
+    );
   }
 
   // ── RunnerProtocol implementation ─────────────────────────────────

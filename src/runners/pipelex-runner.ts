@@ -286,35 +286,37 @@ export class PipelexRunner implements Runner {
   }
 
   // ── Validation ──────────────────────────────────────────────────
-  // pipelex validate --bundle <file.mthds>
+  // pipelex validate method <github-url-or-local-path>
 
   async validate(request: ValidateRequest): Promise<ValidateResponse> {
-    const tmp = makeTmpDir();
-    try {
-      const bundlePath = join(tmp, "bundle.mthds");
-      writeFileSync(bundlePath, request.mthds_content, "utf-8");
+    const url = request.method_url;
+    if (!url) {
+      return {
+        mthds_content: request.mthds_content ?? "",
+        pipelex_bundle_blueprint: { domain: "local" },
+        success: false,
+        message: "method_url is required for pipelex validation",
+      };
+    }
 
-      await this.exec(["validate", "--bundle", bundlePath]);
+    try {
+      await this.execStreaming(["validate", "method", url]);
 
       return {
-        mthds_content: request.mthds_content,
-        pipelex_bundle_blueprint: {
-          domain: "local",
-        },
+        mthds_content: request.mthds_content ?? "",
+        pipelex_bundle_blueprint: { domain: "local" },
         success: true,
-        message: "Bundle validated via local CLI",
+        message: "Method validated via local CLI",
       };
     } catch (err) {
       const message =
         err instanceof Error ? err.message : "Validation failed";
       return {
-        mthds_content: request.mthds_content,
+        mthds_content: request.mthds_content ?? "",
         pipelex_bundle_blueprint: { domain: "local" },
         success: false,
         message,
       };
-    } finally {
-      rmSync(tmp, { recursive: true, force: true });
     }
   }
 

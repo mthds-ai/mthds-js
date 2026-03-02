@@ -222,14 +222,14 @@ const validate = program
 
 validate
   .command("method")
-  .argument("<name>", "Name of the installed method")
+  .argument("<target>", "Method name, GitHub URL, or local path")
   .option("--pipe <code>", "Pipe code to validate (overrides method's main_pipe)")
-  .description("Validate an installed method")
+  .description("Validate a method by name, GitHub URL, or local path")
   .allowUnknownOption()
   .allowExcessArguments(true)
   .exitOverride()
-  .action(async (name: string, options: { pipe?: string }, cmd: Cmd) => {
-    await validateMethod(name, { ...options, runner: getRunner(cmd), libraryDir: getLibraryDirs(cmd) });
+  .action(async (target: string, options: { pipe?: string }, cmd: Cmd) => {
+    await validateMethod(target, { ...options, runner: getRunner(cmd), libraryDir: getLibraryDirs(cmd) });
   });
 
 validate
@@ -251,9 +251,10 @@ program
   .argument("[address]", "GitHub repo (org/repo or https://github.com/org/repo)")
   .option("--local <path>", "Install from a local directory")
   .option("--method <name>", "Install only the specified method (by name)")
+  .option("--runner <type>", `Runner for validation & mermaid (${RUNNER_NAMES.join(", ")})`)
   .description("Install a method package")
   .exitOverride()
-  .action(async (address: string | undefined, opts: { local?: string; method?: string }) => {
+  .action(async (address: string | undefined, opts: { local?: string; method?: string; runner?: string }, cmd: Cmd) => {
     if (address && opts.local) {
       printLogo();
       p.intro("mthds install");
@@ -268,7 +269,8 @@ program
       p.outro("");
       process.exit(1);
     }
-    await installMethod({ address, dir: opts.local, method: opts.method });
+    const runner = (opts.runner ?? getRunner(cmd)) as RunnerType | undefined;
+    await installMethod({ address, dir: opts.local, method: opts.method, runner });
   });
 
 // ── mthds config set|get|list ──────────────────────────────────────

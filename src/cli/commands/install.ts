@@ -15,7 +15,9 @@ import { parseAddress } from "../../installer/resolver/address.js";
 import { resolveFromGitHub } from "../../installer/resolver/github.js";
 import { resolveFromLocal } from "../../installer/resolver/local.js";
 import { generateShim } from "../../installer/agents/registry.js";
+import { createRunner } from "../../runners/registry.js";
 import type { ResolvedRepo } from "../../package/manifest/types.js";
+import type { Runner, RunnerType } from "../../runners/types.js";
 
 type InstallLocation = "project" | "global";
 
@@ -31,6 +33,7 @@ export async function installMethod(options: {
   address?: string;
   dir?: string;
   method?: string;
+  runner?: RunnerType;
 }): Promise<void> {
   printLogo();
   p.intro("mthds install");
@@ -39,13 +42,14 @@ export async function installMethod(options: {
 
   // Step 0: Resolve repo (multiple methods)
   const s = p.spinner();
+  s.start("Resolving methods...");
   let resolved: ResolvedRepo;
 
   // Derive org/repo for telemetry
   let orgRepo: string | undefined;
 
   if (dir) {
-    s.start(`Resolving methods from ${dir}...`);
+    s.message(`Resolving methods from ${dir}...`);
     try {
       resolved = resolveFromLocal(dir);
     } catch (err) {
@@ -66,12 +70,13 @@ export async function installMethod(options: {
     try {
       parsed = parseAddress(address);
     } catch (err) {
+      s.stop("");
       p.log.error((err as Error).message);
       p.outro("");
       process.exit(1);
     }
 
-    s.start(`Resolving methods from ${parsed.org}/${parsed.repo}${parsed.subpath ? `/${parsed.subpath}` : ""}...`);
+    s.message(`Resolving methods from ${parsed.org}/${parsed.repo}${parsed.subpath ? `/${parsed.subpath}` : ""}...`);
     try {
       resolved = await resolveFromGitHub(parsed);
     } catch (err) {
@@ -83,6 +88,7 @@ export async function installMethod(options: {
     s.stop(`Scanned methods/ folder in ${parsed.org}/${parsed.repo}`);
     orgRepo = `${parsed.org}/${parsed.repo}`;
   } else {
+    s.stop("");
     p.log.error("Provide an address (org/repo) or use --dir <path>.");
     p.outro("");
     process.exit(1);
@@ -140,6 +146,61 @@ export async function installMethod(options: {
     p.outro("");
     process.exit(1);
   }
+
+  // Step 1b: Ensure runner is configured
+  let runner: Runner | null = null;
+  try {
+    runner = createRunner(options.runner);
+    const healthSpinner = p.spinner();
+    healthSpinner.start("Checking runner health...");
+    await runner.health();
+    const ver = await runner.version().catch(() => ({}));
+    const versionStr = Object.values(ver).join(" ") || "unknown";
+    healthSpinner.stop(`Runner ${chalk.bold(runner.type)} is healthy (${versionStr})`);
+  } catch {
+    p.log.warning(
+      `No runner configured — skipping pipe validation and mermaid generation.\n` +
+      `  Set up a runner with: ${chalk.cyan("npx mthds runner setup pipelex")}`
+    );
+    runner = null;
+  }
+
+  // Step 1c: Validate each method with the runner
+  if (runner) {
+    const valSpinner = p.spinner();
+    let allValid = true;
+    for (const method of resolved.methods) {
+      // Construct method URL: GitHub URL or local path
+      let methodUrl: string;
+      if (dir) {
+        methodUrl = resolve(dir, "methods", method.name);
+      } else {
+        methodUrl = `https://github.com/${orgRepo}/methods/${method.name}/`;
+      }
+
+      valSpinner.start(`Validating ${method.name}...`);
+      try {
+        const result = await runner.validate({ method_url: methodUrl });
+        if (!result.success) {
+          valSpinner.stop(`Validation failed: ${method.name}`);
+          p.log.error(`${method.name}: ${result.message}`);
+          allValid = false;
+        } else {
+          valSpinner.stop(`Validated ${method.name}`);
+        }
+      } catch (err) {
+        valSpinner.stop(`Validation failed: ${method.name}`);
+        p.log.error(`${method.name}: ${(err as Error).message}`);
+        allValid = false;
+      }
+    }
+    if (!allValid) {
+      p.log.error("One or more methods failed validation. Aborting install.");
+      p.outro("");
+      process.exit(1);
+    }
+  }
+
 
   // Step 2: Install location (project-local or global)
   const projectDir = join(process.cwd(), ".mthds", "methods");
@@ -239,26 +300,24 @@ export async function installMethod(options: {
     }
   }
 
-  // Step 5: Optional pipelex runner install
+  // Step 5: Optional pipelex runner install (only if not already available)
   let hasPipelex = isPipelexInstalled();
 
-  const wantsRunner = await p.confirm({
-    message: "Do you want to install the pipelex runner? (https://github.com/Pipelex/pipelex)",
-    initialValue: false,
-  });
+  if (!hasPipelex) {
+    const wantsRunner = await p.confirm({
+      message: "Do you want to install the pipelex runner? (https://github.com/Pipelex/pipelex)",
+      initialValue: false,
+    });
 
-  if (p.isCancel(wantsRunner)) {
-    p.cancel("Installation cancelled.");
-    process.exit(0);
-  }
+    if (p.isCancel(wantsRunner)) {
+      p.cancel("Installation cancelled.");
+      process.exit(0);
+    }
 
-  if (wantsRunner) {
-    if (!hasPipelex) {
+    if (wantsRunner) {
       await ensureRuntime();
       p.log.success("pipelex installed.");
       hasPipelex = true;
-    } else {
-      p.log.success("pipelex is already installed.");
     }
   }
 

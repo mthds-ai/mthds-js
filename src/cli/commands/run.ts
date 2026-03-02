@@ -46,6 +46,36 @@ export async function runMethod(
   process.exit(1);
 }
 
+export async function runBundle(
+  target: string,
+  options: RunOptions
+): Promise<void> {
+  printLogo();
+  p.intro("mthds run bundle");
+
+  const libraryDirs = options.libraryDir?.length
+    ? options.libraryDir
+    : undefined;
+  const runner = createRunner(options.runner, libraryDirs);
+
+  if (isPipelexRunner(runner)) {
+    p.log.step("Running via pipelex...");
+    try {
+      await runner.runPassthrough(extractPassthroughArgs("run", 1));
+      p.outro("Done");
+    } catch (err) {
+      p.log.error((err as Error).message);
+      p.outro("");
+      process.exit(1);
+    }
+    return;
+  }
+
+  p.log.error("Bundle target is only supported with the pipelex runner.\nYou can specify a different runner with --runner <name>, or change the default with 'mthds set-default runner <name>'.");
+  p.outro("");
+  process.exit(1);
+}
+
 export async function runPipe(
   target: string,
   options: RunOptions

@@ -7,7 +7,7 @@ import { showBanner, printLogo, setLogoEnabled } from "./cli/commands/index.js";
 import { setupRunner, setDefaultRunner, runnerStatus } from "./cli/commands/setup.js";
 import { installMethod } from "./cli/commands/install.js";
 import { configSet, configGet, configList } from "./cli/commands/config.js";
-import { runMethod, runPipe } from "./cli/commands/run.js";
+import { runMethod, runPipe, runBundle } from "./cli/commands/run.js";
 import {
   buildPipe,
   buildRunnerMethod,
@@ -17,7 +17,7 @@ import {
   buildOutputMethod,
   buildOutputPipe,
 } from "./cli/commands/build.js";
-import { validateMethod, validatePipe } from "./cli/commands/validate.js";
+import { validateMethod, validatePipe, validateBundle } from "./cli/commands/validate.js";
 import { packageInit } from "./cli/commands/package/init.js";
 import { packageList } from "./cli/commands/package/list.js";
 import { packageValidate } from "./cli/commands/package/validate.js";
@@ -103,6 +103,22 @@ run
   .exitOverride()
   .action(async (target: string, options: Record<string, string | boolean | undefined>, cmd: Cmd) => {
     await runPipe(target, { ...options, runner: getRunner(cmd), libraryDir: getLibraryDirs(cmd) } as Parameters<typeof runPipe>[1]);
+  });
+
+run
+  .command("bundle")
+  .argument("<target>", ".mthds bundle file")
+  .option("--pipe <code>", "Pipe code to run within the bundle")
+  .option("-i, --inputs <file>", "Path to JSON inputs file")
+  .option("-o, --output <file>", "Path to save output JSON")
+  .option("--no-output", "Skip saving output to file")
+  .option("--no-pretty-print", "Skip pretty printing the output")
+  .description("Run a bundle file")
+  .allowUnknownOption()
+  .allowExcessArguments(true)
+  .exitOverride()
+  .action(async (target: string, options: Record<string, string | boolean | undefined>, cmd: Cmd) => {
+    await runBundle(target, { ...options, runner: getRunner(cmd), libraryDir: getLibraryDirs(cmd) } as Parameters<typeof runBundle>[1]);
   });
 
 // ── mthds build <subcommand> ────────────────────────────────────────
@@ -243,6 +259,18 @@ validate
   .exitOverride()
   .action(async (target: string, options: { pipe?: string; bundle?: string }, cmd: Cmd) => {
     await validatePipe(target, { ...options, runner: getRunner(cmd), libraryDir: getLibraryDirs(cmd) });
+  });
+
+validate
+  .command("bundle")
+  .argument("<target>", ".mthds bundle file")
+  .option("--pipe <code>", "Pipe code to validate within the bundle")
+  .description("Validate a bundle file")
+  .allowUnknownOption()
+  .allowExcessArguments(true)
+  .exitOverride()
+  .action(async (target: string, options: { pipe?: string }, cmd: Cmd) => {
+    await validateBundle(target, { ...options, runner: getRunner(cmd), libraryDir: getLibraryDirs(cmd) });
   });
 
 // ── mthds install [address] (JS-only) ──────────────────────────────

@@ -42,6 +42,36 @@ export async function validateMethod(
   process.exit(1);
 }
 
+export async function validateBundle(
+  target: string,
+  options: ValidateOptions
+): Promise<void> {
+  printLogo();
+  p.intro("mthds validate bundle");
+
+  const libraryDirs = options.libraryDir?.length
+    ? options.libraryDir
+    : undefined;
+  const runner = createRunner(options.runner, libraryDirs);
+
+  if (isPipelexRunner(runner)) {
+    p.log.step("Validating via pipelex...");
+    try {
+      await runner.validatePassthrough(extractPassthroughArgs("validate", 1));
+      p.outro("Done");
+    } catch (err) {
+      p.log.error((err as Error).message);
+      p.outro("");
+      process.exit(1);
+    }
+    return;
+  }
+
+  p.log.error("Bundle target is only supported with the pipelex runner.\nYou can specify a different runner with --runner <name>, or change the default with 'mthds set-default runner <name>'.");
+  p.outro("");
+  process.exit(1);
+}
+
 export async function validatePipe(
   target: string,
   options: ValidateOptions

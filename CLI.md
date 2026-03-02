@@ -94,6 +94,23 @@ mthds run pipe <target> [OPTIONS]
 
 With the pipelex runner, additional flags like `--dry-run`, `--mock-inputs`, and `--output-dir` are passed through to pipelex.
 
+### `mthds run bundle`
+
+Run a `.mthds` bundle file directly. Only supported with the pipelex runner.
+
+```bash
+mthds run bundle <target> [OPTIONS]
+```
+
+| Argument / Option | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `target` | string | yes | -- | `.mthds` bundle file |
+| `--pipe <code>` | string | no | -- | Pipe code to run within the bundle |
+| `-i, --inputs <file>` | string | no | -- | Path to JSON inputs file |
+| `-o, --output <file>` | string | no | -- | Path to save output JSON |
+| `--no-output` | flag | no | -- | Skip saving output to file |
+| `--no-pretty-print` | flag | no | -- | Skip pretty printing the output |
+
 **Examples:**
 
 ```bash
@@ -106,6 +123,9 @@ mthds run pipe my_pipe_code
 
 # Run a .mthds bundle file
 mthds run pipe ./bundle.mthds --pipe my_pipe
+
+# Run a bundle directly
+mthds run bundle ./bundle.mthds --pipe my_pipe
 
 # Run with inputs and save output
 mthds run pipe my_pipe_code --inputs inputs.json --output result.json
@@ -147,6 +167,19 @@ mthds validate pipe <target> [OPTIONS]
 | `--pipe <code>` | string | no | -- | Pipe code that must exist in the bundle |
 | `--bundle <file>` | string | no | -- | Bundle file path (alternative to positional) |
 
+### `mthds validate bundle`
+
+Validate a `.mthds` bundle file directly. Only supported with the pipelex runner.
+
+```bash
+mthds validate bundle <target> [OPTIONS]
+```
+
+| Argument / Option | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `target` | string | yes | -- | `.mthds` bundle file |
+| `--pipe <code>` | string | no | -- | Pipe code to validate within the bundle |
+
 **Examples:**
 
 ```bash
@@ -165,6 +198,10 @@ mthds validate pipe ./bundle.mthds
 
 # Validate a specific pipe within a bundle
 mthds validate pipe ./bundle.mthds --pipe my_pipe
+
+# Validate a bundle directly
+mthds validate bundle ./bundle.mthds
+mthds validate bundle ./bundle.mthds --pipe my_pipe
 ```
 
 ---
@@ -602,5 +639,55 @@ mthds-agent pipelex init --config '{"backends": ["openai"], "telemetry_mode": "o
 
 # Step 2 (global variant):
 mthds-agent pipelex init -g --config '{"backends": ["pipelex_gateway"], "accept_gateway_terms": true}'
+```
+
+### `mthds-agent run method|pipe|bundle`
+
+Execute a pipeline via the pipelex runner. All three subcommands are pipelex-only passthroughs.
+
+```bash
+mthds-agent run method <name> [OPTIONS]
+mthds-agent run pipe <target> [OPTIONS]
+mthds-agent run bundle <target> [OPTIONS]
+```
+
+| Argument / Option | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `name` / `target` | string | yes | -- | Method name, pipe code, or `.mthds` bundle file |
+| `--pipe <code>` | string | no | -- | Pipe code (overrides method's main_pipe or selects within bundle) |
+| `-i, --inputs <file>` | string | no | -- | Path to JSON inputs file |
+| `-o, --output <file>` | string | no | -- | Path to save output JSON |
+| `--no-output` | flag | no | -- | Skip saving output to file |
+| `--no-pretty-print` | flag | no | -- | Skip pretty printing the output |
+
+All arguments are forwarded to `pipelex run`. Requires the pipelex runner.
+
+**Examples:**
+
+```bash
+mthds-agent run method my-method
+mthds-agent run pipe my_pipe_code --inputs inputs.json
+mthds-agent run bundle ./bundle.mthds --pipe my_pipe
+```
+
+### `mthds-agent validate bundle`
+
+Validate a `.mthds` bundle file via the pipelex runner.
+
+```bash
+mthds-agent validate bundle <target> [OPTIONS]
+```
+
+| Argument / Option | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `target` | string | yes | -- | `.mthds` bundle file |
+| `--pipe <code>` | string | no | -- | Pipe code to validate within the bundle |
+
+All arguments are forwarded to `pipelex validate`. Requires the pipelex runner.
+
+**Example:**
+
+```bash
+mthds-agent validate bundle ./bundle.mthds --pipe my_pipe
 ```
 

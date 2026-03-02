@@ -122,15 +122,15 @@ Validate a method or bundle via a runner.
 
 ### `mthds validate method`
 
-Validate an installed method by name.
+Validate a method by name, GitHub URL, or local path. With the pipelex runner, all arguments are forwarded to `pipelex validate method`.
 
 ```bash
-mthds validate method <name> [OPTIONS]
+mthds validate method <target> [OPTIONS]
 ```
 
 | Argument / Option | Type | Required | Default | Description |
 |---|---|---|---|---|
-| `name` | string | yes | -- | Name of the installed method |
+| `target` | string | yes | -- | Method name, GitHub URL, or local path |
 | `--pipe <code>` | string | no | -- | Pipe code to validate (overrides method's main_pipe) |
 
 ### `mthds validate pipe`
@@ -150,9 +150,15 @@ mthds validate pipe <target> [OPTIONS]
 **Examples:**
 
 ```bash
-# Validate an installed method
+# Validate a method from GitHub
+mthds validate method https://github.com/Pipelex/methods/methods/cv-analyzer/
+
+# Validate an installed method by name
 mthds validate method my-method
 mthds validate method my-method -L methods/
+
+# Validate a local method directory
+mthds validate method ./methods/my-method
 
 # Validate a bundle file
 mthds validate pipe ./bundle.mthds
@@ -449,10 +455,11 @@ You must provide either `address` or `--local`, but not both.
 The install flow is interactive:
 1. Resolves methods from the address or local directory
 2. Displays a summary of found methods
-3. Prompts for install location (local `.mthds/methods/` or global `~/.mthds/methods/`)
-4. Writes method files to the selected location
-5. Optionally installs the pipelex runner
-6. Optionally installs MTHDS skills (includes agent selection)
+3. Validates each method via the configured runner (`pipelex validate method`). If validation fails, the install is aborted.
+4. Prompts for install location (local `.mthds/methods/` or global `~/.mthds/methods/`)
+5. Writes method files to the selected location
+6. Optionally installs the pipelex runner (only if not already installed)
+7. Optionally installs MTHDS skills (includes agent selection)
 
 **Examples:**
 

@@ -13,7 +13,7 @@ interface ValidateOptions {
 }
 
 export async function validateMethod(
-  name: string,
+  target: string,
   options: ValidateOptions
 ): Promise<void> {
   printLogo();

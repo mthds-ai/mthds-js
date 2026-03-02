@@ -39,7 +39,7 @@ function extractPassthroughArgs(): string[] {
 }
 
 export async function agentValidateMethod(
-  name: string,
+  target: string,
   options: {
     pipe?: string;
     runner?: RunnerType;

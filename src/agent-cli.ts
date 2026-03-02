@@ -194,14 +194,14 @@ const validateCmd = program
 
 validateCmd
   .command("method")
-  .argument("<name>", "Name of the installed method")
+  .argument("<target>", "Method name, GitHub URL, or local path")
   .option("--pipe <code>", "Pipe code to validate (overrides method's main_pipe)")
-  .description("Validate an installed method")
+  .description("Validate a method by name, GitHub URL, or local path")
   .allowUnknownOption()
   .allowExcessArguments(true)
   .exitOverride()
-  .action(async (name: string, options: { pipe?: string }, cmd: Cmd) => {
-    await agentValidateMethod(name, { ...options, runner: getRunner(cmd), libraryDir: getLibraryDirs(cmd) });
+  .action(async (target: string, options: { pipe?: string }, cmd: Cmd) => {
+    await agentValidateMethod(target, { ...options, runner: getRunner(cmd), libraryDir: getLibraryDirs(cmd) });
   });
 
 validateCmd

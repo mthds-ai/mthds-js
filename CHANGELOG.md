@@ -13,6 +13,13 @@
 - **GitHub resolver uses async `gh api` calls** — replaced `execFileSync` with `execFileAsync` for `gh api` to stop blocking the event loop (which froze spinners during install).
 - **Telemetry: `version` renamed to `package_version`** — avoids PostHog's reserved `version` property mapping that hid the method version under "App version".
 
+### Added
+
+- **`mthds run bundle`** — new subcommand to run a `.mthds` bundle file directly via the pipelex runner (passthrough to `pipelex run bundle`).
+- **`mthds validate bundle`** — new subcommand to validate a `.mthds` bundle file directly via the pipelex runner (passthrough to `pipelex validate bundle`).
+- **`mthds-agent run method|pipe|bundle`** — new `run` command group for the agent CLI. All three subcommands are pipelex-only passthroughs.
+- **`mthds-agent validate bundle`** — new subcommand for the agent CLI to validate bundles via pipelex.
+
 ## [v0.0.15] - 2026-03-01
 
 ### Added

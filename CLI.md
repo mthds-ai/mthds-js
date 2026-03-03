@@ -21,6 +21,9 @@ After installation the `mthds` command is available on your PATH.
 ## Quick Start
 
 ```bash
+# Log in to Pipelex Gateway (opens browser)
+mthds login
+
 # Install a method from the hub
 mthds install org/repo
 
@@ -51,6 +54,29 @@ When `--runner` is omitted, the CLI uses the runner configured via `mthds config
 When using the **pipelex** runner, the `run`, `build`, and `validate` commands act as thin wrappers: they forward all arguments directly to the `pipelex` CLI. This means any pipelex-specific flags (e.g. `--dry-run`, `--mock-inputs`, `--output-dir`) are passed through transparently.
 
 The `--runner` flag is consumed by mthds and not forwarded. The `-L/--library-dir` flags are forwarded to pipelex.
+
+---
+
+## Login
+
+Log in to Pipelex Gateway via the browser and save your API key. Required when using the **pipelex_gateway** backend.
+
+### `mthds login`
+
+```bash
+mthds login
+```
+
+Opens a browser window for OAuth authentication (GitHub or Google). After successful login, the Gateway API key is automatically saved to `~/.pipelex/.env` as `PIPELEX_GATEWAY_API_KEY`. The key never appears in terminal output.
+
+If pipelex is not installed, the command will install it first.
+
+**Example:**
+
+```bash
+# Log in and save your Gateway API key
+mthds login
+```
 
 ---
 
@@ -611,6 +637,29 @@ mthds-agent runner setup api --api-key <key> [--api-url <url>]
 
 ```bash
 mthds-agent runner setup api --api-key sk-my-api-key
+```
+
+### `mthds-agent pipelex login`
+
+Log in to Pipelex Gateway via the browser and save the API key. Required when using the **pipelex_gateway** backend. Forwards to `pipelex login`.
+
+```bash
+mthds-agent pipelex login
+```
+
+Opens a browser window for OAuth authentication (GitHub or Google). After successful login, the Gateway API key is saved to `~/.pipelex/.env`. The key never appears in terminal output.
+
+**Typical agent workflow with Gateway:**
+
+```bash
+# Step 1: Install pipelex if needed
+mthds-agent runner setup pipelex
+
+# Step 2: Log in to get Gateway API key
+mthds-agent pipelex login
+
+# Step 3: Initialize configuration with Gateway backend
+mthds-agent pipelex init -g --config '{"backends": ["pipelex_gateway"], "accept_gateway_terms": true}'
 ```
 
 ### `mthds-agent pipelex init`

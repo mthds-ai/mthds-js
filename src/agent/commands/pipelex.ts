@@ -18,6 +18,9 @@ const PIPELEX_COMMANDS = [
   "doctor",
 ] as const;
 
+/** Commands forwarded to `pipelex` (interactive CLI) instead of `pipelex-agent`. */
+const PIPELEX_INTERACTIVE_COMMANDS = ["login"] as const;
+
 const PIPELEX_RUN_SUBCOMMANDS = ["pipe", "bundle", "method"] as const;
 
 export function registerPipelexCommands(
@@ -30,6 +33,23 @@ export function registerPipelexCommands(
     .description("Forward commands to pipelex-agent")
     .passThroughOptions()
     .allowUnknownOption();
+
+  // Interactive commands go to `pipelex` (not pipelex-agent) because they
+  // require browser interaction (e.g. login opens the browser for OAuth).
+  for (const subcmd of PIPELEX_INTERACTIVE_COMMANDS) {
+    pipelexGroup
+      .command(subcmd)
+      .description(`Forward to pipelex ${subcmd}`)
+      .allowUnknownOption()
+      .allowExcessArguments(true)
+      .passThroughOptions()
+      .action((_options: Record<string, unknown>, cmd: Command) => {
+        const remaining = cmd.args;
+        passthrough("pipelex", [subcmd, "--no-logo", ...remaining], {
+          autoInstall: autoInstall(),
+        });
+      });
+  }
 
   for (const subcmd of PIPELEX_COMMANDS) {
     pipelexGroup

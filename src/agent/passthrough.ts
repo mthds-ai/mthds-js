@@ -10,6 +10,7 @@ import { isBinaryInstalled } from "../installer/runtime/check.js";
 import { installPipelexSync, installPlxtSync } from "../installer/runtime/installer.js";
 
 const AUTO_INSTALL_FN: Record<string, () => void> = {
+  pipelex: installPipelexSync,
   "pipelex-agent": installPipelexSync,
   plxt: installPlxtSync,
 };

@@ -94,8 +94,12 @@ describe("login", () => {
     mockedIsPipelexInstalled.mockReturnValue(false);
     mockedEnsureRuntime.mockResolvedValue();
 
-    await login();
+    const exitError = new Error("process.exit(1)");
+    mockExit.mockImplementation((() => {
+      throw exitError;
+    }) as never);
 
+    await expect(login()).rejects.toThrow(exitError);
     expect(mockExit).toHaveBeenCalledWith(1);
   });
 

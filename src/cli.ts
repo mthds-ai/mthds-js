@@ -7,6 +7,7 @@ import { showBanner, printLogo, setLogoEnabled } from "./cli/commands/index.js";
 import { setupRunner, setDefaultRunner, runnerStatus } from "./cli/commands/setup.js";
 import { installMethod } from "./cli/commands/install.js";
 import { configSet, configGet, configList } from "./cli/commands/config.js";
+import { login } from "./cli/commands/login.js";
 import { runMethod, runPipe, runBundle } from "./cli/commands/run.js";
 import {
   buildPipe,
@@ -65,6 +66,15 @@ program
     if (thisCommand.opts().logo === false) {
       setLogoEnabled(false);
     }
+  });
+
+// ── mthds login ─────────────────────────────────────────────────────
+program
+  .command("login")
+  .description("Log in to Pipelex Gateway via the browser")
+  .exitOverride()
+  .action(async () => {
+    await login();
   });
 
 // ── mthds run method|pipe ─────────────────────────────────────────────

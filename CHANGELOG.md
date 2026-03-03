@@ -1,5 +1,13 @@
 # Changelog
 
+## [v0.1.1] - 2026-03-03
+
+### Added
+
+- **`mthds login`** — new command that opens the browser for Pipelex Gateway OAuth login (GitHub or Google) and saves the API key to `~/.pipelex/.env`. Installs pipelex automatically if needed.
+- **`mthds-agent pipelex login`** — new agent CLI passthrough that forwards to `pipelex login --no-logo` for browser-based Gateway authentication. Unlike other pipelex passthroughs (which go to `pipelex-agent`), this targets the interactive `pipelex` binary since login requires browser interaction.
+- **`pipelex` binary in auto-install registry** — the passthrough layer can now auto-install `pipelex` (not just `pipelex-agent`) when `--auto-install` is set.
+
 ## [v0.1.0] - 2026-03-02
 
 ### Breaking Changes

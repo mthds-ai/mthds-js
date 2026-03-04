@@ -27,6 +27,7 @@ import { agentValidateMethod, agentValidatePipe, agentValidateBundle } from "./a
 import { agentRunMethod, agentRunPipe, agentRunBundle } from "./agent/commands/run.js";
 import { agentConfigGet, agentConfigList, agentConfigSet } from "./agent/commands/config.js";
 import { agentInstall } from "./agent/commands/install.js";
+import { agentPublish } from "./agent/commands/publish.js";
 import { isPipelexInstalled } from "./installer/runtime/check.js";
 import { installPipelexSync } from "./installer/runtime/installer.js";
 import { agentPackageInit, agentPackageList, agentPackageValidate } from "./agent/commands/package.js";
@@ -305,6 +306,24 @@ program
     runner?: boolean; // Commander stores --no-runner as runner: false
   }) => {
     await agentInstall(address, { ...opts, noRunner: opts.runner === false });
+  });
+
+// ── mthds-agent publish [address] ────────────────────────────────────
+
+program
+  .command("publish")
+  .argument("[address]", "GitHub repo (org/repo or https://github.com/org/repo)")
+  .option("--local <path>", "Publish from a local directory")
+  .option("--method <name>", "Publish only the specified method (by name)")
+  .option("--share", "Include share URL in the output")
+  .description("Publish a method package to mthds.sh (telemetry only, no install)")
+  .exitOverride()
+  .action(async (address: string | undefined, opts: {
+    local?: string;
+    method?: string;
+    share?: boolean;
+  }) => {
+    await agentPublish(address, opts);
   });
 
 // ── mthds-agent config set|get|list ──────────────────────────────────

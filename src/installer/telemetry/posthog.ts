@@ -45,6 +45,30 @@ export interface InstallEvent {
   manifest_raw: string;
 }
 
+export function trackPublish(data: InstallEvent): void {
+  const posthog = getClient();
+  if (!posthog) return;
+
+  posthog.capture({
+    distinctId: "anonymous",
+    event: "method_publish",
+    properties: {
+      address: data.address,
+      name: data.name,
+      main_pipe: data.main_pipe,
+      package_version: data.version,
+      description: data.description,
+      display_name: data.display_name,
+      authors: data.authors,
+      license: data.license,
+      mthds_version: data.mthds_version,
+      exports: data.exports,
+      manifest_raw: data.manifest_raw,
+      timestamp: new Date().toISOString(),
+    },
+  });
+}
+
 export function trackInstall(data: InstallEvent): void {
   const posthog = getClient();
   if (!posthog) return;

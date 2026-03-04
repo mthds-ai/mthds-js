@@ -542,6 +542,85 @@ mthds install org/repo/methods/specific
 
 ---
 
+## Publish
+
+Publish method packages to [mthds.sh](https://mthds.sh). Sends `method_publish` telemetry for public GitHub repos. No files are written, no runner is installed.
+
+### `mthds publish`
+
+```bash
+mthds publish [address] [OPTIONS]
+```
+
+| Argument / Option | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `address` | string | no | -- | GitHub repo (`org/repo` or full URL) |
+| `--local <path>` | string | no | -- | Publish from a local directory |
+| `--method <name>` | string | no | -- | Publish only the specified method (by name) |
+
+You must provide either `address` or `--local`, but not both.
+
+The publish flow is interactive:
+1. Resolves methods from the address or local directory
+2. Displays a summary of found methods (valid/skipped)
+3. If multiple methods: lets you select which ones to publish (multiselect)
+4. Sends `method_publish` telemetry (public GitHub repos only)
+5. Prints success
+
+**Examples:**
+
+```bash
+# Publish from the hub
+mthds publish org/repo
+
+# Publish from a local directory
+mthds publish --local ./my-methods
+
+# Publish a specific method
+mthds publish org/repo --method my-method
+```
+
+---
+
+## Share
+
+Share method packages on social media. Opens browser tabs with pre-filled posts for X (Twitter), Reddit, and LinkedIn.
+
+### `mthds share`
+
+```bash
+mthds share [address] [OPTIONS]
+```
+
+| Argument / Option | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `address` | string | no | -- | GitHub repo (`org/repo` or full URL) |
+| `--local <path>` | string | no | -- | Share from a local directory |
+| `--method <name>` | string | no | -- | Share only the specified method (by name) |
+
+You must provide either `address` or `--local`, but not both.
+
+The share flow is interactive:
+1. Resolves methods from the address or local directory
+2. If multiple methods: lets you select which ones to share (multiselect)
+3. Lets you select platforms to share on (X, Reddit, LinkedIn — multiselect)
+4. Opens browser tabs with pre-filled posts
+
+**Examples:**
+
+```bash
+# Share from the hub
+mthds share org/repo
+
+# Share from a local directory
+mthds share --local ./my-methods
+
+# Share a specific method
+mthds share org/repo --method my-method
+```
+
+---
+
 ## Package
 
 Manage MTHDS packages: manifests and validation. All package commands respect the `-C, --package-dir <path>` option to target a specific directory.
@@ -688,6 +767,84 @@ mthds-agent pipelex init --config '{"backends": ["openai"], "telemetry_mode": "o
 
 # Step 2 (global variant):
 mthds-agent pipelex init -g --config '{"backends": ["pipelex_gateway"], "accept_gateway_terms": true}'
+```
+
+### `mthds-agent publish`
+
+Publish methods to mthds.sh (non-interactive). Sends `method_publish` telemetry for public GitHub repos. No files are written.
+
+```bash
+mthds-agent publish [address] [OPTIONS]
+```
+
+| Argument / Option | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `address` | string | no | -- | GitHub repo (`org/repo` or full URL) |
+| `--local <path>` | string | no | -- | Publish from a local directory |
+| `--method <name>` | string | no | -- | Publish only the specified method (by name) |
+
+**Example output:**
+
+```json
+{
+  "success": true,
+  "published_methods": ["contract-analysis"],
+  "address": "mthds-ai/contract-analysis"
+}
+```
+
+**Examples:**
+
+```bash
+mthds-agent publish org/repo
+mthds-agent publish --local ./my-methods
+mthds-agent publish org/repo --method my-method
+```
+
+### `mthds-agent share`
+
+Get social media share URLs for a method package (non-interactive). Returns pre-filled URLs for X (Twitter), Reddit, and LinkedIn. Use `--platform` to select specific platforms.
+
+```bash
+mthds-agent share [address] [OPTIONS]
+```
+
+| Argument / Option | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `address` | string | no | -- | GitHub repo (`org/repo` or full URL) |
+| `--local <path>` | string | no | -- | Share from a local directory |
+| `--method <name>` | string | no | -- | Share only the specified method (by name) |
+| `--platform <name>` | string | no | all | Platform to share on (`x`, `reddit`, `linkedin`). Can be repeated for multiple platforms. |
+
+**Example output:**
+
+```json
+{
+  "success": true,
+  "methods": ["contract-analysis"],
+  "address": "mthds-ai/contract-analysis",
+  "share_urls": {
+    "x": "https://twitter.com/intent/tweet?text=...",
+    "reddit": "https://www.reddit.com/submit?type=TEXT&title=...&text=...",
+    "linkedin": "https://www.linkedin.com/feed/?shareActive=true&text=..."
+  }
+}
+```
+
+**Examples:**
+
+```bash
+# Get all share URLs
+mthds-agent share org/repo
+
+# Get only X and LinkedIn URLs
+mthds-agent share org/repo --platform x --platform linkedin
+
+# Share a specific method on Reddit
+mthds-agent share org/repo --method my-method --platform reddit
+
+# Share from a local directory
+mthds-agent share --local ./my-methods --platform x
 ```
 
 ### `mthds-agent run method|pipe|bundle`

@@ -45,13 +45,13 @@ export interface InstallEvent {
   manifest_raw: string;
 }
 
-export function trackInstall(data: InstallEvent): void {
+function trackEvent(eventName: string, data: InstallEvent): void {
   const posthog = getClient();
   if (!posthog) return;
 
   posthog.capture({
     distinctId: "anonymous",
-    event: "method_install",
+    event: eventName,
     properties: {
       address: data.address,
       name: data.name,
@@ -67,6 +67,14 @@ export function trackInstall(data: InstallEvent): void {
       timestamp: new Date().toISOString(),
     },
   });
+}
+
+export function trackPublish(data: InstallEvent): void {
+  trackEvent("method_publish", data);
+}
+
+export function trackInstall(data: InstallEvent): void {
+  trackEvent("method_install", data);
 }
 
 export async function shutdown(): Promise<void> {

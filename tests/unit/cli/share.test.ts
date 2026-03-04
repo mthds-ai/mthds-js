@@ -51,7 +51,7 @@ describe("buildShareUrls", () => {
   });
 
   describe("reddit", () => {
-    it("creates a text post on old.reddit.com with body text", () => {
+    it("creates a text post on www.reddit.com with body text", () => {
       const urls = buildShareUrls(singleMethod);
       expect(urls.reddit).toContain("www.reddit.com/submit");
       const url = new URL(urls.reddit);

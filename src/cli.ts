@@ -7,6 +7,7 @@ import { showBanner, printLogo, setLogoEnabled } from "./cli/commands/index.js";
 import { setupRunner, setDefaultRunner, runnerStatus } from "./cli/commands/setup.js";
 import { installMethod } from "./cli/commands/install.js";
 import { publishMethod } from "./cli/commands/publish.js";
+import { shareMethod } from "./cli/commands/share-cli.js";
 import { configSet, configGet, configList } from "./cli/commands/config.js";
 import { login } from "./cli/commands/login.js";
 import { runMethod, runPipe, runBundle } from "./cli/commands/run.js";
@@ -336,6 +337,32 @@ program
       process.exit(1);
     }
     await publishMethod({ address, dir: opts.local, method: opts.method });
+  });
+
+// ── mthds share [address] ──────────────────────────────────────────
+program
+  .command("share")
+  .argument("[address]", "GitHub repo (org/repo or https://github.com/org/repo)")
+  .option("--local <path>", "Share from a local directory")
+  .option("--method <name>", "Share only the specified method (by name)")
+  .description("Share a method package on social media")
+  .exitOverride()
+  .action(async (address: string | undefined, opts: { local?: string; method?: string }) => {
+    if (address && opts.local) {
+      printLogo();
+      p.intro("mthds share");
+      p.log.error("Cannot use both an address and --local at the same time.");
+      p.outro("");
+      process.exit(1);
+    }
+    if (!address && !opts.local) {
+      printLogo();
+      p.intro("mthds share");
+      p.log.error("Provide an address (org/repo) or use --local <path>.");
+      p.outro("");
+      process.exit(1);
+    }
+    await shareMethod({ address, dir: opts.local, method: opts.method });
   });
 
 // ── mthds config set|get|list ──────────────────────────────────────

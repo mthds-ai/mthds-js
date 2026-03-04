@@ -1,5 +1,17 @@
 # Changelog
 
+## [v0.1.2] - 2026-03-04
+
+### Added
+
+- **`mthds publish`** — new interactive CLI command to publish methods to mthds.sh. Resolves methods from GitHub or local directory, displays a summary, lets the user select which methods to publish (multiselect), sends `method_publish` telemetry for public GitHub repos, and prints success. No files are written, no runner is installed.
+- **`mthds share`** — new interactive CLI command to share methods on social media. Resolves methods, lets the user pick which ones to share and which platforms (X/Twitter, Reddit, LinkedIn), then opens browser tabs with pre-filled posts.
+- **`mthds-agent publish`** — non-interactive agent CLI for publishing. Returns JSON with `published_methods` and `address`.
+- **`mthds-agent share`** — non-interactive agent CLI for sharing. Returns JSON with `share_urls` for each platform. Supports `--platform <name>` (repeatable) to request specific platforms (x, reddit, linkedin). Defaults to all.
+- **`trackPublish()` telemetry** — new `method_publish` PostHog event, same shape as `method_install`.
+- **Social media share URLs** — `buildShareUrls()` generates pre-filled post URLs for X (Twitter Web Intent), Reddit (text post), and LinkedIn (feed share). Single-method posts include the full description; multi-method posts list names with truncated descriptions (15 words).
+- **Multiselect retry UX** — when the user selects 0 items in a multiselect (methods or platforms), a yellow warning is shown and the prompt is re-presented. On a second empty selection, the command exits gracefully.
+
 ## [v0.1.1] - 2026-03-03
 
 ### Added

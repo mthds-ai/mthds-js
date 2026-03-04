@@ -28,6 +28,7 @@ import { agentRunMethod, agentRunPipe, agentRunBundle } from "./agent/commands/r
 import { agentConfigGet, agentConfigList, agentConfigSet } from "./agent/commands/config.js";
 import { agentInstall } from "./agent/commands/install.js";
 import { agentPublish } from "./agent/commands/publish.js";
+import { agentShare } from "./agent/commands/share.js";
 import { isPipelexInstalled } from "./installer/runtime/check.js";
 import { installPipelexSync } from "./installer/runtime/installer.js";
 import { agentPackageInit, agentPackageList, agentPackageValidate } from "./agent/commands/package.js";
@@ -46,6 +47,10 @@ function getRunner(cmd: Cmd): RunnerType | undefined {
 
 function collect(val: string, prev: string[]): string[] {
   return [...prev, resolve(val)];
+}
+
+function collectPlatform(val: string, prev: string[]): string[] {
+  return [...prev, val];
 }
 
 function getLibraryDirs(cmd: Cmd): string[] {
@@ -315,15 +320,34 @@ program
   .argument("[address]", "GitHub repo (org/repo or https://github.com/org/repo)")
   .option("--local <path>", "Publish from a local directory")
   .option("--method <name>", "Publish only the specified method (by name)")
-  .option("--share", "Include share URL in the output")
   .description("Publish a method package to mthds.sh (telemetry only, no install)")
   .exitOverride()
   .action(async (address: string | undefined, opts: {
     local?: string;
     method?: string;
-    share?: boolean;
   }) => {
     await agentPublish(address, opts);
+  });
+
+// ── mthds-agent share [address] ──────────────────────────────────────
+
+program
+  .command("share")
+  .argument("[address]", "GitHub repo (org/repo or https://github.com/org/repo)")
+  .option("--local <path>", "Share from a local directory")
+  .option("--method <name>", "Share only the specified method (by name)")
+  .option("--platform <name>", "Platform to share on (x, reddit, linkedin). Can be repeated. Defaults to all.", collectPlatform, [] as string[])
+  .description("Get social media share URLs for a method package. Returns URLs for X (Twitter), Reddit, and LinkedIn. Use --platform to select specific platforms.")
+  .exitOverride()
+  .action(async (address: string | undefined, opts: {
+    local?: string;
+    method?: string;
+    platform?: string[];
+  }) => {
+    await agentShare(address, {
+      ...opts,
+      platform: opts.platform && opts.platform.length > 0 ? opts.platform as import("./cli/commands/share.js").SharePlatform[] : undefined,
+    });
   });
 
 // ── mthds-agent config set|get|list ──────────────────────────────────

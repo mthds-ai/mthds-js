@@ -62,6 +62,24 @@ export interface ValidateRequest {
   mthds_content?: string;
 }
 
+export interface ConceptRequest {
+  spec: Record<string, unknown>;
+}
+
+export interface PipeSpecRequest {
+  pipe_type: string;
+  spec: Record<string, unknown>;
+}
+
+export interface AssembleRequest {
+  domain: string;
+  main_pipe: string;
+  description?: string;
+  system_prompt?: string;
+  concepts?: string[];
+  pipes?: string[];
+}
+
 // ── Response types ──────────────────────────────────────────────────
 
 export interface BuildPipeResponse {
@@ -120,6 +138,26 @@ export interface ValidateResponse {
   message: string;
 }
 
+export interface ConceptResponse {
+  success: boolean;
+  concept_code: string;
+  toml: string;
+}
+
+export interface PipeSpecResponse {
+  success: boolean;
+  pipe_code: string;
+  pipe_type: string;
+  toml: string;
+}
+
+export interface AssembleResponse {
+  success: boolean;
+  toml: string;
+  domain: string;
+  main_pipe: string;
+}
+
 // ── Runner interface ────────────────────────────────────────────────
 // Every runtime (API, local pipelex CLI, …) must implement this.
 
@@ -141,4 +179,9 @@ export interface Runner extends RunnerProtocol {
 
   // Validation
   validate(request: ValidateRequest): Promise<ValidateResponse>;
+
+  // Spec-to-TOML
+  concept(request: ConceptRequest): Promise<ConceptResponse>;
+  pipeSpec(request: PipeSpecRequest): Promise<PipeSpecResponse>;
+  assemble(request: AssembleRequest): Promise<AssembleResponse>;
 }

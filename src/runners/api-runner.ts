@@ -13,6 +13,12 @@ import type {
   PipelineResponse,
   ValidateRequest,
   ValidateResponse,
+  ConceptRequest,
+  ConceptResponse,
+  PipeSpecRequest,
+  PipeSpecResponse,
+  AssembleRequest,
+  AssembleResponse,
 } from "./types.js";
 import type {
   ExecutePipelineOptions,
@@ -111,6 +117,18 @@ export class ApiRunner implements Runner {
 
   async validate(request: ValidateRequest): Promise<ValidateResponse> {
     return this.post("/api/v1/validate", request);
+  }
+
+  async concept(request: ConceptRequest): Promise<ConceptResponse> {
+    return this.post("/api/v1/build/concept", request);
+  }
+
+  async pipeSpec(request: PipeSpecRequest): Promise<PipeSpecResponse> {
+    return this.post("/api/v1/build/pipe-spec", request);
+  }
+
+  async assemble(request: AssembleRequest): Promise<AssembleResponse> {
+    return this.post("/api/v1/assemble", request);
   }
 
   // ── RunnerProtocol implementation ─────────────────────────────────

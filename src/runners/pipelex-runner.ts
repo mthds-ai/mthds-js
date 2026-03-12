@@ -25,6 +25,12 @@ import type {
   PipelineResponse,
   ValidateRequest,
   ValidateResponse,
+  ConceptRequest,
+  ConceptResponse,
+  PipeSpecRequest,
+  PipeSpecResponse,
+  AssembleRequest,
+  AssembleResponse,
 } from "./types.js";
 import type {
   ExecutePipelineOptions,
@@ -231,6 +237,66 @@ export class PipelexRunner implements Runner {
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }
+  }
+
+  // ── Spec-to-TOML ────────────────────────────────────────────────
+
+  // pipelex-agent concept --spec <json>
+  async concept(request: ConceptRequest): Promise<ConceptResponse> {
+    const { stdout } = await execFileAsync(
+      "pipelex-agent",
+      ["concept", "--spec", JSON.stringify(request.spec)],
+      { encoding: "utf-8" }
+    );
+    return JSON.parse(stdout) as ConceptResponse;
+  }
+
+  // pipelex-agent pipe --type <type> --spec <json>
+  async pipeSpec(request: PipeSpecRequest): Promise<PipeSpecResponse> {
+    const { stdout } = await execFileAsync(
+      "pipelex-agent",
+      [
+        "pipe",
+        "--type",
+        request.pipe_type,
+        "--spec",
+        JSON.stringify(request.spec),
+      ],
+      { encoding: "utf-8" }
+    );
+    return JSON.parse(stdout) as PipeSpecResponse;
+  }
+
+  // pipelex-agent assemble --domain <d> --main-pipe <p> [--concepts <c>...] [--pipes <p>...]
+  async assemble(request: AssembleRequest): Promise<AssembleResponse> {
+    const args = [
+      "assemble",
+      "--domain",
+      request.domain,
+      "--main-pipe",
+      request.main_pipe,
+    ];
+    if (request.description) {
+      args.push("--description", request.description);
+    }
+    if (request.system_prompt) {
+      args.push("--system-prompt", request.system_prompt);
+    }
+    if (request.concepts) {
+      for (const concept of request.concepts) {
+        args.push("--concepts", concept);
+      }
+    }
+    if (request.pipes) {
+      for (const pipe of request.pipes) {
+        args.push("--pipes", pipe);
+      }
+    }
+
+    const { stdout } = await execFileAsync("pipelex-agent", args, {
+      encoding: "utf-8",
+    });
+    return JSON.parse(stdout) as AssembleResponse;
   }
 
   // ── Pipeline execution ──────────────────────────────────────────

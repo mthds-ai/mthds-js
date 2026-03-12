@@ -7,7 +7,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { agentSuccess, agentError, AGENT_ERROR_DOMAINS } from "../output.js";
 import { createRunner } from "../../runners/registry.js";
 import { isPipelexRunner } from "../../cli/commands/utils.js";
-import type { ConceptRepresentationFormat, Runner, RunnerType } from "../../runners/types.js";
+import type { ConceptRepresentationFormat, Runner, RunnerType, AssembleRequest } from "../../runners/types.js";
 
 interface WithRunner {
   runner?: RunnerType;
@@ -415,6 +415,154 @@ export async function agentBuildOutputPipe(
       success: true,
       output: result,
     });
+  } catch (err) {
+    agentError((err as Error).message, "RunnerError", {
+      error_domain: AGENT_ERROR_DOMAINS.RUNNER,
+    });
+  }
+}
+
+// ── build concept ─────────────────────────────────────────────────────
+
+export async function agentBuildConcept(
+  options: { spec?: string } & WithRunner
+): Promise<void> {
+  const libraryDirs = options.libraryDir?.length
+    ? options.libraryDir
+    : undefined;
+
+  let runner: Runner;
+  try {
+    runner = createRunner(options.runner, libraryDirs);
+  } catch (err) {
+    agentError((err as Error).message, "RunnerError", {
+      error_domain: AGENT_ERROR_DOMAINS.RUNNER,
+    });
+  }
+
+  if (!options.spec) {
+    agentError("--spec is required.", "ArgumentError", {
+      error_domain: AGENT_ERROR_DOMAINS.ARGUMENT,
+    });
+  }
+
+  let spec: Record<string, unknown>;
+  try {
+    spec = JSON.parse(options.spec) as Record<string, unknown>;
+  } catch {
+    agentError("--spec must be valid JSON.", "ArgumentError", {
+      error_domain: AGENT_ERROR_DOMAINS.ARGUMENT,
+    });
+  }
+
+  try {
+    const result = await runner.concept({ spec });
+    agentSuccess({ ...result });
+  } catch (err) {
+    agentError((err as Error).message, "RunnerError", {
+      error_domain: AGENT_ERROR_DOMAINS.RUNNER,
+    });
+  }
+}
+
+// ── build pipe-spec ───────────────────────────────────────────────────
+
+export async function agentBuildPipeSpec(
+  options: { type?: string; spec?: string } & WithRunner
+): Promise<void> {
+  const libraryDirs = options.libraryDir?.length
+    ? options.libraryDir
+    : undefined;
+
+  let runner: Runner;
+  try {
+    runner = createRunner(options.runner, libraryDirs);
+  } catch (err) {
+    agentError((err as Error).message, "RunnerError", {
+      error_domain: AGENT_ERROR_DOMAINS.RUNNER,
+    });
+  }
+
+  if (!options.type) {
+    agentError("--type is required.", "ArgumentError", {
+      error_domain: AGENT_ERROR_DOMAINS.ARGUMENT,
+    });
+  }
+
+  if (!options.spec) {
+    agentError("--spec is required.", "ArgumentError", {
+      error_domain: AGENT_ERROR_DOMAINS.ARGUMENT,
+    });
+  }
+
+  let spec: Record<string, unknown>;
+  try {
+    spec = JSON.parse(options.spec) as Record<string, unknown>;
+  } catch {
+    agentError("--spec must be valid JSON.", "ArgumentError", {
+      error_domain: AGENT_ERROR_DOMAINS.ARGUMENT,
+    });
+  }
+
+  try {
+    const result = await runner.pipeSpec({ pipe_type: options.type, spec });
+    agentSuccess({ ...result });
+  } catch (err) {
+    agentError((err as Error).message, "RunnerError", {
+      error_domain: AGENT_ERROR_DOMAINS.RUNNER,
+    });
+  }
+}
+
+// ── build assemble ────────────────────────────────────────────────────
+
+export async function agentBuildAssemble(
+  options: {
+    domain?: string;
+    mainPipe?: string;
+    description?: string;
+    systemPrompt?: string;
+    concepts?: string[];
+    pipes?: string[];
+  } & WithRunner
+): Promise<void> {
+  const libraryDirs = options.libraryDir?.length
+    ? options.libraryDir
+    : undefined;
+
+  let runner: Runner;
+  try {
+    runner = createRunner(options.runner, libraryDirs);
+  } catch (err) {
+    agentError((err as Error).message, "RunnerError", {
+      error_domain: AGENT_ERROR_DOMAINS.RUNNER,
+    });
+  }
+
+  if (!options.domain) {
+    agentError("--domain is required.", "ArgumentError", {
+      error_domain: AGENT_ERROR_DOMAINS.ARGUMENT,
+    });
+  }
+
+  if (!options.mainPipe) {
+    agentError("--main-pipe is required.", "ArgumentError", {
+      error_domain: AGENT_ERROR_DOMAINS.ARGUMENT,
+    });
+  }
+
+  const request: AssembleRequest = {
+    domain: options.domain,
+    main_pipe: options.mainPipe,
+    description: options.description,
+    system_prompt: options.systemPrompt,
+    concepts: options.concepts,
+    pipes: options.pipes,
+  };
+
+  try {
+    const result = await runner.assemble(request);
+    agentSuccess({ ...result });
   } catch (err) {
     agentError((err as Error).message, "RunnerError", {
       error_domain: AGENT_ERROR_DOMAINS.RUNNER,

@@ -22,9 +22,6 @@ import {
   agentBuildInputsPipe,
   agentBuildOutputMethod,
   agentBuildOutputPipe,
-  agentBuildConcept,
-  agentBuildPipeSpec,
-  agentBuildAssemble,
 } from "./agent/commands/build.js";
 import { agentValidateMethod, agentValidatePipe, agentValidateBundle } from "./agent/commands/validate.js";
 import { agentRunMethod, agentRunPipe, agentRunBundle } from "./agent/commands/run.js";
@@ -35,7 +32,6 @@ import { agentShare } from "./agent/commands/share.js";
 import { isPipelexInstalled } from "./installer/runtime/check.js";
 import { installPipelexSync } from "./installer/runtime/installer.js";
 import { agentPackageInit, agentPackageList, agentPackageValidate } from "./agent/commands/package.js";
-import { RUNNER_NAMES } from "./runners/types.js";
 import type { RunnerType } from "./runners/types.js";
 import type { Command as Cmd } from "commander";
 
@@ -75,7 +71,6 @@ program
   .name("mthds-agent")
   .version(`mthds-agent ${pkg.version}`, "-V, --version")
   .description("Machine-oriented CLI for AI agents — JSON output only")
-  .option("--runner <type>", `Runner to use (${RUNNER_NAMES.join(", ")})`)
   .option("-L, --library-dir <dir>", "Additional library directory (can be repeated)", collect, [] as string[])
   .option("--log-level <level>", `Log level (${LOG_LEVELS.join(", ")})`)
   .option("--auto-install", "Automatically install missing binaries before running")
@@ -193,61 +188,6 @@ buildOutputCmd
   .exitOverride()
   .action(async (target: string, options: { pipe?: string; format?: string }, cmd: Cmd) => {
     await agentBuildOutputPipe(target, { ...options, runner: getRunner(cmd), libraryDir: getLibraryDirs(cmd) });
-  });
-
-build
-  .command("concept")
-  .option("--spec <json>", "Concept spec as JSON")
-  .description("Generate TOML for a concept from a JSON spec")
-  .allowUnknownOption()
-  .allowExcessArguments(true)
-  .exitOverride()
-  .action(async (options: { spec?: string }, cmd: Cmd) => {
-    await agentBuildConcept({ ...options, runner: getRunner(cmd), libraryDir: getLibraryDirs(cmd) });
-  });
-
-build
-  .command("pipe-spec")
-  .option("--type <type>", "Pipe type (PipeLLM, PipeSequence, etc.)")
-  .option("--spec <json>", "Pipe spec as JSON")
-  .description("Generate TOML for a pipe from a JSON spec")
-  .allowUnknownOption()
-  .allowExcessArguments(true)
-  .exitOverride()
-  .action(async (options: { type?: string; spec?: string }, cmd: Cmd) => {
-    await agentBuildPipeSpec({ ...options, runner: getRunner(cmd), libraryDir: getLibraryDirs(cmd) });
-  });
-
-build
-  .command("assemble")
-  .option("--domain <domain>", "Domain code")
-  .option("--main-pipe <pipe>", "Main pipe code")
-  .option("--description <desc>", "Bundle description")
-  .option("--system-prompt <prompt>", "System prompt")
-  .option("--concept <toml>", "Concept TOML (can be repeated)", (val: string, prev: string[]) => [...prev, val], [] as string[])
-  .option("--pipe-toml <toml>", "Pipe TOML (can be repeated)", (val: string, prev: string[]) => [...prev, val], [] as string[])
-  .description("Assemble concepts and pipes into a MTHDS bundle")
-  .allowUnknownOption()
-  .allowExcessArguments(true)
-  .exitOverride()
-  .action(async (options: {
-    domain?: string;
-    mainPipe?: string;
-    description?: string;
-    systemPrompt?: string;
-    concept?: string[];
-    pipeToml?: string[];
-  }, cmd: Cmd) => {
-    await agentBuildAssemble({
-      domain: options.domain,
-      mainPipe: options.mainPipe,
-      description: options.description,
-      systemPrompt: options.systemPrompt,
-      concepts: options.concept?.length ? options.concept : undefined,
-      pipes: options.pipeToml?.length ? options.pipeToml : undefined,
-      runner: getRunner(cmd),
-      libraryDir: getLibraryDirs(cmd),
-    });
   });
 
 // ── mthds-agent run method|pipe|bundle ───────────────────────────────

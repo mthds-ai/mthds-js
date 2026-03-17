@@ -158,6 +158,18 @@ export interface AssembleResponse {
   main_pipe: string;
 }
 
+export interface ModelsRequest {
+  type?: string[];
+}
+
+export interface ModelsResponse {
+  success: boolean;
+  presets: Record<string, Array<{ name: string; description?: string }>>;
+  aliases: Record<string, Record<string, string>>;
+  waterfalls: Record<string, Record<string, string[]>>;
+  talent_mappings: Record<string, Record<string, string>>;
+}
+
 // ── Runner interface ────────────────────────────────────────────────
 // Every runtime (API, local pipelex CLI, …) must implement this.
 
@@ -184,4 +196,7 @@ export interface Runner extends RunnerProtocol {
   concept(request: ConceptRequest): Promise<ConceptResponse>;
   pipeSpec(request: PipeSpecRequest): Promise<PipeSpecResponse>;
   assemble(request: AssembleRequest): Promise<AssembleResponse>;
+
+  // Models
+  models(request?: ModelsRequest): Promise<ModelsResponse>;
 }

@@ -31,6 +31,8 @@ import type {
   PipeSpecResponse,
   AssembleRequest,
   AssembleResponse,
+  ModelsRequest,
+  ModelsResponse,
 } from "./types.js";
 import type {
   ExecutePipelineOptions,
@@ -297,6 +299,20 @@ export class PipelexRunner implements Runner {
       encoding: "utf-8",
     });
     return JSON.parse(stdout) as AssembleResponse;
+  }
+
+  // pipelex-agent models [--type <type>...]
+  async models(request?: ModelsRequest): Promise<ModelsResponse> {
+    const args = ["models"];
+    if (request?.type) {
+      for (const t of request.type) {
+        args.push("--type", t);
+      }
+    }
+    const { stdout } = await execFileAsync("pipelex-agent", args, {
+      encoding: "utf-8",
+    });
+    return JSON.parse(stdout) as ModelsResponse;
   }
 
   // ── Pipeline execution ──────────────────────────────────────────

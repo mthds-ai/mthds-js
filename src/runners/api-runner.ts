@@ -19,6 +19,8 @@ import type {
   PipeSpecResponse,
   AssembleRequest,
   AssembleResponse,
+  ModelsRequest,
+  ModelsResponse,
 } from "./types.js";
 import type {
   ExecutePipelineOptions,
@@ -129,6 +131,18 @@ export class ApiRunner implements Runner {
 
   async assemble(request: AssembleRequest): Promise<AssembleResponse> {
     return this.post("/api/v1/assemble", request);
+  }
+
+  async models(request?: ModelsRequest): Promise<ModelsResponse> {
+    const params = new URLSearchParams();
+    if (request?.type) {
+      for (const t of request.type) {
+        params.append("type", t);
+      }
+    }
+    const qs = params.toString();
+    const path = qs ? `/api/v1/models?${qs}` : "/api/v1/models";
+    return this.get(path);
   }
 
   // ── RunnerProtocol implementation ─────────────────────────────────

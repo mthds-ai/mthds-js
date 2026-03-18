@@ -25,8 +25,14 @@ function extractTopLevelOptions(args: string[]): {
   while (i < args.length) {
     const arg = args[i]!;
     if ((TOP_LEVEL_OPTIONS as readonly string[]).includes(arg)) {
-      topLevel.push(arg, args[i + 1] ?? "");
-      i += 2;
+      if (i + 1 < args.length) {
+        topLevel.push(arg, args[i + 1]!);
+        i += 2;
+      } else {
+        // No value follows — leave the bare flag in rest as-is.
+        rest.push(arg);
+        i += 1;
+      }
     } else if (TOP_LEVEL_OPTIONS.some((opt) => arg.startsWith(`${opt}=`))) {
       topLevel.push(arg);
       i += 1;

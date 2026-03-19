@@ -7,6 +7,47 @@
 import { Command } from "commander";
 import { passthrough } from "../passthrough.js";
 
+/** Options that pipelex-agent accepts only at the top level (before the subcommand). */
+const TOP_LEVEL_OPTIONS = ["--log-level"] as const;
+
+/**
+ * Extract top-level options from remaining args so they can be prepended
+ * before the subcommand. Commander.js's passThroughOptions prevents the
+ * parent program from consuming these when they appear after subcommand args.
+ */
+export function extractTopLevelOptions(args: string[]): {
+  topLevel: string[];
+  rest: string[];
+} {
+  const topLevel: string[] = [];
+  const rest: string[] = [];
+  let i = 0;
+  while (i < args.length) {
+    const arg = args[i]!;
+    if (arg === "--") {
+      rest.push(...args.slice(i));
+      break;
+    }
+    if ((TOP_LEVEL_OPTIONS as readonly string[]).includes(arg)) {
+      if (i + 1 < args.length) {
+        topLevel.push(arg, args[i + 1]!);
+        i += 2;
+      } else {
+        // No value follows — leave the bare flag in rest as-is.
+        rest.push(arg);
+        i += 1;
+      }
+    } else if (TOP_LEVEL_OPTIONS.some((opt) => arg.startsWith(`${opt}=`))) {
+      topLevel.push(arg);
+      i += 1;
+    } else {
+      rest.push(arg);
+      i++;
+    }
+  }
+  return { topLevel, rest };
+}
+
 const PIPELEX_COMMANDS = [
   "init",
   "validate",
@@ -59,8 +100,8 @@ export function registerPipelexCommands(
       .allowExcessArguments(true)
       .passThroughOptions()
       .action((_options: Record<string, unknown>, cmd: Command) => {
-        const remaining = cmd.args;
-        passthrough("pipelex-agent", [...logLevelArgs(), subcmd, ...remaining], {
+        const { topLevel, rest } = extractTopLevelOptions(cmd.args);
+        passthrough("pipelex-agent", [...logLevelArgs(), ...topLevel, subcmd, ...rest], {
           autoInstall: autoInstall(),
         });
       });
@@ -83,8 +124,8 @@ export function registerPipelexCommands(
       .allowExcessArguments(true)
       .passThroughOptions()
       .action((_options: Record<string, unknown>, cmd: Command) => {
-        const remaining = cmd.args;
-        passthrough("pipelex-agent", [...logLevelArgs(), "run", runSub, ...remaining], {
+        const { topLevel, rest } = extractTopLevelOptions(cmd.args);
+        passthrough("pipelex-agent", [...logLevelArgs(), ...topLevel, "run", runSub, ...rest], {
           autoInstall: autoInstall(),
         });
       });

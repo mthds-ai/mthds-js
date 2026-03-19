@@ -1,5 +1,15 @@
 # Changelog
 
+## [v0.1.3] - 2026-03-18
+
+### Added
+
+- **Release skill** — new `/release` Claude Code skill that guides through version bumping, changelog updates, branch management, checks, and commit in 8 interactive steps.
+
+### Fixed
+
+- **`--log-level` flag** — fixed empty string injection when `--log-level` has no value, and corrected argument ordering for log level passthrough.
+
 ## [v0.1.2] - 2026-03-04
 
 ### Added

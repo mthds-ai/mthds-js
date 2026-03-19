@@ -15,7 +15,7 @@ const TOP_LEVEL_OPTIONS = ["--log-level"] as const;
  * before the subcommand. Commander.js's passThroughOptions prevents the
  * parent program from consuming these when they appear after subcommand args.
  */
-function extractTopLevelOptions(args: string[]): {
+export function extractTopLevelOptions(args: string[]): {
   topLevel: string[];
   rest: string[];
 } {
@@ -24,6 +24,10 @@ function extractTopLevelOptions(args: string[]): {
   let i = 0;
   while (i < args.length) {
     const arg = args[i]!;
+    if (arg === "--") {
+      rest.push(...args.slice(i));
+      break;
+    }
     if ((TOP_LEVEL_OPTIONS as readonly string[]).includes(arg)) {
       if (i + 1 < args.length) {
         topLevel.push(arg, args[i + 1]!);

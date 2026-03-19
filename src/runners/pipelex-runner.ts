@@ -9,15 +9,13 @@ import {
   rmSync,
 } from "node:fs";
 import { join } from "node:path";
-import { homedir, tmpdir } from "node:os";
+import { tmpdir } from "node:os";
 import { Runners } from "./types.js";
 import type {
   Runner,
   RunnerType,
   BuildInputsRequest,
   BuildOutputRequest,
-  BuildPipeRequest,
-  BuildPipeResponse,
   BuildRunnerRequest,
   BuildRunnerResponse,
   DictPipeOutput,
@@ -44,26 +42,6 @@ const execFileAsync = promisify(execFile);
 
 function makeTmpDir(): string {
   return mkdtempSync(join(tmpdir(), "mthds-"));
-}
-
-/**
- * Return the default methods directory (~/.mthds/methods).
- */
-function getMethodsDir(): string {
-  return join(homedir(), ".mthds", "methods");
-}
-
-/**
- * Ensure the output directory exists and return the pipelex `-o` base path.
- * Pipelex treats `-o <path>` as a base name and creates `<path>_NN/`,
- * so we pass `<dir>/bundle` to get output inside `<dir>/`.
- */
-function resolveOutputBase(output: string | undefined): string {
-  const dir = output ?? getMethodsDir();
-  if (!existsSync(dir)) {
-    mkdirSync(dir, { recursive: true });
-  }
-  return join(dir, "bundle");
 }
 
 export class PipelexRunner implements Runner {
@@ -189,24 +167,6 @@ export class PipelexRunner implements Runner {
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }
-  }
-
-  // pipelex build pipe "PROMPT" -o <dir>
-  async buildPipe(request: BuildPipeRequest): Promise<BuildPipeResponse> {
-    const outputDir = resolveOutputBase(request.output);
-    await this.execStreaming([
-      "build",
-      "pipe",
-      request.brief,
-      "-o",
-      outputDir,
-    ]);
-    return {
-      mthds_content: "",
-      pipelex_bundle_blueprint: {},
-      success: true,
-      message: `Pipeline built successfully — saved to ${outputDir}`,
-    };
   }
 
   // pipelex build runner <bundle.mthds> --pipe <pipe_code> -o <file>

@@ -5,8 +5,6 @@ import type {
   RunnerType,
   BuildInputsRequest,
   BuildOutputRequest,
-  BuildPipeRequest,
-  BuildPipeResponse,
   BuildRunnerRequest,
   BuildRunnerResponse,
   ExecuteRequest,
@@ -101,10 +99,6 @@ export class ApiRunner implements Runner {
 
   async buildOutput(request: BuildOutputRequest): Promise<unknown> {
     return this.post("/api/v1/build/output", request);
-  }
-
-  async buildPipe(request: BuildPipeRequest): Promise<BuildPipeResponse> {
-    return this.post("/api/v1/build/pipe", request);
   }
 
   async buildRunner(

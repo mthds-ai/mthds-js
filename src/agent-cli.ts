@@ -15,7 +15,6 @@ import { registerPipelexCommands } from "./agent/commands/pipelex.js";
 import { registerPlxtCommands } from "./agent/commands/plxt.js";
 import { agentDoctor } from "./agent/commands/doctor.js";
 import {
-  agentBuildPipe,
   agentBuildRunnerMethod,
   agentBuildRunnerPipe,
   agentBuildInputsMethod,
@@ -84,20 +83,8 @@ program
 
 const build = program
   .command("build")
-  .description("Generate pipelines, runner code, inputs, and output schemas")
+  .description("Generate runner code, inputs, and output schemas")
   .exitOverride();
-
-build
-  .command("pipe")
-  .argument("<brief>", "Natural-language description of the pipeline")
-  .option("-o, --output <file>", "Path to save the generated .mthds file")
-  .description("Build a pipeline from a prompt")
-  .allowUnknownOption()
-  .allowExcessArguments(true)
-  .exitOverride()
-  .action(async (brief: string, options: { output?: string }, cmd: Cmd) => {
-    await agentBuildPipe(brief, { ...options, runner: getRunner(cmd), libraryDir: getLibraryDirs(cmd) });
-  });
 
 const buildRunnerCmd = build
   .command("runner")

@@ -44,56 +44,6 @@ function extractPassthroughArgs(): string[] {
   return result;
 }
 
-// ── build pipe ────────────────────────────────────────────────────────
-
-export async function agentBuildPipe(
-  brief: string,
-  options: { output?: string } & WithRunner
-): Promise<void> {
-  const libraryDirs = options.libraryDir?.length
-    ? options.libraryDir
-    : undefined;
-
-  let runner: Runner;
-  try {
-    runner = createRunner(options.runner, libraryDirs);
-  } catch (err) {
-    agentError((err as Error).message, "RunnerError", {
-      error_domain: AGENT_ERROR_DOMAINS.RUNNER,
-    });
-  }
-
-  if (isPipelexRunner(runner)) {
-    try {
-      await runner.buildPassthrough("pipe", extractPassthroughArgs());
-    } catch (err) {
-      agentError((err as Error).message, "RunnerError", {
-        error_domain: AGENT_ERROR_DOMAINS.RUNNER,
-      });
-    }
-    return;
-  }
-
-  try {
-    const result = await runner.buildPipe({ brief, output: options.output });
-
-    if (result.mthds_content && options.output) {
-      writeFileSync(options.output, result.mthds_content, "utf-8");
-    }
-
-    agentSuccess({
-      success: result.success,
-      message: result.message,
-      mthds_content: result.mthds_content,
-      pipelex_bundle_blueprint: result.pipelex_bundle_blueprint,
-    });
-  } catch (err) {
-    agentError((err as Error).message, "RunnerError", {
-      error_domain: AGENT_ERROR_DOMAINS.RUNNER,
-    });
-  }
-}
-
 // ── build runner method ──────────────────────────────────────────────
 
 export async function agentBuildRunnerMethod(

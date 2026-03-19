@@ -36,11 +36,6 @@ export interface BuildOutputRequest {
   format?: ConceptRepresentationFormat;
 }
 
-export interface BuildPipeRequest {
-  brief: string;
-  output?: string;
-}
-
 export interface BuildRunnerRequest {
   mthds_content: string;
   pipe_code: string;
@@ -81,13 +76,6 @@ export interface AssembleRequest {
 }
 
 // ── Response types ──────────────────────────────────────────────────
-
-export interface BuildPipeResponse {
-  mthds_content: string;
-  pipelex_bundle_blueprint: Record<string, unknown>;
-  success: boolean;
-  message: string;
-}
 
 export interface BuildRunnerResponse {
   python_code: string;
@@ -183,7 +171,6 @@ export interface Runner extends RunnerProtocol {
   // Build
   buildInputs(request: BuildInputsRequest): Promise<unknown>;
   buildOutput(request: BuildOutputRequest): Promise<unknown>;
-  buildPipe(request: BuildPipeRequest): Promise<BuildPipeResponse>;
   buildRunner(request: BuildRunnerRequest): Promise<BuildRunnerResponse>;
 
   // Pipeline execution

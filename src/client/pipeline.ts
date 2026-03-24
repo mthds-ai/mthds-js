@@ -8,7 +8,7 @@ export type { PipelineState } from "../runners/types.js";
 
 export interface PipelineRequest {
   pipe_code?: string | null;
-  mthds_content?: string | null;
+  mthds_contents?: string[] | null;
   inputs?: PipelineInputs | null;
   output_name?: string | null;
   output_multiplicity?: VariableMultiplicity | null;
@@ -39,7 +39,7 @@ export interface PipelineStartResponse {
 
 export interface ExecutePipelineOptions {
   pipe_code?: string | null;
-  mthds_content?: string | null;
+  mthds_contents?: string[] | null;
   inputs?: PipelineInputs | null;
   output_name?: string | null;
   output_multiplicity?: VariableMultiplicity | null;

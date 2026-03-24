@@ -26,24 +26,24 @@ export type ConceptRepresentationFormat = "json" | "python" | "schema";
 // ── Request types ───────────────────────────────────────────────────
 
 export interface BuildInputsRequest {
-  mthds_content: string;
+  mthds_contents: string[];
   pipe_code: string;
 }
 
 export interface BuildOutputRequest {
-  mthds_content: string;
+  mthds_contents: string[];
   pipe_code: string;
   format?: ConceptRepresentationFormat;
 }
 
 export interface BuildRunnerRequest {
-  mthds_content: string;
+  mthds_contents: string[];
   pipe_code: string;
 }
 
 export interface ExecuteRequest {
-  /** MTHDS bundle content to validate, load, and execute. Omit to run an already-loaded pipe. */
-  mthds_content?: string;
+  /** MTHDS bundle content(s) to validate, load, and execute. Omit to run an already-loaded pipe. */
+  mthds_contents?: string[];
   pipe_code?: string;
   inputs?: Record<string, unknown>;
 }
@@ -53,8 +53,8 @@ export interface ValidateRequest {
   method_url?: string;
   /** Pipe code to validate (optional — validates a specific pipe). */
   pipe_code?: string;
-  /** Raw .mthds file content (legacy, used by API runner). */
-  mthds_content?: string;
+  /** Raw .mthds file content(s). */
+  mthds_contents?: string[];
 }
 
 export interface ConceptRequest {
@@ -120,7 +120,7 @@ export interface PipelexBundleBlueprint {
 }
 
 export interface ValidateResponse {
-  mthds_content: string;
+  mthds_contents: string[];
   pipelex_bundle_blueprint: PipelexBundleBlueprint;
   success: boolean;
   message: string;

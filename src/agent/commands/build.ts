@@ -138,7 +138,7 @@ export async function agentBuildRunnerPipe(
 
   try {
     const result = await runner.buildRunner({
-      mthds_content: mthdsContent,
+      mthds_contents: [mthdsContent],
       pipe_code: options.pipe,
     });
 
@@ -245,7 +245,7 @@ export async function agentBuildInputsPipe(
 
   try {
     const result = await runner.buildInputs({
-      mthds_content: mthdsContent,
+      mthds_contents: [mthdsContent],
       pipe_code: options.pipe,
     });
 
@@ -356,7 +356,7 @@ export async function agentBuildOutputPipe(
 
   try {
     const result = await runner.buildOutput({
-      mthds_content: mthdsContent,
+      mthds_contents: [mthdsContent],
       pipe_code: options.pipe,
       format: format as ConceptRepresentationFormat,
     });

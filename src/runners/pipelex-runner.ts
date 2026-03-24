@@ -44,6 +44,19 @@ function makeTmpDir(): string {
   return mkdtempSync(join(tmpdir(), "mthds-"));
 }
 
+/**
+ * Write an array of .mthds file contents to a temp directory.
+ * Returns the path to the first file (the main bundle).
+ */
+function writeMthdsContents(tmp: string, contents: string[]): string {
+  const bundlePath = join(tmp, "bundle.mthds");
+  writeFileSync(bundlePath, contents[0]!, "utf-8");
+  for (let i = 1; i < contents.length; i++) {
+    writeFileSync(join(tmp, `extra_${i}.mthds`), contents[i]!, "utf-8");
+  }
+  return bundlePath;
+}
+
 export class PipelexRunner implements Runner {
   readonly type: RunnerType = Runners.PIPELEX;
   private readonly libraryDirs: string[];
@@ -122,20 +135,17 @@ export class PipelexRunner implements Runner {
   // ── Build ───────────────────────────────────────────────────────
   // buildInputs and buildOutput have no CLI equivalent.
 
-  // pipelex build inputs <bundle.mthds> --pipe <pipe_code>
+  // pipelex-agent inputs bundle <bundle.mthds> --pipe <pipe_code>
   async buildInputs(request: BuildInputsRequest): Promise<unknown> {
     const tmp = makeTmpDir();
     try {
-      const bundlePath = join(tmp, "bundle.mthds");
-      writeFileSync(bundlePath, request.mthds_content, "utf-8");
+      const bundlePath = writeMthdsContents(tmp, request.mthds_contents);
 
-      const { stdout } = await this.exec([
-        "build",
-        "inputs",
-        bundlePath,
-        "--pipe",
-        request.pipe_code,
-      ]);
+      const { stdout } = await execFileAsync(
+        "pipelex-agent",
+        ["inputs", "bundle", bundlePath, "--pipe", request.pipe_code, "-L", tmp, ...this.libraryArgs()],
+        { encoding: "utf-8" }
+      );
 
       return JSON.parse(stdout) as unknown;
     } finally {
@@ -143,25 +153,30 @@ export class PipelexRunner implements Runner {
     }
   }
 
-  // pipelex build output <bundle.mthds> --pipe <pipe_code> [--format <fmt>]
+  // pipelex build output bundle <bundle.mthds> --pipe <pipe_code> [--format <fmt>]
   async buildOutput(request: BuildOutputRequest): Promise<unknown> {
     const tmp = makeTmpDir();
     try {
-      const bundlePath = join(tmp, "bundle.mthds");
-      writeFileSync(bundlePath, request.mthds_content, "utf-8");
+      const bundlePath = writeMthdsContents(tmp, request.mthds_contents);
 
       const args = [
         "build",
         "output",
+        "bundle",
         bundlePath,
         "--pipe",
         request.pipe_code,
+        "-L",
+        tmp,
       ];
       if (request.format) {
         args.push("--format", request.format);
       }
+      args.push(...this.libraryArgs());
 
-      const { stdout } = await this.exec(args);
+      const { stdout } = await execFileAsync("pipelex", args, {
+        encoding: "utf-8",
+      });
 
       return JSON.parse(stdout) as unknown;
     } finally {
@@ -169,19 +184,19 @@ export class PipelexRunner implements Runner {
     }
   }
 
-  // pipelex build runner <bundle.mthds> --pipe <pipe_code> -o <file>
+  // pipelex build runner bundle <bundle.mthds> --pipe <pipe_code> -o <file>
   async buildRunner(
     request: BuildRunnerRequest
   ): Promise<BuildRunnerResponse> {
     const tmp = makeTmpDir();
     try {
-      const bundlePath = join(tmp, "bundle.mthds");
-      writeFileSync(bundlePath, request.mthds_content, "utf-8");
+      const bundlePath = writeMthdsContents(tmp, request.mthds_contents);
 
       const outPath = join(tmp, "runner.py");
       await this.execStreaming([
         "build",
         "runner",
+        "bundle",
         bundlePath,
         "--pipe",
         request.pipe_code,
@@ -231,34 +246,43 @@ export class PipelexRunner implements Runner {
 
   // pipelex-agent assemble --domain <d> --main-pipe <p> [--concepts <c>...] [--pipes <p>...]
   async assemble(request: AssembleRequest): Promise<AssembleResponse> {
-    const args = [
-      "assemble",
-      "--domain",
-      request.domain,
-      "--main-pipe",
-      request.main_pipe,
-    ];
-    if (request.description) {
-      args.push("--description", request.description);
-    }
-    if (request.system_prompt) {
-      args.push("--system-prompt", request.system_prompt);
-    }
-    if (request.concepts) {
-      for (const concept of request.concepts) {
-        args.push("--concepts", concept);
+    const tmp = makeTmpDir();
+    try {
+      const args = [
+        "assemble",
+        "--domain",
+        request.domain,
+        "--main-pipe",
+        request.main_pipe,
+      ];
+      if (request.description) {
+        args.push("--description", request.description);
       }
-    }
-    if (request.pipes) {
-      for (const pipe of request.pipes) {
-        args.push("--pipes", pipe);
+      if (request.system_prompt) {
+        args.push("--system-prompt", request.system_prompt);
       }
-    }
+      if (request.concepts) {
+        for (let i = 0; i < request.concepts.length; i++) {
+          const filePath = join(tmp, `concept_${i}.toml`);
+          writeFileSync(filePath, request.concepts[i]!, "utf-8");
+          args.push("--concepts", filePath);
+        }
+      }
+      if (request.pipes) {
+        for (let i = 0; i < request.pipes.length; i++) {
+          const filePath = join(tmp, `pipe_${i}.toml`);
+          writeFileSync(filePath, request.pipes[i]!, "utf-8");
+          args.push("--pipes", filePath);
+        }
+      }
 
-    const { stdout } = await execFileAsync("pipelex-agent", args, {
-      encoding: "utf-8",
-    });
-    return JSON.parse(stdout) as AssembleResponse;
+      const { stdout } = await execFileAsync("pipelex-agent", args, {
+        encoding: "utf-8",
+      });
+      return JSON.parse(stdout) as AssembleResponse;
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
   }
 
   // pipelex-agent models [--type <type>...]
@@ -283,10 +307,10 @@ export class PipelexRunner implements Runner {
     try {
       const args: string[] = ["run"];
 
-      if (request.mthds_content) {
-        const bundlePath = join(tmp, "bundle.mthds");
-        writeFileSync(bundlePath, request.mthds_content, "utf-8");
+      if (request.mthds_contents?.length) {
+        const bundlePath = writeMthdsContents(tmp, request.mthds_contents);
         args.push(bundlePath);
+        args.push("-L", tmp);
         if (request.pipe_code) {
           args.push("--pipe", request.pipe_code);
         }
@@ -337,7 +361,7 @@ export class PipelexRunner implements Runner {
     const url = request.method_url;
     if (!url) {
       return {
-        mthds_content: request.mthds_content ?? "",
+        mthds_contents: request.mthds_contents ?? [],
         pipelex_bundle_blueprint: { domain: "local" },
         success: false,
         message: "method_url is required for pipelex validation",
@@ -352,7 +376,7 @@ export class PipelexRunner implements Runner {
       await this.execStreaming(args);
 
       return {
-        mthds_content: request.mthds_content ?? "",
+        mthds_contents: request.mthds_contents ?? [],
         pipelex_bundle_blueprint: { domain: "local" },
         success: true,
         message: "Method validated via local CLI",
@@ -361,7 +385,7 @@ export class PipelexRunner implements Runner {
       const message =
         err instanceof Error ? err.message : "Validation failed";
       return {
-        mthds_content: request.mthds_content ?? "",
+        mthds_contents: request.mthds_contents ?? [],
         pipelex_bundle_blueprint: { domain: "local" },
         success: false,
         message,
@@ -375,7 +399,7 @@ export class PipelexRunner implements Runner {
     options: ExecutePipelineOptions
   ): Promise<PipelineExecuteResponse> {
     const request: ExecuteRequest = {
-      mthds_content: options.mthds_content ?? undefined,
+      mthds_contents: options.mthds_contents ?? undefined,
       pipe_code: options.pipe_code ?? undefined,
       inputs: options.inputs
         ? Object.fromEntries(

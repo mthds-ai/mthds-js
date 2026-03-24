@@ -96,7 +96,7 @@ export async function buildRunnerPipe(
 
   try {
     const result = await runner.buildRunner({
-      mthds_content: mthdsContent,
+      mthds_contents: [mthdsContent],
       pipe_code: pipeCode,
     });
     s.stop(result.message);
@@ -196,7 +196,7 @@ export async function buildInputsPipe(
 
   try {
     const result = await runner.buildInputs({
-      mthds_content: mthdsContent,
+      mthds_contents: [mthdsContent],
       pipe_code: options.pipe,
     });
     s.stop("Inputs generated.");
@@ -297,7 +297,7 @@ export async function buildOutputPipe(
 
   try {
     const result = await runner.buildOutput({
-      mthds_content: mthdsContent,
+      mthds_contents: [mthdsContent],
       pipe_code: options.pipe,
       format: format as ConceptRepresentationFormat,
     });

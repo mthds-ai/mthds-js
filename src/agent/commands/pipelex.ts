@@ -206,13 +206,35 @@ export function registerRunnerCommands(
         });
       }
 
+      // Read file contents for concepts/pipes so both runners get TOML content
+      let concepts: string[] | undefined;
+      if (options.concepts?.length) {
+        concepts = options.concepts.map((c) => {
+          try {
+            return readFileSync(c, "utf-8");
+          } catch {
+            return c; // treat as inline TOML if not a readable file
+          }
+        });
+      }
+      let pipes: string[] | undefined;
+      if (options.pipes?.length) {
+        pipes = options.pipes.map((p) => {
+          try {
+            return readFileSync(p, "utf-8");
+          } catch {
+            return p; // treat as inline TOML if not a readable file
+          }
+        });
+      }
+
       const request: AssembleRequest = {
         domain: options.domain,
         main_pipe: options.mainPipe,
         description: options.description,
         system_prompt: options.systemPrompt,
-        concepts: options.concepts?.length ? options.concepts : undefined,
-        pipes: options.pipes?.length ? options.pipes : undefined,
+        concepts,
+        pipes,
       };
 
       try {
@@ -283,7 +305,7 @@ export function registerRunnerCommands(
 
       try {
         const result = await runner.validate({
-          mthds_content: mthdsContent,
+          mthds_contents: [mthdsContent],
           pipe_code: options.pipe,
         });
         agentSuccess({ ...result });
@@ -336,7 +358,7 @@ export function registerRunnerCommands(
         }
         try {
           const result = await runner.validate({
-            mthds_content: mthdsContent,
+            mthds_contents: [mthdsContent],
             pipe_code: options.pipe,
           });
           agentSuccess({ ...result });
@@ -457,7 +479,7 @@ export function registerRunnerCommands(
 
       try {
         const result = await runner.buildInputs({
-          mthds_content: mthdsContent,
+          mthds_contents: [mthdsContent],
           pipe_code: pipeCode,
         });
         agentSuccess({ success: true, pipe_code: pipeCode, inputs: result });
@@ -509,7 +531,7 @@ export function registerRunnerCommands(
 
         try {
           const result = await runner.buildInputs({
-            mthds_content: mthdsContent,
+            mthds_contents: [mthdsContent],
             pipe_code: pipeCode,
           });
           agentSuccess({ success: true, pipe_code: pipeCode, inputs: result });
@@ -698,7 +720,7 @@ export function registerRunnerCommands(
 
       try {
         const result = await runner.execute({
-          mthds_content: mthdsContent,
+          mthds_contents: [mthdsContent],
           pipe_code: pipeCode,
           inputs,
         });
@@ -789,7 +811,7 @@ export function registerRunnerCommands(
 
       try {
         const result = await runner.execute({
-          mthds_content: mthdsContent,
+          mthds_contents: [mthdsContent],
           pipe_code: pipeCode,
           inputs,
         });

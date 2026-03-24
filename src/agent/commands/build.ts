@@ -44,56 +44,6 @@ function extractPassthroughArgs(): string[] {
   return result;
 }
 
-// ── build pipe ────────────────────────────────────────────────────────
-
-export async function agentBuildPipe(
-  brief: string,
-  options: { output?: string } & WithRunner
-): Promise<void> {
-  const libraryDirs = options.libraryDir?.length
-    ? options.libraryDir
-    : undefined;
-
-  let runner: Runner;
-  try {
-    runner = createRunner(options.runner, libraryDirs);
-  } catch (err) {
-    agentError((err as Error).message, "RunnerError", {
-      error_domain: AGENT_ERROR_DOMAINS.RUNNER,
-    });
-  }
-
-  if (isPipelexRunner(runner)) {
-    try {
-      await runner.buildPassthrough("pipe", extractPassthroughArgs());
-    } catch (err) {
-      agentError((err as Error).message, "RunnerError", {
-        error_domain: AGENT_ERROR_DOMAINS.RUNNER,
-      });
-    }
-    return;
-  }
-
-  try {
-    const result = await runner.buildPipe({ brief, output: options.output });
-
-    if (result.mthds_content && options.output) {
-      writeFileSync(options.output, result.mthds_content, "utf-8");
-    }
-
-    agentSuccess({
-      success: result.success,
-      message: result.message,
-      mthds_content: result.mthds_content,
-      pipelex_bundle_blueprint: result.pipelex_bundle_blueprint,
-    });
-  } catch (err) {
-    agentError((err as Error).message, "RunnerError", {
-      error_domain: AGENT_ERROR_DOMAINS.RUNNER,
-    });
-  }
-}
-
 // ── build runner method ──────────────────────────────────────────────
 
 export async function agentBuildRunnerMethod(
@@ -188,7 +138,7 @@ export async function agentBuildRunnerPipe(
 
   try {
     const result = await runner.buildRunner({
-      mthds_content: mthdsContent,
+      mthds_contents: [mthdsContent],
       pipe_code: options.pipe,
     });
 
@@ -295,7 +245,7 @@ export async function agentBuildInputsPipe(
 
   try {
     const result = await runner.buildInputs({
-      mthds_content: mthdsContent,
+      mthds_contents: [mthdsContent],
       pipe_code: options.pipe,
     });
 
@@ -406,7 +356,7 @@ export async function agentBuildOutputPipe(
 
   try {
     const result = await runner.buildOutput({
-      mthds_content: mthdsContent,
+      mthds_contents: [mthdsContent],
       pipe_code: options.pipe,
       format: format as ConceptRepresentationFormat,
     });
@@ -421,3 +371,4 @@ export async function agentBuildOutputPipe(
     });
   }
 }
+

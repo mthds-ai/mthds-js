@@ -53,9 +53,6 @@ export function showBanner(): void {
     `    ${chalk.yellow("run pipe <target>")}           Run a pipe by code or bundle file`
   );
   console.log(
-    `    ${chalk.yellow("build pipe <brief>")}          Build a pipeline from a prompt`
-  );
-  console.log(
     `    ${chalk.yellow("build runner method|pipe")}    Generate Python runner code`
   );
   console.log(

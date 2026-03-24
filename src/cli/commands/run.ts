@@ -107,7 +107,7 @@ export async function runPipe(
 
   try {
     if (isBundlePath) {
-      pipelineOptions.mthds_content = readFileSync(resolve(target), "utf-8");
+      pipelineOptions.mthds_contents = [readFileSync(resolve(target), "utf-8")];
       if (options.pipe) {
         pipelineOptions.pipe_code = options.pipe;
       }

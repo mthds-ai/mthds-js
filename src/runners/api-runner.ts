@@ -5,14 +5,20 @@ import type {
   RunnerType,
   BuildInputsRequest,
   BuildOutputRequest,
-  BuildPipeRequest,
-  BuildPipeResponse,
   BuildRunnerRequest,
   BuildRunnerResponse,
   ExecuteRequest,
   PipelineResponse,
   ValidateRequest,
   ValidateResponse,
+  ConceptRequest,
+  ConceptResponse,
+  PipeSpecRequest,
+  PipeSpecResponse,
+  AssembleRequest,
+  AssembleResponse,
+  ModelsRequest,
+  ModelsResponse,
 } from "./types.js";
 import type {
   ExecutePipelineOptions,
@@ -95,10 +101,6 @@ export class ApiRunner implements Runner {
     return this.post("/api/v1/build/output", request);
   }
 
-  async buildPipe(request: BuildPipeRequest): Promise<BuildPipeResponse> {
-    return this.post("/api/v1/build/pipe", request);
-  }
-
   async buildRunner(
     request: BuildRunnerRequest
   ): Promise<BuildRunnerResponse> {
@@ -111,6 +113,30 @@ export class ApiRunner implements Runner {
 
   async validate(request: ValidateRequest): Promise<ValidateResponse> {
     return this.post("/api/v1/validate", request);
+  }
+
+  async concept(request: ConceptRequest): Promise<ConceptResponse> {
+    return this.post("/api/v1/build/concept", request);
+  }
+
+  async pipeSpec(request: PipeSpecRequest): Promise<PipeSpecResponse> {
+    return this.post("/api/v1/build/pipe-spec", request);
+  }
+
+  async assemble(request: AssembleRequest): Promise<AssembleResponse> {
+    return this.post("/api/v1/assemble", request);
+  }
+
+  async models(request?: ModelsRequest): Promise<ModelsResponse> {
+    const params = new URLSearchParams();
+    if (request?.type) {
+      for (const t of request.type) {
+        params.append("type", t);
+      }
+    }
+    const qs = params.toString();
+    const path = qs ? `/api/v1/models?${qs}` : "/api/v1/models";
+    return this.get(path);
   }
 
   // ── RunnerProtocol implementation ─────────────────────────────────

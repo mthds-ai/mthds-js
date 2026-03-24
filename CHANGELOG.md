@@ -1,5 +1,27 @@
 # Changelog
 
+## [v0.2.0] - 2026-03-24
+
+### Breaking Changes
+
+- **`mthds_contents` is now `string[]` everywhere** — all runner request types (`BuildInputsRequest`, `BuildOutputRequest`, `BuildRunnerRequest`, `ExecuteRequest`, `ValidateRequest`) and `PipelineRequest` now use `mthds_contents: string[]` instead of `mthds_content: string`. `ValidateResponse.mthds_contents` is also `string[]`. Callers that passed a single string must now wrap it in an array (`[content]`). The `ApiRunner.validate()` method no longer wraps the value internally — it passes `request` through directly.
+- **Removed `mthds-agent pipelex` and `mthds-agent api` subcommand groups** — runner-aware commands (`concept`, `pipe`, `assemble`, `validate`, `inputs`, `run`, `models`) are now registered at the top level. Use `mthds-agent --runner <type> <command>` to override the runner, or rely on the default runner configured via `mthds-agent runner setup`.
+
+### Added
+
+- **`--runner <type>` global option on `mthds-agent`** — select which runner (`api`, `pipelex`) to use for any command. Applies to all runner-aware commands. Falls back to the default runner from config when omitted.
+- **Top-level `mthds-agent concept`** — structure a concept from JSON spec (previously only under `pipelex`/`api` groups).
+- **Top-level `mthds-agent pipe`** — structure a pipe from JSON spec (previously only under `pipelex`/`api` groups).
+- **Top-level `mthds-agent assemble`** — assemble a `.mthds` bundle from TOML parts (previously only under `pipelex`/`api` groups).
+- **Top-level `mthds-agent inputs`** — generate example input JSON for a bundle, pipe, or method (previously only under `pipelex`/`api` groups).
+- **Top-level `mthds-agent models`** — list available model presets and talent mappings (previously only under `pipelex`/`api` groups).
+- **Unified `mthds-agent run` and `mthds-agent validate`** — now work with both API and pipelex runners. Pipelex runner uses passthrough for full CLI flag compatibility; API runner uses the Runner interface.
+
+### Changed
+
+- **Runner resolution** — all runner-aware commands now resolve the runner dynamically: `--runner` flag → default runner from config. No more hardcoded runner per command group.
+- **`PipelexRunner` writes `mthds_contents` array to temp files** — new `writeMthdsContents()` helper writes the first element as `bundle.mthds` and additional elements as `extra_N.mthds`, with `-L tmp` for library resolution.
+
 ## [v0.1.3] - 2026-03-18
 
 ### Added

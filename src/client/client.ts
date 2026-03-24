@@ -65,15 +65,15 @@ export class MthdsApiClient implements RunnerProtocol {
   async executePipeline(
     options: ExecutePipelineOptions
   ): Promise<PipelineExecuteResponse> {
-    if (!options.pipe_code && !options.mthds_content) {
+    if (!options.pipe_code && (!options.mthds_contents || options.mthds_contents.length === 0)) {
       throw new PipelineRequestError(
-        "Either pipe_code or mthds_content must be provided to executePipeline."
+        "Either pipe_code or mthds_contents must be provided to executePipeline."
       );
     }
 
     const request: PipelineRequest = {
       pipe_code: options.pipe_code,
-      mthds_content: options.mthds_content,
+      mthds_contents: options.mthds_contents,
       inputs: options.inputs,
       output_name: options.output_name,
       output_multiplicity: options.output_multiplicity,
@@ -87,15 +87,15 @@ export class MthdsApiClient implements RunnerProtocol {
   async startPipeline(
     options: ExecutePipelineOptions
   ): Promise<PipelineStartResponse> {
-    if (!options.pipe_code && !options.mthds_content) {
+    if (!options.pipe_code && (!options.mthds_contents || options.mthds_contents.length === 0)) {
       throw new PipelineRequestError(
-        "Either pipe_code or mthds_content must be provided to startPipeline."
+        "Either pipe_code or mthds_contents must be provided to startPipeline."
       );
     }
 
     const request: PipelineRequest = {
       pipe_code: options.pipe_code,
-      mthds_content: options.mthds_content,
+      mthds_contents: options.mthds_contents,
       inputs: options.inputs,
       output_name: options.output_name,
       output_multiplicity: options.output_multiplicity,

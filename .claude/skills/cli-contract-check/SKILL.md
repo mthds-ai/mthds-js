@@ -5,7 +5,7 @@ description: Detect CLI contract breakages between current code and a baseline (
 
 # CLI Contract Check
 
-Detects ruptures between the CLI interfaces implemented in this package and the contracts that document them. The contracts are the source of truth for what downstream consumers rely on, so any undocumented change is a potential breakage.
+Detects discrepancies between the CLI interfaces implemented in this package and the contracts that document them. A discrepancy means the code and the contract disagree — but this skill does NOT presume which side is wrong. The code may need fixing, the contract may need updating, or both may need changes. That judgment belongs to the human reviewing the report.
 
 ## Prerequisites: Locate the Contracts
 
@@ -115,45 +115,80 @@ For each contract-visible change, determine:
 
 ## Step 5 — Report
 
-Start the report with a summary table for quick scanning, then the detailed sections.
+The report must be **self-contained** — readable by someone who has never seen this codebase. It may be handed off to a different SWE agent working in a different repo (e.g., the `docs` repo to update contracts, or the `skills` repo to adapt consumers). Include enough context for that agent to act without re-running this analysis.
 
-### Summary
+Start the report with a header block, then the summary table, then the detailed sections.
+
+### Header Block
+
+```markdown
+# CLI Contract Check — mthds-js
+
+**Date**: YYYY-MM-DD
+**Repo**: mthds-js (npm: `mthds`)
+**Branch**: <current branch>
+**Baseline**: `<tag>` (user-specified | auto-detected)
+**Target**: HEAD (`<commit short hash>`)
+
+**Contracts checked**:
+- `docs/contracts/mthds-agent-cli.md` — mthds-agent CLI (owned by mthds-js)
+- `docs/contracts/plxt-cli.md` — plxt CLI (owned by vscode-pipelex)
+- `docs/contracts/hook-lint-pipeline.md` — hook pipeline (owned by skills)
+```
+
+### Summary Table
 
 ```
-| Category               | Count | Action needed? |
-|------------------------|-------|----------------|
-| Confirmed Breakages    | N     | Yes            |
-| Undocumented Additions | N     | Yes            |
-| Safe Changes           | N     | No             |
+| Category               | Count | Resolution needed? |
+|------------------------|-------|--------------------|
+| Discrepancies          | N     | Yes                |
+| Unmatched additions    | N     | Yes                |
+| Aligned changes        | N     | No                 |
 ```
 
-Follow the table with a one-line verdict, e.g.: "2 items require contract updates before release." or "All clear — no contract-visible changes."
-
-If comparing against a non-default baseline, note it: "Baseline: `v0.1.3` (user-specified)"
+Follow the table with a one-line verdict, e.g.: "3 discrepancies require resolution before release." or "All clear — code and contracts are aligned."
 
 ---
 
-### Confirmed Breakages
+### Discrepancies
 
-Changes that contradict what the contract specifies. These are the most urgent — something a consumer relies on has changed without the contract being updated.
+Places where the code and the contract disagree. For each discrepancy:
 
-### Undocumented Additions
+1. **What the code does** — describe the actual behavior with file path and line reference
+2. **What the contract says** — quote or paraphrase the relevant contract section with file path and section reference
+3. **What changed** — which side moved? Did the code change since the baseline? Was the contract recently updated? Or is it unclear?
 
-New commands, options, or behaviors that work correctly but are not yet reflected in the contract. These need contract updates before release.
+Do NOT recommend which side should change. State the facts and let the reviewer decide. If there is obvious context that helps (e.g., the CHANGELOG explicitly labels something as an intentional breaking change), include it — but still don't prescribe the fix.
 
-### Safe Changes
+### Unmatched Additions
 
-Internal-only changes and changes already documented in the contracts. List briefly for completeness.
+Behaviors present in only one side:
+- **In code but not in contract**: new commands, options, or output fields that the contract doesn't mention
+- **In contract but not in code**: documented commands or options that don't exist in the implementation
 
-### Recommendation
+For each, state clearly which side has it and which side lacks it.
 
-For each breakage or undocumented addition, recommend one of:
-- **Update the contract** — if the code change is intentional
-- **Revert the code change** — if the contract is correct and the code drifted
-- **Discuss with the team** — if the right answer isn't clear
+### Aligned Changes
+
+Changes that are consistent between code and contract. List briefly for completeness.
+
+---
+
+## Step 6 — Offer to Save the Report
+
+After presenting the report, ask the user:
+
+> "Save this report to `wip/`? (e.g., `wip/cli-contract-check-v0.1.3-to-v0.2.0.md`)"
+
+If the user agrees:
+
+1. Create the `wip/` directory if it doesn't exist
+2. Write the report as a markdown file named `wip/cli-contract-check-<baseline>-to-<target>.md`
+3. The saved report must include the full header block so that a different SWE agent working in a different repo (e.g., `docs`, `skills`, `vscode-pipelex`) can understand what was checked, what was found, and what needs resolution — without needing access to this repo or this conversation
 
 ## Notes
 
 - The `mthds` interactive CLI does not have a contract yet (it's user-facing, not machine-facing). Flag notable changes for awareness but don't treat them as contract violations.
 - The `mthds-agent` CLI contract is the most critical one because AI agents and the `skills` plugin depend on its exact output format.
 - When checking passthrough behavior, pay special attention to how arguments are constructed and forwarded — even small changes (extra flags, different ordering) can break downstream consumers.
+- This skill detects discrepancies — it does not assign blame. The code might be wrong, the contract might be stale, or both might need updating. That's a human decision.

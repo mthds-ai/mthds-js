@@ -6,6 +6,12 @@
 
 - **Refactored agent runner commands** — split runner-aware commands into distinct API and pipelex passthrough implementations for clearer separation of concerns.
 
+### Fixed
+
+- **`mthds-agent --help` now shows all commands** — runner-aware commands (`validate`, `run`, `models`, etc.) are now visible in help output regardless of the active runner. Previously they were only listed with `--runner=api`.
+- **`mthds-agent models` (and other runner-aware commands) now work with pipelex runner** — commands like `models` were silently swallowed by the default action handler instead of being forwarded to `pipelex-agent`.
+- **Removed misleading "JSON output only" from help description** — the pipelex runner passes through non-JSON output (TOML, markdown) from `pipelex-agent`.
+
 ## [v0.2.0] - 2026-03-24
 
 ### Breaking Changes

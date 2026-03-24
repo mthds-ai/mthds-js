@@ -47,6 +47,7 @@ These files define the `mthds` and `mthds-agent` CLIs that downstream consumers 
 - `src/cli/commands/**` — individual command handlers
 - `src/agent-cli.ts` — `mthds-agent` CLI entry point
 - `src/agent/**` — agent command handlers, output protocol, passthrough logic
+- `src/agent/commands/pipelex-commands.ts` — pipelex runner stub commands (must stay in sync with runner-aware commands in the contract)
 - `src/runners/types.ts` — runner interface and type definitions (affects CLI options)
 
 ### Consumed CLIs (called by this package)
@@ -107,6 +108,15 @@ For each contract-visible change, read the relevant contract and compare:
 | Passthrough to `pipelex-agent` | `../docs/contracts/mthds-agent-cli.md` (runner-aware section) |
 | Hook-facing behavior (lint/fmt/validate pipeline) | `../docs/contracts/hook-lint-pipeline.md` |
 | `mthds` CLI (interactive) | No contract exists yet — flag new commands/options for the user's awareness but no contract comparison needed |
+
+**Pipelex stub sync check** (always run, even if `pipelex-commands.ts` itself didn't change):
+
+Compare the commands registered in `src/agent/commands/pipelex-commands.ts` against the runner-aware commands listed in `mthds-agent-cli.md` (Runner-Aware Commands section). Flag any mismatch:
+- A command in the contract but missing from the stubs → it won't appear in `mthds-agent --help` with the default pipelex runner
+- A stub not in the contract → the contract is stale
+- A command in `api-commands.ts` but missing from `pipelex-commands.ts` (or vice versa) → the two runner implementations are out of sync
+
+This is critical because mismatches are silent — the command still works via the catch-all fallback, but users and agents won't discover it through `--help`.
 
 For each contract-visible change, determine:
 

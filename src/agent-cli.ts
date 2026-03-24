@@ -3,8 +3,8 @@
 /**
  * mthds-agent — machine-oriented CLI for AI agents.
  *
- * Outputs structured JSON to stdout (success) and stderr (errors).
- * No clack, no chalk, no ora — just JSON.
+ * Native commands output structured JSON. Runner-aware commands
+ * route through the configured runner (API = JSON, pipelex = passthrough).
  *
  * Runner dispatch:
  *   --runner=pipelex (default): all runner-aware commands are forwarded
@@ -18,6 +18,7 @@ import { createRequire } from "node:module";
 import { resolve } from "node:path";
 import { agentError, agentSuccess, AGENT_ERROR_DOMAINS } from "./agent/output.js";
 import { registerApiRunnerCommands } from "./agent/commands/api-commands.js";
+import { registerPipelexRunnerCommands } from "./agent/commands/pipelex-commands.js";
 import { passthroughToPipelexAgent } from "./agent/commands/pipelex-passthrough.js";
 import { registerPlxtCommands } from "./agent/commands/plxt.js";
 import { agentDoctor } from "./agent/commands/doctor.js";
@@ -90,7 +91,7 @@ const program = new Command();
 program
   .name("mthds-agent")
   .version(`mthds-agent ${pkg.version}`, "-V, --version")
-  .description("Machine-oriented CLI for AI agents — JSON output only")
+  .description("Machine-oriented CLI for AI agents")
   .option("-L, --library-dir <dir>", "Additional library directory (can be repeated)", collectPath, [] as string[])
   .option("--log-level <level>", `Log level (${LOG_LEVELS.join(", ")})`)
   .option("--auto-install", "Automatically install missing binaries before running")
@@ -320,8 +321,8 @@ program
   });
 
 // ── Runner dispatch ──────────────────────────────────────────────────
-// API runner: register per-command handlers with arg parsing.
-// Pipelex runner: no command registration — catch-all forwards to pipelex-agent.
+// API runner: register per-command handlers with full arg parsing.
+// Pipelex runner: register passthrough stubs that forward to pipelex-agent.
 
 if (isApiRunner) {
   const getLibraryDirs = () => (program.optsWithGlobals().libraryDir ?? []) as string[];
@@ -329,24 +330,26 @@ if (isApiRunner) {
     const libraryDirs = getLibraryDirs();
     return createRunner(Runners.API, libraryDirs.length ? libraryDirs : undefined);
   });
+} else {
+  registerPipelexRunnerCommands(program, () => getAutoInstall(program));
 }
 
-// Catch-all: forward unrecognized commands to pipelex-agent (pipelex runner)
-// or error (API runner).
-program.on("command:*", () => {
-  if (!isApiRunner) {
-    passthroughToPipelexAgent(getAutoInstall(program));
-  } else {
-    agentError(
-      `Unknown command: ${program.args[0]}. Run mthds-agent --help for usage.`,
-      "ArgumentError",
-      { error_domain: AGENT_ERROR_DOMAINS.ARGUMENT }
-    );
+// Default action — handle no command or unrecognized commands.
+// With program.action() defined, Commander routes unknown operands here
+// as positional args rather than emitting command:*.
+program.action((_opts: unknown, cmd: Command) => {
+  if (cmd.args.length > 0) {
+    if (!isApiRunner) {
+      passthroughToPipelexAgent(getAutoInstall(program));
+    } else {
+      agentError(
+        `Unknown command: ${cmd.args[0]}. Run mthds-agent --help for usage.`,
+        "ArgumentError",
+        { error_domain: AGENT_ERROR_DOMAINS.ARGUMENT }
+      );
+    }
+    return;
   }
-});
-
-// Default action (no command specified)
-program.action(() => {
   agentError("No command specified. Run mthds-agent --help for usage.", "ArgumentError", {
     error_domain: AGENT_ERROR_DOMAINS.ARGUMENT,
   });

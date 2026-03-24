@@ -29,7 +29,7 @@ import { isPipelexInstalled } from "./installer/runtime/check.js";
 import { installPipelexSync } from "./installer/runtime/installer.js";
 import { agentPackageInit, agentPackageList, agentPackageValidate } from "./agent/commands/package.js";
 import { createRunner } from "./runners/registry.js";
-import { Runners } from "./runners/types.js";
+import { Runners, RUNNER_NAMES } from "./runners/types.js";
 import type { RunnerType, Runner } from "./runners/types.js";
 import type { Command as Cmd } from "commander";
 
@@ -44,20 +44,30 @@ const LOG_LEVELS = ["debug", "verbose", "info", "warning", "error", "critical"] 
 
 function resolveRunnerTypeFromArgv(): RunnerType {
   const argv = process.argv;
+  let raw: string | undefined;
   for (let idx = 0; idx < argv.length; idx++) {
-    if (argv[idx] === "--runner" && argv[idx + 1]) return argv[idx + 1] as RunnerType;
+    if (argv[idx] === "--runner" && argv[idx + 1]) { raw = argv[idx + 1]; break; }
     const eqMatch = argv[idx]?.match(/^--runner=(.+)$/);
-    if (eqMatch) return eqMatch[1] as RunnerType;
+    if (eqMatch) { raw = eqMatch[1]; break; }
   }
-  // Fall back to config default
-  try {
-    const configModule = require("./config/config.js") as { loadConfig: () => { runner?: string } };
-    const cfg = configModule.loadConfig();
-    if (cfg.runner) return cfg.runner as RunnerType;
-  } catch {
-    // Config not available — default to pipelex
+  if (!raw) {
+    // Fall back to config default
+    try {
+      const configModule = require("./config/config.js") as { loadConfig: () => { runner?: string } };
+      const cfg = configModule.loadConfig();
+      if (cfg.runner) raw = cfg.runner;
+    } catch {
+      // Config not available — default to pipelex
+    }
   }
-  return Runners.PIPELEX;
+  if (!raw) return Runners.PIPELEX;
+  if (RUNNER_NAMES.includes(raw as RunnerType)) return raw as RunnerType;
+  agentError(
+    `Unknown runner: "${raw}". Valid values: ${RUNNER_NAMES.join(", ")}`,
+    "ArgumentError",
+    { error_domain: AGENT_ERROR_DOMAINS.ARGUMENT }
+  );
+  throw new Error("unreachable");
 }
 
 const activeRunnerType = resolveRunnerTypeFromArgv();

@@ -368,8 +368,8 @@ export function registerApiRunnerCommands(
     .option("-i, --inputs <file>", "Path to JSON inputs file")
     .option("--content <mthds>", "Bundle content as a string")
     .option("--inputs-json <json>", "Inputs as a JSON string")
-    .option("--dry-run", "Validate without executing")
-    .option("--mock-inputs", "Use mock inputs for dry run")
+    .option("--dry-run", "Validate without executing") // TODO: --dry-run is not yet read by the action handler
+    .option("--mock-inputs", "Use mock inputs for dry run") // TODO: --mock-inputs is not yet read by the action handler
     .description("Run a pipe from a bundle file, directory, or content")
     .allowUnknownOption()
     .allowExcessArguments(true)
@@ -470,6 +470,8 @@ function readFileOrError(path: string): string {
   }
 }
 
+// TODO: resolveContent() doesn't handle directory targets (unlike resolveContentForRun()).
+// validate bundle and inputs bundle use this function and will fail when passed a directory.
 function resolveContent(target: string | undefined, content: string | undefined): string {
   if (content) return content;
   if (target) return readFileOrError(target);

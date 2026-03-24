@@ -13,6 +13,7 @@ The contracts live at `../docs/contracts/` (relative to the mthds-js repo root, 
 
 1. Check that the directory `../docs/contracts/` exists.
 2. Check that it contains at least `mthds-agent-cli.md` (owned by this repo).
+3. Also check for `plxt-cli.md` and `hook-lint-pipeline.md` — these are required by Step 4.
 
 If the directory is missing or does not contain the expected contract files, **stop immediately** and tell the user:
 

@@ -15,8 +15,8 @@ import type {
   ConceptResponse,
   PipeSpecRequest,
   PipeSpecResponse,
-  AssembleRequest,
-  AssembleResponse,
+  CheckModelRequest,
+  CheckModelResponse,
   ModelsRequest,
   ModelsResponse,
 } from "./types.js";
@@ -123,8 +123,8 @@ export class ApiRunner implements Runner {
     return this.post("/api/v1/build/pipe-spec", request);
   }
 
-  async assemble(request: AssembleRequest): Promise<AssembleResponse> {
-    return this.post("/api/v1/assemble", request);
+  async checkModel(request: CheckModelRequest): Promise<CheckModelResponse> {
+    return this.post("/api/v1/check-model", request);
   }
 
   async models(request?: ModelsRequest): Promise<ModelsResponse> {

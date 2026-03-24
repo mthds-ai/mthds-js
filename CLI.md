@@ -234,32 +234,9 @@ mthds validate bundle ./bundle.mthds --pipe my_pipe
 
 ## Build
 
-Generate pipelines, runner code, inputs, and output schemas. Build operations delegate to a runner.
+Generate runner code, inputs, and output schemas. Build operations delegate to a runner.
 
 With the pipelex runner, all build subcommands pass arguments through to the `pipelex build` CLI directly.
-
-### `mthds build pipe`
-
-Build a pipeline from a natural-language prompt.
-
-```bash
-mthds build pipe <brief> [OPTIONS]
-```
-
-| Argument / Option | Type | Required | Default | Description |
-|---|---|---|---|---|
-| `brief` | string | yes | -- | Natural-language description of the pipeline |
-| `-o, --output <file>` | string | no | -- | Path to save the generated `.mthds` file |
-
-**Examples:**
-
-```bash
-# Build a pipeline and print to stdout
-mthds build pipe "Extract key facts from a news article"
-
-# Build and save to file
-mthds build pipe "Summarize a document" --output summary.mthds
-```
 
 ### `mthds build runner method|pipe`
 

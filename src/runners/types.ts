@@ -26,29 +26,24 @@ export type ConceptRepresentationFormat = "json" | "python" | "schema";
 // ── Request types ───────────────────────────────────────────────────
 
 export interface BuildInputsRequest {
-  mthds_content: string;
+  mthds_contents: string[];
   pipe_code: string;
 }
 
 export interface BuildOutputRequest {
-  mthds_content: string;
+  mthds_contents: string[];
   pipe_code: string;
   format?: ConceptRepresentationFormat;
 }
 
-export interface BuildPipeRequest {
-  brief: string;
-  output?: string;
-}
-
 export interface BuildRunnerRequest {
-  mthds_content: string;
+  mthds_contents: string[];
   pipe_code: string;
 }
 
 export interface ExecuteRequest {
-  /** MTHDS bundle content to validate, load, and execute. Omit to run an already-loaded pipe. */
-  mthds_content?: string;
+  /** MTHDS bundle content(s) to validate, load, and execute. Omit to run an already-loaded pipe. */
+  mthds_contents?: string[];
   pipe_code?: string;
   inputs?: Record<string, unknown>;
 }
@@ -58,18 +53,29 @@ export interface ValidateRequest {
   method_url?: string;
   /** Pipe code to validate (optional — validates a specific pipe). */
   pipe_code?: string;
-  /** Raw .mthds file content (legacy, used by API runner). */
-  mthds_content?: string;
+  /** Raw .mthds file content(s). */
+  mthds_contents?: string[];
+}
+
+export interface ConceptRequest {
+  spec: Record<string, unknown>;
+}
+
+export interface PipeSpecRequest {
+  pipe_type: string;
+  spec: Record<string, unknown>;
+}
+
+export interface AssembleRequest {
+  domain: string;
+  main_pipe: string;
+  description?: string;
+  system_prompt?: string;
+  concepts?: string[];
+  pipes?: string[];
 }
 
 // ── Response types ──────────────────────────────────────────────────
-
-export interface BuildPipeResponse {
-  mthds_content: string;
-  pipelex_bundle_blueprint: Record<string, unknown>;
-  success: boolean;
-  message: string;
-}
 
 export interface BuildRunnerResponse {
   python_code: string;
@@ -114,10 +120,42 @@ export interface PipelexBundleBlueprint {
 }
 
 export interface ValidateResponse {
-  mthds_content: string;
+  mthds_contents: string[];
   pipelex_bundle_blueprint: PipelexBundleBlueprint;
   success: boolean;
   message: string;
+}
+
+export interface ConceptResponse {
+  success: boolean;
+  concept_code: string;
+  toml: string;
+}
+
+export interface PipeSpecResponse {
+  success: boolean;
+  pipe_code: string;
+  pipe_type: string;
+  toml: string;
+}
+
+export interface AssembleResponse {
+  success: boolean;
+  toml: string;
+  domain: string;
+  main_pipe: string;
+}
+
+export interface ModelsRequest {
+  type?: string[];
+}
+
+export interface ModelsResponse {
+  success: boolean;
+  presets: Record<string, Array<{ name: string; description?: string }>>;
+  aliases: Record<string, Record<string, string>>;
+  waterfalls: Record<string, Record<string, string[]>>;
+  talent_mappings: Record<string, Record<string, string>>;
 }
 
 // ── Runner interface ────────────────────────────────────────────────
@@ -133,7 +171,6 @@ export interface Runner extends RunnerProtocol {
   // Build
   buildInputs(request: BuildInputsRequest): Promise<unknown>;
   buildOutput(request: BuildOutputRequest): Promise<unknown>;
-  buildPipe(request: BuildPipeRequest): Promise<BuildPipeResponse>;
   buildRunner(request: BuildRunnerRequest): Promise<BuildRunnerResponse>;
 
   // Pipeline execution
@@ -141,4 +178,12 @@ export interface Runner extends RunnerProtocol {
 
   // Validation
   validate(request: ValidateRequest): Promise<ValidateResponse>;
+
+  // Spec-to-TOML
+  concept(request: ConceptRequest): Promise<ConceptResponse>;
+  pipeSpec(request: PipeSpecRequest): Promise<PipeSpecResponse>;
+  assemble(request: AssembleRequest): Promise<AssembleResponse>;
+
+  // Models
+  models(request?: ModelsRequest): Promise<ModelsResponse>;
 }

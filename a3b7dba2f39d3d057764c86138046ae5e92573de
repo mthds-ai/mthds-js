@@ -1,0 +1,33 @@
+src/agent-cli.ts
+  de55624fbf7a7a87 8-13,20-21,31-33,41-60,63-66,84,94,115,143-144,244,249,256,312-336,338
+src/runners/pipelex-runner.ts
+  de55624fbf7a7a87 30-31,253-257,259-265
+src/agent/commands/api-commands.ts
+  de55624fbf7a7a87 1-515
+src/agent/commands/pipelex-passthrough.ts
+  de55624fbf7a7a87 1-43
+src/runners/api-runner.ts
+  de55624fbf7a7a87 18-19,126-127
+src/runners/types.ts
+  de55624fbf7a7a87 69-72,139,141-144,186
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.17",
+  "base_commit_sha": "a3b7dba2f39d3d057764c86138046ae5e92573de",
+  "prompts": {
+    "de55624fbf7a7a87": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1ddfda83-1854-4273-b80c-f2f6dfd454ed",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Louis Choquel <lchoquel@users.noreply.github.com>",
+      "messages": [],
+      "total_additions": 662,
+      "total_deletions": 195,
+      "accepted_lines": 655,
+      "overriden_lines": 0
+    }
+  }
+}

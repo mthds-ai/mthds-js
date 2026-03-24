@@ -65,7 +65,7 @@ export class MthdsApiClient implements RunnerProtocol {
   async executePipeline(
     options: ExecutePipelineOptions
   ): Promise<PipelineExecuteResponse> {
-    if (!options.pipe_code && !options.mthds_contents) {
+    if (!options.pipe_code && (!options.mthds_contents || options.mthds_contents.length === 0)) {
       throw new PipelineRequestError(
         "Either pipe_code or mthds_contents must be provided to executePipeline."
       );
@@ -87,7 +87,7 @@ export class MthdsApiClient implements RunnerProtocol {
   async startPipeline(
     options: ExecutePipelineOptions
   ): Promise<PipelineStartResponse> {
-    if (!options.pipe_code && !options.mthds_contents) {
+    if (!options.pipe_code && (!options.mthds_contents || options.mthds_contents.length === 0)) {
       throw new PipelineRequestError(
         "Either pipe_code or mthds_contents must be provided to startPipeline."
       );

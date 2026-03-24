@@ -11,7 +11,7 @@ import { Command, CommanderError } from "commander";
 import { createRequire } from "node:module";
 import { resolve } from "node:path";
 import { agentError, agentSuccess, AGENT_ERROR_DOMAINS } from "./agent/output.js";
-import { registerRunnerCommands } from "./agent/commands/pipelex.js";
+import { registerRunnerCommands } from "./agent/commands/runner-commands.js";
 import { registerPlxtCommands } from "./agent/commands/plxt.js";
 import { agentDoctor } from "./agent/commands/doctor.js";
 import {

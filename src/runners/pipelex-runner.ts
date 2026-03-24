@@ -49,6 +49,9 @@ function makeTmpDir(): string {
  * Returns the path to the first file (the main bundle).
  */
 function writeMthdsContents(tmp: string, contents: string[]): string {
+  if (contents.length === 0) {
+    throw new Error("mthds_contents must contain at least one element");
+  }
   const bundlePath = join(tmp, "bundle.mthds");
   writeFileSync(bundlePath, contents[0]!, "utf-8");
   for (let i = 1; i < contents.length; i++) {
@@ -202,6 +205,9 @@ export class PipelexRunner implements Runner {
         request.pipe_code,
         "-o",
         outPath,
+        "-L",
+        tmp,
+        ...this.libraryArgs(),
       ]);
 
       const pythonCode = readFileSync(outPath, "utf-8");

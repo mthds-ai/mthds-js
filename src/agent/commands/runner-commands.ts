@@ -9,7 +9,8 @@
  */
 
 import { Command } from "commander";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
+import { join } from "node:path";
 import { agentError, agentSuccess, AGENT_ERROR_DOMAINS } from "../output.js";
 import { createRunner } from "../../runners/registry.js";
 import { isPipelexRunner } from "../../cli/commands/utils.js";
@@ -57,7 +58,7 @@ function extractPassthroughArgs(keyword: string): string[] {
  */
 export function registerRunnerCommands(
   program: Command,
-  _logLevelArgs: () => string[],
+  logLevelArgs: () => string[],
   _autoInstall: () => boolean
 ): void {
   const getLibraryDirs = () => (program.optsWithGlobals().libraryDir ?? []) as string[];
@@ -90,7 +91,13 @@ export function registerRunnerCommands(
 
       let specStr = options.spec;
       if (!specStr && options.specFile) {
-        specStr = readFileSync(options.specFile, "utf-8");
+        try {
+          specStr = readFileSync(options.specFile, "utf-8");
+        } catch (err) {
+          agentError(`Cannot read spec file: ${(err as Error).message}`, "IOError", {
+            error_domain: AGENT_ERROR_DOMAINS.IO,
+          });
+        }
       }
       if (!specStr) {
         agentError("--spec or --spec-file is required.", "ArgumentError", {
@@ -146,7 +153,13 @@ export function registerRunnerCommands(
 
       let specStr = options.spec;
       if (!specStr && options.specFile) {
-        specStr = readFileSync(options.specFile, "utf-8");
+        try {
+          specStr = readFileSync(options.specFile, "utf-8");
+        } catch (err) {
+          agentError(`Cannot read spec file: ${(err as Error).message}`, "IOError", {
+            error_domain: AGENT_ERROR_DOMAINS.IO,
+          });
+        }
       }
       if (!specStr) {
         agentError("--spec or --spec-file is required.", "ArgumentError", {
@@ -184,7 +197,6 @@ export function registerRunnerCommands(
     .option("--system-prompt <prompt>", "Default system prompt for LLM pipes")
     .option("--concepts <toml>", "TOML for concepts (repeatable)", collect, [] as string[])
     .option("--pipes <toml>", "TOML for pipes (repeatable)", collect, [] as string[])
-    .option("-o, --output <file>", "Path to write assembled .mthds file")
     .allowUnknownOption()
     .allowExcessArguments(true)
     .exitOverride()
@@ -195,7 +207,6 @@ export function registerRunnerCommands(
       systemPrompt?: string;
       concepts?: string[];
       pipes?: string[];
-      output?: string;
     }) => {
       let runner: Runner;
       try {
@@ -212,8 +223,11 @@ export function registerRunnerCommands(
         concepts = options.concepts.map((c) => {
           try {
             return readFileSync(c, "utf-8");
-          } catch {
-            return c; // treat as inline TOML if not a readable file
+          } catch (err) {
+            if ((err as NodeJS.ErrnoException).code === "ENOENT") {
+              return c; // treat as inline TOML if file does not exist
+            }
+            throw err; // re-throw permission errors and other I/O failures
           }
         });
       }
@@ -222,8 +236,11 @@ export function registerRunnerCommands(
         pipes = options.pipes.map((p) => {
           try {
             return readFileSync(p, "utf-8");
-          } catch {
-            return p; // treat as inline TOML if not a readable file
+          } catch (err) {
+            if ((err as NodeJS.ErrnoException).code === "ENOENT") {
+              return p; // treat as inline TOML if file does not exist
+            }
+            throw err; // re-throw permission errors and other I/O failures
           }
         });
       }
@@ -277,7 +294,7 @@ export function registerRunnerCommands(
       // Passthrough for pipelex runner (forwards all CLI flags like --graph)
       if (isPipelexRunner(runner)) {
         try {
-          await runner.validatePassthrough(extractPassthroughArgs("validate"));
+          await runner.validatePassthrough([...logLevelArgs(), ...extractPassthroughArgs("validate")]);
         } catch (err) {
           agentError((err as Error).message, "ValidationError", {
             error_domain: AGENT_ERROR_DOMAINS.VALIDATION,
@@ -308,7 +325,13 @@ export function registerRunnerCommands(
           mthds_contents: [mthdsContent],
           pipe_code: options.pipe,
         });
-        agentSuccess({ ...result });
+        if (result.success) {
+          agentSuccess({ ...result });
+        } else {
+          agentError(result.message, "ValidationError", {
+            error_domain: AGENT_ERROR_DOMAINS.VALIDATION,
+          });
+        }
       } catch (err) {
         agentError((err as Error).message, "RunnerError", {
           error_domain: AGENT_ERROR_DOMAINS.RUNNER,
@@ -338,7 +361,7 @@ export function registerRunnerCommands(
       // Passthrough for pipelex runner
       if (isPipelexRunner(runner)) {
         try {
-          await runner.validatePassthrough(extractPassthroughArgs("validate"));
+          await runner.validatePassthrough([...logLevelArgs(), ...extractPassthroughArgs("validate")]);
         } catch (err) {
           agentError((err as Error).message, "ValidationError", {
             error_domain: AGENT_ERROR_DOMAINS.VALIDATION,
@@ -361,7 +384,13 @@ export function registerRunnerCommands(
             mthds_contents: [mthdsContent],
             pipe_code: options.pipe,
           });
-          agentSuccess({ ...result });
+          if (result.success) {
+            agentSuccess({ ...result });
+          } else {
+            agentError(result.message, "ValidationError", {
+              error_domain: AGENT_ERROR_DOMAINS.VALIDATION,
+            });
+          }
         } catch (err) {
           agentError((err as Error).message, "RunnerError", {
             error_domain: AGENT_ERROR_DOMAINS.RUNNER,
@@ -370,7 +399,13 @@ export function registerRunnerCommands(
       } else {
         try {
           const result = await runner.validate({ pipe_code: target });
-          agentSuccess({ ...result });
+          if (result.success) {
+            agentSuccess({ ...result });
+          } else {
+            agentError(result.message, "ValidationError", {
+              error_domain: AGENT_ERROR_DOMAINS.VALIDATION,
+            });
+          }
         } catch (err) {
           agentError((err as Error).message, "RunnerError", {
             error_domain: AGENT_ERROR_DOMAINS.RUNNER,
@@ -400,7 +435,7 @@ export function registerRunnerCommands(
       // Passthrough for pipelex runner
       if (isPipelexRunner(runner)) {
         try {
-          await runner.validatePassthrough(extractPassthroughArgs("validate"));
+          await runner.validatePassthrough([...logLevelArgs(), ...extractPassthroughArgs("validate")]);
         } catch (err) {
           agentError((err as Error).message, "ValidationError", {
             error_domain: AGENT_ERROR_DOMAINS.VALIDATION,
@@ -414,7 +449,13 @@ export function registerRunnerCommands(
           method_url: target,
           pipe_code: options.pipe,
         });
-        agentSuccess({ ...result });
+        if (result.success) {
+          agentSuccess({ ...result });
+        } else {
+          agentError(result.message, "ValidationError", {
+            error_domain: AGENT_ERROR_DOMAINS.VALIDATION,
+          });
+        }
       } catch (err) {
         agentError((err as Error).message, "RunnerError", {
           error_domain: AGENT_ERROR_DOMAINS.RUNNER,
@@ -595,7 +636,7 @@ export function registerRunnerCommands(
       // Passthrough for pipelex runner
       if (isPipelexRunner(runner)) {
         try {
-          await runner.runPassthrough(extractPassthroughArgs("run"));
+          await runner.runPassthrough([...logLevelArgs(), ...extractPassthroughArgs("run")]);
         } catch (err) {
           agentError((err as Error).message, "RunError", {
             error_domain: AGENT_ERROR_DOMAINS.RUNNER,
@@ -611,6 +652,116 @@ export function registerRunnerCommands(
       );
     });
 
+  /** Shared execution logic for run pipe / run bundle */
+  async function executeViaRunner(
+    runner: Runner,
+    target: string | undefined,
+    options: { pipe?: string; inputs?: string; content?: string; inputsJson?: string }
+  ): Promise<void> {
+    let mthdsContent: string;
+    if (options.content) {
+      mthdsContent = options.content;
+    } else if (target) {
+      // Resolve target: if directory, look for bundle.mthds inside
+      let bundlePath = target;
+      if (existsSync(target) && statSync(target).isDirectory()) {
+        const candidate = join(target, "bundle.mthds");
+        if (existsSync(candidate)) {
+          bundlePath = candidate;
+        } else {
+          agentError(`No bundle.mthds found in directory: ${target}`, "IOError", {
+            error_domain: AGENT_ERROR_DOMAINS.IO,
+          });
+        }
+        // Also check for inputs.json in directory if not specified
+        if (!options.inputs && !options.inputsJson) {
+          const inputsCandidate = join(target, "inputs.json");
+          if (existsSync(inputsCandidate)) {
+            options.inputs = inputsCandidate;
+          }
+        }
+      }
+      try {
+        mthdsContent = readFileSync(bundlePath, "utf-8");
+      } catch (err) {
+        agentError(`Cannot read bundle: ${(err as Error).message}`, "IOError", {
+          error_domain: AGENT_ERROR_DOMAINS.IO,
+        });
+      }
+    } else {
+      agentError("Either <target> or --content is required.", "ArgumentError", {
+        error_domain: AGENT_ERROR_DOMAINS.ARGUMENT,
+      });
+    }
+
+    let pipeCode = options.pipe;
+    if (!pipeCode) {
+      const match = mthdsContent.match(/^main_pipe\s*=\s*"([^"]+)"/m);
+      if (match) pipeCode = match[1];
+    }
+
+    let inputs: Record<string, unknown> | undefined;
+    if (options.inputsJson) {
+      try {
+        inputs = JSON.parse(options.inputsJson) as Record<string, unknown>;
+      } catch {
+        agentError("--inputs-json must be valid JSON.", "ArgumentError", {
+          error_domain: AGENT_ERROR_DOMAINS.ARGUMENT,
+        });
+      }
+    } else if (options.inputs) {
+      try {
+        inputs = JSON.parse(readFileSync(options.inputs, "utf-8")) as Record<string, unknown>;
+      } catch (err) {
+        agentError(`Cannot read inputs: ${(err as Error).message}`, "IOError", {
+          error_domain: AGENT_ERROR_DOMAINS.IO,
+        });
+      }
+    }
+
+    try {
+      const result = await runner.execute({
+        mthds_contents: [mthdsContent],
+        pipe_code: pipeCode,
+        inputs,
+      });
+      agentSuccess({ ...result });
+    } catch (err) {
+      agentError((err as Error).message, "RunnerError", {
+        error_domain: AGENT_ERROR_DOMAINS.RUNNER,
+      });
+    }
+  }
+
+  /** Shared runner dispatch for run pipe / run bundle */
+  async function runAction(
+    target: string | undefined,
+    options: { pipe?: string; inputs?: string; content?: string; inputsJson?: string }
+  ): Promise<void> {
+    let runner: Runner;
+    try {
+      runner = makeRunner();
+    } catch (err) {
+      agentError((err as Error).message, "RunnerError", {
+        error_domain: AGENT_ERROR_DOMAINS.RUNNER,
+      });
+    }
+
+    // Passthrough for pipelex runner (forwards all CLI flags like --dry-run, --output-dir, etc.)
+    if (isPipelexRunner(runner)) {
+      try {
+        await runner.runPassthrough([...logLevelArgs(), ...extractPassthroughArgs("run")]);
+      } catch (err) {
+        agentError((err as Error).message, "RunError", {
+          error_domain: AGENT_ERROR_DOMAINS.RUNNER,
+        });
+      }
+      return;
+    }
+
+    await executeViaRunner(runner, target, options);
+  }
+
   // run pipe [target] [--pipe <code>] [-i <inputs>] [--content <mthds>] [--inputs-json <json>]
   runGroup
     .command("pipe")
@@ -625,112 +776,7 @@ export function registerRunnerCommands(
     .allowUnknownOption()
     .allowExcessArguments(true)
     .exitOverride()
-    .action(async (target: string | undefined, options: {
-      pipe?: string;
-      inputs?: string;
-      content?: string;
-      inputsJson?: string;
-      dryRun?: boolean;
-      mockInputs?: boolean;
-    }) => {
-      let runner: Runner;
-      try {
-        runner = makeRunner();
-      } catch (err) {
-        agentError((err as Error).message, "RunnerError", {
-          error_domain: AGENT_ERROR_DOMAINS.RUNNER,
-        });
-      }
-
-      // Passthrough for pipelex runner (forwards all CLI flags like --dry-run, --output-dir, etc.)
-      if (isPipelexRunner(runner)) {
-        try {
-          await runner.runPassthrough(extractPassthroughArgs("run"));
-        } catch (err) {
-          agentError((err as Error).message, "RunError", {
-            error_domain: AGENT_ERROR_DOMAINS.RUNNER,
-          });
-        }
-        return;
-      }
-
-      // API runner: use Runner interface
-      let mthdsContent: string;
-      if (options.content) {
-        mthdsContent = options.content;
-      } else if (target) {
-        // Resolve target: if directory, look for bundle.mthds inside
-        let bundlePath = target;
-        const { existsSync, statSync } = await import("node:fs");
-        const { join } = await import("node:path");
-        if (existsSync(target) && statSync(target).isDirectory()) {
-          const candidate = join(target, "bundle.mthds");
-          if (existsSync(candidate)) {
-            bundlePath = candidate;
-          } else {
-            agentError(`No bundle.mthds found in directory: ${target}`, "IOError", {
-              error_domain: AGENT_ERROR_DOMAINS.IO,
-            });
-          }
-          // Also check for inputs.json in directory if not specified
-          if (!options.inputs && !options.inputsJson) {
-            const inputsCandidate = join(target, "inputs.json");
-            if (existsSync(inputsCandidate)) {
-              options.inputs = inputsCandidate;
-            }
-          }
-        }
-        try {
-          mthdsContent = readFileSync(bundlePath, "utf-8");
-        } catch (err) {
-          agentError(`Cannot read bundle: ${(err as Error).message}`, "IOError", {
-            error_domain: AGENT_ERROR_DOMAINS.IO,
-          });
-        }
-      } else {
-        agentError("Either <target> or --content is required.", "ArgumentError", {
-          error_domain: AGENT_ERROR_DOMAINS.ARGUMENT,
-        });
-      }
-
-      let pipeCode = options.pipe;
-      if (!pipeCode) {
-        const match = mthdsContent.match(/^main_pipe\s*=\s*"([^"]+)"/m);
-        if (match) pipeCode = match[1];
-      }
-
-      let inputs: Record<string, unknown> | undefined;
-      if (options.inputsJson) {
-        try {
-          inputs = JSON.parse(options.inputsJson) as Record<string, unknown>;
-        } catch {
-          agentError("--inputs-json must be valid JSON.", "ArgumentError", {
-            error_domain: AGENT_ERROR_DOMAINS.ARGUMENT,
-          });
-        }
-      } else if (options.inputs) {
-        try {
-          inputs = JSON.parse(readFileSync(options.inputs, "utf-8")) as Record<string, unknown>;
-        } catch (err) {
-          agentError(`Cannot read inputs: ${(err as Error).message}`, "IOError", {
-            error_domain: AGENT_ERROR_DOMAINS.IO,
-          });
-        }
-      }
-
-      try {
-        const result = await runner.execute({
-          mthds_contents: [mthdsContent],
-          pipe_code: pipeCode,
-          inputs,
-        });
-        agentSuccess({ ...result });
-      } catch (err) {
-        agentError((err as Error).message, "RunnerError", {
-          error_domain: AGENT_ERROR_DOMAINS.RUNNER,
-        });
-      }
-    });
+    .action(runAction);
 
   // run bundle [target] (alias for run pipe)
   runGroup
@@ -744,84 +790,7 @@ export function registerRunnerCommands(
     .allowUnknownOption()
     .allowExcessArguments(true)
     .exitOverride()
-    .action(async (target: string | undefined, options: { pipe?: string; inputs?: string; content?: string; inputsJson?: string }) => {
-      let runner: Runner;
-      try {
-        runner = makeRunner();
-      } catch (err) {
-        agentError((err as Error).message, "RunnerError", {
-          error_domain: AGENT_ERROR_DOMAINS.RUNNER,
-        });
-      }
-
-      // Passthrough for pipelex runner
-      if (isPipelexRunner(runner)) {
-        try {
-          await runner.runPassthrough(extractPassthroughArgs("run"));
-        } catch (err) {
-          agentError((err as Error).message, "RunError", {
-            error_domain: AGENT_ERROR_DOMAINS.RUNNER,
-          });
-        }
-        return;
-      }
-
-      // API runner: use Runner interface
-      let mthdsContent: string;
-      if (options.content) {
-        mthdsContent = options.content;
-      } else if (target) {
-        try {
-          mthdsContent = readFileSync(target, "utf-8");
-        } catch (err) {
-          agentError(`Cannot read bundle: ${(err as Error).message}`, "IOError", {
-            error_domain: AGENT_ERROR_DOMAINS.IO,
-          });
-        }
-      } else {
-        agentError("Either <target> or --content is required.", "ArgumentError", {
-          error_domain: AGENT_ERROR_DOMAINS.ARGUMENT,
-        });
-      }
-
-      let pipeCode = options.pipe;
-      if (!pipeCode) {
-        const match = mthdsContent.match(/^main_pipe\s*=\s*"([^"]+)"/m);
-        if (match) pipeCode = match[1];
-      }
-
-      let inputs: Record<string, unknown> | undefined;
-      if (options.inputsJson) {
-        try {
-          inputs = JSON.parse(options.inputsJson) as Record<string, unknown>;
-        } catch {
-          agentError("--inputs-json must be valid JSON.", "ArgumentError", {
-            error_domain: AGENT_ERROR_DOMAINS.ARGUMENT,
-          });
-        }
-      } else if (options.inputs) {
-        try {
-          inputs = JSON.parse(readFileSync(options.inputs, "utf-8")) as Record<string, unknown>;
-        } catch (err) {
-          agentError(`Cannot read inputs: ${(err as Error).message}`, "IOError", {
-            error_domain: AGENT_ERROR_DOMAINS.IO,
-          });
-        }
-      }
-
-      try {
-        const result = await runner.execute({
-          mthds_contents: [mthdsContent],
-          pipe_code: pipeCode,
-          inputs,
-        });
-        agentSuccess({ ...result });
-      } catch (err) {
-        agentError((err as Error).message, "RunnerError", {
-          error_domain: AGENT_ERROR_DOMAINS.RUNNER,
-        });
-      }
-    });
+    .action(runAction);
 
   // ── models ──
 

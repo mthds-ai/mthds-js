@@ -153,7 +153,7 @@ export async function agentValidatePipe(
   }
 
   try {
-    const result = await runner.validate({ mthds_content: mthdsContent });
+    const result = await runner.validate({ mthds_contents: [mthdsContent] });
 
     if (result.success) {
       agentSuccess({

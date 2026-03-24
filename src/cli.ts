@@ -12,7 +12,6 @@ import { configSet, configGet, configList } from "./cli/commands/config.js";
 import { login } from "./cli/commands/login.js";
 import { runMethod, runPipe, runBundle } from "./cli/commands/run.js";
 import {
-  buildPipe,
   buildRunnerMethod,
   buildRunnerPipe,
   buildInputsMethod,
@@ -136,20 +135,8 @@ run
 // ── mthds build <subcommand> ────────────────────────────────────────
 const build = program
   .command("build")
-  .description("Generate pipelines, runner code, inputs, and output schemas")
+  .description("Generate runner code, inputs, and output schemas")
   .exitOverride();
-
-build
-  .command("pipe")
-  .argument("<brief>", "Natural-language description of the pipeline")
-  .option("-o, --output <file>", "Path to save the generated .mthds file")
-  .description("Build a pipeline from a prompt")
-  .allowUnknownOption()
-  .allowExcessArguments(true)
-  .exitOverride()
-  .action(async (brief: string, options: { output?: string }, cmd: Cmd) => {
-    await buildPipe(brief, { ...options, runner: getRunner(cmd), libraryDir: getLibraryDirs(cmd) });
-  });
 
 const buildRunnerCmd = build
   .command("runner")

@@ -10,61 +10,6 @@ interface WithRunner {
   libraryDir?: string[];
 }
 
-// ── mthds build pipe "PROMPT" [-o file] ─────────────────────────────
-
-export async function buildPipe(
-  brief: string,
-  options: { output?: string } & WithRunner
-): Promise<void> {
-  printLogo();
-  p.intro("mthds build pipe");
-
-  const libraryDirs = options.libraryDir?.length
-    ? options.libraryDir
-    : undefined;
-  const runner = createRunner(options.runner, libraryDirs);
-
-  if (isPipelexRunner(runner)) {
-    p.log.step("Building via pipelex...");
-    try {
-      await runner.buildPassthrough("pipe", extractPassthroughArgs("build", 2));
-      p.outro("Done");
-    } catch (err) {
-      p.log.error((err as Error).message);
-      p.outro("");
-      process.exit(1);
-    }
-    return;
-  }
-
-  const s = p.spinner();
-  s.start("Building pipeline...");
-
-  try {
-    const result = await runner.buildPipe({
-      brief,
-      output: options.output,
-    });
-    s.stop(result.message);
-
-    if (result.mthds_content) {
-      if (options.output) {
-        writeFileSync(options.output, result.mthds_content, "utf-8");
-        p.log.success(`Bundle written to ${options.output}`);
-      } else {
-        p.log.info(result.mthds_content);
-      }
-    }
-
-    p.outro("Done");
-  } catch (err) {
-    s.stop("Build failed.");
-    p.log.error((err as Error).message);
-    p.outro("");
-    process.exit(1);
-  }
-}
-
 // ── mthds build runner method <name> ─────────────────────────────────
 
 export async function buildRunnerMethod(
@@ -151,7 +96,7 @@ export async function buildRunnerPipe(
 
   try {
     const result = await runner.buildRunner({
-      mthds_content: mthdsContent,
+      mthds_contents: [mthdsContent],
       pipe_code: pipeCode,
     });
     s.stop(result.message);
@@ -251,7 +196,7 @@ export async function buildInputsPipe(
 
   try {
     const result = await runner.buildInputs({
-      mthds_content: mthdsContent,
+      mthds_contents: [mthdsContent],
       pipe_code: options.pipe,
     });
     s.stop("Inputs generated.");
@@ -352,7 +297,7 @@ export async function buildOutputPipe(
 
   try {
     const result = await runner.buildOutput({
-      mthds_content: mthdsContent,
+      mthds_contents: [mthdsContent],
       pipe_code: options.pipe,
       format: format as ConceptRepresentationFormat,
     });

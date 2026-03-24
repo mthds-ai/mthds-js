@@ -118,7 +118,7 @@ export async function validatePipe(
   s.start("Validating...");
 
   try {
-    const result = await runner.validate({ mthds_content: mthdsContent });
+    const result = await runner.validate({ mthds_contents: [mthdsContent] });
 
     if (result.success) {
       s.stop("Validation passed.");

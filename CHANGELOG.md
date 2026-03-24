@@ -1,5 +1,11 @@
 # Changelog
 
+## [v0.2.1] - 2026-03-24
+
+### Changed
+
+- **Refactored agent runner commands** — split runner-aware commands into distinct API and pipelex passthrough implementations for clearer separation of concerns.
+
 ## [v0.2.0] - 2026-03-24
 
 ### Breaking Changes

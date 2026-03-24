@@ -1,51 +1,76 @@
 /**
- * Runner command groups.
+ * Runner-aware commands — registered at the top level.
  *
- * mthds-agent pipelex <cmd> [args...]  → uses pipelex runner
- * mthds-agent api <cmd> [args...]      → uses API runner
+ * mthds-agent [--runner <type>] <cmd> [args...]
  *
- * Both groups expose the same commands. The first word selects the runner.
+ * Runner resolution: --runner flag → default runner from config.
+ * For pipelex runner: run and validate use passthrough for full CLI compatibility.
+ * For all runners: concept, pipe, assemble, inputs, models use the Runner interface.
  */
 
 import { Command } from "commander";
 import { readFileSync } from "node:fs";
 import { agentError, agentSuccess, AGENT_ERROR_DOMAINS } from "../output.js";
 import { createRunner } from "../../runners/registry.js";
-import { Runners } from "../../runners/types.js";
+import { isPipelexRunner } from "../../cli/commands/utils.js";
 import type { RunnerType, AssembleRequest, Runner } from "../../runners/types.js";
 
 function collect(val: string, prev: string[]): string[] {
   return [...prev, val];
 }
 
+/** Extract raw args after a command keyword, filtering out global options */
+function extractPassthroughArgs(keyword: string): string[] {
+  const argv = process.argv;
+  const idx = argv.indexOf(keyword);
+  if (idx === -1) return [];
+  const raw = argv.slice(idx + 1);
+  const result: string[] = [];
+  let i = 0;
+  while (i < raw.length) {
+    if (
+      raw[i] === "--runner" ||
+      raw[i] === "-L" ||
+      raw[i] === "--library-dir" ||
+      raw[i] === "--log-level"
+    ) {
+      i += 2;
+    } else if (
+      raw[i]!.startsWith("--runner=") ||
+      raw[i]!.startsWith("--library-dir=") ||
+      raw[i]!.startsWith("--log-level=")
+    ) {
+      i += 1;
+    } else if (raw[i] === "--auto-install") {
+      i += 1;
+    } else {
+      result.push(raw[i]!);
+      i++;
+    }
+  }
+  return result;
+}
+
 /**
- * Register all runner-aware commands under a command group that forces
- * a specific runner type.
+ * Register all runner-aware commands directly on the program.
+ * Uses --runner flag or default runner from config.
  */
-function registerRunnerGroup(
+export function registerRunnerCommands(
   program: Command,
-  groupName: string,
-  runnerType: RunnerType,
-  description: string,
-  logLevelArgs: () => string[],
+  _logLevelArgs: () => string[],
   _autoInstall: () => boolean
 ): void {
   const getLibraryDirs = () => (program.optsWithGlobals().libraryDir ?? []) as string[];
 
   function makeRunner(): Runner {
+    const runnerType = program.optsWithGlobals().runner as RunnerType | undefined;
     const libraryDirs = getLibraryDirs();
     return createRunner(runnerType, libraryDirs.length ? libraryDirs : undefined);
   }
 
-  const group = program
-    .command(groupName)
-    .description(description)
-    .passThroughOptions()
-    .allowUnknownOption();
-
   // ── concept ──
 
-  group
+  program
     .command("concept")
     .description("Structure a concept from JSON spec and output TOML")
     .option("--spec <json>", "JSON string with concept specification")
@@ -94,7 +119,7 @@ function registerRunnerGroup(
 
   // ── pipe ──
 
-  group
+  program
     .command("pipe")
     .description("Structure a pipe from JSON spec and output TOML")
     .option("--type <type>", "Pipe type (PipeLLM, PipeSequence, etc.)")
@@ -150,7 +175,7 @@ function registerRunnerGroup(
 
   // ── assemble ──
 
-  group
+  program
     .command("assemble")
     .description("Assemble a complete .mthds bundle from TOML parts")
     .requiredOption("--domain <domain>", "Domain code for the bundle")
@@ -159,6 +184,7 @@ function registerRunnerGroup(
     .option("--system-prompt <prompt>", "Default system prompt for LLM pipes")
     .option("--concepts <toml>", "TOML for concepts (repeatable)", collect, [] as string[])
     .option("--pipes <toml>", "TOML for pipes (repeatable)", collect, [] as string[])
+    .option("-o, --output <file>", "Path to write assembled .mthds file")
     .allowUnknownOption()
     .allowExcessArguments(true)
     .exitOverride()
@@ -169,6 +195,7 @@ function registerRunnerGroup(
       systemPrompt?: string;
       concepts?: string[];
       pipes?: string[];
+      output?: string;
     }) => {
       let runner: Runner;
       try {
@@ -200,7 +227,7 @@ function registerRunnerGroup(
 
   // ── validate ──
 
-  const validateGroup = group
+  const validateGroup = program
     .command("validate")
     .description("Validate a method, pipe, or bundle")
     .passThroughOptions()
@@ -223,6 +250,18 @@ function registerRunnerGroup(
         agentError((err as Error).message, "RunnerError", {
           error_domain: AGENT_ERROR_DOMAINS.RUNNER,
         });
+      }
+
+      // Passthrough for pipelex runner (forwards all CLI flags like --graph)
+      if (isPipelexRunner(runner)) {
+        try {
+          await runner.validatePassthrough(extractPassthroughArgs("validate"));
+        } catch (err) {
+          agentError((err as Error).message, "ValidationError", {
+            error_domain: AGENT_ERROR_DOMAINS.VALIDATION,
+          });
+        }
+        return;
       }
 
       let mthdsContent: string;
@@ -259,11 +298,12 @@ function registerRunnerGroup(
     .command("pipe")
     .argument("<target>", "Pipe code or .mthds bundle file")
     .option("--pipe <code>", "Pipe code to validate")
+    .option("--bundle <file>", "Bundle file path (alternative to positional)")
     .description("Validate a pipe by code or bundle file")
     .allowUnknownOption()
     .allowExcessArguments(true)
     .exitOverride()
-    .action(async (target: string, options: { pipe?: string }) => {
+    .action(async (target: string, options: { pipe?: string; bundle?: string }) => {
       let runner: Runner;
       try {
         runner = makeRunner();
@@ -271,6 +311,18 @@ function registerRunnerGroup(
         agentError((err as Error).message, "RunnerError", {
           error_domain: AGENT_ERROR_DOMAINS.RUNNER,
         });
+      }
+
+      // Passthrough for pipelex runner
+      if (isPipelexRunner(runner)) {
+        try {
+          await runner.validatePassthrough(extractPassthroughArgs("validate"));
+        } catch (err) {
+          agentError((err as Error).message, "ValidationError", {
+            error_domain: AGENT_ERROR_DOMAINS.VALIDATION,
+          });
+        }
+        return;
       }
 
       if (target.endsWith(".mthds")) {
@@ -323,6 +375,18 @@ function registerRunnerGroup(
         });
       }
 
+      // Passthrough for pipelex runner
+      if (isPipelexRunner(runner)) {
+        try {
+          await runner.validatePassthrough(extractPassthroughArgs("validate"));
+        } catch (err) {
+          agentError((err as Error).message, "ValidationError", {
+            error_domain: AGENT_ERROR_DOMAINS.VALIDATION,
+          });
+        }
+        return;
+      }
+
       try {
         const result = await runner.validate({
           method_url: target,
@@ -338,7 +402,7 @@ function registerRunnerGroup(
 
   // ── inputs ──
 
-  const inputsGroup = group
+  const inputsGroup = program
     .command("inputs")
     .description("Generate example input JSON for a pipe")
     .passThroughOptions()
@@ -481,11 +545,49 @@ function registerRunnerGroup(
 
   // ── run ──
 
-  const runGroup = group
+  const runGroup = program
     .command("run")
     .description("Execute a pipeline")
     .passThroughOptions()
     .allowUnknownOption();
+
+  runGroup
+    .command("method")
+    .argument("<name>", "Name of the installed method")
+    .option("--pipe <code>", "Pipe code (overrides method's main_pipe)")
+    .option("-i, --inputs <file>", "Path to JSON inputs file")
+    .description("Run an installed method by name")
+    .allowUnknownOption()
+    .allowExcessArguments(true)
+    .exitOverride()
+    .action(async () => {
+      let runner: Runner;
+      try {
+        runner = makeRunner();
+      } catch (err) {
+        agentError((err as Error).message, "RunnerError", {
+          error_domain: AGENT_ERROR_DOMAINS.RUNNER,
+        });
+      }
+
+      // Passthrough for pipelex runner
+      if (isPipelexRunner(runner)) {
+        try {
+          await runner.runPassthrough(extractPassthroughArgs("run"));
+        } catch (err) {
+          agentError((err as Error).message, "RunError", {
+            error_domain: AGENT_ERROR_DOMAINS.RUNNER,
+          });
+        }
+        return;
+      }
+
+      agentError(
+        "Method target is not yet supported for the API runner. Use 'mthds-agent run pipe <target>' instead, or specify a different runner with --runner <name>.",
+        "ArgumentError",
+        { error_domain: AGENT_ERROR_DOMAINS.ARGUMENT }
+      );
+    });
 
   // run pipe [target] [--pipe <code>] [-i <inputs>] [--content <mthds>] [--inputs-json <json>]
   runGroup
@@ -518,6 +620,19 @@ function registerRunnerGroup(
         });
       }
 
+      // Passthrough for pipelex runner (forwards all CLI flags like --dry-run, --output-dir, etc.)
+      if (isPipelexRunner(runner)) {
+        try {
+          await runner.runPassthrough(extractPassthroughArgs("run"));
+        } catch (err) {
+          agentError((err as Error).message, "RunError", {
+            error_domain: AGENT_ERROR_DOMAINS.RUNNER,
+          });
+        }
+        return;
+      }
+
+      // API runner: use Runner interface
       let mthdsContent: string;
       if (options.content) {
         mthdsContent = options.content;
@@ -617,6 +732,19 @@ function registerRunnerGroup(
         });
       }
 
+      // Passthrough for pipelex runner
+      if (isPipelexRunner(runner)) {
+        try {
+          await runner.runPassthrough(extractPassthroughArgs("run"));
+        } catch (err) {
+          agentError((err as Error).message, "RunError", {
+            error_domain: AGENT_ERROR_DOMAINS.RUNNER,
+          });
+        }
+        return;
+      }
+
+      // API runner: use Runner interface
       let mthdsContent: string;
       if (options.content) {
         mthdsContent = options.content;
@@ -675,7 +803,7 @@ function registerRunnerGroup(
 
   // ── models ──
 
-  group
+  program
     .command("models")
     .description("List available model presets, aliases, and talent mappings")
     .option("--type <type>", "Filter by model category (repeatable): llm, extract, img_gen, search", collect, [] as string[])
@@ -702,30 +830,4 @@ function registerRunnerGroup(
         });
       }
     });
-}
-
-// ── Public registration ──
-
-export function registerPipelexCommands(
-  program: Command,
-  logLevelArgs: () => string[],
-  autoInstall: () => boolean
-): void {
-  registerRunnerGroup(
-    program,
-    "pipelex",
-    Runners.PIPELEX,
-    "Commands using the pipelex runner (local CLI)",
-    logLevelArgs,
-    autoInstall
-  );
-
-  registerRunnerGroup(
-    program,
-    "api",
-    Runners.API,
-    "Commands using the API runner",
-    logLevelArgs,
-    autoInstall
-  );
 }

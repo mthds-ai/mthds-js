@@ -1,5 +1,35 @@
 # Changelog
 
+## [v0.1.4] - 2026-03-24
+
+### Breaking Changes
+
+- **Removed `mthds-agent pipelex` and `mthds-agent api` subcommand groups** — runner-aware commands (`concept`, `pipe`, `assemble`, `validate`, `inputs`, `run`, `models`) are now registered at the top level. Use `mthds-agent --runner <type> <command>` to override the runner, or rely on the default runner configured via `mthds-agent runner setup`.
+
+### Added
+
+- **`--runner <type>` global option on `mthds-agent`** — select which runner (`api`, `pipelex`) to use for any command. Applies to all runner-aware commands. Falls back to the default runner from config when omitted.
+- **Top-level `mthds-agent concept`** — structure a concept from JSON spec (previously only under `pipelex`/`api` groups).
+- **Top-level `mthds-agent pipe`** — structure a pipe from JSON spec (previously only under `pipelex`/`api` groups).
+- **Top-level `mthds-agent assemble`** — assemble a `.mthds` bundle from TOML parts (previously only under `pipelex`/`api` groups).
+- **Top-level `mthds-agent inputs`** — generate example input JSON for a bundle, pipe, or method (previously only under `pipelex`/`api` groups).
+- **Top-level `mthds-agent models`** — list available model presets and talent mappings (previously only under `pipelex`/`api` groups).
+- **Unified `mthds-agent run` and `mthds-agent validate`** — now work with both API and pipelex runners. Pipelex runner uses passthrough for full CLI flag compatibility; API runner uses the Runner interface.
+
+### Changed
+
+- **Runner resolution** — all runner-aware commands now resolve the runner dynamically: `--runner` flag → default runner from config. No more hardcoded runner per command group.
+
+## [v0.1.3] - 2026-03-18
+
+### Added
+
+- **Release skill** — new `/release` Claude Code skill that guides through version bumping, changelog updates, branch management, checks, and commit in 8 interactive steps.
+
+### Fixed
+
+- **`--log-level` flag** — fixed empty string injection when `--log-level` has no value, and corrected argument ordering for log level passthrough.
+
 ## [v0.1.2] - 2026-03-04
 
 ### Added

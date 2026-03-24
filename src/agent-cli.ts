@@ -11,7 +11,7 @@ import { Command, CommanderError } from "commander";
 import { createRequire } from "node:module";
 import { resolve } from "node:path";
 import { agentError, agentSuccess, AGENT_ERROR_DOMAINS } from "./agent/output.js";
-import { registerPipelexCommands } from "./agent/commands/pipelex.js";
+import { registerRunnerCommands } from "./agent/commands/pipelex.js";
 import { registerPlxtCommands } from "./agent/commands/plxt.js";
 import { agentDoctor } from "./agent/commands/doctor.js";
 import {
@@ -22,8 +22,6 @@ import {
   agentBuildOutputMethod,
   agentBuildOutputPipe,
 } from "./agent/commands/build.js";
-import { agentValidateMethod, agentValidatePipe, agentValidateBundle } from "./agent/commands/validate.js";
-import { agentRunMethod, agentRunPipe, agentRunBundle } from "./agent/commands/run.js";
 import { agentConfigGet, agentConfigList, agentConfigSet } from "./agent/commands/config.js";
 import { agentInstall } from "./agent/commands/install.js";
 import { agentPublish } from "./agent/commands/publish.js";
@@ -73,6 +71,7 @@ program
   .option("-L, --library-dir <dir>", "Additional library directory (can be repeated)", collect, [] as string[])
   .option("--log-level <level>", `Log level (${LOG_LEVELS.join(", ")})`)
   .option("--auto-install", "Automatically install missing binaries before running")
+  .option("--runner <type>", "Runner to use (api, pipelex)")
   .enablePositionalOptions()
   .exitOverride()
   .configureOutput({
@@ -175,103 +174,6 @@ buildOutputCmd
   .exitOverride()
   .action(async (target: string, options: { pipe?: string; format?: string }, cmd: Cmd) => {
     await agentBuildOutputPipe(target, { ...options, runner: getRunner(cmd), libraryDir: getLibraryDirs(cmd) });
-  });
-
-// ── mthds-agent run method|pipe|bundle ───────────────────────────────
-
-const runCmd = program
-  .command("run")
-  .description("Execute a pipeline")
-  .exitOverride();
-
-runCmd
-  .command("method")
-  .argument("<name>", "Name of the installed method")
-  .option("--pipe <code>", "Pipe code (overrides method's main_pipe)")
-  .option("-i, --inputs <file>", "Path to JSON inputs file")
-  .option("-o, --output <file>", "Path to save output JSON")
-  .option("--no-output", "Skip saving output to file")
-  .option("--no-pretty-print", "Skip pretty printing the output")
-  .description("Run an installed method by name")
-  .allowUnknownOption()
-  .allowExcessArguments(true)
-  .exitOverride()
-  .action(async (name: string, options: Record<string, string | boolean | undefined>, cmd: Cmd) => {
-    await agentRunMethod(name, { ...options, runner: getRunner(cmd), libraryDir: getLibraryDirs(cmd) } as Parameters<typeof agentRunMethod>[1]);
-  });
-
-runCmd
-  .command("pipe")
-  .argument("<target>", "Pipe code or .mthds bundle file")
-  .option("--pipe <code>", "Pipe code (when target is a bundle)")
-  .option("-i, --inputs <file>", "Path to JSON inputs file")
-  .option("-o, --output <file>", "Path to save output JSON")
-  .option("--no-output", "Skip saving output to file")
-  .option("--no-pretty-print", "Skip pretty printing the output")
-  .description("Run a pipe by code or bundle file")
-  .allowUnknownOption()
-  .allowExcessArguments(true)
-  .exitOverride()
-  .action(async (target: string, options: Record<string, string | boolean | undefined>, cmd: Cmd) => {
-    await agentRunPipe(target, { ...options, runner: getRunner(cmd), libraryDir: getLibraryDirs(cmd) } as Parameters<typeof agentRunPipe>[1]);
-  });
-
-runCmd
-  .command("bundle")
-  .argument("<target>", ".mthds bundle file")
-  .option("--pipe <code>", "Pipe code to run within the bundle")
-  .option("-i, --inputs <file>", "Path to JSON inputs file")
-  .option("-o, --output <file>", "Path to save output JSON")
-  .option("--no-output", "Skip saving output to file")
-  .option("--no-pretty-print", "Skip pretty printing the output")
-  .description("Run a bundle file")
-  .allowUnknownOption()
-  .allowExcessArguments(true)
-  .exitOverride()
-  .action(async (target: string, options: Record<string, string | boolean | undefined>, cmd: Cmd) => {
-    await agentRunBundle(target, { ...options, runner: getRunner(cmd), libraryDir: getLibraryDirs(cmd) } as Parameters<typeof agentRunBundle>[1]);
-  });
-
-// ── mthds-agent validate method|pipe|bundle ─────────────────────────────
-
-const validateCmd = program
-  .command("validate")
-  .description("Validate a method or pipe")
-  .exitOverride();
-
-validateCmd
-  .command("method")
-  .argument("<target>", "Method name, GitHub URL, or local path")
-  .option("--pipe <code>", "Pipe code to validate (overrides method's main_pipe)")
-  .description("Validate a method by name, GitHub URL, or local path")
-  .allowUnknownOption()
-  .allowExcessArguments(true)
-  .exitOverride()
-  .action(async (target: string, options: { pipe?: string }, cmd: Cmd) => {
-    await agentValidateMethod(target, { ...options, runner: getRunner(cmd), libraryDir: getLibraryDirs(cmd) });
-  });
-
-validateCmd
-  .command("pipe")
-  .argument("<target>", ".mthds bundle file or pipe code")
-  .option("--pipe <code>", "Pipe code that must exist in the bundle")
-  .option("--bundle <file>", "Bundle file path (alternative to positional)")
-  .description("Validate a pipe by code or bundle file (.mthds)")
-  .exitOverride()
-  .action(async (target: string, options: { pipe?: string; bundle?: string }, cmd: Cmd) => {
-    await agentValidatePipe(target, { ...options, runner: getRunner(cmd), libraryDir: getLibraryDirs(cmd) });
-  });
-
-validateCmd
-  .command("bundle")
-  .argument("<target>", ".mthds bundle file")
-  .option("--pipe <code>", "Pipe code to validate within the bundle")
-  .description("Validate a bundle file")
-  .allowUnknownOption()
-  .allowExcessArguments(true)
-  .exitOverride()
-  .action(async (target: string, options: { pipe?: string }, cmd: Cmd) => {
-    await agentValidateBundle(target, { ...options, runner: getRunner(cmd), libraryDir: getLibraryDirs(cmd) });
   });
 
 // ── mthds-agent install [address] ────────────────────────────────────
@@ -476,9 +378,9 @@ runnerSetup
     await agentConfigSet("api-key", options.apiKey);
   });
 
-// ── mthds-agent pipelex <cmd> [args...] ──────────────────────────────
+// ── Runner-aware commands (concept, pipe, assemble, validate, inputs, run, models) ──
 
-registerPipelexCommands(program, () => getLogLevelArgs(program), () => getAutoInstall(program));
+registerRunnerCommands(program, () => getLogLevelArgs(program), () => getAutoInstall(program));
 
 // ── mthds-agent plxt <cmd> [args...] ─────────────────────────────────
 

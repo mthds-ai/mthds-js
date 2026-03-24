@@ -20,6 +20,21 @@ function collect(val: string, prev: string[]): string[] {
   return [...prev, val];
 }
 
+/**
+ * Try to read `value` as a file path; if the file does not exist (ENOENT),
+ * treat `value` as inline content and return it as-is.
+ */
+export function resolveFileOrInline(value: string): string {
+  try {
+    return readFileSync(value, "utf-8");
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") {
+      return value;
+    }
+    throw err;
+  }
+}
+
 /** Extract raw args after a command keyword, filtering out global options */
 function extractPassthroughArgs(keyword: string): string[] {
   const argv = process.argv;
@@ -220,29 +235,25 @@ export function registerRunnerCommands(
       // Read file contents for concepts/pipes so both runners get TOML content
       let concepts: string[] | undefined;
       if (options.concepts?.length) {
-        concepts = options.concepts.map((c) => {
-          try {
-            return readFileSync(c, "utf-8");
-          } catch (err) {
-            if ((err as NodeJS.ErrnoException).code === "ENOENT") {
-              return c; // treat as inline TOML if file does not exist
-            }
-            throw err; // re-throw permission errors and other I/O failures
-          }
-        });
+        try {
+          concepts = options.concepts.map(resolveFileOrInline);
+        } catch (err) {
+          agentError(`Failed to read concept file: ${(err as Error).message}`, "FileError", {
+            error_domain: AGENT_ERROR_DOMAINS.RUNNER,
+          });
+          return;
+        }
       }
       let pipes: string[] | undefined;
       if (options.pipes?.length) {
-        pipes = options.pipes.map((p) => {
-          try {
-            return readFileSync(p, "utf-8");
-          } catch (err) {
-            if ((err as NodeJS.ErrnoException).code === "ENOENT") {
-              return p; // treat as inline TOML if file does not exist
-            }
-            throw err; // re-throw permission errors and other I/O failures
-          }
-        });
+        try {
+          pipes = options.pipes.map(resolveFileOrInline);
+        } catch (err) {
+          agentError(`Failed to read pipe file: ${(err as Error).message}`, "FileError", {
+            error_domain: AGENT_ERROR_DOMAINS.RUNNER,
+          });
+          return;
+        }
       }
 
       const request: AssembleRequest = {

@@ -1,5 +1,11 @@
 # Changelog
 
+## [Unreleased]
+
+### Fixed
+
+- **Default runner changed from `api` to `pipelex`** — fresh installs now default to the Pipelex runner instead of the API runner, preventing wrong runner selection when no credentials file exists.
+
 ## [v0.2.1] - 2026-03-24
 
 ### Added

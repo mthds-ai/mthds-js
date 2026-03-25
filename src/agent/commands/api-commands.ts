@@ -508,6 +508,9 @@ function resolveContentForRun(
         error_domain: AGENT_ERROR_DOMAINS.IO,
       });
     }
+    // TODO: refactor to return { bundleContent, resolvedInputsPath } instead of mutating
+    // the caller's options object. This side-effect coupling is fragile — if the call
+    // order in runAction changes, auto-discovery silently breaks with no compile-time signal.
     if (!options.inputs && !options.inputsJson) {
       const inputsCandidate = join(target, "inputs.json");
       if (existsSync(inputsCandidate)) {

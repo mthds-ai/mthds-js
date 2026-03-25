@@ -3,25 +3,25 @@
 /**
  * mthds-agent — machine-oriented CLI for AI agents.
  *
- * Outputs structured JSON to stdout (success) and stderr (errors).
- * No clack, no chalk, no ora — just JSON.
+ * Native commands output structured JSON. Runner-aware commands
+ * route through the configured runner (API = JSON, pipelex = passthrough).
+ *
+ * Runner dispatch:
+ *   --runner=pipelex (default): all runner-aware commands are forwarded
+ *     verbatim to pipelex-agent as passthrough.
+ *   --runner=api: runner-aware commands are registered with full arg parsing
+ *     and call the MTHDS API.
  */
 
 import { Command, CommanderError } from "commander";
 import { createRequire } from "node:module";
 import { resolve } from "node:path";
 import { agentError, agentSuccess, AGENT_ERROR_DOMAINS } from "./agent/output.js";
-import { registerRunnerCommands } from "./agent/commands/runner-commands.js";
+import { registerApiRunnerCommands } from "./agent/commands/api-commands.js";
+import { registerPipelexRunnerCommands } from "./agent/commands/pipelex-commands.js";
+import { passthroughToPipelexAgent } from "./agent/commands/pipelex-passthrough.js";
 import { registerPlxtCommands } from "./agent/commands/plxt.js";
 import { agentDoctor } from "./agent/commands/doctor.js";
-import {
-  agentBuildRunnerMethod,
-  agentBuildRunnerPipe,
-  agentBuildInputsMethod,
-  agentBuildInputsPipe,
-  agentBuildOutputMethod,
-  agentBuildOutputPipe,
-} from "./agent/commands/build.js";
 import { agentConfigGet, agentConfigList, agentConfigSet } from "./agent/commands/config.js";
 import { agentInstall } from "./agent/commands/install.js";
 import { agentPublish } from "./agent/commands/publish.js";
@@ -29,7 +29,9 @@ import { agentShare } from "./agent/commands/share.js";
 import { isPipelexInstalled } from "./installer/runtime/check.js";
 import { installPipelexSync } from "./installer/runtime/installer.js";
 import { agentPackageInit, agentPackageList, agentPackageValidate } from "./agent/commands/package.js";
-import type { RunnerType } from "./runners/types.js";
+import { createRunner } from "./runners/registry.js";
+import { Runners, RUNNER_NAMES } from "./runners/types.js";
+import type { RunnerType, Runner } from "./runners/types.js";
 import type { Command as Cmd } from "commander";
 
 const require = createRequire(import.meta.url);
@@ -37,11 +39,42 @@ const pkg = require("../package.json") as { version: string };
 
 const LOG_LEVELS = ["debug", "verbose", "info", "warning", "error", "critical"] as const;
 
-function getRunner(cmd: Cmd): RunnerType | undefined {
-  return cmd.optsWithGlobals().runner as RunnerType | undefined;
+// ── Runner pre-detection ─────────────────────────────────────────────
+// We need to know the runner type BEFORE parseAsync() to decide which
+// commands to register. Pre-scan argv for --runner.
+
+function resolveRunnerTypeFromArgv(): RunnerType {
+  const argv = process.argv;
+  let raw: string | undefined;
+  for (let idx = 0; idx < argv.length; idx++) {
+    if (argv[idx] === "--runner" && argv[idx + 1]) { raw = argv[idx + 1]; break; }
+    const eqMatch = argv[idx]?.match(/^--runner=(.+)$/);
+    if (eqMatch) { raw = eqMatch[1]; break; }
+  }
+  if (!raw) {
+    // Fall back to config default
+    try {
+      const configModule = require("./config/config.js") as { loadConfig: () => { runner?: string } };
+      const cfg = configModule.loadConfig();
+      if (cfg.runner) raw = cfg.runner;
+    } catch {
+      // Config not available — default to pipelex
+    }
+  }
+  if (!raw) return Runners.PIPELEX;
+  if (RUNNER_NAMES.includes(raw as RunnerType)) return raw as RunnerType;
+  agentError(
+    `Unknown runner: "${raw}". Valid values: ${RUNNER_NAMES.join(", ")}`,
+    "ArgumentError",
+    { error_domain: AGENT_ERROR_DOMAINS.ARGUMENT }
+  );
+  throw new Error("unreachable");
 }
 
-function collect(val: string, prev: string[]): string[] {
+const activeRunnerType = resolveRunnerTypeFromArgv();
+const isApiRunner = activeRunnerType === Runners.API;
+
+function collectPath(val: string, prev: string[]): string[] {
   return [...prev, resolve(val)];
 }
 
@@ -49,17 +82,8 @@ function collectPlatform(val: string, prev: string[]): string[] {
   return [...prev, val];
 }
 
-function getLibraryDirs(cmd: Cmd): string[] {
-  return (cmd.optsWithGlobals().libraryDir ?? []) as string[];
-}
-
 function getAutoInstall(cmd: Cmd): boolean {
   return (cmd.optsWithGlobals().autoInstall as boolean) ?? false;
-}
-
-function getLogLevelArgs(cmd: Cmd): string[] {
-  const logLevel = cmd.optsWithGlobals().logLevel as string | undefined;
-  return logLevel ? ["--log-level", logLevel] : [];
 }
 
 const program = new Command();
@@ -67,8 +91,8 @@ const program = new Command();
 program
   .name("mthds-agent")
   .version(`mthds-agent ${pkg.version}`, "-V, --version")
-  .description("Machine-oriented CLI for AI agents — JSON output only")
-  .option("-L, --library-dir <dir>", "Additional library directory (can be repeated)", collect, [] as string[])
+  .description("Machine-oriented CLI for AI agents")
+  .option("-L, --library-dir <dir>", "Additional library directory (can be repeated)", collectPath, [] as string[])
   .option("--log-level <level>", `Log level (${LOG_LEVELS.join(", ")})`)
   .option("--auto-install", "Automatically install missing binaries before running")
   .option("--runner <type>", "Runner to use (api, pipelex)")
@@ -78,103 +102,7 @@ program
     writeErr: () => {},
   });
 
-// ── mthds-agent build <subcommand> ───────────────────────────────────
-
-const build = program
-  .command("build")
-  .description("Generate runner code, inputs, and output schemas")
-  .exitOverride();
-
-const buildRunnerCmd = build
-  .command("runner")
-  .description("Generate Python runner code for a pipe")
-  .exitOverride();
-
-buildRunnerCmd
-  .command("method")
-  .argument("<name>", "Name of the installed method")
-  .option("--pipe <code>", "Pipe code to generate runner for")
-  .option("-o, --output <file>", "Path to save the generated Python file")
-  .description("Generate runner for an installed method")
-  .allowUnknownOption()
-  .allowExcessArguments(true)
-  .exitOverride()
-  .action(async (name: string, options: { pipe?: string; output?: string }, cmd: Cmd) => {
-    await agentBuildRunnerMethod(name, { ...options, runner: getRunner(cmd), libraryDir: getLibraryDirs(cmd) });
-  });
-
-buildRunnerCmd
-  .command("pipe")
-  .argument("<target>", "Bundle file path")
-  .option("--pipe <code>", "Pipe code to generate runner for")
-  .option("-o, --output <file>", "Path to save the generated Python file")
-  .description("Generate runner for a pipe by bundle path")
-  .allowUnknownOption()
-  .allowExcessArguments(true)
-  .exitOverride()
-  .action(async (target: string, options: { pipe?: string; output?: string }, cmd: Cmd) => {
-    await agentBuildRunnerPipe(target, { ...options, runner: getRunner(cmd), libraryDir: getLibraryDirs(cmd) });
-  });
-
-const buildInputsCmd = build
-  .command("inputs")
-  .description("Generate example input JSON for a pipe")
-  .exitOverride();
-
-buildInputsCmd
-  .command("method")
-  .argument("<name>", "Name of the installed method")
-  .option("--pipe <code>", "Pipe code to generate inputs for")
-  .description("Generate inputs for an installed method")
-  .allowUnknownOption()
-  .allowExcessArguments(true)
-  .exitOverride()
-  .action(async (name: string, options: { pipe?: string }, cmd: Cmd) => {
-    await agentBuildInputsMethod(name, { ...options, runner: getRunner(cmd), libraryDir: getLibraryDirs(cmd) });
-  });
-
-buildInputsCmd
-  .command("pipe")
-  .argument("<target>", "Bundle file path")
-  .option("--pipe <code>", "Pipe code to generate inputs for")
-  .description("Generate inputs for a pipe by bundle path")
-  .allowUnknownOption()
-  .allowExcessArguments(true)
-  .exitOverride()
-  .action(async (target: string, options: { pipe?: string }, cmd: Cmd) => {
-    await agentBuildInputsPipe(target, { ...options, runner: getRunner(cmd), libraryDir: getLibraryDirs(cmd) });
-  });
-
-const buildOutputCmd = build
-  .command("output")
-  .description("Generate output representation for a pipe")
-  .exitOverride();
-
-buildOutputCmd
-  .command("method")
-  .argument("<name>", "Name of the installed method")
-  .option("--pipe <code>", "Pipe code to generate output for")
-  .option("--format <format>", "Output format (json, python, schema)", "schema")
-  .description("Generate output for an installed method")
-  .allowUnknownOption()
-  .allowExcessArguments(true)
-  .exitOverride()
-  .action(async (name: string, options: { pipe?: string; format?: string }, cmd: Cmd) => {
-    await agentBuildOutputMethod(name, { ...options, runner: getRunner(cmd), libraryDir: getLibraryDirs(cmd) });
-  });
-
-buildOutputCmd
-  .command("pipe")
-  .argument("<target>", "Bundle file path")
-  .option("--pipe <code>", "Pipe code to generate output for")
-  .option("--format <format>", "Output format (json, python, schema)", "schema")
-  .description("Generate output for a pipe by bundle path")
-  .allowUnknownOption()
-  .allowExcessArguments(true)
-  .exitOverride()
-  .action(async (target: string, options: { pipe?: string; format?: string }, cmd: Cmd) => {
-    await agentBuildOutputPipe(target, { ...options, runner: getRunner(cmd), libraryDir: getLibraryDirs(cmd) });
-  });
+// ── Native commands (always registered) ──────────────────────────────
 
 // ── mthds-agent install [address] ────────────────────────────────────
 
@@ -195,7 +123,7 @@ program
     location?: string;
     method?: string;
     skills?: boolean;
-    runner?: boolean; // Commander stores --no-runner as runner: false
+    runner?: boolean;
   }) => {
     await agentInstall(address, { ...opts, noRunner: opts.runner === false });
   });
@@ -223,8 +151,8 @@ program
   .argument("[address]", "GitHub repo (org/repo or https://github.com/org/repo)")
   .option("--local <path>", "Share from a local directory")
   .option("--method <name>", "Share only the specified method (by name)")
-  .option("--platform <name>", "Platform to share on (x, reddit, linkedin). Can be repeated. Defaults to all.", collectPlatform, [] as string[])
-  .description("Get social media share URLs for a method package. Returns URLs for X (Twitter), Reddit, and LinkedIn. Use --platform to select specific platforms.")
+  .option("--platform <name>", "Platform to share on (x, reddit, linkedin). Can be repeated.", collectPlatform, [] as string[])
+  .description("Get social media share URLs for a method package")
   .exitOverride()
   .action(async (address: string | undefined, opts: {
     local?: string;
@@ -324,19 +252,19 @@ packageCmd
 
 // ── mthds-agent runner setup <name> ──────────────────────────────────
 
-const runner = program
+const runnerCmd = program
   .command("runner")
   .description("Manage runner configuration")
   .exitOverride();
 
-const runnerSetup = runner
+const runnerSetup = runnerCmd
   .command("setup")
   .description("Set up a runner")
   .exitOverride();
 
 runnerSetup
   .command("pipelex")
-  .description("Install the Pipelex runner (does not initialize config — use 'mthds-agent pipelex init' for that)")
+  .description("Install the Pipelex runner")
   .exitOverride()
   .action(() => {
     if (isPipelexInstalled()) {
@@ -378,10 +306,6 @@ runnerSetup
     await agentConfigSet("api-key", options.apiKey);
   });
 
-// ── Runner-aware commands (concept, pipe, assemble, validate, inputs, run, models) ──
-
-registerRunnerCommands(program, () => getLogLevelArgs(program), () => getAutoInstall(program));
-
 // ── mthds-agent plxt <cmd> [args...] ─────────────────────────────────
 
 registerPlxtCommands(program, () => getAutoInstall(program));
@@ -396,9 +320,36 @@ program
     await agentDoctor();
   });
 
-// ── Default: show version ────────────────────────────────────────────
+// ── Runner dispatch ──────────────────────────────────────────────────
+// API runner: register per-command handlers with full arg parsing.
+// Pipelex runner: register passthrough stubs that forward to pipelex-agent.
 
-program.action(() => {
+if (isApiRunner) {
+  const getLibraryDirs = () => (program.optsWithGlobals().libraryDir ?? []) as string[];
+  registerApiRunnerCommands(program, (): Runner => {
+    const libraryDirs = getLibraryDirs();
+    return createRunner(Runners.API, libraryDirs.length ? libraryDirs : undefined);
+  });
+} else {
+  registerPipelexRunnerCommands(program, () => getAutoInstall(program));
+}
+
+// Default action — handle no command or unrecognized commands.
+// With program.action() defined, Commander routes unknown operands here
+// as positional args rather than emitting command:*.
+program.action((_opts: unknown, cmd: Command) => {
+  if (cmd.args.length > 0) {
+    if (!isApiRunner) {
+      passthroughToPipelexAgent(getAutoInstall(program));
+    } else {
+      agentError(
+        `Unknown command: ${cmd.args[0]}. Run mthds-agent --help for usage.`,
+        "ArgumentError",
+        { error_domain: AGENT_ERROR_DOMAINS.ARGUMENT }
+      );
+    }
+    return;
+  }
   agentError("No command specified. Run mthds-agent --help for usage.", "ArgumentError", {
     error_domain: AGENT_ERROR_DOMAINS.ARGUMENT,
   });
@@ -409,7 +360,6 @@ program.action(() => {
 program.parseAsync(process.argv).catch((err: unknown) => {
   if (err instanceof CommanderError) {
     if (err.exitCode === 0) {
-      // Commander already wrote help/version to stdout (writeOut is not suppressed)
       process.exit(0);
     }
     const message = err.message.replace(/^error: /, "").replace(/^Error: /, "");

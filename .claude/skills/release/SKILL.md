@@ -88,6 +88,12 @@ Use the appropriate subsections (Added, Changed, Fixed, Removed, Breaking Change
 
 - **If exists**: show the existing entry and ask the user whether to keep it or edit it.
 
+## Step 6b — CLI Contract Check
+
+Before running checks, verify that CLI interfaces haven't drifted from their contracts. Run the `/cli-contract-check` skill. If it reports any confirmed breakages or undocumented additions, warn the user and ask whether to continue the release or pause to address the findings first.
+
+This step is especially important when the diff includes changes to `src/cli.ts`, `src/agent-cli.ts`, `src/agent/`, `src/cli/commands/`, or `src/runners/types.ts`.
+
 ## Step 7 — Run Checks
 
 Run:

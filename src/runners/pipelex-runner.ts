@@ -27,8 +27,8 @@ import type {
   ConceptResponse,
   PipeSpecRequest,
   PipeSpecResponse,
-  AssembleRequest,
-  AssembleResponse,
+  CheckModelRequest,
+  CheckModelResponse,
   ModelsRequest,
   ModelsResponse,
 } from "./types.js";
@@ -250,45 +250,19 @@ export class PipelexRunner implements Runner {
     return JSON.parse(stdout) as PipeSpecResponse;
   }
 
-  // pipelex-agent assemble --domain <d> --main-pipe <p> [--concepts <c>...] [--pipes <p>...]
-  async assemble(request: AssembleRequest): Promise<AssembleResponse> {
-    const tmp = makeTmpDir();
-    try {
-      const args = [
-        "assemble",
-        "--domain",
-        request.domain,
-        "--main-pipe",
-        request.main_pipe,
-      ];
-      if (request.description) {
-        args.push("--description", request.description);
-      }
-      if (request.system_prompt) {
-        args.push("--system-prompt", request.system_prompt);
-      }
-      if (request.concepts) {
-        for (let i = 0; i < request.concepts.length; i++) {
-          const filePath = join(tmp, `concept_${i}.toml`);
-          writeFileSync(filePath, request.concepts[i]!, "utf-8");
-          args.push("--concepts", filePath);
-        }
-      }
-      if (request.pipes) {
-        for (let i = 0; i < request.pipes.length; i++) {
-          const filePath = join(tmp, `pipe_${i}.toml`);
-          writeFileSync(filePath, request.pipes[i]!, "utf-8");
-          args.push("--pipes", filePath);
-        }
-      }
-
-      const { stdout } = await execFileAsync("pipelex-agent", args, {
-        encoding: "utf-8",
-      });
-      return JSON.parse(stdout) as AssembleResponse;
-    } finally {
-      rmSync(tmp, { recursive: true, force: true });
+  // pipelex-agent check-model <reference> [--type <type>] [--format <format>]
+  async checkModel(request: CheckModelRequest): Promise<CheckModelResponse> {
+    const args = ["check-model", request.reference];
+    if (request.type) {
+      args.push("--type", request.type);
     }
+    if (request.format) {
+      args.push("--format", request.format);
+    }
+    const { stdout } = await execFileAsync("pipelex-agent", args, {
+      encoding: "utf-8",
+    });
+    return JSON.parse(stdout) as CheckModelResponse;
   }
 
   // pipelex-agent models [--type <type>...]

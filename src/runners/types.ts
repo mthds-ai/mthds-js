@@ -66,13 +66,10 @@ export interface PipeSpecRequest {
   spec: Record<string, unknown>;
 }
 
-export interface AssembleRequest {
-  domain: string;
-  main_pipe: string;
-  description?: string;
-  system_prompt?: string;
-  concepts?: string[];
-  pipes?: string[];
+export interface CheckModelRequest {
+  reference: string;
+  type?: string;
+  format?: string;
 }
 
 // ── Response types ──────────────────────────────────────────────────
@@ -139,11 +136,12 @@ export interface PipeSpecResponse {
   toml: string;
 }
 
-export interface AssembleResponse {
+export interface CheckModelResponse {
   success: boolean;
-  toml: string;
-  domain: string;
-  main_pipe: string;
+  valid: boolean;
+  reference: string;
+  suggestions?: string[];
+  [key: string]: unknown;
 }
 
 export interface ModelsRequest {
@@ -182,8 +180,8 @@ export interface Runner extends RunnerProtocol {
   // Spec-to-TOML
   concept(request: ConceptRequest): Promise<ConceptResponse>;
   pipeSpec(request: PipeSpecRequest): Promise<PipeSpecResponse>;
-  assemble(request: AssembleRequest): Promise<AssembleResponse>;
 
   // Models
   models(request?: ModelsRequest): Promise<ModelsResponse>;
+  checkModel(request: CheckModelRequest): Promise<CheckModelResponse>;
 }

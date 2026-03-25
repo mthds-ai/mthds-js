@@ -2,9 +2,20 @@
 
 ## [v0.2.1] - 2026-03-24
 
+### Added
+
+- **`mthds-agent check-model <reference>`** — validate a model reference with fuzzy suggestions. Replaces `assemble` in the Runner interface.
+- **`mthds-agent pipe` accepts `type`/`pipe_type` in spec JSON** — the `--type` flag is now optional; pipe type can be provided inside the `--spec` JSON payload as `type` or `pipe_type`. CLI `--type` takes precedence when both are present.
+
 ### Changed
 
 - **Refactored agent runner commands** — split runner-aware commands into distinct API and pipelex passthrough implementations for clearer separation of concerns.
+
+### Removed
+
+- **`mthds-agent build` command group** — the `build runner`, `build inputs`, and `build output` subcommands have been removed from the agent CLI.
+- **`mthds-agent assemble`** — removed from both the CLI and the `Runner` interface. Use `check-model` for model validation, or build bundles via the `/mthds-build` skill.
+- **`Runner.assemble()` interface method** — replaced by `Runner.checkModel()`. SDK consumers must update their `Runner` implementations.
 
 ### Fixed
 

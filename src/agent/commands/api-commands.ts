@@ -333,8 +333,15 @@ export function registerApiRunnerCommands(
 
   const runAction = async (
     target: string | undefined,
-    options: { pipe?: string; inputs?: string; content?: string; inputsJson?: string }
+    options: { pipe?: string; inputs?: string; content?: string; inputsJson?: string; dryRun?: boolean; mockInputs?: boolean }
   ): Promise<void> => {
+    if (options.dryRun || options.mockInputs) {
+      agentError(
+        "--dry-run and --mock-inputs are not yet supported via the API runner.",
+        "UnsupportedError",
+        { error_domain: AGENT_ERROR_DOMAINS.RUNNER }
+      );
+    }
     const runner = safeCreateRunner(makeRunner);
     const mthdsContent = resolveContentForRun(target, options);
     const pipeCode = resolvePipeCode(mthdsContent, options.pipe);
@@ -368,8 +375,8 @@ export function registerApiRunnerCommands(
     .option("-i, --inputs <file>", "Path to JSON inputs file")
     .option("--content <mthds>", "Bundle content as a string")
     .option("--inputs-json <json>", "Inputs as a JSON string")
-    .option("--dry-run", "Validate without executing") // TODO: --dry-run is not yet read by the action handler
-    .option("--mock-inputs", "Use mock inputs for dry run") // TODO: --mock-inputs is not yet read by the action handler
+    .option("--dry-run", "Validate without executing")
+    .option("--mock-inputs", "Use mock inputs for dry run")
     .description("Run a pipe from a bundle file, directory, or content")
     .allowUnknownOption()
     .allowExcessArguments(true)

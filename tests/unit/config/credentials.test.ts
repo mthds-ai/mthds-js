@@ -43,7 +43,7 @@ describe("credentials", () => {
     it("returns defaults when no credentials file exists", async () => {
       const { loadCredentials } = await importCredentials();
       const creds = loadCredentials();
-      expect(creds.runner).toBe("api");
+      expect(creds.runner).toBe("pipelex");
       expect(creds.apiUrl).toBe("https://api.pipelex.com");
       expect(creds.apiKey).toBe("");
       expect(creds.telemetry).toBe(true);

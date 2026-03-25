@@ -50,7 +50,7 @@ const FILE_KEYS: Record<keyof MthdsCredentials, string> = {
 
 /** Defaults */
 const DEFAULTS: MthdsCredentials = {
-  runner: Runners.API,
+  runner: Runners.PIPELEX,
   apiUrl: "https://api.pipelex.com",
   apiKey: "",
   telemetry: true,

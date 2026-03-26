@@ -1,0 +1,27 @@
+src/installer/runtime/installer.ts
+  82d00fb16d833de3 108
+tests/unit/installer/runtime/installer-uv.test.ts
+  82d00fb16d833de3 73,87
+src/installer/runtime/version-check.ts
+  82d00fb16d833de3 41
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.19",
+  "base_commit_sha": "7c964c031d6fb6542fbc390d739b2442cedd8950",
+  "prompts": {
+    "82d00fb16d833de3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "4c7a7f1b-62e3-4513-bb6d-ca116fe2f1c9",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Louis Choquel <lchoquel@users.noreply.github.com>",
+      "messages": [],
+      "total_additions": 4,
+      "total_deletions": 3,
+      "accepted_lines": 4,
+      "overriden_lines": 0
+    }
+  }
+}

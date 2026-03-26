@@ -1,4 +1,4 @@
-import { execSync } from "node:child_process";
+import { execSync, execFileSync } from "node:child_process";
 import ora from "ora";
 import { isPipelexInstalled } from "./check.js";
 
@@ -68,4 +68,47 @@ export function installPipelexSync(): void {
 export function installPlxtSync(): void {
   const pythonCmd = process.platform === "win32" ? "python" : "python3";
   execSync(`${pythonCmd} -m pip install --quiet pipelex-tools`, { stdio: "pipe" });
+}
+
+// ── uv-based install (for version-aware binary management) ──────────
+
+/**
+ * Locate the `uv` binary. Throws with install instructions if not found.
+ */
+export function requireUv(): string {
+  try {
+    execFileSync("uv", ["--version"], { stdio: "ignore" });
+    return "uv";
+  } catch (err) {
+    const errno = (err as NodeJS.ErrnoException).code;
+    if (errno === "ENOENT") {
+      throw new Error(
+        "uv is required but not found in PATH. Install it: https://docs.astral.sh/uv/getting-started/installation/"
+      );
+    }
+    const msg = err instanceof Error ? err.message : String(err);
+    throw new Error(`uv was found but failed to run: ${msg}`);
+  }
+}
+
+/**
+ * Install or upgrade a Python tool via `uv tool install`.
+ * Uses execFileSync (no shell) for cross-platform safety.
+ *
+ * @param pkg - PyPI package name (e.g. "pipelex")
+ * @param versionConstraint - Optional semver range appended to the package spec (e.g. ">=0.22.0").
+ */
+export function uvToolInstallSync(
+  pkg: string,
+  versionConstraint?: string
+): void {
+  const uv = requireUv();
+  const spec = versionConstraint ? `${pkg}${versionConstraint}` : pkg;
+  try {
+    execFileSync(uv, ["tool", "install", "--upgrade", spec], { stdio: "pipe" });
+  } catch (err) {
+    const stderr = (err as { stderr?: Buffer })?.stderr?.toString().trim();
+    const detail = stderr || (err instanceof Error ? err.message : String(err));
+    throw new Error(`uv tool install failed for "${spec}": ${detail}`);
+  }
 }

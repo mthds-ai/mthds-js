@@ -283,7 +283,7 @@ runnerSetup
       const msg = err instanceof Error ? err.message : String(err);
       agentError(`Failed to ${action} pipelex: ${msg}`, "InstallError", {
         error_domain: AGENT_ERROR_DOMAINS.INSTALL,
-        hint: `Install manually: ${buildInstallCommand(recovery)}`,
+        hint: `${action === "upgrade" ? "Upgrade" : "Install"} manually: ${buildInstallCommand(recovery)}`,
       });
     }
 
@@ -291,10 +291,10 @@ runnerSetup
     if (postCheck.status !== "ok") {
       const detail = postCheck.status === "missing"
         ? "pipelex was installed but is not reachable in PATH."
-        : `pipelex was ${action}d but version check failed (status: ${postCheck.status}, installed: ${postCheck.installed_version}, needs: ${recovery.version_constraint}).`;
+        : `pipelex was ${action === "upgrade" ? "upgraded" : "installed"} but version check failed (status: ${postCheck.status}, installed: ${postCheck.installed_version}, needs: ${recovery.version_constraint}).`;
       const hint = postCheck.status === "missing"
         ? "Restart your shell or add the install directory to your PATH."
-        : `Upgrade manually: ${buildInstallCommand(recovery)}`;
+        : `${action === "upgrade" ? "Upgrade" : "Install"} manually: ${buildInstallCommand(recovery)}`;
       agentError(detail, "InstallError", {
         error_domain: AGENT_ERROR_DOMAINS.INSTALL,
         hint,
@@ -302,8 +302,8 @@ runnerSetup
     }
     agentSuccess({
       success: true,
-      already_installed: false,
-      message: `pipelex ${action}d successfully`,
+      already_installed: action === "upgrade",
+      message: action === "upgrade" ? "pipelex upgraded successfully" : "pipelex installed successfully",
       installed_version: postCheck.installed_version,
     });
   });

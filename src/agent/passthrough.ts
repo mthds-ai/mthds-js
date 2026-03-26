@@ -39,17 +39,27 @@ export function passthrough(
             }
           );
         }
-        // Verify install succeeded
-        if (checkBinaryVersion(recovery).status === "missing") {
-          agentError(
-            `${bin} was installed but is not reachable in PATH.`,
-            "InstallError",
-            {
-              error_domain: AGENT_ERROR_DOMAINS.INSTALL,
-              hint: "You may need to restart your shell or add the install directory to your PATH.",
-              recovery,
-            }
-          );
+        // Verify install succeeded and version constraint is satisfied
+        {
+          const postCheck = checkBinaryVersion(recovery);
+          if (postCheck.status === "missing") {
+            agentError(
+              `${bin} was installed but is not reachable in PATH.`,
+              "InstallError",
+              {
+                error_domain: AGENT_ERROR_DOMAINS.INSTALL,
+                hint: "You may need to restart your shell or add the install directory to your PATH.",
+                recovery,
+              }
+            );
+          } else if (postCheck.status !== "ok") {
+            process.stderr.write(
+              JSON.stringify({
+                warning: true,
+                message: `Install of ${bin} may not have taken effect (status: ${postCheck.status}, installed: ${postCheck.installed_version}, needs: ${recovery.version_constraint}).`,
+              }) + "\n"
+            );
+          }
         }
         break;
 

@@ -38,6 +38,7 @@ export function checkBinaryVersion(
   try {
     rawOutput = execFileSync(recovery.binary, ["--version"], {
       stdio: "pipe",
+      timeout: 5000,
     })
       .toString()
       .trim();

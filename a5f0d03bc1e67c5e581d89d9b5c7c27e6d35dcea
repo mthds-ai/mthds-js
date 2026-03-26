@@ -1,0 +1,25 @@
+src/agent/passthrough.ts
+  3c7f401ddee34091 42-62
+src/agent-cli.ts
+  3c7f401ddee34091 286,294,297,305-306
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.19",
+  "base_commit_sha": "a5f0d03bc1e67c5e581d89d9b5c7c27e6d35dcea",
+  "prompts": {
+    "3c7f401ddee34091": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e9ad957f-a731-4d61-8502-f8a7e26d743f",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Louis Choquel <lchoquel@users.noreply.github.com>",
+      "messages": [],
+      "total_additions": 26,
+      "total_deletions": 16,
+      "accepted_lines": 26,
+      "overriden_lines": 0
+    }
+  }
+}

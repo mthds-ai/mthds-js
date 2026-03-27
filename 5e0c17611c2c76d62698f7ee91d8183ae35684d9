@@ -1,0 +1,37 @@
+tests/unit/agent/update-check.test.ts
+  6d1bef0c4666903c 52-54,67,98-101,141,148,153-154,158,160-161,163,165-169,173-194,205-206,214,218,232-233,276,306-307,310,328-356
+tests/unit/agent/update-cache.test.ts
+  6d1bef0c4666903c 233-269
+src/agent/snooze.ts
+  6d1bef0c4666903c 13,44,46-49,116-118
+tests/unit/agent/snooze.test.ts
+  6d1bef0c4666903c 223-231
+src/agent/commands/update-check.ts
+  6d1bef0c4666903c 13,21,76,91,102-115,117,123,126-135,137,142,145,148,150,152-162,176,180,187,189-193,196-199,213,217-220
+src/agent/update-cache.ts
+  6d1bef0c4666903c 38,65-66,71-73,89-90,129-131
+src/config/credentials.ts
+  6d1bef0c4666903c 91-93,218,227,300
+tests/unit/config/credentials.test.ts
+  6d1bef0c4666903c 377-426
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.19",
+  "base_commit_sha": "5e0c17611c2c76d62698f7ee91d8183ae35684d9",
+  "prompts": {
+    "6d1bef0c4666903c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "789919b7-6951-416d-a865-5898ef7e9327",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Louis Choquel <lchoquel@users.noreply.github.com>",
+      "messages": [],
+      "total_additions": 285,
+      "total_deletions": 92,
+      "accepted_lines": 271,
+      "overriden_lines": 0
+    }
+  }
+}

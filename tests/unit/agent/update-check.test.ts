@@ -69,6 +69,7 @@ let stdoutOutput: string;
 
 describe("update-check", () => {
   beforeEach(() => {
+    vi.restoreAllMocks();
     vi.clearAllMocks();
     stdoutOutput = "";
     vi.spyOn(process.stdout, "write").mockImplementation((chunk: string | Uint8Array) => {

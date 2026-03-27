@@ -74,7 +74,7 @@ export function readSnooze(): SnoozeState | null {
 
   const level = parseInt(levelStr, 10);
   const epoch = parseInt(epochStr, 10);
-  if (isNaN(level) || isNaN(epoch) || !versionKey) return null;
+  if (isNaN(level) || isNaN(epoch) || level <= 0 || !versionKey) return null;
 
   return { versionKey, level, epoch };
 }

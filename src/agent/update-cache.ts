@@ -57,6 +57,19 @@ const VALID_AGGREGATES: ReadonlySet<string> = new Set([
   "UPGRADE_AVAILABLE",
 ]);
 
+// ── Validation ──────────────────────────────────────────────────────
+
+function isValidPayload(p: unknown): p is CachePayload {
+  if (!p || typeof p !== "object") return false;
+  const obj = p as Record<string, unknown>;
+  for (const key of ["mthds_agent", "pipelex_agent", "plxt"]) {
+    const entry = obj[key];
+    if (!entry || typeof entry !== "object") return false;
+    if (typeof (entry as Record<string, unknown>).s !== "string") return false;
+  }
+  return true;
+}
+
 // ── Functions ──────────────────────────────────────────────────────
 
 /** Ensure the state directory exists. */
@@ -93,7 +106,9 @@ export function readCache(): CacheResult | null {
 
   let payload: CachePayload;
   try {
-    payload = JSON.parse(lines[1]!) as CachePayload;
+    const parsed: unknown = JSON.parse(lines[1]!);
+    if (!isValidPayload(parsed)) return null;
+    payload = parsed;
   } catch {
     return null;
   }

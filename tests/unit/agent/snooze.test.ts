@@ -59,6 +59,22 @@ describe("snooze", () => {
       expect(readSnooze()).toBeNull();
     });
 
+    it("returns null when level is zero", async () => {
+      mkdirSync(stateDir(), { recursive: true });
+      writeFileSync(snoozePath(), "ok:ok:ok 0 1711440000000\n", "utf-8");
+
+      const { readSnooze } = await importModule();
+      expect(readSnooze()).toBeNull();
+    });
+
+    it("returns null when level is negative", async () => {
+      mkdirSync(stateDir(), { recursive: true });
+      writeFileSync(snoozePath(), "ok:ok:ok -1 1711440000000\n", "utf-8");
+
+      const { readSnooze } = await importModule();
+      expect(readSnooze()).toBeNull();
+    });
+
     it("parses valid snooze line correctly", async () => {
       mkdirSync(stateDir(), { recursive: true });
       writeFileSync(snoozePath(), "ok:ok:outdated>=0.3.2 2 1711440000000\n", "utf-8");

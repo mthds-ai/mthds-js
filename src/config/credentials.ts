@@ -185,7 +185,7 @@ function migrateIfNeeded(): void {
       if (envEntries["DISABLE_TELEMETRY"]) {
         migrated["DISABLE_TELEMETRY"] = envEntries["DISABLE_TELEMETRY"];
       }
-      envLocalMigrated = true;
+      envLocalMigrated = Boolean(envEntries["DISABLE_TELEMETRY"]);
     } catch {
       // Read failed — preserve the legacy file
     }

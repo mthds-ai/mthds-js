@@ -96,6 +96,23 @@ describe("update-cache", () => {
       expect(readCache()).toBeNull();
     });
 
+    it("returns null when JSON is valid but payload shape is wrong", async () => {
+      mkdirSync(stateDir(), { recursive: true });
+      writeFileSync(cachePath(), 'UP_TO_DATE\n{"foo":"bar"}\n', "utf-8");
+
+      const { readCache } = await importModule();
+      expect(readCache()).toBeNull();
+    });
+
+    it("returns null when payload entries are missing required 's' field", async () => {
+      mkdirSync(stateDir(), { recursive: true });
+      const bad = { mthds_agent: { v: "0.2.1" }, pipelex_agent: { s: "ok", v: "0.22.0" }, plxt: { s: "ok", v: "0.3.2" } };
+      writeFileSync(cachePath(), "UP_TO_DATE\n" + JSON.stringify(bad) + "\n", "utf-8");
+
+      const { readCache } = await importModule();
+      expect(readCache()).toBeNull();
+    });
+
     it("returns null when UP_TO_DATE cache is expired (>60min)", async () => {
       mkdirSync(stateDir(), { recursive: true });
       const content = "UP_TO_DATE\n" + JSON.stringify(OK_PAYLOAD) + "\n";

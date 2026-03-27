@@ -79,19 +79,19 @@ async function agentUpdateCheckInner(
     return;
   }
 
-  // 3. Handle --snooze
+  // 3. Handle --force
+  if (options.force) {
+    clearCache();
+    clearSnooze();
+  }
+
+  // 4. Handle --snooze
   if (options.snooze) {
     const payload = getOrRefreshPayload();
     const versionKey = computeVersionKey(payload);
     writeSnooze(versionKey);
     agentSuccess({ snoozed: true, version_key: versionKey });
     return;
-  }
-
-  // 4. Handle --force
-  if (options.force) {
-    clearCache();
-    clearSnooze();
   }
 
   // 5. Try cache

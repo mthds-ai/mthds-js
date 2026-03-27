@@ -23,6 +23,7 @@ import { passthroughToPipelexAgent } from "./agent/commands/pipelex-passthrough.
 import { registerPlxtCommands } from "./agent/commands/plxt.js";
 import { agentDoctor } from "./agent/commands/doctor.js";
 import { agentUpdateCheck } from "./agent/commands/update-check.js";
+import { agentUpgrade } from "./agent/commands/upgrade.js";
 import { agentConfigGet, agentConfigList, agentConfigSet } from "./agent/commands/config.js";
 import { agentInstall } from "./agent/commands/install.js";
 import { agentPublish } from "./agent/commands/publish.js";
@@ -346,6 +347,16 @@ program
   .exitOverride()
   .action(async (opts: { force?: boolean; snooze?: boolean }) => {
     await agentUpdateCheck(opts);
+  });
+
+// ── mthds-agent upgrade ───────────────────────────────────────────
+
+program
+  .command("upgrade")
+  .description("Upgrade Python binary dependencies (pipelex, plxt)")
+  .exitOverride()
+  .action(async () => {
+    await agentUpgrade();
   });
 
 // ── Runner dispatch ──────────────────────────────────────────────────

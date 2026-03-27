@@ -1,42 +1,34 @@
-import { execSync, execFileSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import ora from "ora";
 import { isPipelexInstalled } from "./check.js";
+import { BINARY_RECOVERY } from "../../agent/binaries.js";
 
-// ── Shared helpers ───────────────────────────────────────────────────
-
-function runPipelexInstallSync(): void {
-  if (process.platform === "win32") {
-    execSync(
-      'powershell -Command "irm https://pipelex.com/install.ps1 | iex"',
-      { stdio: "pipe" }
-    );
-  } else {
-    execSync(
-      "curl -fsSL https://pipelex.com/install.sh | sh",
-      { stdio: "pipe", shell: "/bin/sh" }
-    );
-  }
-}
+// All binary installation goes through uv, which provides version-constraint-aware
+// installs and consistent cross-platform behavior.
 
 // ── Async install (interactive, with spinner) ────────────────────────
 
+/**
+ * Ensure pipelex is installed, using uv tool install with spinner feedback.
+ * Used by interactive CLI commands (mthds install, mthds setup, etc.).
+ */
 export async function ensureRuntime(): Promise<void> {
   if (!isPipelexInstalled()) {
-    await installPipelex();
+    await installPipelexViaUv();
   }
 }
 
-async function installPipelex(): Promise<void> {
-  const spinner = ora("Installing pipelex...").start();
+async function installPipelexViaUv(): Promise<void> {
+  const spinner = ora("Installing pipelex via uv...").start();
+  const recovery = BINARY_RECOVERY["pipelex"];
   try {
-    runPipelexInstallSync();
+    uvToolInstallSync(recovery.uv_package, recovery.version_constraint);
   } catch (error) {
     spinner.fail("Failed to install pipelex");
-    const msg =
-      error instanceof Error ? error.message : String(error);
+    const msg = error instanceof Error ? error.message : String(error);
     throw new Error(
       `Could not install pipelex: ${msg}\n` +
-        "Install manually: https://pipelex.com"
+        `Install manually: uv tool install --upgrade "${recovery.uv_package}${recovery.version_constraint}"`
     );
   }
 
@@ -51,26 +43,7 @@ async function installPipelex(): Promise<void> {
   spinner.succeed("pipelex installed");
 }
 
-// ── Sync silent install functions (for mthds-agent --auto-install) ──
-
-/**
- * Install pipelex synchronously without interactive output (no spinner).
- * Throws on failure.
- */
-export function installPipelexSync(): void {
-  runPipelexInstallSync();
-}
-
-/**
- * Install pipelex-tools (plxt) synchronously without interactive output.
- * Throws on failure.
- */
-export function installPlxtSync(): void {
-  const pythonCmd = process.platform === "win32" ? "python" : "python3";
-  execSync(`${pythonCmd} -m pip install --quiet pipelex-tools`, { stdio: "pipe" });
-}
-
-// ── uv-based install (for version-aware binary management) ──────────
+// ── uv helpers ──────────────────────────────────────────────────────
 
 /**
  * Locate the `uv` binary. Throws with install instructions if not found.

@@ -88,7 +88,12 @@ export function ensureStateDir(): void {
 export function computeAggregate(payload: CachePayload): AggregateStatus {
   const entries: BinaryCheckEntry[] = [payload.mthds_agent, payload.plxt];
   if (payload.pipelex_agent) entries.push(payload.pipelex_agent);
-  return entries.every((e) => e.s === "ok") ? "UP_TO_DATE" : "UPGRADE_AVAILABLE";
+  // Treat "unparseable" same as "ok" — the binary exists, we just can't parse
+  // its version. Treating it as UPGRADE_AVAILABLE would cause an infinite loop:
+  // preamble says upgrade available -> upgrade skips unparseable -> repeat.
+  return entries.every((e) => e.s === "ok" || e.s === "unparseable")
+    ? "UP_TO_DATE"
+    : "UPGRADE_AVAILABLE";
 }
 
 /**

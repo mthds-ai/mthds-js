@@ -231,6 +231,28 @@ describe("update-cache", () => {
       expect(computeAggregate(payload)).toBe("UPGRADE_AVAILABLE");
     });
 
+    it("returns UP_TO_DATE when a binary is unparseable (not UPGRADE_AVAILABLE)", async () => {
+      const { computeAggregate } = await importModule();
+      const payload = {
+        ...OK_PAYLOAD,
+        plxt: { s: "unparseable" as const, v: null },
+      };
+      // Unparseable means the binary exists but version can't be parsed.
+      // Treating it as UPGRADE_AVAILABLE would cause an infinite loop because
+      // the upgrade command skips unparseable binaries.
+      expect(computeAggregate(payload)).toBe("UP_TO_DATE");
+    });
+
+    it("returns UPGRADE_AVAILABLE when one binary is outdated even if another is unparseable", async () => {
+      const { computeAggregate } = await importModule();
+      const payload = {
+        mthds_agent: { s: "ok" as const, v: "0.2.1" },
+        pipelex_agent: { s: "outdated" as const, v: "0.21.0", r: ">=0.22.0" },
+        plxt: { s: "unparseable" as const, v: null },
+      };
+      expect(computeAggregate(payload)).toBe("UPGRADE_AVAILABLE");
+    });
+
     it("returns UP_TO_DATE when pipelex_agent is absent and others are ok", async () => {
       const { computeAggregate } = await importModule();
       const payload = {

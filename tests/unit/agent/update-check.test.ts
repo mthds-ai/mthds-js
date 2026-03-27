@@ -49,8 +49,9 @@ vi.mock("node:fs", async (importOriginal) => {
   const original = await importOriginal<typeof import("node:fs")>();
   return {
     ...original,
-    existsSync: vi.fn((): boolean => false),
-    readFileSync: vi.fn((): string => "{}"),
+    readFileSync: vi.fn((): string => {
+      throw new Error("ENOENT: no such file"); // Default: marker file doesn't exist
+    }),
     unlinkSync: vi.fn(),
   };
 });
@@ -63,7 +64,7 @@ import { checkBinaryVersion } from "../../../src/installer/runtime/version-check
 import { readCache, writeCache, clearCache, computeAggregate } from "../../../src/agent/update-cache.js";
 import { isSnoozed, writeSnooze, clearSnooze, computeVersionKey } from "../../../src/agent/snooze.js";
 import { agentSuccess } from "../../../src/agent/output.js";
-import { existsSync, readFileSync, unlinkSync } from "node:fs";
+import { readFileSync, unlinkSync } from "node:fs";
 
 let stdoutOutput: string;
 
@@ -94,7 +95,10 @@ describe("update-check", () => {
       version_constraint: ">=0.22.0",
     });
     vi.mocked(isSnoozed).mockReturnValue(false);
-    vi.mocked(existsSync).mockReturnValue(false);
+    // Default: upgrade marker file doesn't exist
+    vi.mocked(readFileSync).mockImplementation(() => {
+      throw new Error("ENOENT: no such file");
+    });
   });
 
   // ---------------------------------------------------------------------------
@@ -134,33 +138,60 @@ describe("update-check", () => {
   // ---------------------------------------------------------------------------
   // Cache hit — UPGRADE_AVAILABLE + snoozed
   // ---------------------------------------------------------------------------
-  it("returns no output when UPGRADE_AVAILABLE but snoozed", async () => {
+  it("returns no output when re-verify still UPGRADE_AVAILABLE but snoozed", async () => {
     const payload: CachePayload = {
       mthds_agent: { s: "ok", v: "0.2.1" },
       pipelex_agent: { s: "outdated", v: "0.21.0", r: ">=0.22.0" },
       plxt: { s: "ok", v: "0.3.2" },
     };
     vi.mocked(readCache).mockReturnValue({ aggregate: "UPGRADE_AVAILABLE", payload });
+    vi.mocked(computeAggregate).mockReturnValue("UPGRADE_AVAILABLE");
     vi.mocked(isSnoozed).mockReturnValue(true);
 
     await agentUpdateCheck({});
     expect(stdoutOutput).toBe("");
+    // Snooze check happens before re-verify — no subprocess spawns
+    expect(checkBinaryVersion).not.toHaveBeenCalled();
   });
 
   // ---------------------------------------------------------------------------
-  // Cache hit — UPGRADE_AVAILABLE + not snoozed
+  // Cache hit — UPGRADE_AVAILABLE + re-verify still outdated
   // ---------------------------------------------------------------------------
-  it("writes UPGRADE_AVAILABLE to stdout when not snoozed", async () => {
-    const payload: CachePayload = {
+  it("writes UPGRADE_AVAILABLE with fresh data when re-verify confirms", async () => {
+    const stalePayload: CachePayload = {
       mthds_agent: { s: "ok", v: "0.2.1" },
-      pipelex_agent: { s: "outdated", v: "0.21.0", r: ">=0.22.0" },
-      plxt: { s: "ok", v: "0.3.2" },
+      plxt: { s: "outdated", v: "0.3.1", r: ">=0.3.2" },
     };
-    vi.mocked(readCache).mockReturnValue({ aggregate: "UPGRADE_AVAILABLE", payload });
+    vi.mocked(readCache).mockReturnValue({ aggregate: "UPGRADE_AVAILABLE", payload: stalePayload });
+    vi.mocked(computeAggregate).mockReturnValue("UPGRADE_AVAILABLE");
+    vi.mocked(checkBinaryVersion).mockReturnValue({
+      status: "outdated", installed_version: "0.3.1", version_constraint: ">=0.3.2",
+    });
 
     await agentUpdateCheck({});
     expect(stdoutOutput).toContain("UPGRADE_AVAILABLE");
-    expect(stdoutOutput).toContain('"pipelex_agent"');
+    expect(writeCache).toHaveBeenCalled();
+  });
+
+  // ---------------------------------------------------------------------------
+  // Cache hit — UPGRADE_AVAILABLE but manual upgrade detected
+  // ---------------------------------------------------------------------------
+  it("returns silently when re-verify detects manual upgrade", async () => {
+    const stalePayload: CachePayload = {
+      mthds_agent: { s: "ok", v: "0.2.1" },
+      plxt: { s: "outdated", v: "0.3.1", r: ">=0.3.2" },
+    };
+    vi.mocked(readCache).mockReturnValue({ aggregate: "UPGRADE_AVAILABLE", payload: stalePayload });
+    vi.mocked(computeAggregate).mockReturnValue("UP_TO_DATE");
+    vi.mocked(checkBinaryVersion).mockReturnValue({
+      status: "ok", installed_version: "0.3.2", version_constraint: ">=0.3.2",
+    });
+
+    await agentUpdateCheck({});
+    expect(stdoutOutput).toBe(""); // no UPGRADE_AVAILABLE — user already upgraded
+    expect(writeCache).toHaveBeenCalledWith(
+      expect.objectContaining({ aggregate: "UP_TO_DATE" })
+    );
   });
 
   // ---------------------------------------------------------------------------
@@ -171,8 +202,8 @@ describe("update-check", () => {
     vi.mocked(computeAggregate).mockReturnValue("UP_TO_DATE");
 
     await agentUpdateCheck({});
-    // Should check pipelex-agent and plxt (mthds-agent is self, always ok)
-    expect(checkBinaryVersion).toHaveBeenCalledTimes(2);
+    // runner=api → only plxt checked (pipelex-agent not needed)
+    expect(checkBinaryVersion).toHaveBeenCalledTimes(1);
     expect(writeCache).toHaveBeenCalled();
     expect(stdoutOutput).toBe(""); // UP_TO_DATE = no output
   });
@@ -180,12 +211,11 @@ describe("update-check", () => {
   // ---------------------------------------------------------------------------
   // Cache miss — one outdated
   // ---------------------------------------------------------------------------
-  it("outputs UPGRADE_AVAILABLE when one binary is outdated", async () => {
+  it("outputs UPGRADE_AVAILABLE when plxt is outdated (runner=api)", async () => {
     vi.mocked(readCache).mockReturnValue(null);
     vi.mocked(computeAggregate).mockReturnValue("UPGRADE_AVAILABLE");
     vi.mocked(checkBinaryVersion)
-      .mockReturnValueOnce({ status: "outdated", installed_version: "0.21.0", version_constraint: ">=0.22.0" })
-      .mockReturnValueOnce({ status: "ok", installed_version: "0.3.2", version_constraint: ">=0.3.2" });
+      .mockReturnValueOnce({ status: "outdated", installed_version: "0.3.1", version_constraint: ">=0.3.2" });
 
     await agentUpdateCheck({});
     expect(stdoutOutput).toContain("UPGRADE_AVAILABLE");
@@ -199,7 +229,8 @@ describe("update-check", () => {
     await agentUpdateCheck({ force: true });
     expect(clearCache).toHaveBeenCalled();
     expect(clearSnooze).toHaveBeenCalled();
-    expect(checkBinaryVersion).toHaveBeenCalledTimes(2);
+    // runner=api → only plxt checked
+    expect(checkBinaryVersion).toHaveBeenCalledTimes(1);
   });
 
   // ---------------------------------------------------------------------------
@@ -226,7 +257,6 @@ describe("update-check", () => {
   // just-upgraded-from marker
   // ---------------------------------------------------------------------------
   it("outputs JUST_UPGRADED when marker exists", async () => {
-    vi.mocked(existsSync).mockReturnValue(true);
     vi.mocked(readFileSync).mockReturnValue('{"pipelex_agent":"0.21.0"}');
     vi.mocked(computeAggregate).mockReturnValue("UP_TO_DATE");
 
@@ -243,8 +273,7 @@ describe("update-check", () => {
     vi.mocked(readCache).mockReturnValue(null);
     vi.mocked(computeAggregate).mockReturnValue("UPGRADE_AVAILABLE");
     vi.mocked(checkBinaryVersion)
-      .mockReturnValueOnce({ status: "missing", installed_version: null, version_constraint: ">=0.22.0" })
-      .mockReturnValueOnce({ status: "ok", installed_version: "0.3.2", version_constraint: ">=0.3.2" });
+      .mockReturnValueOnce({ status: "missing", installed_version: null, version_constraint: ">=0.3.2" });
 
     await agentUpdateCheck({});
     expect(stdoutOutput).toContain("UPGRADE_AVAILABLE");
@@ -274,14 +303,11 @@ describe("update-check", () => {
   // ---------------------------------------------------------------------------
   // Corrupt upgrade marker
   // ---------------------------------------------------------------------------
-  it("handles corrupt upgrade marker (invalid JSON) gracefully", async () => {
-    vi.mocked(existsSync).mockReturnValue(true);
-    vi.mocked(readFileSync).mockImplementation(() => {
-      throw new SyntaxError("Unexpected token");
-    });
+  it("handles corrupt upgrade marker (unparseable JSON) gracefully", async () => {
+    vi.mocked(readFileSync).mockReturnValue("not valid json{{{");
 
     await agentUpdateCheck({});
-    // Should delete the marker and continue (fall through to cache/fresh check path)
+    // Marker file read succeeds but JSON.parse fails → still deletes marker
     expect(unlinkSync).toHaveBeenCalled();
     // Falls through to cache miss → fresh checks
     expect(checkBinaryVersion).toHaveBeenCalled();
@@ -291,7 +317,6 @@ describe("update-check", () => {
   // Non-object upgrade marker
   // ---------------------------------------------------------------------------
   it("ignores upgrade marker that is not an object", async () => {
-    vi.mocked(existsSync).mockReturnValue(true);
     vi.mocked(readFileSync).mockReturnValue('"just a string"');
     vi.mocked(computeAggregate).mockReturnValue("UP_TO_DATE");
 
@@ -299,5 +324,34 @@ describe("update-check", () => {
     // Should not output JUST_UPGRADED — falls through to cache/fresh check
     expect(stdoutOutput).not.toContain("JUST_UPGRADED");
     expect(checkBinaryVersion).toHaveBeenCalled();
+  });
+
+  // ---------------------------------------------------------------------------
+  // Runner-aware binary checks
+  // ---------------------------------------------------------------------------
+  it("skips pipelex-agent check when runner=api", async () => {
+    vi.mocked(readCache).mockReturnValue(null);
+    vi.mocked(computeAggregate).mockReturnValue("UP_TO_DATE");
+
+    await agentUpdateCheck({});
+    // runner=api (default) → only plxt checked
+    expect(checkBinaryVersion).toHaveBeenCalledTimes(1);
+  });
+
+  it("checks both pipelex-agent and plxt when runner=pipelex", async () => {
+    vi.mocked(loadCredentials).mockReturnValue({
+      runner: "pipelex" as const,
+      apiUrl: "",
+      apiKey: "",
+      telemetry: true,
+      autoUpgrade: false,
+      updateCheck: true,
+    });
+    vi.mocked(readCache).mockReturnValue(null);
+    vi.mocked(computeAggregate).mockReturnValue("UP_TO_DATE");
+
+    await agentUpdateCheck({});
+    // runner=pipelex → both pipelex-agent and plxt checked
+    expect(checkBinaryVersion).toHaveBeenCalledTimes(2);
   });
 });

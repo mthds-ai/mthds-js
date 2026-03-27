@@ -35,7 +35,7 @@ export interface BinaryCheckEntry {
 
 export interface CachePayload {
   mthds_agent: BinaryCheckEntry;
-  pipelex_agent: BinaryCheckEntry;
+  pipelex_agent?: BinaryCheckEntry; // optional — skipped when runner !== "pipelex"
   plxt: BinaryCheckEntry;
 }
 
@@ -62,8 +62,15 @@ const VALID_AGGREGATES: ReadonlySet<string> = new Set([
 function isValidPayload(p: unknown): p is CachePayload {
   if (!p || typeof p !== "object") return false;
   const obj = p as Record<string, unknown>;
-  for (const key of ["mthds_agent", "pipelex_agent", "plxt"]) {
+  // mthds_agent and plxt are always required
+  for (const key of ["mthds_agent", "plxt"]) {
     const entry = obj[key];
+    if (!entry || typeof entry !== "object") return false;
+    if (typeof (entry as Record<string, unknown>).s !== "string") return false;
+  }
+  // pipelex_agent is optional, but if present must be valid
+  if (obj.pipelex_agent !== undefined) {
+    const entry = obj.pipelex_agent;
     if (!entry || typeof entry !== "object") return false;
     if (typeof (entry as Record<string, unknown>).s !== "string") return false;
   }
@@ -79,7 +86,8 @@ export function ensureStateDir(): void {
 
 /** Compute aggregate status from a payload. */
 export function computeAggregate(payload: CachePayload): AggregateStatus {
-  const entries = [payload.mthds_agent, payload.pipelex_agent, payload.plxt];
+  const entries: BinaryCheckEntry[] = [payload.mthds_agent, payload.plxt];
+  if (payload.pipelex_agent) entries.push(payload.pipelex_agent);
   return entries.every((e) => e.s === "ok") ? "UP_TO_DATE" : "UPGRADE_AVAILABLE";
 }
 
@@ -118,7 +126,9 @@ export function readCache(): CacheResult | null {
     aggregate === "UP_TO_DATE"
       ? TTL_UP_TO_DATE_MS
       : TTL_UPGRADE_AVAILABLE_MS;
-  if (Date.now() - mtimeMs > ttl) return null;
+  const age = Date.now() - mtimeMs;
+  // Negative age beyond 1 minute means clock skew — treat as expired
+  if (age < -60_000 || age > ttl) return null;
 
   return { aggregate: aggregate as AggregateStatus, payload };
 }

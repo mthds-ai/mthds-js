@@ -374,4 +374,54 @@ describe("credentials", () => {
       expect(existsSync(join(configDir, "credentials"))).toBe(true);
     });
   });
+
+  // ---------------------------------------------------------------------------
+  // Boolean coercion: env vars and file values with "true"/"yes"/"on"
+  // ---------------------------------------------------------------------------
+  describe("boolean coercion from env and file", () => {
+    it("MTHDS_AUTO_UPGRADE=true via env returns autoUpgrade=true", async () => {
+      vi.stubEnv("MTHDS_AUTO_UPGRADE", "true");
+      const { loadCredentials } = await importCredentials();
+      expect(loadCredentials().autoUpgrade).toBe(true);
+    });
+
+    it("MTHDS_UPDATE_CHECK=yes via env returns updateCheck=true", async () => {
+      vi.stubEnv("MTHDS_UPDATE_CHECK", "yes");
+      const { loadCredentials } = await importCredentials();
+      expect(loadCredentials().updateCheck).toBe(true);
+    });
+
+    it("DISABLE_TELEMETRY=true via env returns telemetry=false", async () => {
+      vi.stubEnv("DISABLE_TELEMETRY", "true");
+      const { loadCredentials } = await importCredentials();
+      expect(loadCredentials().telemetry).toBe(false);
+    });
+
+    it("DISABLE_TELEMETRY=on via env returns telemetry=false", async () => {
+      vi.stubEnv("DISABLE_TELEMETRY", "on");
+      const { loadCredentials } = await importCredentials();
+      expect(loadCredentials().telemetry).toBe(false);
+    });
+
+    it("MTHDS_AUTO_UPGRADE=false via env returns autoUpgrade=false", async () => {
+      vi.stubEnv("MTHDS_AUTO_UPGRADE", "false");
+      const { loadCredentials } = await importCredentials();
+      expect(loadCredentials().autoUpgrade).toBe(false);
+    });
+
+    it("file values 'true'/'yes'/'on' are coerced correctly", async () => {
+      const configDir = join(tempHome, ".mthds");
+      mkdirSync(configDir, { recursive: true });
+      writeFileSync(
+        join(configDir, "credentials"),
+        "MTHDS_AUTO_UPGRADE=true\nMTHDS_UPDATE_CHECK=yes\nDISABLE_TELEMETRY=on\n",
+        "utf-8"
+      );
+      const { loadCredentials } = await importCredentials();
+      const creds = loadCredentials();
+      expect(creds.autoUpgrade).toBe(true);
+      expect(creds.updateCheck).toBe(true);
+      expect(creds.telemetry).toBe(false);
+    });
+  });
 });

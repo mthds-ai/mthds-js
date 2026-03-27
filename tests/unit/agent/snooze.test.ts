@@ -220,6 +220,15 @@ describe("snooze", () => {
       expect(computeVersionKey(payload)).toBe(computeVersionKey(payload));
     });
 
+    it("produces 2-part key when pipelex_agent is absent", async () => {
+      const { computeVersionKey } = await importModule();
+      const payload = {
+        mthds_agent: { s: "ok" as const, v: "0.2.1" },
+        plxt: { s: "ok" as const, v: "0.3.2" },
+      };
+      expect(computeVersionKey(payload)).toBe("ok:ok");
+    });
+
     it("changes when constraint changes", async () => {
       const { computeVersionKey } = await importModule();
       const payload1 = {

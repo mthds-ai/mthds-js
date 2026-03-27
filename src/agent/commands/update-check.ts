@@ -10,7 +10,7 @@
  * and checks for the presence of these keywords. Plain text, not agentSuccess JSON.
  */
 
-import { existsSync, readFileSync, unlinkSync } from "node:fs";
+import { readFileSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { createRequire } from "node:module";
 import { agentSuccess } from "../output.js";
@@ -18,6 +18,7 @@ import { BINARY_RECOVERY } from "../binaries.js";
 import { checkBinaryVersion } from "../../installer/runtime/version-check.js";
 import type { VersionCheckResult } from "../../installer/runtime/version-check.js";
 import { loadCredentials } from "../../config/credentials.js";
+import { Runners } from "../../runners/types.js";
 import {
   readCache,
   writeCache,
@@ -72,7 +73,7 @@ async function agentUpdateCheckInner(
   const upgradeMarker = readAndClearUpgradeMarker();
   if (upgradeMarker) {
     clearCache();
-    const payload = runFreshChecks();
+    const payload = runFreshChecks(creds.runner);
     writeCache({ aggregate: computeAggregate(payload), payload });
     const output = { previous: upgradeMarker, current: payloadVersions(payload) };
     process.stdout.write("JUST_UPGRADED " + JSON.stringify(output) + "\n");
@@ -87,7 +88,7 @@ async function agentUpdateCheckInner(
 
   // 4. Handle --snooze
   if (options.snooze) {
-    const payload = getOrRefreshPayload();
+    const payload = getOrRefreshPayload(creds.runner);
     const versionKey = computeVersionKey(payload);
     writeSnooze(versionKey);
     agentSuccess({ snoozed: true, version_key: versionKey });
@@ -98,45 +99,67 @@ async function agentUpdateCheckInner(
   const cached = readCache();
   if (cached) {
     if (cached.aggregate === "UP_TO_DATE") return;
-    // UPGRADE_AVAILABLE — check snooze
-    const versionKey = computeVersionKey(cached.payload);
-    if (isSnoozed(versionKey)) return;
+
+    // UPGRADE_AVAILABLE — check snooze first to avoid unnecessary subprocess spawns
+    const cachedKey = computeVersionKey(cached.payload);
+    if (isSnoozed(cachedKey)) return;
+
+    // Re-verify to catch manual upgrades (e.g. uv tool install --upgrade)
+    const freshPayload = runFreshChecks(creds.runner);
+    const freshAggregate = computeAggregate(freshPayload);
+    writeCache({ aggregate: freshAggregate, payload: freshPayload });
+
+    if (freshAggregate === "UP_TO_DATE") return;
+
+    const freshKey = computeVersionKey(freshPayload);
+    if (isSnoozed(freshKey)) return;
     process.stdout.write(
-      "UPGRADE_AVAILABLE " + JSON.stringify(cached.payload) + "\n"
+      "UPGRADE_AVAILABLE " + JSON.stringify(freshPayload) + "\n"
     );
     return;
   }
 
   // 6. Cache miss — run fresh checks
-  const payload = runFreshChecks();
+  const payload = runFreshChecks(creds.runner);
   const aggregate = computeAggregate(payload);
+
+  // 7. Emit result BEFORE writing cache — if writeCache throws (e.g. state dir
+  //    not creatable), the preamble still gets the signal.
+  if (aggregate !== "UP_TO_DATE") {
+    const versionKey = computeVersionKey(payload);
+    if (!isSnoozed(versionKey)) {
+      process.stdout.write(
+        "UPGRADE_AVAILABLE " + JSON.stringify(payload) + "\n"
+      );
+    }
+  }
+
   writeCache({ aggregate, payload });
-
-  // 7. Return result
-  if (aggregate === "UP_TO_DATE") return;
-
-  const versionKey = computeVersionKey(payload);
-  if (isSnoozed(versionKey)) return;
-  process.stdout.write("UPGRADE_AVAILABLE " + JSON.stringify(payload) + "\n");
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────
 
-function runFreshChecks(): CachePayload {
-  const pipelexRecovery = BINARY_RECOVERY["pipelex-agent"];
+function runFreshChecks(runner: string): CachePayload {
   const plxtRecovery = BINARY_RECOVERY["plxt"];
-  if (!pipelexRecovery || !plxtRecovery) {
-    throw new Error("Missing binary recovery info for pipelex-agent or plxt");
+  if (!plxtRecovery) {
+    throw new Error("Missing binary recovery info for plxt");
   }
 
-  const pipelexCheck = checkBinaryVersion(pipelexRecovery);
-  const plxtCheck = checkBinaryVersion(plxtRecovery);
-
-  return {
+  const payload: CachePayload = {
     mthds_agent: { s: "ok", v: pkg.version },
-    pipelex_agent: toBinaryEntry(pipelexCheck),
-    plxt: toBinaryEntry(plxtCheck),
+    plxt: toBinaryEntry(checkBinaryVersion(plxtRecovery)),
   };
+
+  // Only check pipelex-agent when runner requires it
+  if (runner === Runners.PIPELEX) {
+    const pipelexRecovery = BINARY_RECOVERY["pipelex-agent"];
+    if (!pipelexRecovery) {
+      throw new Error("Missing binary recovery info for pipelex-agent");
+    }
+    payload.pipelex_agent = toBinaryEntry(checkBinaryVersion(pipelexRecovery));
+  }
+
+  return payload;
 }
 
 function toBinaryEntry(check: VersionCheckResult): BinaryCheckEntry {
@@ -150,33 +173,36 @@ function toBinaryEntry(check: VersionCheckResult): BinaryCheckEntry {
   return entry;
 }
 
-function getOrRefreshPayload(): CachePayload {
+function getOrRefreshPayload(runner: string): CachePayload {
   const cached = readCache();
   if (cached) return cached.payload;
 
-  const payload = runFreshChecks();
+  const payload = runFreshChecks(runner);
   const aggregate = computeAggregate(payload);
   writeCache({ aggregate, payload });
   return payload;
 }
 
 function readAndClearUpgradeMarker(): Record<string, unknown> | null {
-  if (!existsSync(JUST_UPGRADED_PATH)) return null;
+  let content: string;
   try {
-    const content = readFileSync(JUST_UPGRADED_PATH, "utf-8");
+    content = readFileSync(JUST_UPGRADED_PATH, "utf-8");
+  } catch {
+    return null; // File doesn't exist or unreadable
+  }
+  // Delete marker before parsing — even corrupt markers should be consumed
+  try {
     unlinkSync(JUST_UPGRADED_PATH);
+  } catch {
+    // ignore
+  }
+  try {
     const parsed: unknown = JSON.parse(content);
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
       return null;
     }
     return parsed as Record<string, unknown>;
   } catch {
-    // Corrupt marker — delete and treat as absent
-    try {
-      unlinkSync(JUST_UPGRADED_PATH);
-    } catch {
-      // ignore
-    }
     return null;
   }
 }
@@ -184,9 +210,12 @@ function readAndClearUpgradeMarker(): Record<string, unknown> | null {
 function payloadVersions(
   payload: CachePayload
 ): Record<string, string | null> {
-  return {
+  const result: Record<string, string | null> = {
     mthds_agent: payload.mthds_agent.v,
-    pipelex_agent: payload.pipelex_agent.v,
     plxt: payload.plxt.v,
   };
+  if (payload.pipelex_agent) {
+    result.pipelex_agent = payload.pipelex_agent.v;
+  }
+  return result;
 }

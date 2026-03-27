@@ -10,7 +10,7 @@
  */
 
 import { join } from "node:path";
-import { existsSync, readFileSync, writeFileSync, unlinkSync } from "node:fs";
+import { readFileSync, writeFileSync, unlinkSync } from "node:fs";
 import { STATE_DIR, ensureStateDir } from "./update-cache.js";
 import type { CachePayload } from "./update-cache.js";
 
@@ -41,17 +41,17 @@ const SNOOZE_DEFAULT_MS = 7 * 24 * 60 * 60 * 1000; // 7d for level 3+
  */
 export function computeVersionKey(payload: CachePayload): string {
   const parts = [
-    payload.mthds_agent.s + (payload.mthds_agent.r ? payload.mthds_agent.r : ""),
-    payload.pipelex_agent.s + (payload.pipelex_agent.r ? payload.pipelex_agent.r : ""),
-    payload.plxt.s + (payload.plxt.r ? payload.plxt.r : ""),
+    payload.mthds_agent.s + (payload.mthds_agent.r ?? ""),
   ];
+  if (payload.pipelex_agent) {
+    parts.push(payload.pipelex_agent.s + (payload.pipelex_agent.r ?? ""));
+  }
+  parts.push(payload.plxt.s + (payload.plxt.r ?? ""));
   return parts.join(":");
 }
 
 /** Read current snooze state. Returns null if missing or corrupt. */
 export function readSnooze(): SnoozeState | null {
-  if (!existsSync(SNOOZE_PATH)) return null;
-
   let content: string;
   try {
     content = readFileSync(SNOOZE_PATH, "utf-8").trim();
@@ -113,7 +113,9 @@ export function isSnoozed(versionKey: string): boolean {
   if (state.versionKey !== versionKey) return false;
 
   const duration = SNOOZE_DURATIONS_MS[state.level] ?? SNOOZE_DEFAULT_MS;
-  return Date.now() - state.epoch < duration;
+  const elapsed = Date.now() - state.epoch;
+  // Negative elapsed beyond 1 minute means clock skew — treat snooze as expired
+  return elapsed >= -60_000 && elapsed < duration;
 }
 
 /** Clear snooze file. */

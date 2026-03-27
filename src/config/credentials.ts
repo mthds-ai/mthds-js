@@ -88,6 +88,9 @@ const INVERTED_BOOLEAN_KEYS: Set<keyof MthdsCredentials> = new Set([
   "telemetry",
 ]);
 
+/** Strings treated as truthy for boolean keys — used in both load and set paths */
+const TRUTHY_STRINGS: ReadonlySet<string> = new Set(["true", "1", "yes", "on"]);
+
 export const VALID_KEYS = Object.keys(KEY_ALIASES);
 
 export function resolveKey(
@@ -212,7 +215,7 @@ function coerceValue(
   raw: string
 ): string | boolean {
   if (!BOOLEAN_KEYS.has(key)) return raw;
-  const truthy = raw === "1";
+  const truthy = TRUTHY_STRINGS.has(raw.toLowerCase());
   return INVERTED_BOOLEAN_KEYS.has(key) ? !truthy : truthy;
 }
 
@@ -221,7 +224,7 @@ function toFileValue(key: keyof MthdsCredentials, value: string | boolean): stri
   const boolVal =
     typeof value === "boolean"
       ? value
-      : ["true", "1", "yes", "on"].includes(String(value).toLowerCase());
+      : TRUTHY_STRINGS.has(String(value).toLowerCase());
   return INVERTED_BOOLEAN_KEYS.has(key)
     ? (boolVal ? "0" : "1")
     : (boolVal ? "1" : "0");
@@ -294,8 +297,7 @@ export function setCredentialValue(
  * Accepts "true"/"false", "1"/"0", "yes"/"no", "on"/"off".
  */
 function coerceBooleanInput(value: string): boolean {
-  const lower = value.toLowerCase();
-  return ["true", "1", "yes", "on"].includes(lower);
+  return TRUTHY_STRINGS.has(value.toLowerCase());
 }
 
 export function listCredentials(): Array<{

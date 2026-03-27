@@ -230,5 +230,42 @@ describe("update-cache", () => {
       };
       expect(computeAggregate(payload)).toBe("UPGRADE_AVAILABLE");
     });
+
+    it("returns UP_TO_DATE when pipelex_agent is absent and others are ok", async () => {
+      const { computeAggregate } = await importModule();
+      const payload = {
+        mthds_agent: { s: "ok" as const, v: "0.2.1" },
+        plxt: { s: "ok" as const, v: "0.3.2" },
+      };
+      expect(computeAggregate(payload)).toBe("UP_TO_DATE");
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Optional pipelex_agent in cache
+  // ---------------------------------------------------------------------------
+  describe("optional pipelex_agent", () => {
+    it("validates payload without pipelex_agent as valid", async () => {
+      mkdirSync(stateDir(), { recursive: true });
+      const payload = { mthds_agent: { s: "ok", v: "0.2.1" }, plxt: { s: "ok", v: "0.3.2" } };
+      const content = "UP_TO_DATE\n" + JSON.stringify(payload) + "\n";
+      writeFileSync(cachePath(), content, "utf-8");
+
+      const { readCache } = await importModule();
+      const result = readCache();
+      expect(result).not.toBeNull();
+      expect(result!.payload.pipelex_agent).toBeUndefined();
+    });
+
+    it("validates payload with pipelex_agent present", async () => {
+      mkdirSync(stateDir(), { recursive: true });
+      const content = "UP_TO_DATE\n" + JSON.stringify(OK_PAYLOAD) + "\n";
+      writeFileSync(cachePath(), content, "utf-8");
+
+      const { readCache } = await importModule();
+      const result = readCache();
+      expect(result).not.toBeNull();
+      expect(result!.payload.pipelex_agent).toBeDefined();
+    });
   });
 });

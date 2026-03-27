@@ -1,0 +1,43 @@
+src/agent-cli.ts
+  f90fe89ad1691ee0 25,339-350
+tests/unit/config/credentials.test.ts
+  f90fe89ad1691ee0 2,50-51,245-376
+src/agent/update-cache.ts
+  f90fe89ad1691ee0 1-133
+src/agent/snooze.ts
+  f90fe89ad1691ee0 1-126
+src/agent/commands/update-check.ts
+  f90fe89ad1691ee0 1-192
+src/agent/passthrough.ts
+  f90fe89ad1691ee0 15,19-20
+src/config/credentials.ts
+  f90fe89ad1691ee0 151-152,173,175,188,190,194,198-200,202-203
+tests/unit/agent/snooze.test.ts
+  f90fe89ad1691ee0 1-241
+tests/unit/agent/update-check.test.ts
+  f90fe89ad1691ee0 1-302
+tests/unit/agent/passthrough.test.ts
+  f90fe89ad1691ee0 242-257
+tests/unit/agent/update-cache.test.ts
+  f90fe89ad1691ee0 1-217
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.19",
+  "base_commit_sha": "134dde507f38990b73fb540398aa3fddb086f8f9",
+  "prompts": {
+    "f90fe89ad1691ee0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "038446c0-53bb-4c5d-83c3-b6efdd686187",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Louis Choquel <lchoquel@users.noreply.github.com>",
+      "messages": [],
+      "total_additions": 1460,
+      "total_deletions": 89,
+      "accepted_lines": 1391,
+      "overriden_lines": 0
+    }
+  }
+}

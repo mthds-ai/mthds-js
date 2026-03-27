@@ -12,12 +12,12 @@ import { uvToolInstallSync } from "../installer/runtime/installer.js";
 export function passthrough(
   bin: string,
   args: string[],
-  options?: { autoInstall?: boolean }
+  options?: { autoInstall?: boolean; skipVersionCheck?: boolean }
 ): void {
   const recovery = BINARY_RECOVERY[bin];
 
-  // Version-aware auto-install/upgrade
-  if (options?.autoInstall && recovery?.auto_installable) {
+  // Skip version check if caller (e.g. update-check preamble path) already verified
+  if (!options?.skipVersionCheck && options?.autoInstall && recovery?.auto_installable) {
     const check = checkBinaryVersion(recovery);
 
     switch (check.status) {

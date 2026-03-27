@@ -22,6 +22,7 @@ import { registerPipelexRunnerCommands } from "./agent/commands/pipelex-commands
 import { passthroughToPipelexAgent } from "./agent/commands/pipelex-passthrough.js";
 import { registerPlxtCommands } from "./agent/commands/plxt.js";
 import { agentDoctor } from "./agent/commands/doctor.js";
+import { agentUpdateCheck } from "./agent/commands/update-check.js";
 import { agentConfigGet, agentConfigList, agentConfigSet } from "./agent/commands/config.js";
 import { agentInstall } from "./agent/commands/install.js";
 import { agentPublish } from "./agent/commands/publish.js";
@@ -333,6 +334,18 @@ program
   .exitOverride()
   .action(async () => {
     await agentDoctor();
+  });
+
+// ── mthds-agent update-check ──────────────────────────────────────
+
+program
+  .command("update-check")
+  .description("Check if binary dependencies need updating")
+  .option("--force", "Ignore cache and snooze, re-check all binaries")
+  .option("--snooze", "Snooze upgrade reminders for this version set")
+  .exitOverride()
+  .action(async (opts: { force?: boolean; snooze?: boolean }) => {
+    await agentUpdateCheck(opts);
   });
 
 // ── Runner dispatch ──────────────────────────────────────────────────

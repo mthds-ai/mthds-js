@@ -1,0 +1,27 @@
+src/agent/commands/upgrade.ts
+  d6af7103708ca278 10-15,40-43,47,51,54,64,68-73,92,101,110,114,127-130,133-136,144,146-147,155,171
+tests/unit/agent/upgrade.test.ts
+  d6af7103708ca278 330-332
+src/installer/runtime/installer.ts
+  d6af7103708ca278 4,6-7,23,25,31
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.20",
+  "base_commit_sha": "08e9584067c3eb4da6af9959674bb095ce5fb42c",
+  "prompts": {
+    "d6af7103708ca278": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f6b34725-4c66-49cd-b7c3-360f076f347d",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Louis Choquel <lchoquel@users.noreply.github.com>",
+      "messages": [],
+      "total_additions": 51,
+      "total_deletions": 44,
+      "accepted_lines": 46,
+      "overriden_lines": 0
+    }
+  }
+}

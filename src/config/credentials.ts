@@ -17,6 +17,8 @@ export interface MthdsCredentials {
   apiUrl: string;
   apiKey: string;
   telemetry: boolean;
+  autoUpgrade: boolean;
+  updateCheck: boolean;
 }
 
 export type CredentialSource = "env" | "file" | "default";
@@ -38,6 +40,8 @@ const ENV_NAMES: Record<keyof MthdsCredentials, string> = {
   apiKey: "PIPELEX_API_KEY",
   runner: "MTHDS_RUNNER",
   telemetry: "DISABLE_TELEMETRY",
+  autoUpgrade: "MTHDS_AUTO_UPGRADE",
+  updateCheck: "MTHDS_UPDATE_CHECK",
 };
 
 /** Map from credential key to file key (used in ~/.mthds/credentials) */
@@ -46,6 +50,8 @@ const FILE_KEYS: Record<keyof MthdsCredentials, string> = {
   apiKey: "PIPELEX_API_KEY",
   runner: "MTHDS_RUNNER",
   telemetry: "DISABLE_TELEMETRY",
+  autoUpgrade: "MTHDS_AUTO_UPGRADE",
+  updateCheck: "MTHDS_UPDATE_CHECK",
 };
 
 /** Defaults */
@@ -54,6 +60,8 @@ const DEFAULTS: MthdsCredentials = {
   apiUrl: "https://api.pipelex.com",
   apiKey: "",
   telemetry: true,
+  autoUpgrade: false,
+  updateCheck: true,
 };
 
 /** Map from CLI flag names (kebab-case) to credential keys */
@@ -62,7 +70,23 @@ const KEY_ALIASES: Record<string, keyof MthdsCredentials> = {
   "api-url": "apiUrl",
   "api-key": "apiKey",
   telemetry: "telemetry",
+  "auto-upgrade": "autoUpgrade",
+  "update-check": "updateCheck",
 };
+
+// ── Boolean key sets ──────────────────────────────────────────────
+
+/** Keys that store boolean values (coerced from "0"/"1" in file/env) */
+const BOOLEAN_KEYS: Set<keyof MthdsCredentials> = new Set([
+  "telemetry",
+  "autoUpgrade",
+  "updateCheck",
+]);
+
+/** Boolean keys with inverted file semantics (DISABLE_TELEMETRY=1 → false) */
+const INVERTED_BOOLEAN_KEYS: Set<keyof MthdsCredentials> = new Set([
+  "telemetry",
+]);
 
 export const VALID_KEYS = Object.keys(KEY_ALIASES);
 
@@ -124,7 +148,8 @@ function migrateIfNeeded(): void {
   if (existsSync(CREDENTIALS_PATH)) return;
 
   const migrated: Record<string, string> = {};
-  let didMigrate = false;
+  let configJsonMigrated = false;
+  let envLocalMigrated = false;
 
   // Migrate from config.json
   if (existsSync(LEGACY_CONFIG_PATH)) {
@@ -145,9 +170,9 @@ function migrateIfNeeded(): void {
         migrated["DISABLE_TELEMETRY"] = config.telemetry ? "0" : "1";
       }
 
-      didMigrate = true;
+      configJsonMigrated = true;
     } catch {
-      // ignore parse errors
+      // Parse failed — preserve the legacy file so the user can fix it
     }
   }
 
@@ -160,26 +185,22 @@ function migrateIfNeeded(): void {
       if (envEntries["DISABLE_TELEMETRY"]) {
         migrated["DISABLE_TELEMETRY"] = envEntries["DISABLE_TELEMETRY"];
       }
-      didMigrate = true;
+      envLocalMigrated = true;
     } catch {
-      // ignore parse errors
+      // Read failed — preserve the legacy file
     }
   }
 
-  if (didMigrate) {
+  if (configJsonMigrated || envLocalMigrated) {
     mkdirSync(CONFIG_DIR, { recursive: true });
     writeFileSync(CREDENTIALS_PATH, serializeDotenv(migrated), "utf-8");
 
-    // Remove legacy files
-    try {
-      if (existsSync(LEGACY_CONFIG_PATH)) unlinkSync(LEGACY_CONFIG_PATH);
-    } catch {
-      // ignore
+    // Only delete legacy files that were successfully migrated
+    if (configJsonMigrated) {
+      try { unlinkSync(LEGACY_CONFIG_PATH); } catch { /* ignore */ }
     }
-    try {
-      if (existsSync(LEGACY_ENV_LOCAL_PATH)) unlinkSync(LEGACY_ENV_LOCAL_PATH);
-    } catch {
-      // ignore
+    if (envLocalMigrated) {
+      try { unlinkSync(LEGACY_ENV_LOCAL_PATH); } catch { /* ignore */ }
     }
   }
 }
@@ -190,18 +211,20 @@ function coerceValue(
   key: keyof MthdsCredentials,
   raw: string
 ): string | boolean {
-  if (key === "telemetry") {
-    // DISABLE_TELEMETRY=1 means telemetry is OFF
-    return raw !== "1";
-  }
-  return raw;
+  if (!BOOLEAN_KEYS.has(key)) return raw;
+  const truthy = raw === "1";
+  return INVERTED_BOOLEAN_KEYS.has(key) ? !truthy : truthy;
 }
 
 function toFileValue(key: keyof MthdsCredentials, value: string | boolean): string {
-  if (key === "telemetry") {
-    return value ? "0" : "1";
-  }
-  return String(value);
+  if (!BOOLEAN_KEYS.has(key)) return String(value);
+  const boolVal =
+    typeof value === "boolean"
+      ? value
+      : ["true", "1", "yes", "on"].includes(String(value).toLowerCase());
+  return INVERTED_BOOLEAN_KEYS.has(key)
+    ? (boolVal ? "0" : "1")
+    : (boolVal ? "1" : "0");
 }
 
 export function loadCredentials(): MthdsCredentials {
@@ -242,8 +265,12 @@ export function getCredentialValue(
   }
 
   const defaultVal = DEFAULTS[key];
-  if (key === "telemetry") {
-    return { value: defaultVal ? "0" : "1", source: "default" };
+  if (BOOLEAN_KEYS.has(key)) {
+    const boolDefault = defaultVal as boolean;
+    if (INVERTED_BOOLEAN_KEYS.has(key)) {
+      return { value: boolDefault ? "0" : "1", source: "default" };
+    }
+    return { value: boolDefault ? "1" : "0", source: "default" };
   }
   return { value: String(defaultVal), source: "default" };
 }
@@ -254,15 +281,19 @@ export function setCredentialValue(
 ): void {
   const file = readCredentialsFile();
   const fileKey = FILE_KEYS[key];
-  file[fileKey] = toFileValue(key, key === "telemetry" ? coerceTelemetryInput(value) : value);
+  if (BOOLEAN_KEYS.has(key)) {
+    file[fileKey] = toFileValue(key, coerceBooleanInput(value));
+  } else {
+    file[fileKey] = value;
+  }
   writeCredentialsFile(file);
 }
 
 /**
- * Normalize user-facing telemetry input to a boolean.
+ * Normalize user-facing boolean input.
  * Accepts "true"/"false", "1"/"0", "yes"/"no", "on"/"off".
  */
-function coerceTelemetryInput(value: string): boolean {
+function coerceBooleanInput(value: string): boolean {
   const lower = value.toLowerCase();
   return ["true", "1", "yes", "on"].includes(lower);
 }

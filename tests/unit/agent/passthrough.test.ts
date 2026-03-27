@@ -239,4 +239,20 @@ describe("passthrough", () => {
       expect.objectContaining({ error_domain: "install" })
     );
   });
+
+  it("skips version check when skipVersionCheck is true", () => {
+    mockedSpawnSync.mockReturnValue(OK_SPAWN);
+
+    passthrough("pipelex-agent", ["run"], {
+      autoInstall: true,
+      skipVersionCheck: true,
+    });
+
+    expect(mockedCheckBinaryVersion).not.toHaveBeenCalled();
+    expect(mockedSpawnSync).toHaveBeenCalledWith(
+      "pipelex-agent",
+      ["run"],
+      { stdio: "inherit" }
+    );
+  });
 });

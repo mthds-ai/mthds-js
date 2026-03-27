@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { mkdtempSync, writeFileSync, readFileSync, mkdirSync } from "node:fs";
+import { mkdtempSync, writeFileSync, readFileSync, mkdirSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
@@ -47,6 +47,8 @@ describe("credentials", () => {
       expect(creds.apiUrl).toBe("https://api.pipelex.com");
       expect(creds.apiKey).toBe("");
       expect(creds.telemetry).toBe(true);
+      expect(creds.autoUpgrade).toBe(false);
+      expect(creds.updateCheck).toBe(true);
     });
 
     it("reads values from credentials file", async () => {
@@ -238,6 +240,138 @@ describe("credentials", () => {
       );
       expect(content).toContain("PIPELEX_API_KEY=existing-key");
       expect(content).toContain("MTHDS_RUNNER=pipelex");
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // auto-upgrade and update-check boolean config keys
+  // ---------------------------------------------------------------------------
+  describe("autoUpgrade and updateCheck", () => {
+    it("writes MTHDS_AUTO_UPGRADE=1 when setting auto-upgrade to true", async () => {
+      const { setCredentialValue } = await importCredentials();
+      setCredentialValue("autoUpgrade", "true");
+
+      const content = readFileSync(
+        join(tempHome, ".mthds", "credentials"),
+        "utf-8"
+      );
+      expect(content).toContain("MTHDS_AUTO_UPGRADE=1");
+    });
+
+    it("writes MTHDS_UPDATE_CHECK=0 when setting update-check to false", async () => {
+      const { setCredentialValue } = await importCredentials();
+      setCredentialValue("updateCheck", "false");
+
+      const content = readFileSync(
+        join(tempHome, ".mthds", "credentials"),
+        "utf-8"
+      );
+      expect(content).toContain("MTHDS_UPDATE_CHECK=0");
+    });
+
+    it("coerces yes/on/1/true all to true for autoUpgrade", async () => {
+      for (const val of ["yes", "on", "1", "true"]) {
+        const { setCredentialValue, loadCredentials } = await importCredentials();
+        setCredentialValue("autoUpgrade", val);
+        const creds = loadCredentials();
+        expect(creds.autoUpgrade).toBe(true);
+      }
+    });
+
+    it("round-trips autoUpgrade: set true, reload, get true", async () => {
+      const mod1 = await importCredentials();
+      mod1.setCredentialValue("autoUpgrade", "true");
+
+      const mod2 = await importCredentials();
+      const creds = mod2.loadCredentials();
+      expect(creds.autoUpgrade).toBe(true);
+    });
+
+    it("round-trips updateCheck: set false, reload, get false", async () => {
+      const mod1 = await importCredentials();
+      mod1.setCredentialValue("updateCheck", "false");
+
+      const mod2 = await importCredentials();
+      const creds = mod2.loadCredentials();
+      expect(creds.updateCheck).toBe(false);
+    });
+
+    it("env var MTHDS_AUTO_UPGRADE=1 overrides file value", async () => {
+      const configDir = join(tempHome, ".mthds");
+      mkdirSync(configDir, { recursive: true });
+      writeFileSync(
+        join(configDir, "credentials"),
+        "MTHDS_AUTO_UPGRADE=0\n",
+        "utf-8"
+      );
+      vi.stubEnv("MTHDS_AUTO_UPGRADE", "1");
+
+      const { loadCredentials } = await importCredentials();
+      const creds = loadCredentials();
+      expect(creds.autoUpgrade).toBe(true);
+    });
+
+    it("getCredentialValue returns raw file value for boolean keys", async () => {
+      const configDir = join(tempHome, ".mthds");
+      mkdirSync(configDir, { recursive: true });
+      writeFileSync(
+        join(configDir, "credentials"),
+        "MTHDS_AUTO_UPGRADE=1\n",
+        "utf-8"
+      );
+
+      const { getCredentialValue } = await importCredentials();
+      const result = getCredentialValue("autoUpgrade");
+      expect(result.value).toBe("1");
+      expect(result.source).toBe("file");
+    });
+
+    it("getCredentialValue returns correct defaults for new boolean keys", async () => {
+      const { getCredentialValue } = await importCredentials();
+
+      const autoUpgrade = getCredentialValue("autoUpgrade");
+      expect(autoUpgrade.value).toBe("0");
+      expect(autoUpgrade.source).toBe("default");
+
+      const updateCheck = getCredentialValue("updateCheck");
+      expect(updateCheck.value).toBe("1");
+      expect(updateCheck.source).toBe("default");
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Migration: per-file deletion safety
+  // ---------------------------------------------------------------------------
+  describe("migration", () => {
+    it("preserves corrupt config.json when .env.local migrates successfully", async () => {
+      const configDir = join(tempHome, ".mthds");
+      mkdirSync(configDir, { recursive: true });
+
+      // config.json with invalid JSON (trailing comma)
+      writeFileSync(
+        join(configDir, "config.json"),
+        '{"apiKey": "my-key",}',
+        "utf-8"
+      );
+      // .env.local with valid content
+      writeFileSync(
+        join(configDir, ".env.local"),
+        "DISABLE_TELEMETRY=1\n",
+        "utf-8"
+      );
+
+      const { loadCredentials } = await importCredentials();
+      const creds = loadCredentials();
+
+      // Telemetry migrated from .env.local
+      expect(creds.telemetry).toBe(false);
+
+      // config.json should be preserved (parse failed)
+      expect(existsSync(join(configDir, "config.json"))).toBe(true);
+      // .env.local should be deleted (migrated successfully)
+      expect(existsSync(join(configDir, ".env.local"))).toBe(false);
+      // credentials file should exist with telemetry from .env.local
+      expect(existsSync(join(configDir, "credentials"))).toBe(true);
     });
   });
 });

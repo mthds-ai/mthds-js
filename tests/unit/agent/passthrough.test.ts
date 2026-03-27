@@ -71,6 +71,11 @@ beforeEach(() => {
 
 describe("passthrough", () => {
   it("spawns the binary and exits with its status code", () => {
+    mockedCheckBinaryVersion.mockReturnValue({
+      status: "ok",
+      installed_version: "0.22.0",
+      version_constraint: ">=0.22.0",
+    });
     mockedSpawnSync.mockReturnValue(OK_SPAWN);
 
     passthrough("pipelex-agent", ["run", "--pipe", "test"]);
@@ -83,7 +88,7 @@ describe("passthrough", () => {
     expect(mockExit).toHaveBeenCalledWith(0);
   });
 
-  it("emits BinaryNotFoundError on ENOENT", () => {
+  it("emits BinaryNotFoundError on ENOENT when no recovery info", () => {
     const enoentError = new Error("spawn ENOENT") as NodeJS.ErrnoException;
     enoentError.code = "ENOENT";
 
@@ -94,13 +99,13 @@ describe("passthrough", () => {
       pid: 0,
     });
 
-    expect(() => passthrough("pipelex-agent", ["run"])).toThrow(AgentErrorThrow);
+    // Use a binary with no BINARY_RECOVERY entry so version check is skipped
+    expect(() => passthrough("nonexistent-bin", ["run"])).toThrow(AgentErrorThrow);
     expect(mockedAgentError).toHaveBeenCalledWith(
       expect.stringContaining("not found"),
       "BinaryNotFoundError",
       expect.objectContaining({
         error_domain: "binary",
-        recovery: expect.objectContaining({ binary: "pipelex-agent" }),
       })
     );
   });
@@ -238,6 +243,66 @@ describe("passthrough", () => {
       "InstallError",
       expect.objectContaining({ error_domain: "install" })
     );
+  });
+
+  // ── 9c: Version check runs unconditionally when recovery exists ──────
+
+  it("emits BinaryNotFoundError when autoInstall=false and binary is missing", () => {
+    mockedCheckBinaryVersion.mockReturnValue({
+      status: "missing",
+      installed_version: null,
+      version_constraint: ">=0.22.0",
+    });
+
+    expect(() =>
+      passthrough("pipelex-agent", ["run"], { autoInstall: false })
+    ).toThrow(AgentErrorThrow);
+
+    expect(mockedAgentError).toHaveBeenCalledWith(
+      expect.stringContaining("not installed"),
+      "BinaryNotFoundError",
+      expect.objectContaining({
+        error_domain: "binary",
+        hint: expect.stringContaining("Install"),
+      })
+    );
+    expect(mockedUvToolInstallSync).not.toHaveBeenCalled();
+  });
+
+  it("emits InstallError when autoInstall=false and binary is outdated", () => {
+    mockedCheckBinaryVersion.mockReturnValue({
+      status: "outdated",
+      installed_version: "0.20.0",
+      version_constraint: ">=0.22.0",
+    });
+
+    expect(() =>
+      passthrough("pipelex-agent", ["run"], { autoInstall: false })
+    ).toThrow(AgentErrorThrow);
+
+    expect(mockedAgentError).toHaveBeenCalledWith(
+      expect.stringContaining("outdated"),
+      "InstallError",
+      expect.objectContaining({
+        error_domain: "install",
+        hint: expect.stringContaining("Upgrade"),
+      })
+    );
+    expect(mockedUvToolInstallSync).not.toHaveBeenCalled();
+  });
+
+  it("checks version even without autoInstall when recovery exists", () => {
+    mockedCheckBinaryVersion.mockReturnValue({
+      status: "ok",
+      installed_version: "0.22.0",
+      version_constraint: ">=0.22.0",
+    });
+    mockedSpawnSync.mockReturnValue(OK_SPAWN);
+
+    passthrough("pipelex-agent", ["run"]); // no autoInstall option at all
+
+    expect(mockedCheckBinaryVersion).toHaveBeenCalled();
+    expect(mockedSpawnSync).toHaveBeenCalled();
   });
 
   it("skips version check when skipVersionCheck is true", () => {

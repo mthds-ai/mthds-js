@@ -43,7 +43,7 @@ function errorMsg(err: unknown): string {
 
 // ── Main ───────────────────────────────────────────────────────────
 
-export async function agentUpgrade(): Promise<void> {
+export function agentUpgrade(): void {
   // requireUv() — fatal if missing
   try {
     requireUv();

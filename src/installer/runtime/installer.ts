@@ -21,6 +21,10 @@ export async function ensureRuntime(): Promise<void> {
 async function installPipelexViaUv(): Promise<void> {
   const spinner = ora("Installing pipelex via uv...").start();
   const recovery = BINARY_RECOVERY["pipelex"];
+  if (!recovery) {
+    spinner.fail("pipelex recovery info is missing — this is a bug.");
+    throw new Error("BINARY_RECOVERY is missing the 'pipelex' entry.");
+  }
   try {
     uvToolInstallSync(recovery.uv_package, recovery.version_constraint);
   } catch (error) {

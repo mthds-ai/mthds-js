@@ -51,15 +51,10 @@ export interface UpdateCheckOptions {
 export async function agentUpdateCheck(
   options: UpdateCheckOptions
 ): Promise<void> {
-  try {
-    await agentUpdateCheckInner(options);
-  } catch (err) {
-    // Write to stderr for interactive use; preamble discards stderr via 2>/dev/null
-    // but interactive `mthds-agent update-check` will show it.
-    process.stderr.write(
-      `update-check failed unexpectedly: ${err instanceof Error ? err.message : String(err)}\n`
-    );
-  }
+  // Let errors propagate to non-zero exit so the preamble's
+  // MTHDS_UPDATE_CHECK_FAILED branch can detect real failures.
+  // The preamble handles non-zero exit gracefully (warns + proceeds).
+  await agentUpdateCheckInner(options);
 }
 
 async function agentUpdateCheckInner(

@@ -280,23 +280,14 @@ describe("update-check", () => {
   });
 
   // ---------------------------------------------------------------------------
-  // Error boundary
+  // Error propagation (errors surface as non-zero exit for preamble detection)
   // ---------------------------------------------------------------------------
-  it("catches unexpected errors and writes to stderr without throwing", async () => {
+  it("propagates errors so preamble can detect MTHDS_UPDATE_CHECK_FAILED", async () => {
     vi.mocked(loadCredentials).mockImplementation(() => {
       throw new Error("unexpected boom");
     });
 
-    let stderrOutput = "";
-    vi.spyOn(process.stderr, "write").mockImplementation((chunk: string | Uint8Array) => {
-      stderrOutput += String(chunk);
-      return true;
-    });
-
-    // Should NOT throw
-    await agentUpdateCheck({});
-    expect(stderrOutput).toContain("update-check failed unexpectedly");
-    expect(stderrOutput).toContain("unexpected boom");
+    await expect(agentUpdateCheck({})).rejects.toThrow("unexpected boom");
     expect(stdoutOutput).toBe("");
   });
 

@@ -3,6 +3,12 @@
  *
  * Runs `<binary> --version`, extracts the semver, and compares against the
  * declared constraint from BinaryRecoveryInfo.
+ *
+ * NOTE: The skill preamble (skills/shared/preamble.md) implements a parallel
+ * bash version comparison for mthds-agent itself (chicken-and-egg: must check
+ * mthds-agent before calling it). That bash comparison is intentionally simpler
+ * (major.minor.patch arithmetic only, no prerelease/build metadata). Both
+ * implementations must stay in sync for the version gate to behave consistently.
  */
 
 import { execFileSync } from "node:child_process";

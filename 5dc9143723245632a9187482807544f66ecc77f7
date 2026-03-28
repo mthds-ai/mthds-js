@@ -1,0 +1,23 @@
+src/installer/runtime/version-check.ts
+  47df939a7fedae14 6-11
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.22",
+  "base_commit_sha": "5dc9143723245632a9187482807544f66ecc77f7",
+  "prompts": {
+    "47df939a7fedae14": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2bce10dd-2da3-42dc-816d-6c1f8db8eb6f",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Louis Choquel <lchoquel@users.noreply.github.com>",
+      "messages": [],
+      "total_additions": 6,
+      "total_deletions": 0,
+      "accepted_lines": 6,
+      "overriden_lines": 0
+    }
+  }
+}

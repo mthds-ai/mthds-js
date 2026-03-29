@@ -22,12 +22,15 @@ import { registerPipelexRunnerCommands } from "./agent/commands/pipelex-commands
 import { passthroughToPipelexAgent } from "./agent/commands/pipelex-passthrough.js";
 import { registerPlxtCommands } from "./agent/commands/plxt.js";
 import { agentDoctor } from "./agent/commands/doctor.js";
+import { agentUpdateCheck } from "./agent/commands/update-check.js";
+import { agentUpgrade } from "./agent/commands/upgrade.js";
 import { agentConfigGet, agentConfigList, agentConfigSet } from "./agent/commands/config.js";
 import { agentInstall } from "./agent/commands/install.js";
 import { agentPublish } from "./agent/commands/publish.js";
 import { agentShare } from "./agent/commands/share.js";
-import { isPipelexInstalled } from "./installer/runtime/check.js";
-import { installPipelexSync } from "./installer/runtime/installer.js";
+import { checkBinaryVersion } from "./installer/runtime/version-check.js";
+import { uvToolInstallSync } from "./installer/runtime/installer.js";
+import { BINARY_RECOVERY, buildInstallCommand } from "./agent/binaries.js";
 import { agentPackageInit, agentPackageList, agentPackageValidate } from "./agent/commands/package.js";
 import { createRunner } from "./runners/registry.js";
 import { Runners, RUNNER_NAMES } from "./runners/types.js";
@@ -267,30 +270,44 @@ runnerSetup
   .description("Install the Pipelex runner")
   .exitOverride()
   .action(() => {
-    if (isPipelexInstalled()) {
-      agentSuccess({ success: true, already_installed: true, message: "pipelex is already installed" });
+    const recovery = BINARY_RECOVERY["pipelex"];
+    const check = checkBinaryVersion(recovery);
+
+    if (check.status === "ok") {
+      agentSuccess({ success: true, already_installed: true, message: "pipelex is already installed and up to date" });
       return;
     }
+
+    const action = check.status === "outdated" ? "upgrade" : "install";
     try {
-      installPipelexSync();
+      uvToolInstallSync(recovery.uv_package, recovery.version_constraint);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      agentError(`Failed to install pipelex: ${msg}`, "InstallError", {
+      agentError(`Failed to ${action} pipelex: ${msg}`, "InstallError", {
         error_domain: AGENT_ERROR_DOMAINS.INSTALL,
-        hint: "Install manually: https://pipelex.com",
+        hint: `${action === "upgrade" ? "Upgrade" : "Install"} manually: ${buildInstallCommand(recovery)}`,
       });
     }
-    if (!isPipelexInstalled()) {
-      agentError(
-        "pipelex was installed but is not reachable in PATH.",
-        "InstallError",
-        {
-          error_domain: AGENT_ERROR_DOMAINS.INSTALL,
-          hint: "Restart your shell or add the install directory to your PATH.",
-        }
-      );
+
+    const postCheck = checkBinaryVersion(recovery);
+    if (postCheck.status !== "ok") {
+      const detail = postCheck.status === "missing"
+        ? "pipelex was installed but is not reachable in PATH."
+        : `pipelex was ${action === "upgrade" ? "upgraded" : "installed"} but version check failed (status: ${postCheck.status}, installed: ${postCheck.installed_version}, needs: ${recovery.version_constraint}).`;
+      const hint = postCheck.status === "missing"
+        ? "Restart your shell or add the install directory to your PATH."
+        : `${action === "upgrade" ? "Upgrade" : "Install"} manually: ${buildInstallCommand(recovery)}`;
+      agentError(detail, "InstallError", {
+        error_domain: AGENT_ERROR_DOMAINS.INSTALL,
+        hint,
+      });
     }
-    agentSuccess({ success: true, already_installed: false, message: "pipelex installed successfully" });
+    agentSuccess({
+      success: true,
+      already_installed: action === "upgrade",
+      message: action === "upgrade" ? "pipelex upgraded successfully" : "pipelex installed successfully",
+      installed_version: postCheck.installed_version,
+    });
   });
 
 runnerSetup
@@ -318,6 +335,28 @@ program
   .exitOverride()
   .action(async () => {
     await agentDoctor();
+  });
+
+// ── mthds-agent update-check ──────────────────────────────────────
+
+program
+  .command("update-check")
+  .description("Check if binary dependencies need updating")
+  .option("--force", "Ignore cache and snooze, re-check all binaries")
+  .option("--snooze", "Snooze upgrade reminders for this version set")
+  .exitOverride()
+  .action(async (opts: { force?: boolean; snooze?: boolean }) => {
+    await agentUpdateCheck(opts);
+  });
+
+// ── mthds-agent upgrade ───────────────────────────────────────────
+
+program
+  .command("upgrade")
+  .description("Upgrade Python binary dependencies (pipelex, plxt)")
+  .exitOverride()
+  .action(async () => {
+    await agentUpgrade();
   });
 
 // ── Runner dispatch ──────────────────────────────────────────────────

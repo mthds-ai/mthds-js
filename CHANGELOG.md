@@ -1,5 +1,25 @@
 # Changelog
 
+## [v0.3.0] - 2026-03-30
+
+### Added
+
+- **`mthds-agent upgrade` command** — upgrade the pipelex backend to a specific or latest version via `uv`.
+- **`mthds-agent update-check` command** — check for available pipelex updates with snooze and cache support to avoid redundant network calls.
+- **Always-on version checks** — `mthds-agent` automatically checks for pipelex updates on every invocation (with snooze/cache to stay fast).
+- **Version-aware binary management** — the agent tracks installed pipelex versions and supports auto-upgrade via `uv`.
+- **Subprocess execution timeouts** — all subprocess calls now have configurable timeouts to prevent indefinite hangs.
+
+### Changed
+
+- **Update-check errors are now propagated** — previously swallowed errors in version checks are surfaced to the user.
+- **Runner-aware pre-flight checks improved** — TOCTOU race fixes and snooze-before-reverify optimization for faster startup.
+
+### Fixed
+
+- **Install/upgrade message text** — corrected misleading messages and tightened post-install verification.
+- **Skills repo URL** — updated to `mthds-plugins` and fixed `mthds.ai` links.
+
 ## [v0.2.1] - 2026-03-24
 
 ### Added

@@ -1,6 +1,6 @@
 # MTHDS CLI Reference (JavaScript)
 
-Command-line interface for the [mthds.ai](https://mthds.ai) open standard. Install methods, execute pipelines, and manage configuration.
+Command-line interface for the [mthds.ai](https://mthds.ai/latest/) open standard. Install methods, execute pipelines, and manage configuration.
 
 ## Installation
 

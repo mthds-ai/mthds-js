@@ -54,7 +54,7 @@ async function installPipelexViaUv(): Promise<void> {
  */
 export function requireUv(): string {
   try {
-    execFileSync("uv", ["--version"], { stdio: "ignore" });
+    execFileSync("uv", ["--version"], { stdio: "ignore", timeout: 5000 });
     return "uv";
   } catch (err) {
     const errno = (err as NodeJS.ErrnoException).code;

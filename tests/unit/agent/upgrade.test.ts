@@ -320,7 +320,7 @@ describe("agentUpgrade", () => {
       throw new Error("uv is required but not found in PATH");
     });
 
-    expect(() => agentUpgrade()).toThrow("agentError called");
+    await expect(agentUpgrade()).rejects.toThrow("agentError called");
 
     expect(agentError).toHaveBeenCalledWith(
       expect.stringContaining("uv is required"),

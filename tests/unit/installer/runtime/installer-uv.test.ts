@@ -35,6 +35,7 @@ describe("requireUv", () => {
     expect(result).toBe("uv");
     expect(mockedExecFileSync).toHaveBeenCalledWith("uv", ["--version"], {
       stdio: "ignore",
+      timeout: 5000,
     });
   });
 

@@ -140,10 +140,10 @@ export function readCache(): CacheResult | null {
 
 /** Write cache. Creates state directory if needed. */
 export function writeCache(result: CacheResult): void {
-  ensureStateDir();
-  const content =
-    result.aggregate + "\n" + JSON.stringify(result.payload) + "\n";
   try {
+    ensureStateDir();
+    const content =
+      result.aggregate + "\n" + JSON.stringify(result.payload) + "\n";
     writeFileSync(CACHE_PATH, content, "utf-8");
   } catch (err) {
     const code = (err as NodeJS.ErrnoException).code;

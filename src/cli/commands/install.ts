@@ -338,7 +338,7 @@ export async function installMethod(options: {
   }
 
   // Step 6: Optional MTHDS skills
-  const SKILLS_REPO = "https://github.com/mthds-ai/skills";
+  const PLUGINS_REPO = "https://github.com/mthds-ai/mthds-plugins";
 
   const wantsSkills = await p.confirm({
     message: "Do you want to install the MTHDS skills?",
@@ -383,13 +383,13 @@ export async function installMethod(options: {
     const sk = p.spinner();
     sk.start(`Installing MTHDS skills ${locationLabel} for ${selectedAgent}...`);
     try {
-      await execAsync(`npx skills add ${SKILLS_REPO} --skill '*' --agent ${selectedAgent}${globalFlag} -y`, {
+      await execAsync(`npx skills add ${PLUGINS_REPO} --skill '*' --agent ${selectedAgent}${globalFlag} -y`, {
         cwd: process.cwd(),
       });
       sk.stop(`MTHDS skills installed ${locationLabel} for ${selectedAgent}.`);
     } catch {
       sk.stop("Failed to install MTHDS skills.");
-      p.log.warning(`Could not install MTHDS skills. You can retry manually:\n  npx skills add ${SKILLS_REPO} --skill '*' --agent ${selectedAgent}${globalFlag}`);
+      p.log.warning(`Could not install MTHDS skills. You can retry manually:\n  npx skills add ${PLUGINS_REPO} --skill '*' --agent ${selectedAgent}${globalFlag}`);
     }
   }
 

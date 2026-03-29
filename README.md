@@ -2,7 +2,7 @@
 
 CLI and SDK for **methods** — reusable workflows for AI coding agents.
 
-The MTHDS open standard is defined at [mthds.ai](https://mthds.ai). Browse and discover public methods on the hub at [mthds.sh](https://mthds.sh).
+The MTHDS open standard is defined at [mthds.ai](https://mthds.ai/latest/). Browse and discover public methods on the hub at [mthds.sh](https://mthds.sh).
 
 ## What is a method?
 

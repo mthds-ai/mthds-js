@@ -214,12 +214,12 @@ export async function agentInstall(
   // Optional skills install
   const installedSkills: string[] = [];
   if (options.skills) {
-    const SKILLS_REPO = "https://github.com/mthds-ai/skills";
+    const PLUGINS_REPO = "https://github.com/mthds-ai/mthds-plugins";
     const globalFlag = selectedLocation === Loc.Global ? " -g" : "";
 
     try {
       await execAsync(
-        `npx --yes skills add ${SKILLS_REPO} --skill '*' --agent ${selectedAgent}${globalFlag} -y`,
+        `npx --yes skills add ${PLUGINS_REPO} --skill '*' --agent ${selectedAgent}${globalFlag} -y`,
         { cwd: process.cwd() }
       );
       installedSkills.push("*");

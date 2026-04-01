@@ -27,13 +27,17 @@ export function isUvInstalled(): boolean {
  * for the current process. Throws on failure.
  */
 export function installUv(): void {
-  const uvBinDir = join(homedir(), ".local", "bin");
+  const isWindows = process.platform === "win32";
+  const uvBinDir = isWindows
+    ? join(process.env.APPDATA ?? join(homedir(), "AppData", "Roaming"), "uv", "bin")
+    : join(homedir(), ".local", "bin");
+
+  const cmd = isWindows
+    ? 'powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"'
+    : "curl -LsSf https://astral.sh/uv/install.sh | sh";
 
   try {
-    execSync("curl -LsSf https://astral.sh/uv/install.sh | sh", {
-      stdio: "pipe",
-      timeout: 30_000,
-    });
+    execSync(cmd, { stdio: "pipe", timeout: 30_000 });
   } catch (err) {
     const stderr = (err as { stderr?: Buffer })?.stderr?.toString().trim();
     const detail = stderr || (err instanceof Error ? err.message : String(err));
@@ -41,8 +45,9 @@ export function installUv(): void {
   }
 
   // Make uv available in the current process
+  const sep = isWindows ? ";" : ":";
   if (!process.env.PATH?.includes(uvBinDir)) {
-    process.env.PATH = `${uvBinDir}:${process.env.PATH}`;
+    process.env.PATH = `${uvBinDir}${sep}${process.env.PATH}`;
   }
 }
 

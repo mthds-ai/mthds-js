@@ -1,0 +1,53 @@
+src/installer/telemetry/posthog.ts
+  f68b87ba7bb83b1b 6-7,14
+src/config/config.ts
+  f68b87ba7bb83b1b 1-312,314-315,317-354
+tests/unit/agent/update-check.test.ts
+  f68b87ba7bb83b1b 7-8,62,82,108,286,333
+src/cli/commands/setup.ts
+  f68b87ba7bb83b1b 58
+tests/unit/installer/telemetry/posthog.test.ts
+  f68b87ba7bb83b1b 16
+CHANGELOG.md
+  f68b87ba7bb83b1b 3-9
+src/agent/commands/update-check.ts
+  f68b87ba7bb83b1b 20,64-65,71,86,103,118
+tests/unit/config/config.test.ts
+  f68b87ba7bb83b1b 1-449
+CLAUDE.md
+  f68b87ba7bb83b1b 43,62,75
+tests/unit/agent/upgrade.test.ts
+  f68b87ba7bb83b1b 6-7,62,83,129,177,235,331,339
+CLI.md
+  f68b87ba7bb83b1b 310,312,393,453
+src/cli.ts
+  f68b87ba7bb83b1b 27
+README.md
+  f68b87ba7bb83b1b 146,155,157
+src/agent/commands/bootstrap.ts
+  f68b87ba7bb83b1b 26,72,74
+package.json
+  f68b87ba7bb83b1b 3
+src/agent/commands/upgrade.ts
+  f68b87ba7bb83b1b 28,57,60
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.2.3",
+  "base_commit_sha": "0704a586a3aa5c4525c0a419381a2080fcae9e31",
+  "prompts": {
+    "f68b87ba7bb83b1b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6747bb7d-5e34-4608-9f02-087276958939",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Louis Choquel",
+      "messages": [],
+      "total_additions": 857,
+      "total_deletions": 62,
+      "accepted_lines": 854,
+      "overriden_lines": 0
+    }
+  }
+}

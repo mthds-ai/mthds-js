@@ -1,0 +1,25 @@
+tests/unit/config/config.test.ts
+  f68b87ba7bb83b1b 2
+src/config/config.ts
+  f68b87ba7bb83b1b 242-244
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.2.3",
+  "base_commit_sha": "5aac3c35918fb6db7c5112535fa72518fc6ed70a",
+  "prompts": {
+    "f68b87ba7bb83b1b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6747bb7d-5e34-4608-9f02-087276958939",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Louis Choquel",
+      "messages": [],
+      "total_additions": 4,
+      "total_deletions": 154,
+      "accepted_lines": 394,
+      "overriden_lines": 0
+    }
+  }
+}

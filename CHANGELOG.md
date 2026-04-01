@@ -1,11 +1,21 @@
 # Changelog
 
+## [v0.3.3] - 2026-04-01
+
+### Changed
+
+- **Removed legacy config migration system** — no backward compatibility with old `~/.mthds/credentials`, `config.json`, or `.env.local` files.
+
+### Fixed
+
+- Renamed stale `credKey` variable to `configKey` in `listConfig()`.
+
 ## [v0.3.2] - 2026-04-01
 
 ### Changed
 
 - **Default runner changed to `pipelex`** — new installations now default to the local Pipelex CLI runner instead of the API runner.
-- **Renamed config file from `~/.mthds/credentials` to `~/.mthds/config`** — the file stores general configuration (runner, telemetry, auto-upgrade), not just credentials. Existing `~/.mthds/credentials` files are auto-migrated on first access.
+- **Renamed config file from `~/.mthds/credentials` to `~/.mthds/config`** — the file stores general configuration (runner, telemetry, auto-upgrade), not just credentials.
 
 ## [v0.3.1] - 2026-04-01
 

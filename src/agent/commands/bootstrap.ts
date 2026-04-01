@@ -40,6 +40,10 @@ function errorMsg(err: unknown): string {
 
 // ── Main ───────────────────────────────────────────────────────────
 
+// TODO: Extract shared install-check-report workflow with agentUpgrade() to
+// reduce duplication (~78% overlap). The unique bootstrap logic is the uv
+// auto-install preamble (lines below); everything after that mirrors upgrade.
+
 export async function agentBootstrap(): Promise<void> {
   // 1. Ensure uv is available — auto-install if missing
   if (!isUvInstalled()) {
@@ -56,7 +60,7 @@ export async function agentBootstrap(): Promise<void> {
 
     if (!isUvInstalled()) {
       agentError(
-        "uv was installed but is not reachable in PATH. Restart your shell or add ~/.local/bin to PATH.",
+        `uv was installed but is not reachable in PATH. Restart your shell or add the uv bin directory to PATH.`,
         "InstallError",
         { error_domain: AGENT_ERROR_DOMAINS.INSTALL }
       );
@@ -182,6 +186,8 @@ export async function agentBootstrap(): Promise<void> {
       "BOOTSTRAP_FAILED " + JSON.stringify({ failed: failedEntries }) + "\n"
     );
   } else {
+    clearCache();
+    clearSnooze();
     process.stdout.write(
       "BOOTSTRAP_PARTIAL " +
         JSON.stringify({ installed: installedEntries, failed: failedEntries }) +

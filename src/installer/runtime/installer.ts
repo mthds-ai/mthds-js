@@ -32,6 +32,9 @@ export function installUv(): void {
     ? join(process.env.APPDATA ?? join(homedir(), "AppData", "Roaming"), "uv", "bin")
     : join(homedir(), ".local", "bin");
 
+  // Official uv install scripts (https://docs.astral.sh/uv/getting-started/installation/).
+  // These execute a remote script without checksum verification — accepted tradeoff for the
+  // standard install path. The scripts are served over HTTPS from astral.sh's CDN.
   const cmd = isWindows
     ? 'powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"'
     : "curl -LsSf https://astral.sh/uv/install.sh | sh";

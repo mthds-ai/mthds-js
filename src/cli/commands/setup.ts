@@ -55,7 +55,7 @@ async function initApi(): Promise<void> {
     setConfigValue("apiKey", apiKey as string);
   }
 
-  p.log.success("API credentials saved to ~/.mthds/credentials");
+  p.log.success("API configuration saved to ~/.mthds/config");
 }
 
 async function initPipelex(): Promise<void> {

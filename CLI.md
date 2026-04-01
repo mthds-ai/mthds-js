@@ -307,9 +307,9 @@ mthds build output pipe ./bundle.mthds --pipe my_pipe --format json
 
 ## Config
 
-Manage configuration stored in `~/.mthds/credentials`.
+Manage configuration stored in `~/.mthds/config`.
 
-Configuration values are resolved in this order: **environment variables > credentials file > defaults**.
+Configuration values are resolved in this order: **environment variables > config file > defaults**.
 
 ### Valid Configuration Keys
 
@@ -390,7 +390,7 @@ mthds runner setup <name>
 |---|---|---|---|
 | `name` | string | yes | Runner name (`api` or `pipelex`) |
 
-**For `api`:** interactively prompts for the API URL and API key (masked input), then saves them to `~/.mthds/credentials`.
+**For `api`:** interactively prompts for the API URL and API key (masked input), then saves them to `~/.mthds/config`.
 
 **For `pipelex`:** installs the pipelex CLI if not already present, then runs `pipelex init` (interactive configuration for backends, credentials, routing, etc.).
 
@@ -450,7 +450,7 @@ Default runner: pipelex
 
 ## Telemetry
 
-Manage anonymous usage telemetry. Telemetry can also be controlled via the `DISABLE_TELEMETRY=1` environment variable, which takes precedence over the credentials file.
+Manage anonymous usage telemetry. Telemetry can also be controlled via the `DISABLE_TELEMETRY=1` environment variable, which takes precedence over the config file.
 
 ### `mthds telemetry enable`
 

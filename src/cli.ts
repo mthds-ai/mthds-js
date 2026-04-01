@@ -24,7 +24,7 @@ import { packageInit } from "./cli/commands/package/init.js";
 import { packageList } from "./cli/commands/package/list.js";
 import { packageValidate } from "./cli/commands/package/validate.js";
 import { RUNNER_NAMES } from "./runners/types.js";
-import { isTelemetryEnabled, setTelemetryEnabled, getTelemetrySource } from "./config/credentials.js";
+import { isTelemetryEnabled, setTelemetryEnabled, getTelemetrySource } from "./config/config.js";
 import type { RunnerType } from "./runners/types.js";
 import type { Command as Cmd } from "commander";
 

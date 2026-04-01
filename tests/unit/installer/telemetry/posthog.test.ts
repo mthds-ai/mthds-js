@@ -13,7 +13,7 @@ vi.mock("posthog-node", () => {
   return { PostHog: MockPostHog };
 });
 
-vi.mock("../../../../src/config/credentials.js", () => ({
+vi.mock("../../../../src/config/config.js", () => ({
   isTelemetryEnabled: vi.fn().mockReturnValue(true),
   setTelemetryEnabled: vi.fn(),
   getTelemetrySource: vi.fn().mockReturnValue("default"),

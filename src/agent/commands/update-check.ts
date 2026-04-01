@@ -17,7 +17,7 @@ import { agentSuccess } from "../output.js";
 import { BINARY_RECOVERY } from "../binaries.js";
 import { checkBinaryVersion } from "../../installer/runtime/version-check.js";
 import type { VersionCheckResult } from "../../installer/runtime/version-check.js";
-import { loadCredentials } from "../../config/credentials.js";
+import { loadConfig } from "../../config/config.js";
 import { Runners } from "../../runners/types.js";
 import {
   readCache,
@@ -61,14 +61,14 @@ async function agentUpdateCheckInner(
   options: UpdateCheckOptions
 ): Promise<void> {
   // 1. Check if update-check is disabled
-  const creds = loadCredentials();
-  if (!creds.updateCheck) return;
+  const cfg = loadConfig();
+  if (!cfg.updateCheck) return;
 
   // 2. Check for just-upgraded-from marker
   const upgradeMarker = readAndClearUpgradeMarker();
   if (upgradeMarker) {
     clearCache();
-    const payload = runFreshChecks(creds.runner);
+    const payload = runFreshChecks(cfg.runner);
     writeCache({ aggregate: computeAggregate(payload), payload });
     const output = { previous: upgradeMarker, current: payloadVersions(payload) };
     process.stdout.write("JUST_UPGRADED " + JSON.stringify(output) + "\n");
@@ -83,7 +83,7 @@ async function agentUpdateCheckInner(
 
   // 4. Handle --snooze
   if (options.snooze) {
-    const payload = getOrRefreshPayload(creds.runner);
+    const payload = getOrRefreshPayload(cfg.runner);
     const versionKey = computeVersionKey(payload);
     writeSnooze(versionKey);
     agentSuccess({ snoozed: true, version_key: versionKey });
@@ -100,7 +100,7 @@ async function agentUpdateCheckInner(
     if (isSnoozed(cachedKey)) return;
 
     // Re-verify to catch manual upgrades (e.g. uv tool install --upgrade)
-    const freshPayload = runFreshChecks(creds.runner);
+    const freshPayload = runFreshChecks(cfg.runner);
     const freshAggregate = computeAggregate(freshPayload);
     writeCache({ aggregate: freshAggregate, payload: freshPayload });
 
@@ -115,7 +115,7 @@ async function agentUpdateCheckInner(
   }
 
   // 6. Cache miss — run fresh checks
-  const payload = runFreshChecks(creds.runner);
+  const payload = runFreshChecks(cfg.runner);
   const aggregate = computeAggregate(payload);
 
   // 7. Emit result BEFORE writing cache — if writeCache throws (e.g. state dir

@@ -3,8 +3,8 @@ import type { VersionCheckResult } from "../../../src/installer/runtime/version-
 
 // ── Mocks ──────────────────────────────────────────────────────────
 
-vi.mock("../../../src/config/credentials.js", () => ({
-  loadCredentials: vi.fn(() => ({
+vi.mock("../../../src/config/config.js", () => ({
+  loadConfig: vi.fn(() => ({
     runner: "api",
     apiUrl: "",
     apiKey: "",
@@ -59,7 +59,7 @@ vi.mock("node:fs", async (importOriginal) => {
 // ── Imports (after mocks) ──────────────────────────────────────────
 
 import { agentUpgrade } from "../../../src/agent/commands/upgrade.js";
-import { loadCredentials } from "../../../src/config/credentials.js";
+import { loadConfig } from "../../../src/config/config.js";
 import { checkBinaryVersion } from "../../../src/installer/runtime/version-check.js";
 import { requireUv, uvToolInstallSync } from "../../../src/installer/runtime/installer.js";
 import { clearCache, ensureStateDir } from "../../../src/agent/update-cache.js";
@@ -80,7 +80,7 @@ describe("agentUpgrade", () => {
     });
 
     // Reset defaults
-    vi.mocked(loadCredentials).mockReturnValue({
+    vi.mocked(loadConfig).mockReturnValue({
       runner: "api" as const,
       apiUrl: "",
       apiKey: "",
@@ -126,7 +126,7 @@ describe("agentUpgrade", () => {
   // Case 2: Upgrades both pipelex-agent and plxt (runner=pipelex)
   // ---------------------------------------------------------------------------
   it("upgrades both pipelex-agent and plxt (runner=pipelex)", async () => {
-    vi.mocked(loadCredentials).mockReturnValue({
+    vi.mocked(loadConfig).mockReturnValue({
       runner: "pipelex" as const,
       apiUrl: "",
       apiKey: "",
@@ -174,7 +174,7 @@ describe("agentUpgrade", () => {
   // Case 3: De-duplicates shared uv_package
   // ---------------------------------------------------------------------------
   it("de-duplicates shared uv_package (pipelex + pipelex-agent)", async () => {
-    vi.mocked(loadCredentials).mockReturnValue({
+    vi.mocked(loadConfig).mockReturnValue({
       runner: "pipelex" as const,
       apiUrl: "",
       apiKey: "",
@@ -232,7 +232,7 @@ describe("agentUpgrade", () => {
   // Case 5: Partial failure
   // ---------------------------------------------------------------------------
   it("outputs UPGRADE_PARTIAL when one succeeds and one fails", async () => {
-    vi.mocked(loadCredentials).mockReturnValue({
+    vi.mocked(loadConfig).mockReturnValue({
       runner: "pipelex" as const,
       apiUrl: "",
       apiKey: "",
@@ -328,7 +328,7 @@ describe("agentUpgrade", () => {
       expect.objectContaining({ error_domain: "install" })
     );
     // Verify execution halted — no downstream calls after fatal error
-    expect(loadCredentials).not.toHaveBeenCalled();
+    expect(loadConfig).not.toHaveBeenCalled();
     expect(checkBinaryVersion).not.toHaveBeenCalled();
   });
 
@@ -336,7 +336,7 @@ describe("agentUpgrade", () => {
   // Case 9: Marker file contains correct old versions JSON
   // ---------------------------------------------------------------------------
   it("writes marker with correct old versions JSON", async () => {
-    vi.mocked(loadCredentials).mockReturnValue({
+    vi.mocked(loadConfig).mockReturnValue({
       runner: "pipelex" as const,
       apiUrl: "",
       apiKey: "",

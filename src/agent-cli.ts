@@ -24,6 +24,7 @@ import { registerPlxtCommands } from "./agent/commands/plxt.js";
 import { agentDoctor } from "./agent/commands/doctor.js";
 import { agentUpdateCheck } from "./agent/commands/update-check.js";
 import { agentUpgrade } from "./agent/commands/upgrade.js";
+import { agentBootstrap } from "./agent/commands/bootstrap.js";
 import { agentConfigGet, agentConfigList, agentConfigSet } from "./agent/commands/config.js";
 import { agentInstall } from "./agent/commands/install.js";
 import { agentPublish } from "./agent/commands/publish.js";
@@ -357,6 +358,16 @@ program
   .exitOverride()
   .action(async () => {
     await agentUpgrade();
+  });
+
+// ── mthds-agent bootstrap ─────────────────────────────────────────
+
+program
+  .command("bootstrap")
+  .description("Bootstrap environment: install uv and all binary dependencies")
+  .exitOverride()
+  .action(async () => {
+    await agentBootstrap();
   });
 
 // ── Runner dispatch ──────────────────────────────────────────────────

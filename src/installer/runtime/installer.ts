@@ -1,10 +1,50 @@
-import { execFileSync } from "node:child_process";
+import { execFileSync, execSync } from "node:child_process";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import ora from "ora";
 import { isPipelexInstalled } from "./check.js";
 import { BINARY_RECOVERY } from "../../agent/binaries.js";
 
 // All binary installation goes through uv, which provides version-constraint-aware
 // installs and consistent cross-platform behavior.
+
+// ── uv presence / auto-install ─────────────────────────────────────
+
+/**
+ * Check whether `uv` is on PATH without throwing.
+ */
+export function isUvInstalled(): boolean {
+  try {
+    execFileSync("uv", ["--version"], { stdio: "ignore", timeout: 5000 });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Install uv via the official install script and add its bin dir to PATH
+ * for the current process. Throws on failure.
+ */
+export function installUv(): void {
+  const uvBinDir = join(homedir(), ".local", "bin");
+
+  try {
+    execSync("curl -LsSf https://astral.sh/uv/install.sh | sh", {
+      stdio: "pipe",
+      timeout: 30_000,
+    });
+  } catch (err) {
+    const stderr = (err as { stderr?: Buffer })?.stderr?.toString().trim();
+    const detail = stderr || (err instanceof Error ? err.message : String(err));
+    throw new Error(`Failed to install uv: ${detail}`);
+  }
+
+  // Make uv available in the current process
+  if (!process.env.PATH?.includes(uvBinDir)) {
+    process.env.PATH = `${uvBinDir}:${process.env.PATH}`;
+  }
+}
 
 // ── Async install (interactive, with spinner) ────────────────────────
 

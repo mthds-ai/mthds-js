@@ -1,5 +1,12 @@
 # Changelog
 
+## [v0.3.1] - 2026-04-01
+
+### Added
+
+- **`mthds-agent bootstrap` command** — first-run environment setup that installs `uv` (if missing) and all required Python binaries (`plxt`, `pipelex-agent`), designed for copy-paste install instructions.
+- **`isUvInstalled()` and `installUv()` helpers** — detect and auto-install `uv` via the official install script, with PATH patching for the current process.
+
 ## [v0.3.0] - 2026-03-30
 
 ### Added

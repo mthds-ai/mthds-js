@@ -1,10 +1,58 @@
-import { execFileSync } from "node:child_process";
+import { execFileSync, execSync } from "node:child_process";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import ora from "ora";
 import { isPipelexInstalled } from "./check.js";
 import { BINARY_RECOVERY } from "../../agent/binaries.js";
 
 // All binary installation goes through uv, which provides version-constraint-aware
 // installs and consistent cross-platform behavior.
+
+// ── uv presence / auto-install ─────────────────────────────────────
+
+/**
+ * Check whether `uv` is on PATH without throwing.
+ */
+export function isUvInstalled(): boolean {
+  try {
+    execFileSync("uv", ["--version"], { stdio: "ignore", timeout: 5000 });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Install uv via the official install script and add its bin dir to PATH
+ * for the current process. Throws on failure.
+ */
+export function installUv(): void {
+  const isWindows = process.platform === "win32";
+  const uvBinDir = isWindows
+    ? join(process.env.APPDATA ?? join(homedir(), "AppData", "Roaming"), "uv", "bin")
+    : join(homedir(), ".local", "bin");
+
+  // Official uv install scripts (https://docs.astral.sh/uv/getting-started/installation/).
+  // These execute a remote script without checksum verification — accepted tradeoff for the
+  // standard install path. The scripts are served over HTTPS from astral.sh's CDN.
+  const cmd = isWindows
+    ? 'powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"'
+    : "curl -LsSf https://astral.sh/uv/install.sh | sh";
+
+  try {
+    execSync(cmd, { stdio: "pipe", timeout: 30_000 });
+  } catch (err) {
+    const stderr = (err as { stderr?: Buffer })?.stderr?.toString().trim();
+    const detail = stderr || (err instanceof Error ? err.message : String(err));
+    throw new Error(`Failed to install uv: ${detail}`);
+  }
+
+  // Make uv available in the current process
+  const sep = isWindows ? ";" : ":";
+  if (!process.env.PATH?.includes(uvBinDir)) {
+    process.env.PATH = `${uvBinDir}${sep}${process.env.PATH}`;
+  }
+}
 
 // ── Async install (interactive, with spinner) ────────────────────────
 

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { mkdtempSync, writeFileSync, readFileSync, mkdirSync, existsSync } from "node:fs";
+import { mkdtempSync, writeFileSync, readFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
@@ -18,9 +18,8 @@ vi.mock("node:os", async (importOriginal) => {
 });
 
 // Dynamic import after mock setup — we must re-import for each test
-// because the module caches migration state.
+// so we get a fresh module instance.
 async function importConfig() {
-  // Reset module registry so we get a fresh module with fresh `migrationDone = false`
   vi.resetModules();
   const mod = await import("../../../src/config/config.js");
   return mod;
@@ -336,64 +335,6 @@ describe("config", () => {
       const updateCheck = getConfigValue("updateCheck");
       expect(updateCheck.value).toBe("1");
       expect(updateCheck.source).toBe("default");
-    });
-  });
-
-  // ---------------------------------------------------------------------------
-  // Migration: per-file deletion safety
-  // ---------------------------------------------------------------------------
-  describe("migration", () => {
-    it("preserves corrupt config.json when .env.local migrates successfully", async () => {
-      const configDir = join(tempHome, ".mthds");
-      mkdirSync(configDir, { recursive: true });
-
-      // config.json with invalid JSON (trailing comma)
-      writeFileSync(
-        join(configDir, "config.json"),
-        '{"apiKey": "my-key",}',
-        "utf-8"
-      );
-      // .env.local with valid content
-      writeFileSync(
-        join(configDir, ".env.local"),
-        "DISABLE_TELEMETRY=1\n",
-        "utf-8"
-      );
-
-      const { loadConfig } = await importConfig();
-      const config = loadConfig();
-
-      // Telemetry migrated from .env.local
-      expect(config.telemetry).toBe(false);
-
-      // config.json should be preserved (parse failed)
-      expect(existsSync(join(configDir, "config.json"))).toBe(true);
-      // .env.local should be deleted (migrated successfully)
-      expect(existsSync(join(configDir, ".env.local"))).toBe(false);
-      // config file should exist with telemetry from .env.local
-      expect(existsSync(join(configDir, "config"))).toBe(true);
-    });
-
-    it("migrates from legacy credentials file", async () => {
-      const configDir = join(tempHome, ".mthds");
-      mkdirSync(configDir, { recursive: true });
-
-      writeFileSync(
-        join(configDir, "credentials"),
-        "MTHDS_RUNNER=api\nPIPELEX_API_KEY=old-key\n",
-        "utf-8"
-      );
-
-      const { loadConfig } = await importConfig();
-      const config = loadConfig();
-
-      expect(config.runner).toBe("api");
-      expect(config.apiKey).toBe("old-key");
-
-      // credentials file should be deleted after migration
-      expect(existsSync(join(configDir, "credentials"))).toBe(false);
-      // config file should exist
-      expect(existsSync(join(configDir, "config"))).toBe(true);
     });
   });
 

@@ -5,7 +5,6 @@ import {
   mkdirSync,
   readFileSync,
   writeFileSync,
-  unlinkSync,
 } from "node:fs";
 import { Runners } from "../runners/types.js";
 import type { RunnerType } from "../runners/types.js";
@@ -27,11 +26,6 @@ export type ConfigSource = "env" | "file" | "default";
 
 const CONFIG_DIR = join(homedir(), ".mthds");
 const CONFIG_PATH = join(CONFIG_DIR, "config");
-
-// Legacy paths (for auto-migration)
-const LEGACY_CONFIG_PATH = join(CONFIG_DIR, "config.json");
-const LEGACY_ENV_LOCAL_PATH = join(CONFIG_DIR, ".env.local");
-const LEGACY_CREDENTIALS_PATH = join(CONFIG_DIR, "credentials");
 
 // ── Config keys ───────────────────────────────────────────────────
 
@@ -127,7 +121,6 @@ function serializeDotenv(entries: Record<string, string>): string {
 // ── File I/O ───────────────────────────────────────────────────────
 
 function readConfigFile(): Record<string, string> {
-  migrateIfNeeded();
   if (!existsSync(CONFIG_PATH)) return {};
   try {
     return parseDotenv(readFileSync(CONFIG_PATH, "utf-8"));
@@ -139,91 +132,6 @@ function readConfigFile(): Record<string, string> {
 function writeConfigFile(entries: Record<string, string>): void {
   mkdirSync(CONFIG_DIR, { recursive: true });
   writeFileSync(CONFIG_PATH, serializeDotenv(entries), "utf-8");
-}
-
-// ── Migration ──────────────────────────────────────────────────────
-
-let migrationDone = false;
-
-function migrateIfNeeded(): void {
-  if (migrationDone) return;
-  migrationDone = true;
-
-  if (existsSync(CONFIG_PATH)) return;
-
-  const migrated: Record<string, string> = {};
-  let configJsonMigrated = false;
-  let envLocalMigrated = false;
-  let credentialsMigrated = false;
-
-  // Migrate from ~/.mthds/credentials (previous config file name)
-  if (existsSync(LEGACY_CREDENTIALS_PATH)) {
-    try {
-      const entries = parseDotenv(
-        readFileSync(LEGACY_CREDENTIALS_PATH, "utf-8")
-      );
-      Object.assign(migrated, entries);
-      credentialsMigrated = true;
-    } catch {
-      // Read failed — preserve the legacy file
-    }
-  }
-
-  // Migrate from config.json
-  if (existsSync(LEGACY_CONFIG_PATH)) {
-    try {
-      const raw = readFileSync(LEGACY_CONFIG_PATH, "utf-8");
-      const config = JSON.parse(raw) as Record<string, unknown>;
-
-      if (typeof config.runner === "string") {
-        migrated["MTHDS_RUNNER"] = config.runner;
-      }
-      if (typeof config.apiUrl === "string") {
-        migrated["PIPELEX_API_URL"] = config.apiUrl;
-      }
-      if (typeof config.apiKey === "string") {
-        migrated["PIPELEX_API_KEY"] = config.apiKey;
-      }
-      if (typeof config.telemetry === "boolean") {
-        migrated["DISABLE_TELEMETRY"] = config.telemetry ? "0" : "1";
-      }
-
-      configJsonMigrated = true;
-    } catch {
-      // Parse failed — preserve the legacy file so the user can fix it
-    }
-  }
-
-  // Migrate from .env.local (telemetry flag)
-  if (existsSync(LEGACY_ENV_LOCAL_PATH)) {
-    try {
-      const envEntries = parseDotenv(
-        readFileSync(LEGACY_ENV_LOCAL_PATH, "utf-8")
-      );
-      if (envEntries["DISABLE_TELEMETRY"]) {
-        migrated["DISABLE_TELEMETRY"] = envEntries["DISABLE_TELEMETRY"];
-      }
-      envLocalMigrated = Boolean(envEntries["DISABLE_TELEMETRY"]);
-    } catch {
-      // Read failed — preserve the legacy file
-    }
-  }
-
-  if (credentialsMigrated || configJsonMigrated || envLocalMigrated) {
-    mkdirSync(CONFIG_DIR, { recursive: true });
-    writeFileSync(CONFIG_PATH, serializeDotenv(migrated), "utf-8");
-
-    // Only delete legacy files that were successfully migrated
-    if (credentialsMigrated) {
-      try { unlinkSync(LEGACY_CREDENTIALS_PATH); } catch { /* ignore */ }
-    }
-    if (configJsonMigrated) {
-      try { unlinkSync(LEGACY_CONFIG_PATH); } catch { /* ignore */ }
-    }
-    if (envLocalMigrated) {
-      try { unlinkSync(LEGACY_ENV_LOCAL_PATH); } catch { /* ignore */ }
-    }
-  }
 }
 
 // ── Public API ─────────────────────────────────────────────────────
@@ -331,9 +239,9 @@ export function listConfig(): Array<{
     source: ConfigSource;
   }> = [];
 
-  for (const [cliKey, credKey] of Object.entries(KEY_ALIASES)) {
-    const { value, source } = getConfigValue(credKey);
-    result.push({ key: credKey, cliKey, value, source });
+  for (const [cliKey, configKey] of Object.entries(KEY_ALIASES)) {
+    const { value, source } = getConfigValue(configKey);
+    result.push({ key: configKey, cliKey, value, source });
   }
 
   return result;

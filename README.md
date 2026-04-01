@@ -143,7 +143,7 @@ The API runner is the default. Set it up interactively:
 mthds setup runner api
 ```
 
-This prompts for the API URL and API key (masked input) and saves them to `~/.mthds/credentials`.
+This prompts for the API URL and API key (masked input) and saves them to `~/.mthds/config`.
 
 You can also set values directly:
 
@@ -152,9 +152,9 @@ mthds config set api-key YOUR_KEY
 mthds config set api-url https://your-api-instance.com
 ```
 
-Credentials are stored in `~/.mthds/credentials` and shared between mthds-js and mthds-python.
+Configuration is stored in `~/.mthds/config` and shared between mthds-js and mthds-python.
 
-You can also use environment variables (`PIPELEX_API_KEY`, `PIPELEX_API_URL`) which take precedence over the credentials file.
+You can also use environment variables (`PIPELEX_API_KEY`, `PIPELEX_API_URL`) which take precedence over the config file.
 
 See the [SDK Usage](#sdk-usage) section below to connect to a Pipelex API instance programmatically.
 

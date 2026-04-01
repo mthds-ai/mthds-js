@@ -3,15 +3,15 @@ import {
   isTelemetryEnabled,
   setTelemetryEnabled as setTelemetryFlag,
   getTelemetrySource,
-} from "../../config/credentials.js";
-import type { CredentialSource } from "../../config/credentials.js";
+} from "../../config/config.js";
+import type { ConfigSource } from "../../config/config.js";
 
 const POSTHOG_API_KEY = "phc_LRwe2lybfPTNCzAT1ScpnsWznrxAvmc1pmCaXEr1hwJ";
 const POSTHOG_HOST = "https://eu.i.posthog.com";
 
 let client: PostHog | null = null;
 
-export type TelemetrySource = CredentialSource;
+export type TelemetrySource = ConfigSource;
 
 export function getTelemetryStatus(): { enabled: boolean; source: TelemetrySource } {
   const enabled = isTelemetryEnabled();

@@ -40,8 +40,7 @@ src/
 │   ├── api-runner.ts               # API runner
 │   └── pipelex-runner.ts           # Pipelex CLI runner
 ├── config/
-│   ├── credentials.ts              # ~/.mthds/credentials handling
-│   └── config.ts                   # Re-export wrapper
+│   └── config.ts                   # ~/.mthds/config handling
 ├── package/
 │   ├── manifest/
 │   │   ├── types.ts                # Manifest types
@@ -60,7 +59,7 @@ Tests use Vitest and are organized in tiers:
 ```
 tests/
 ├── unit/                           # Fast, isolated tests
-│   ├── config/credentials.test.ts
+│   ├── config/config.test.ts
 │   ├── runners/registry.test.ts
 │   ├── package/manifest/validate.test.ts
 │   └── installer/resolver/address.test.ts
@@ -73,5 +72,5 @@ tests/
 - Strict TypeScript with ESM modules (`.js` import extensions)
 - Commander.js for CLI, `@clack/prompts` for interactive UI
 - All runner operations go through the `Runner` interface
-- Config stored in `~/.mthds/credentials` (dotenv format)
+- Config stored in `~/.mthds/config` (dotenv format)
 - Package management commands are stubs (use mthds-python)

@@ -25,7 +25,7 @@ import type { BinaryRecoveryInfo } from "../binaries.js";
 import { agentError, AGENT_ERROR_DOMAINS } from "../output.js";
 import { clearCache, ensureStateDir, STATE_DIR } from "../update-cache.js";
 import { clearSnooze } from "../snooze.js";
-import { loadCredentials } from "../../config/credentials.js";
+import { loadConfig } from "../../config/config.js";
 import { Runners } from "../../runners/types.js";
 
 // ── Types ──────────────────────────────────────────────────────────
@@ -54,10 +54,10 @@ export async function agentUpgrade(): Promise<void> {
     return; // unreachable — agentError calls process.exit, but explicit for TypeScript
   }
 
-  const creds = loadCredentials();
+  const cfg = loadConfig();
 
   const binaryKeys: string[] = ["plxt"];
-  if (creds.runner === Runners.PIPELEX) {
+  if (cfg.runner === Runners.PIPELEX) {
     binaryKeys.push("pipelex-agent");
   }
 

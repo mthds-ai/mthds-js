@@ -4,8 +4,8 @@ import type { CachePayload, CacheResult } from "../../../src/agent/update-cache.
 
 // ── Mocks ──────────────────────────────────────────────────────────
 
-vi.mock("../../../src/config/credentials.js", () => ({
-  loadCredentials: vi.fn(() => ({
+vi.mock("../../../src/config/config.js", () => ({
+  loadConfig: vi.fn(() => ({
     runner: "api",
     apiUrl: "",
     apiKey: "",
@@ -59,7 +59,7 @@ vi.mock("node:fs", async (importOriginal) => {
 // ── Imports (after mocks) ──────────────────────────────────────────
 
 import { agentUpdateCheck } from "../../../src/agent/commands/update-check.js";
-import { loadCredentials } from "../../../src/config/credentials.js";
+import { loadConfig } from "../../../src/config/config.js";
 import { checkBinaryVersion } from "../../../src/installer/runtime/version-check.js";
 import { readCache, writeCache, clearCache, computeAggregate } from "../../../src/agent/update-cache.js";
 import { isSnoozed, writeSnooze, clearSnooze, computeVersionKey } from "../../../src/agent/snooze.js";
@@ -79,7 +79,7 @@ describe("update-check", () => {
     });
 
     // Reset defaults
-    vi.mocked(loadCredentials).mockReturnValue({
+    vi.mocked(loadConfig).mockReturnValue({
       runner: "api" as const,
       apiUrl: "",
       apiKey: "",
@@ -105,7 +105,7 @@ describe("update-check", () => {
   // Config disabled
   // ---------------------------------------------------------------------------
   it("exits with no output when updateCheck config is false", async () => {
-    vi.mocked(loadCredentials).mockReturnValue({
+    vi.mocked(loadConfig).mockReturnValue({
       runner: "api" as const,
       apiUrl: "",
       apiKey: "",
@@ -283,7 +283,7 @@ describe("update-check", () => {
   // Error propagation (errors surface as non-zero exit for preamble detection)
   // ---------------------------------------------------------------------------
   it("propagates errors so preamble can detect MTHDS_UPDATE_CHECK_FAILED", async () => {
-    vi.mocked(loadCredentials).mockImplementation(() => {
+    vi.mocked(loadConfig).mockImplementation(() => {
       throw new Error("unexpected boom");
     });
 
@@ -330,7 +330,7 @@ describe("update-check", () => {
   });
 
   it("checks both pipelex-agent and plxt when runner=pipelex", async () => {
-    vi.mocked(loadCredentials).mockReturnValue({
+    vi.mocked(loadConfig).mockReturnValue({
       runner: "pipelex" as const,
       apiUrl: "",
       apiKey: "",

@@ -1,5 +1,12 @@
 # Changelog
 
+## [v0.3.2] - 2026-04-01
+
+### Changed
+
+- **Default runner changed to `pipelex`** — new installations now default to the local Pipelex CLI runner instead of the API runner.
+- **Renamed config file from `~/.mthds/credentials` to `~/.mthds/config`** — the file stores general configuration (runner, telemetry, auto-upgrade), not just credentials. Existing `~/.mthds/credentials` files are auto-migrated on first access.
+
 ## [v0.3.1] - 2026-04-01
 
 ### Added

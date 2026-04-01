@@ -1,0 +1,29 @@
+CHANGELOG.md
+  f68b87ba7bb83b1b 3-12,18
+src/config/config.ts
+  f68b87ba7bb83b1b 242-244
+tests/unit/config/config.test.ts
+  f68b87ba7bb83b1b 2,21
+package.json
+  f68b87ba7bb83b1b 3
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.2.3",
+  "base_commit_sha": "6a416db1704c0205f3a6aafca980f8beb6a3d67f",
+  "prompts": {
+    "f68b87ba7bb83b1b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6747bb7d-5e34-4608-9f02-087276958939",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Louis Choquel",
+      "messages": [],
+      "total_additions": 17,
+      "total_deletions": 158,
+      "accepted_lines": 17,
+      "overriden_lines": 0
+    }
+  }
+}

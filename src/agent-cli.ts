@@ -21,7 +21,7 @@ import { registerApiRunnerCommands } from "./agent/commands/api-commands.js";
 import { registerPipelexRunnerCommands } from "./agent/commands/pipelex-commands.js";
 import { passthroughToPipelexAgent } from "./agent/commands/pipelex-passthrough.js";
 import { registerPlxtCommands } from "./agent/commands/plxt.js";
-import { agentDoctor } from "./agent/commands/doctor.js";
+import { agentDoctor, OutputFormat } from "./agent/commands/doctor.js";
 import { agentUpdateCheck } from "./agent/commands/update-check.js";
 import { agentUpgrade } from "./agent/commands/upgrade.js";
 import { agentBootstrap } from "./agent/commands/bootstrap.js";
@@ -333,9 +333,11 @@ registerPlxtCommands(program, () => getAutoInstall(program));
 program
   .command("doctor")
   .description("Check binary dependencies, configuration, and overall health")
+  .option("--format <format>", "Output format (markdown, json)", "markdown")
   .exitOverride()
-  .action(async () => {
-    await agentDoctor();
+  .action(async (options: { format?: string }) => {
+    const fmt = options.format === "json" ? OutputFormat.JSON : OutputFormat.MARKDOWN;
+    await agentDoctor(fmt);
   });
 
 // ── mthds-agent update-check ──────────────────────────────────────

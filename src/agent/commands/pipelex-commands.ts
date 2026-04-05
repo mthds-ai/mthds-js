@@ -81,6 +81,14 @@ export function registerPipelexRunnerCommands(
       .description("Validate a model reference with fuzzy suggestions")
   );
 
+  // ── accept-gateway-terms ──
+
+  stub(
+    program
+      .command("accept-gateway-terms")
+      .description("Accept Pipelex Gateway terms of service")
+  );
+
   // ── inputs ──
 
   const inputsGroup = program

@@ -1,0 +1,29 @@
+tests/unit/installer/runtime/version-check.test.ts
+  27e0a215d52ed7d1 59-60,62,65
+tests/unit/agent/doctor.test.ts
+  27e0a215d52ed7d1 227
+src/agent/commands/doctor.ts
+  27e0a215d52ed7d1 87-89
+src/agent-cli.ts
+  27e0a215d52ed7d1 16,336
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.2.5",
+  "base_commit_sha": "509d4a557eb5446fcac7a45a61ec29e4a487e071",
+  "prompts": {
+    "27e0a215d52ed7d1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ec79a167-5637-4799-938d-fd58c8321026",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Louis Choquel",
+      "messages": [],
+      "total_additions": 10,
+      "total_deletions": 8,
+      "accepted_lines": 10,
+      "overriden_lines": 0
+    }
+  }
+}

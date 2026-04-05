@@ -84,7 +84,9 @@ function formatDoctorMarkdown(
       ? "missing"
       : dep.version_ok
         ? "ok"
-        : "outdated";
+        : dep.version === null
+          ? "unparseable"
+          : "outdated";
     const path = dep.path ?? "—";
     lines.push(`| ${escapeCell(dep.binary)} | ${escapeCell(version)} | ${status} | ${escapeCell(path)} |`);
   }

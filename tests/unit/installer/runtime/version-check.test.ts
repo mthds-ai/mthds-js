@@ -56,13 +56,13 @@ describe("checkBinaryVersion", () => {
     expect(result.installed_version).toBeNull();
   });
 
-  it("returns 'ok' when version satisfies constraint", () => {
-    mockedExecFileSync.mockReturnValue(Buffer.from("pipelex 99.0.0"));
+  it("returns 'ok' when version satisfies constraint (exact minimum)", () => {
+    mockedExecFileSync.mockReturnValue(Buffer.from("pipelex 1.0.0"));
 
-    const result = checkBinaryVersion(makeRecovery());
+    const result = checkBinaryVersion(makeRecovery({ version_constraint: ">=1.0.0" }));
 
     expect(result.status).toBe("ok");
-    expect(result.installed_version).toBe("99.0.0");
+    expect(result.installed_version).toBe("1.0.0");
   });
 
   it("returns 'ok' when version exceeds constraint", () => {

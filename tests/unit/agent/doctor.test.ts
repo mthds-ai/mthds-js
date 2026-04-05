@@ -224,7 +224,7 @@ describe("agentDoctor", () => {
     ]);
 
     const writeSpy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
-    await agentDoctor(OutputFormat.MARKDOWN);
+    await agentDoctor();
 
     expect(writeSpy).toHaveBeenCalledOnce();
     const output = writeSpy.mock.calls[0]![0] as string;

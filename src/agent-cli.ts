@@ -13,7 +13,7 @@
  *     and call the MTHDS API.
  */
 
-import { Command, CommanderError } from "commander";
+import { Command, CommanderError, Option } from "commander";
 import { createRequire } from "node:module";
 import { resolve } from "node:path";
 import { agentError, agentSuccess, AGENT_ERROR_DOMAINS } from "./agent/output.js";
@@ -333,7 +333,7 @@ registerPlxtCommands(program, () => getAutoInstall(program));
 program
   .command("doctor")
   .description("Check binary dependencies, configuration, and overall health")
-  .option("--format <format>", "Output format (markdown, json)", "markdown")
+  .addOption(new Option("--format <format>", "Output format").choices(["markdown", "json"]).default("markdown"))
   .exitOverride()
   .action(async (options: { format?: string }) => {
     const fmt = options.format === "json" ? OutputFormat.JSON : OutputFormat.MARKDOWN;

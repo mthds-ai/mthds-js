@@ -1,0 +1,54 @@
+tests/unit/agent/update-cache.test.ts
+  88b5f71153df14c6 14-17,49,170,254
+tests/unit/installer/runtime/version-check.test.ts
+  88b5f71153df14c6 9-12,23,45,60,65,109,116,126,135,140
+tests/unit/agent/update-check.test.ts
+  88b5f71153df14c6 4,6-7,95,144,163,168,182,187,218,244,276
+tests/unit/installer/runtime/installer-uv.test.ts
+  88b5f71153df14c6 22-24,71,75
+src/agent-cli.ts
+  7fb2b3b0e5a00444 370,372-373
+tests/unit/agent/doctor.test.ts
+  88b5f71153df14c6 29-31,63,87,115,135,158,177,198,219,246,265
+tests/unit/agent/binaries.test.ts
+  88b5f71153df14c6 10,13-15,21
+src/agent/commands/bootstrap.ts
+  7fb2b3b0e5a00444 47-56,128-134
+tests/unit/agent/passthrough.test.ts
+  88b5f71153df14c6 52-54,80,120,136,141,147,157,162,168,177,197,215,236,257,279,301
+tests/unit/agent/upgrade.test.ts
+  88b5f71153df14c6 3,5-6,95,107,113,118,143,149,155,161,168-169,191,197,203,210,221,249,255,261,285,290,295,306,353,359,365,371,399,423,429,457,462
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.2.5",
+  "base_commit_sha": "bbc38b6d15f365f6f559b459c6baf9b9fbf6a75c",
+  "prompts": {
+    "7fb2b3b0e5a00444": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0cf2656e-fb43-42ed-aa31-b7d444a3584c",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Louis Choquel",
+      "messages": [],
+      "total_additions": 21,
+      "total_deletions": 5,
+      "accepted_lines": 20,
+      "overriden_lines": 0
+    },
+    "88b5f71153df14c6": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "11dc4fe5-65e5-4e99-b525-8fd3666085a2",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Louis Choquel",
+      "messages": [],
+      "total_additions": 123,
+      "total_deletions": 105,
+      "accepted_lines": 109,
+      "overriden_lines": 0
+    }
+  }
+}

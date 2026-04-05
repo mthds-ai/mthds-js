@@ -367,9 +367,10 @@ program
 program
   .command("bootstrap")
   .description("Bootstrap environment: install uv and all binary dependencies")
+  .option("--dev", "Install from local source paths instead of PyPI (for CCC/worktree dev)")
   .exitOverride()
-  .action(async () => {
-    await agentBootstrap();
+  .action(async (opts: { dev?: boolean }) => {
+    await agentBootstrap({ dev: opts.dev });
   });
 
 // ── Runner dispatch ──────────────────────────────────────────────────

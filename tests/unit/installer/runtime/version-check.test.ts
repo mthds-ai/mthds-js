@@ -6,7 +6,10 @@ vi.mock("node:child_process", () => ({
 
 import { execFileSync } from "node:child_process";
 import { checkBinaryVersion } from "../../../../src/installer/runtime/version-check.js";
-import type { BinaryRecoveryInfo } from "../../../../src/agent/binaries.js";
+import { BINARY_RECOVERY, type BinaryRecoveryInfo } from "../../../../src/agent/binaries.js";
+
+const PX_CONSTRAINT = BINARY_RECOVERY["pipelex"].version_constraint;
+const PLXT_CONSTRAINT = BINARY_RECOVERY["plxt"].version_constraint;
 
 const mockedExecFileSync = vi.mocked(execFileSync);
 
@@ -17,7 +20,7 @@ function makeRecovery(overrides?: Partial<BinaryRecoveryInfo>): BinaryRecoveryIn
     binary: "pipelex",
     package: "pipelex",
     uv_package: "pipelex",
-    version_constraint: ">=0.22.0",
+    version_constraint: PX_CONSTRAINT,
     version_extract: VERSION_RE,
     install_url: "https://pipelex.com",
     auto_installable: true,
@@ -39,7 +42,7 @@ describe("checkBinaryVersion", () => {
 
     expect(result.status).toBe("missing");
     expect(result.installed_version).toBeNull();
-    expect(result.version_constraint).toBe(">=0.22.0");
+    expect(result.version_constraint).toBe(PX_CONSTRAINT);
   });
 
   it("returns 'unparseable' when binary exists but crashes (non-ENOENT error)", () => {
@@ -54,12 +57,12 @@ describe("checkBinaryVersion", () => {
   });
 
   it("returns 'ok' when version satisfies constraint", () => {
-    mockedExecFileSync.mockReturnValue(Buffer.from("pipelex 0.22.0"));
+    mockedExecFileSync.mockReturnValue(Buffer.from("pipelex 99.0.0"));
 
     const result = checkBinaryVersion(makeRecovery());
 
     expect(result.status).toBe("ok");
-    expect(result.installed_version).toBe("0.22.0");
+    expect(result.installed_version).toBe("99.0.0");
   });
 
   it("returns 'ok' when version exceeds constraint", () => {
@@ -103,14 +106,14 @@ describe("checkBinaryVersion", () => {
   });
 
   it("handles pipelex-agent version format", () => {
-    mockedExecFileSync.mockReturnValue(Buffer.from("pipelex-agent 0.22.0"));
+    mockedExecFileSync.mockReturnValue(Buffer.from("pipelex-agent 99.0.0"));
 
     const result = checkBinaryVersion(
       makeRecovery({ binary: "pipelex-agent" })
     );
 
     expect(result.status).toBe("ok");
-    expect(result.installed_version).toBe("0.22.0");
+    expect(result.installed_version).toBe("99.0.0");
   });
 
   it("handles plxt version format", () => {
@@ -120,7 +123,7 @@ describe("checkBinaryVersion", () => {
       makeRecovery({
         binary: "plxt",
         uv_package: "pipelex-tools",
-        version_constraint: ">=0.3.2",
+        version_constraint: PLXT_CONSTRAINT,
       })
     );
 
@@ -129,11 +132,11 @@ describe("checkBinaryVersion", () => {
   });
 
   it("handles version with trailing whitespace/newlines", () => {
-    mockedExecFileSync.mockReturnValue(Buffer.from("pipelex 0.22.0\n"));
+    mockedExecFileSync.mockReturnValue(Buffer.from("pipelex 99.0.0\n"));
 
     const result = checkBinaryVersion(makeRecovery());
 
     expect(result.status).toBe("ok");
-    expect(result.installed_version).toBe("0.22.0");
+    expect(result.installed_version).toBe("99.0.0");
   });
 });

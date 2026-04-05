@@ -44,7 +44,16 @@ function errorMsg(err: unknown): string {
 // reduce duplication (~78% overlap). The unique bootstrap logic is the uv
 // auto-install preamble (lines below); everything after that mirrors upgrade.
 
-export async function agentBootstrap(): Promise<void> {
+export interface BootstrapOptions {
+  dev?: boolean;
+}
+
+/** Local-path overrides used in dev mode (CCC containers, worktrees). */
+const DEV_LOCAL_PATHS: Record<string, string> = {
+  pipelex: "/workspace/pipelex/",
+};
+
+export async function agentBootstrap(options: BootstrapOptions = {}): Promise<void> {
   // 1. Ensure uv is available — auto-install if missing
   if (!isUvInstalled()) {
     try {
@@ -116,7 +125,13 @@ export async function agentBootstrap(): Promise<void> {
 
   for (const target of uniqueTargets) {
     try {
-      uvToolInstallSync(target.recovery.uv_package, target.recovery.version_constraint);
+      const localPath = options.dev ? DEV_LOCAL_PATHS[target.recovery.uv_package] : undefined;
+      if (localPath) {
+        // Dev mode: install from local source path, no version constraint
+        uvToolInstallSync(localPath);
+      } else {
+        uvToolInstallSync(target.recovery.uv_package, target.recovery.version_constraint);
+      }
       succeeded.set(target.recovery.uv_package, target);
     } catch (err) {
       failed.set(target.recovery.uv_package, errorMsg(err));

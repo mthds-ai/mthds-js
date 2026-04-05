@@ -11,6 +11,10 @@ import {
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
+import { BINARY_RECOVERY } from "../../../src/agent/binaries.js";
+
+const PX_CONSTRAINT = BINARY_RECOVERY["pipelex"].version_constraint;
+
 let tempHome: string;
 
 vi.mock("node:os", async (importOriginal) => {
@@ -42,7 +46,7 @@ const OK_PAYLOAD = {
 
 const OUTDATED_PAYLOAD = {
   mthds_agent: { s: "ok" as const, v: "0.2.1" },
-  pipelex_agent: { s: "outdated" as const, v: "0.21.0", r: ">=0.22.0" },
+  pipelex_agent: { s: "outdated" as const, v: "0.21.0", r: PX_CONSTRAINT },
   plxt: { s: "ok" as const, v: "0.3.2" },
 };
 
@@ -163,7 +167,7 @@ describe("update-cache", () => {
       expect(result).not.toBeNull();
       expect(result!.aggregate).toBe("UPGRADE_AVAILABLE");
       expect(result!.payload.pipelex_agent.s).toBe("outdated");
-      expect(result!.payload.pipelex_agent.r).toBe(">=0.22.0");
+      expect(result!.payload.pipelex_agent.r).toBe(PX_CONSTRAINT);
     });
   });
 
@@ -247,7 +251,7 @@ describe("update-cache", () => {
       const { computeAggregate } = await importModule();
       const payload = {
         mthds_agent: { s: "ok" as const, v: "0.2.1" },
-        pipelex_agent: { s: "outdated" as const, v: "0.21.0", r: ">=0.22.0" },
+        pipelex_agent: { s: "outdated" as const, v: "0.21.0", r: PX_CONSTRAINT },
         plxt: { s: "unparseable" as const, v: null },
       };
       expect(computeAggregate(payload)).toBe("UPGRADE_AVAILABLE");

@@ -26,6 +26,9 @@ import { execFileSync } from "node:child_process";
 import { checkBinaryVersion } from "../../../src/installer/runtime/version-check.js";
 import { listConfig } from "../../../src/config/config.js";
 import { agentDoctor, OutputFormat } from "../../../src/agent/commands/doctor.js";
+import { BINARY_RECOVERY } from "../../../src/agent/binaries.js";
+
+const PX_CONSTRAINT = BINARY_RECOVERY["pipelex"].version_constraint;
 
 const mockedCheckBinaryVersion = vi.mocked(checkBinaryVersion);
 const mockedExecFileSync = vi.mocked(execFileSync);
@@ -57,7 +60,7 @@ describe("agentDoctor", () => {
     mockedCheckBinaryVersion.mockReturnValue({
       status: "ok",
       installed_version: "0.22.0",
-      version_constraint: ">=0.22.0",
+      version_constraint: PX_CONSTRAINT,
     });
     // getBinaryPath uses execFileSync (which)
     mockedExecFileSync.mockReturnValue(Buffer.from("/usr/local/bin/pipelex"));
@@ -81,7 +84,7 @@ describe("agentDoctor", () => {
     mockedCheckBinaryVersion.mockReturnValue({
       status: "outdated",
       installed_version: "0.20.0",
-      version_constraint: ">=0.22.0",
+      version_constraint: PX_CONSTRAINT,
     });
     mockedExecFileSync.mockReturnValue(Buffer.from("/usr/local/bin/pipelex"));
     mockedListConfig.mockReturnValue([]);
@@ -109,7 +112,7 @@ describe("agentDoctor", () => {
     mockedCheckBinaryVersion.mockReturnValue({
       status: "missing",
       installed_version: null,
-      version_constraint: ">=0.22.0",
+      version_constraint: PX_CONSTRAINT,
     });
     mockedListConfig.mockReturnValue([]);
 
@@ -129,7 +132,7 @@ describe("agentDoctor", () => {
     mockedCheckBinaryVersion.mockReturnValue({
       status: "missing",
       installed_version: null,
-      version_constraint: ">=0.22.0",
+      version_constraint: PX_CONSTRAINT,
     });
     mockedListConfig.mockReturnValue([
       { cliKey: "runner", envKey: "MTHDS_RUNNER", value: "pipelex", source: "default" },
@@ -152,7 +155,7 @@ describe("agentDoctor", () => {
     mockedCheckBinaryVersion.mockReturnValue({
       status: "missing",
       installed_version: null,
-      version_constraint: ">=0.22.0",
+      version_constraint: PX_CONSTRAINT,
     });
     mockedListConfig.mockReturnValue([
       { cliKey: "runner", envKey: "MTHDS_RUNNER", value: "api", source: "default" },
@@ -171,7 +174,7 @@ describe("agentDoctor", () => {
     mockedCheckBinaryVersion.mockReturnValue({
       status: "ok",
       installed_version: "0.22.0",
-      version_constraint: ">=0.22.0",
+      version_constraint: PX_CONSTRAINT,
     });
     mockedExecFileSync.mockReturnValue(Buffer.from("/usr/local/bin/pipelex"));
     mockedListConfig.mockReturnValue([
@@ -192,7 +195,7 @@ describe("agentDoctor", () => {
     mockedCheckBinaryVersion.mockReturnValue({
       status: "unparseable",
       installed_version: null,
-      version_constraint: ">=0.22.0",
+      version_constraint: PX_CONSTRAINT,
     });
     mockedExecFileSync.mockReturnValue(Buffer.from("/usr/local/bin/pipelex"));
     mockedListConfig.mockReturnValue([]);
@@ -213,7 +216,7 @@ describe("agentDoctor", () => {
     mockedCheckBinaryVersion.mockReturnValue({
       status: "ok",
       installed_version: "0.22.0",
-      version_constraint: ">=0.22.0",
+      version_constraint: PX_CONSTRAINT,
     });
     mockedExecFileSync.mockReturnValue(Buffer.from("/usr/local/bin/pipelex"));
     mockedListConfig.mockReturnValue([
@@ -240,7 +243,7 @@ describe("agentDoctor", () => {
     mockedCheckBinaryVersion.mockReturnValue({
       status: "missing",
       installed_version: null,
-      version_constraint: ">=0.22.0",
+      version_constraint: PX_CONSTRAINT,
     });
     mockedListConfig.mockReturnValue([]);
 
@@ -259,7 +262,7 @@ describe("agentDoctor", () => {
     mockedCheckBinaryVersion.mockReturnValue({
       status: "ok",
       installed_version: "0.22.0",
-      version_constraint: ">=0.22.0",
+      version_constraint: PX_CONSTRAINT,
     });
     mockedExecFileSync.mockReturnValue(Buffer.from("/usr/local/bin/pipelex"));
     mockedListConfig.mockReturnValue([]);

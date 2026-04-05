@@ -1,5 +1,9 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import type { VersionCheckResult } from "../../../src/installer/runtime/version-check.js";
+import { BINARY_RECOVERY } from "../../../src/agent/binaries.js";
+
+const PX_CONSTRAINT = BINARY_RECOVERY["pipelex"].version_constraint;
+const PLXT_CONSTRAINT = BINARY_RECOVERY["plxt"].version_constraint;
 
 // ── Mocks ──────────────────────────────────────────────────────────
 
@@ -15,11 +19,7 @@ vi.mock("../../../src/config/config.js", () => ({
 }));
 
 vi.mock("../../../src/installer/runtime/version-check.js", () => ({
-  checkBinaryVersion: vi.fn((): VersionCheckResult => ({
-    status: "ok",
-    installed_version: "0.22.0",
-    version_constraint: ">=0.22.0",
-  })),
+  checkBinaryVersion: vi.fn(),
 }));
 
 vi.mock("../../../src/installer/runtime/installer.js", () => ({
@@ -92,7 +92,7 @@ describe("agentUpgrade", () => {
     vi.mocked(checkBinaryVersion).mockReturnValue({
       status: "ok",
       installed_version: "0.22.0",
-      version_constraint: ">=0.22.0",
+      version_constraint: PX_CONSTRAINT,
     });
   });
 
@@ -104,18 +104,18 @@ describe("agentUpgrade", () => {
       .mockReturnValueOnce({
         status: "outdated",
         installed_version: "0.3.1",
-        version_constraint: ">=0.3.2",
+        version_constraint: PLXT_CONSTRAINT,
       })
       // Post-check after upgrade
       .mockReturnValueOnce({
         status: "ok",
         installed_version: "0.3.2",
-        version_constraint: ">=0.3.2",
+        version_constraint: PLXT_CONSTRAINT,
       });
 
     await agentUpgrade();
 
-    expect(uvToolInstallSync).toHaveBeenCalledWith("pipelex-tools", ">=0.3.2");
+    expect(uvToolInstallSync).toHaveBeenCalledWith("pipelex-tools", PLXT_CONSTRAINT);
     expect(writeFileSync).toHaveBeenCalled();
     expect(clearCache).toHaveBeenCalled();
     expect(clearSnooze).toHaveBeenCalled();
@@ -140,33 +140,33 @@ describe("agentUpgrade", () => {
       .mockReturnValueOnce({
         status: "outdated",
         installed_version: "0.3.1",
-        version_constraint: ">=0.3.2",
+        version_constraint: PLXT_CONSTRAINT,
       })
       // pipelex-agent check
       .mockReturnValueOnce({
         status: "outdated",
         installed_version: "0.21.0",
-        version_constraint: ">=0.22.0",
+        version_constraint: PX_CONSTRAINT,
       })
       // Post-check for plxt (pipelex-tools)
       .mockReturnValueOnce({
         status: "ok",
         installed_version: "0.3.2",
-        version_constraint: ">=0.3.2",
+        version_constraint: PLXT_CONSTRAINT,
       })
       // Post-check for pipelex-agent (pipelex)
       .mockReturnValueOnce({
         status: "ok",
         installed_version: "0.22.0",
-        version_constraint: ">=0.22.0",
+        version_constraint: PX_CONSTRAINT,
       });
 
     await agentUpgrade();
 
     // Two different uv_packages: pipelex-tools and pipelex
     expect(uvToolInstallSync).toHaveBeenCalledTimes(2);
-    expect(uvToolInstallSync).toHaveBeenCalledWith("pipelex-tools", ">=0.3.2");
-    expect(uvToolInstallSync).toHaveBeenCalledWith("pipelex", ">=0.22.0");
+    expect(uvToolInstallSync).toHaveBeenCalledWith("pipelex-tools", PLXT_CONSTRAINT);
+    expect(uvToolInstallSync).toHaveBeenCalledWith("pipelex", PX_CONSTRAINT);
     expect(stdoutOutput).toContain("UPGRADE_COMPLETE");
   });
 
@@ -188,26 +188,26 @@ describe("agentUpgrade", () => {
       .mockReturnValueOnce({
         status: "ok",
         installed_version: "0.3.2",
-        version_constraint: ">=0.3.2",
+        version_constraint: PLXT_CONSTRAINT,
       })
       // pipelex-agent outdated
       .mockReturnValueOnce({
         status: "outdated",
         installed_version: "0.21.0",
-        version_constraint: ">=0.22.0",
+        version_constraint: PX_CONSTRAINT,
       })
       // Post-check for pipelex
       .mockReturnValueOnce({
         status: "ok",
         installed_version: "0.22.0",
-        version_constraint: ">=0.22.0",
+        version_constraint: PX_CONSTRAINT,
       });
 
     await agentUpgrade();
 
     // Only pipelex-agent is outdated → single uvToolInstallSync("pipelex", ...)
     expect(uvToolInstallSync).toHaveBeenCalledTimes(1);
-    expect(uvToolInstallSync).toHaveBeenCalledWith("pipelex", ">=0.22.0");
+    expect(uvToolInstallSync).toHaveBeenCalledWith("pipelex", PX_CONSTRAINT);
     expect(stdoutOutput).toContain("UPGRADE_COMPLETE");
   });
 
@@ -218,7 +218,7 @@ describe("agentUpgrade", () => {
     vi.mocked(checkBinaryVersion).mockReturnValue({
       status: "ok",
       installed_version: "0.3.2",
-      version_constraint: ">=0.3.2",
+      version_constraint: PLXT_CONSTRAINT,
     });
 
     await agentUpgrade();
@@ -246,19 +246,19 @@ describe("agentUpgrade", () => {
       .mockReturnValueOnce({
         status: "outdated",
         installed_version: "0.3.1",
-        version_constraint: ">=0.3.2",
+        version_constraint: PLXT_CONSTRAINT,
       })
       // pipelex-agent outdated
       .mockReturnValueOnce({
         status: "outdated",
         installed_version: "0.21.0",
-        version_constraint: ">=0.22.0",
+        version_constraint: PX_CONSTRAINT,
       })
       // Post-check for plxt (the one that succeeds)
       .mockReturnValueOnce({
         status: "ok",
         installed_version: "0.3.2",
-        version_constraint: ">=0.3.2",
+        version_constraint: PLXT_CONSTRAINT,
       });
 
     vi.mocked(uvToolInstallSync)
@@ -282,17 +282,17 @@ describe("agentUpgrade", () => {
       .mockReturnValueOnce({
         status: "missing",
         installed_version: null,
-        version_constraint: ">=0.3.2",
+        version_constraint: PLXT_CONSTRAINT,
       })
       .mockReturnValueOnce({
         status: "ok",
         installed_version: "0.3.2",
-        version_constraint: ">=0.3.2",
+        version_constraint: PLXT_CONSTRAINT,
       });
 
     await agentUpgrade();
 
-    expect(uvToolInstallSync).toHaveBeenCalledWith("pipelex-tools", ">=0.3.2");
+    expect(uvToolInstallSync).toHaveBeenCalledWith("pipelex-tools", PLXT_CONSTRAINT);
     expect(stdoutOutput).toContain("UPGRADE_COMPLETE");
   });
 
@@ -303,7 +303,7 @@ describe("agentUpgrade", () => {
     vi.mocked(checkBinaryVersion).mockReturnValue({
       status: "unparseable",
       installed_version: null,
-      version_constraint: ">=0.3.2",
+      version_constraint: PLXT_CONSTRAINT,
     });
 
     await agentUpgrade();
@@ -350,25 +350,25 @@ describe("agentUpgrade", () => {
       .mockReturnValueOnce({
         status: "outdated",
         installed_version: "0.3.1",
-        version_constraint: ">=0.3.2",
+        version_constraint: PLXT_CONSTRAINT,
       })
       // pipelex-agent outdated
       .mockReturnValueOnce({
         status: "outdated",
         installed_version: "0.21.0",
-        version_constraint: ">=0.22.0",
+        version_constraint: PX_CONSTRAINT,
       })
       // Post-check for plxt
       .mockReturnValueOnce({
         status: "ok",
         installed_version: "0.3.2",
-        version_constraint: ">=0.3.2",
+        version_constraint: PLXT_CONSTRAINT,
       })
       // Post-check for pipelex-agent
       .mockReturnValueOnce({
         status: "ok",
         installed_version: "0.22.0",
-        version_constraint: ">=0.22.0",
+        version_constraint: PX_CONSTRAINT,
       });
 
     await agentUpgrade();
@@ -396,7 +396,7 @@ describe("agentUpgrade", () => {
     vi.mocked(checkBinaryVersion).mockReturnValueOnce({
       status: "outdated",
       installed_version: "0.3.1",
-      version_constraint: ">=0.3.2",
+      version_constraint: PLXT_CONSTRAINT,
     });
 
     vi.mocked(uvToolInstallSync).mockImplementation(() => {
@@ -420,13 +420,13 @@ describe("agentUpgrade", () => {
       .mockReturnValueOnce({
         status: "outdated",
         installed_version: "0.3.1",
-        version_constraint: ">=0.3.2",
+        version_constraint: PLXT_CONSTRAINT,
       })
       // Post-check: binary not yet visible in PATH
       .mockReturnValueOnce({
         status: "missing",
         installed_version: null,
-        version_constraint: ">=0.3.2",
+        version_constraint: PLXT_CONSTRAINT,
       });
 
     await agentUpgrade();
@@ -454,12 +454,12 @@ describe("agentUpgrade", () => {
       .mockReturnValueOnce({
         status: "outdated",
         installed_version: "0.3.1",
-        version_constraint: ">=0.3.2",
+        version_constraint: PLXT_CONSTRAINT,
       })
       .mockReturnValueOnce({
         status: "ok",
         installed_version: "0.3.2",
-        version_constraint: ">=0.3.2",
+        version_constraint: PLXT_CONSTRAINT,
       });
 
     vi.mocked(writeFileSync).mockImplementation(() => {

@@ -1,6 +1,10 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import type { VersionCheckResult } from "../../../src/installer/runtime/version-check.js";
 import type { CachePayload, CacheResult } from "../../../src/agent/update-cache.js";
+import { BINARY_RECOVERY } from "../../../src/agent/binaries.js";
+
+const PX_CONSTRAINT = BINARY_RECOVERY["pipelex"].version_constraint;
+const PLXT_CONSTRAINT = BINARY_RECOVERY["plxt"].version_constraint;
 
 // ── Mocks ──────────────────────────────────────────────────────────
 
@@ -16,11 +20,7 @@ vi.mock("../../../src/config/config.js", () => ({
 }));
 
 vi.mock("../../../src/installer/runtime/version-check.js", () => ({
-  checkBinaryVersion: vi.fn((): VersionCheckResult => ({
-    status: "ok",
-    installed_version: "0.22.0",
-    version_constraint: ">=0.22.0",
-  })),
+  checkBinaryVersion: vi.fn(),
 }));
 
 vi.mock("../../../src/agent/update-cache.js", () => ({
@@ -92,7 +92,7 @@ describe("update-check", () => {
     vi.mocked(checkBinaryVersion).mockReturnValue({
       status: "ok",
       installed_version: "0.22.0",
-      version_constraint: ">=0.22.0",
+      version_constraint: PX_CONSTRAINT,
     });
     vi.mocked(isSnoozed).mockReturnValue(false);
     // Default: upgrade marker file doesn't exist
@@ -141,7 +141,7 @@ describe("update-check", () => {
   it("returns no output when re-verify still UPGRADE_AVAILABLE but snoozed", async () => {
     const payload: CachePayload = {
       mthds_agent: { s: "ok", v: "0.2.1" },
-      pipelex_agent: { s: "outdated", v: "0.21.0", r: ">=0.22.0" },
+      pipelex_agent: { s: "outdated", v: "0.21.0", r: PX_CONSTRAINT },
       plxt: { s: "ok", v: "0.3.2" },
     };
     vi.mocked(readCache).mockReturnValue({ aggregate: "UPGRADE_AVAILABLE", payload });
@@ -160,12 +160,12 @@ describe("update-check", () => {
   it("writes UPGRADE_AVAILABLE with fresh data when re-verify confirms", async () => {
     const stalePayload: CachePayload = {
       mthds_agent: { s: "ok", v: "0.2.1" },
-      plxt: { s: "outdated", v: "0.3.1", r: ">=0.3.2" },
+      plxt: { s: "outdated", v: "0.3.1", r: PLXT_CONSTRAINT },
     };
     vi.mocked(readCache).mockReturnValue({ aggregate: "UPGRADE_AVAILABLE", payload: stalePayload });
     vi.mocked(computeAggregate).mockReturnValue("UPGRADE_AVAILABLE");
     vi.mocked(checkBinaryVersion).mockReturnValue({
-      status: "outdated", installed_version: "0.3.1", version_constraint: ">=0.3.2",
+      status: "outdated", installed_version: "0.3.1", version_constraint: PLXT_CONSTRAINT,
     });
 
     await agentUpdateCheck({});
@@ -179,12 +179,12 @@ describe("update-check", () => {
   it("returns silently when re-verify detects manual upgrade", async () => {
     const stalePayload: CachePayload = {
       mthds_agent: { s: "ok", v: "0.2.1" },
-      plxt: { s: "outdated", v: "0.3.1", r: ">=0.3.2" },
+      plxt: { s: "outdated", v: "0.3.1", r: PLXT_CONSTRAINT },
     };
     vi.mocked(readCache).mockReturnValue({ aggregate: "UPGRADE_AVAILABLE", payload: stalePayload });
     vi.mocked(computeAggregate).mockReturnValue("UP_TO_DATE");
     vi.mocked(checkBinaryVersion).mockReturnValue({
-      status: "ok", installed_version: "0.3.2", version_constraint: ">=0.3.2",
+      status: "ok", installed_version: "0.3.2", version_constraint: PLXT_CONSTRAINT,
     });
 
     await agentUpdateCheck({});
@@ -215,7 +215,7 @@ describe("update-check", () => {
     vi.mocked(readCache).mockReturnValue(null);
     vi.mocked(computeAggregate).mockReturnValue("UPGRADE_AVAILABLE");
     vi.mocked(checkBinaryVersion)
-      .mockReturnValueOnce({ status: "outdated", installed_version: "0.3.1", version_constraint: ">=0.3.2" });
+      .mockReturnValueOnce({ status: "outdated", installed_version: "0.3.1", version_constraint: PLXT_CONSTRAINT });
 
     await agentUpdateCheck({});
     expect(stdoutOutput).toContain("UPGRADE_AVAILABLE");
@@ -241,7 +241,7 @@ describe("update-check", () => {
       aggregate: "UPGRADE_AVAILABLE",
       payload: {
         mthds_agent: { s: "ok", v: "0.2.1" },
-        pipelex_agent: { s: "outdated", v: "0.21.0", r: ">=0.22.0" },
+        pipelex_agent: { s: "outdated", v: "0.21.0", r: PX_CONSTRAINT },
         plxt: { s: "ok", v: "0.3.2" },
       },
     });
@@ -273,7 +273,7 @@ describe("update-check", () => {
     vi.mocked(readCache).mockReturnValue(null);
     vi.mocked(computeAggregate).mockReturnValue("UPGRADE_AVAILABLE");
     vi.mocked(checkBinaryVersion)
-      .mockReturnValueOnce({ status: "missing", installed_version: null, version_constraint: ">=0.3.2" });
+      .mockReturnValueOnce({ status: "missing", installed_version: null, version_constraint: PLXT_CONSTRAINT });
 
     await agentUpdateCheck({});
     expect(stdoutOutput).toContain("UPGRADE_AVAILABLE");

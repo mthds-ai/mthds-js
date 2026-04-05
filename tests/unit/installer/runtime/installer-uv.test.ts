@@ -19,6 +19,9 @@ vi.mock("../../../../src/installer/runtime/check.js", () => ({
 
 import { execFileSync } from "node:child_process";
 import { requireUv, uvToolInstallSync } from "../../../../src/installer/runtime/installer.js";
+import { BINARY_RECOVERY } from "../../../../src/agent/binaries.js";
+
+const PX_CONSTRAINT = BINARY_RECOVERY["pipelex"].version_constraint;
 
 const mockedExecFileSync = vi.mocked(execFileSync);
 
@@ -65,11 +68,11 @@ describe("uvToolInstallSync", () => {
       .mockReturnValueOnce(Buffer.from("uv 0.7.2")) // requireUv
       .mockReturnValueOnce(Buffer.from("")); // actual install
 
-    uvToolInstallSync("pipelex", ">=0.22.0");
+    uvToolInstallSync("pipelex", PX_CONSTRAINT);
 
     expect(mockedExecFileSync).toHaveBeenCalledWith(
       "uv",
-      ["tool", "install", "--upgrade", "pipelex>=0.22.0"],
+      ["tool", "install", "--upgrade", `pipelex${PX_CONSTRAINT}`],
       { stdio: "pipe", timeout: 60000 }
     );
   });

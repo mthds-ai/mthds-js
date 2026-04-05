@@ -49,6 +49,9 @@ import { checkBinaryVersion } from "../../../src/installer/runtime/version-check
 import { uvToolInstallSync } from "../../../src/installer/runtime/installer.js";
 import { agentError } from "../../../src/agent/output.js";
 import { passthrough } from "../../../src/agent/passthrough.js";
+import { BINARY_RECOVERY } from "../../../src/agent/binaries.js";
+
+const PX_CONSTRAINT = BINARY_RECOVERY["pipelex"].version_constraint;
 
 const mockedSpawnSync = vi.mocked(spawnSync);
 const mockedCheckBinaryVersion = vi.mocked(checkBinaryVersion);
@@ -74,7 +77,7 @@ describe("passthrough", () => {
     mockedCheckBinaryVersion.mockReturnValue({
       status: "ok",
       installed_version: "0.22.0",
-      version_constraint: ">=0.22.0",
+      version_constraint: PX_CONSTRAINT,
     });
     mockedSpawnSync.mockReturnValue(OK_SPAWN);
 
@@ -114,7 +117,7 @@ describe("passthrough", () => {
     mockedCheckBinaryVersion.mockReturnValue({
       status: "ok",
       installed_version: "0.22.0",
-      version_constraint: ">=0.22.0",
+      version_constraint: PX_CONSTRAINT,
     });
     mockedSpawnSync.mockReturnValue(OK_SPAWN);
 
@@ -130,18 +133,18 @@ describe("passthrough", () => {
       .mockReturnValueOnce({
         status: "missing",
         installed_version: null,
-        version_constraint: ">=0.22.0",
+        version_constraint: PX_CONSTRAINT,
       })
       .mockReturnValueOnce({
         status: "ok",
         installed_version: "0.22.0",
-        version_constraint: ">=0.22.0",
+        version_constraint: PX_CONSTRAINT,
       });
     mockedSpawnSync.mockReturnValue(OK_SPAWN);
 
     passthrough("pipelex-agent", ["run"], { autoInstall: true });
 
-    expect(mockedUvToolInstallSync).toHaveBeenCalledWith("pipelex", ">=0.22.0");
+    expect(mockedUvToolInstallSync).toHaveBeenCalledWith("pipelex", PX_CONSTRAINT);
     expect(mockedSpawnSync).toHaveBeenCalled();
     expect(mockExit).toHaveBeenCalledWith(0);
   });
@@ -151,18 +154,18 @@ describe("passthrough", () => {
       .mockReturnValueOnce({
         status: "outdated",
         installed_version: "0.20.0",
-        version_constraint: ">=0.22.0",
+        version_constraint: PX_CONSTRAINT,
       })
       .mockReturnValueOnce({
         status: "ok",
         installed_version: "0.22.0",
-        version_constraint: ">=0.22.0",
+        version_constraint: PX_CONSTRAINT,
       });
     mockedSpawnSync.mockReturnValue(OK_SPAWN);
 
     passthrough("pipelex-agent", ["run"], { autoInstall: true });
 
-    expect(mockedUvToolInstallSync).toHaveBeenCalledWith("pipelex", ">=0.22.0");
+    expect(mockedUvToolInstallSync).toHaveBeenCalledWith("pipelex", PX_CONSTRAINT);
     expect(mockedSpawnSync).toHaveBeenCalled();
   });
 
@@ -171,7 +174,7 @@ describe("passthrough", () => {
     mockedCheckBinaryVersion.mockReturnValue({
       status: "outdated",
       installed_version: "0.20.0",
-      version_constraint: ">=0.22.0",
+      version_constraint: PX_CONSTRAINT,
     });
     mockedSpawnSync.mockReturnValue(OK_SPAWN);
 
@@ -191,7 +194,7 @@ describe("passthrough", () => {
     mockedCheckBinaryVersion.mockReturnValue({
       status: "unparseable",
       installed_version: null,
-      version_constraint: ">=0.22.0",
+      version_constraint: PX_CONSTRAINT,
     });
     mockedSpawnSync.mockReturnValue(OK_SPAWN);
 
@@ -209,7 +212,7 @@ describe("passthrough", () => {
     mockedCheckBinaryVersion.mockReturnValue({
       status: "missing",
       installed_version: null,
-      version_constraint: ">=0.22.0",
+      version_constraint: PX_CONSTRAINT,
     });
     mockedUvToolInstallSync.mockImplementation(() => {
       throw new Error("Network error");
@@ -230,7 +233,7 @@ describe("passthrough", () => {
     mockedCheckBinaryVersion.mockReturnValue({
       status: "missing",
       installed_version: null,
-      version_constraint: ">=0.22.0",
+      version_constraint: PX_CONSTRAINT,
     });
     mockedUvToolInstallSync.mockImplementation(() => {}); // install "succeeds"
 
@@ -251,7 +254,7 @@ describe("passthrough", () => {
     mockedCheckBinaryVersion.mockReturnValue({
       status: "missing",
       installed_version: null,
-      version_constraint: ">=0.22.0",
+      version_constraint: PX_CONSTRAINT,
     });
 
     expect(() =>
@@ -273,7 +276,7 @@ describe("passthrough", () => {
     mockedCheckBinaryVersion.mockReturnValue({
       status: "outdated",
       installed_version: "0.20.0",
-      version_constraint: ">=0.22.0",
+      version_constraint: PX_CONSTRAINT,
     });
 
     expect(() =>
@@ -295,7 +298,7 @@ describe("passthrough", () => {
     mockedCheckBinaryVersion.mockReturnValue({
       status: "ok",
       installed_version: "0.22.0",
-      version_constraint: ">=0.22.0",
+      version_constraint: PX_CONSTRAINT,
     });
     mockedSpawnSync.mockReturnValue(OK_SPAWN);
 

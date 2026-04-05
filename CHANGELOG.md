@@ -1,5 +1,16 @@
 # Changelog
 
+## [v0.3.4] - 2026-04-05
+
+### Added
+
+- **`--format` option for `mthds-agent doctor`** — supports `markdown` (default) and `json` output formats. Markdown renders a human-readable report with tables; JSON preserves the previous machine-readable output.
+- **`mthds-agent accept-gateway-terms` stub command** — placeholder for accepting Pipelex Gateway terms of service.
+
+### Changed
+
+- **`mthds-agent doctor` defaults to markdown output** — previously output JSON via `agentSuccess`; now writes a formatted markdown report to stdout by default.
+
 ## [v0.3.3] - 2026-04-01
 
 ### Changed

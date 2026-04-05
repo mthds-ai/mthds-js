@@ -13,7 +13,7 @@
  *     and call the MTHDS API.
  */
 
-import { Command, CommanderError } from "commander";
+import { Command, CommanderError, Option } from "commander";
 import { createRequire } from "node:module";
 import { resolve } from "node:path";
 import { agentError, agentSuccess, AGENT_ERROR_DOMAINS } from "./agent/output.js";
@@ -21,7 +21,7 @@ import { registerApiRunnerCommands } from "./agent/commands/api-commands.js";
 import { registerPipelexRunnerCommands } from "./agent/commands/pipelex-commands.js";
 import { passthroughToPipelexAgent } from "./agent/commands/pipelex-passthrough.js";
 import { registerPlxtCommands } from "./agent/commands/plxt.js";
-import { agentDoctor } from "./agent/commands/doctor.js";
+import { agentDoctor, OutputFormat } from "./agent/commands/doctor.js";
 import { agentUpdateCheck } from "./agent/commands/update-check.js";
 import { agentUpgrade } from "./agent/commands/upgrade.js";
 import { agentBootstrap } from "./agent/commands/bootstrap.js";
@@ -333,9 +333,11 @@ registerPlxtCommands(program, () => getAutoInstall(program));
 program
   .command("doctor")
   .description("Check binary dependencies, configuration, and overall health")
+  .addOption(new Option("--format <format>", "Output format").choices(["markdown", "json"]).default("markdown"))
   .exitOverride()
-  .action(async () => {
-    await agentDoctor();
+  .action(async (options: { format?: string }) => {
+    const fmt = options.format === "json" ? OutputFormat.JSON : OutputFormat.MARKDOWN;
+    await agentDoctor(fmt);
   });
 
 // ── mthds-agent update-check ──────────────────────────────────────
@@ -365,9 +367,10 @@ program
 program
   .command("bootstrap")
   .description("Bootstrap environment: install uv and all binary dependencies")
+  .option("--dev", "Install from local source paths instead of PyPI (for CCC/worktree dev)")
   .exitOverride()
-  .action(async () => {
-    await agentBootstrap();
+  .action(async (opts: { dev?: boolean }) => {
+    await agentBootstrap({ dev: opts.dev });
   });
 
 // ── Runner dispatch ──────────────────────────────────────────────────

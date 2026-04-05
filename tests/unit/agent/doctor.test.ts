@@ -25,7 +25,10 @@ vi.mock("../../../src/agent/output.js", () => ({
 import { execFileSync } from "node:child_process";
 import { checkBinaryVersion } from "../../../src/installer/runtime/version-check.js";
 import { listConfig } from "../../../src/config/config.js";
-import { agentDoctor } from "../../../src/agent/commands/doctor.js";
+import { agentDoctor, OutputFormat } from "../../../src/agent/commands/doctor.js";
+import { BINARY_RECOVERY } from "../../../src/agent/binaries.js";
+
+const PX_CONSTRAINT = BINARY_RECOVERY["pipelex"].version_constraint;
 
 const mockedCheckBinaryVersion = vi.mocked(checkBinaryVersion);
 const mockedExecFileSync = vi.mocked(execFileSync);
@@ -57,13 +60,13 @@ describe("agentDoctor", () => {
     mockedCheckBinaryVersion.mockReturnValue({
       status: "ok",
       installed_version: "0.22.0",
-      version_constraint: ">=0.22.0",
+      version_constraint: PX_CONSTRAINT,
     });
     // getBinaryPath uses execFileSync (which)
     mockedExecFileSync.mockReturnValue(Buffer.from("/usr/local/bin/pipelex"));
     mockedListConfig.mockReturnValue([]);
 
-    await agentDoctor();
+    await agentDoctor(OutputFormat.JSON);
 
     expect(capturedResult).toBeDefined();
     expect(capturedResult!.healthy).toBe(true);
@@ -81,12 +84,12 @@ describe("agentDoctor", () => {
     mockedCheckBinaryVersion.mockReturnValue({
       status: "outdated",
       installed_version: "0.20.0",
-      version_constraint: ">=0.22.0",
+      version_constraint: PX_CONSTRAINT,
     });
     mockedExecFileSync.mockReturnValue(Buffer.from("/usr/local/bin/pipelex"));
     mockedListConfig.mockReturnValue([]);
 
-    await agentDoctor();
+    await agentDoctor(OutputFormat.JSON);
 
     expect(capturedResult).toBeDefined();
     const issues = capturedResult!.issues as Issue[];
@@ -109,11 +112,11 @@ describe("agentDoctor", () => {
     mockedCheckBinaryVersion.mockReturnValue({
       status: "missing",
       installed_version: null,
-      version_constraint: ">=0.22.0",
+      version_constraint: PX_CONSTRAINT,
     });
     mockedListConfig.mockReturnValue([]);
 
-    await agentDoctor();
+    await agentDoctor(OutputFormat.JSON);
 
     expect(capturedResult).toBeDefined();
     const issues = capturedResult!.issues as Issue[];
@@ -129,13 +132,13 @@ describe("agentDoctor", () => {
     mockedCheckBinaryVersion.mockReturnValue({
       status: "missing",
       installed_version: null,
-      version_constraint: ">=0.22.0",
+      version_constraint: PX_CONSTRAINT,
     });
     mockedListConfig.mockReturnValue([
       { cliKey: "runner", envKey: "MTHDS_RUNNER", value: "pipelex", source: "default" },
     ]);
 
-    await agentDoctor();
+    await agentDoctor(OutputFormat.JSON);
 
     expect(capturedResult).toBeDefined();
     const issues = capturedResult!.issues as Issue[];
@@ -152,13 +155,13 @@ describe("agentDoctor", () => {
     mockedCheckBinaryVersion.mockReturnValue({
       status: "missing",
       installed_version: null,
-      version_constraint: ">=0.22.0",
+      version_constraint: PX_CONSTRAINT,
     });
     mockedListConfig.mockReturnValue([
       { cliKey: "runner", envKey: "MTHDS_RUNNER", value: "api", source: "default" },
     ]);
 
-    await agentDoctor();
+    await agentDoctor(OutputFormat.JSON);
 
     expect(capturedResult).toBeDefined();
     const issues = capturedResult!.issues as Issue[];
@@ -171,7 +174,7 @@ describe("agentDoctor", () => {
     mockedCheckBinaryVersion.mockReturnValue({
       status: "ok",
       installed_version: "0.22.0",
-      version_constraint: ">=0.22.0",
+      version_constraint: PX_CONSTRAINT,
     });
     mockedExecFileSync.mockReturnValue(Buffer.from("/usr/local/bin/pipelex"));
     mockedListConfig.mockReturnValue([
@@ -179,7 +182,7 @@ describe("agentDoctor", () => {
       { cliKey: "api-key", envKey: "MTHDS_API_KEY", value: "", source: "default" },
     ]);
 
-    await agentDoctor();
+    await agentDoctor(OutputFormat.JSON);
 
     expect(capturedResult).toBeDefined();
     const issues = capturedResult!.issues as Issue[];
@@ -192,12 +195,12 @@ describe("agentDoctor", () => {
     mockedCheckBinaryVersion.mockReturnValue({
       status: "unparseable",
       installed_version: null,
-      version_constraint: ">=0.22.0",
+      version_constraint: PX_CONSTRAINT,
     });
     mockedExecFileSync.mockReturnValue(Buffer.from("/usr/local/bin/pipelex"));
     mockedListConfig.mockReturnValue([]);
 
-    await agentDoctor();
+    await agentDoctor(OutputFormat.JSON);
 
     expect(capturedResult).toBeDefined();
     const issues = capturedResult!.issues as Issue[];
@@ -209,16 +212,62 @@ describe("agentDoctor", () => {
     expect(capturedResult!.healthy).toBe(true);
   });
 
+  it("outputs markdown by default", async () => {
+    mockedCheckBinaryVersion.mockReturnValue({
+      status: "ok",
+      installed_version: "0.22.0",
+      version_constraint: PX_CONSTRAINT,
+    });
+    mockedExecFileSync.mockReturnValue(Buffer.from("/usr/local/bin/pipelex"));
+    mockedListConfig.mockReturnValue([
+      { cliKey: "runner", envKey: "MTHDS_RUNNER", value: "pipelex", source: "config file" },
+    ]);
+
+    const writeSpy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    await agentDoctor();
+
+    expect(writeSpy).toHaveBeenCalledOnce();
+    const output = writeSpy.mock.calls[0]![0] as string;
+    expect(output).toContain("# Doctor Report");
+    expect(output).toContain("**Status:** healthy");
+    expect(output).toContain("## Dependencies");
+    expect(output).toContain("## Configuration");
+    expect(output).toContain("pipelex");
+    // agentSuccess should NOT have been called
+    expect(capturedResult).toBeUndefined();
+
+    writeSpy.mockRestore();
+  });
+
+  it("markdown includes issues section when there are problems", async () => {
+    mockedCheckBinaryVersion.mockReturnValue({
+      status: "missing",
+      installed_version: null,
+      version_constraint: PX_CONSTRAINT,
+    });
+    mockedListConfig.mockReturnValue([]);
+
+    const writeSpy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    await agentDoctor(OutputFormat.MARKDOWN);
+
+    const output = writeSpy.mock.calls[0]![0] as string;
+    expect(output).toContain("## Issues");
+    expect(output).toContain("[WARN]");
+    expect(output).toContain("not installed");
+
+    writeSpy.mockRestore();
+  });
+
   it("includes install_command using uv tool install format", async () => {
     mockedCheckBinaryVersion.mockReturnValue({
       status: "ok",
       installed_version: "0.22.0",
-      version_constraint: ">=0.22.0",
+      version_constraint: PX_CONSTRAINT,
     });
     mockedExecFileSync.mockReturnValue(Buffer.from("/usr/local/bin/pipelex"));
     mockedListConfig.mockReturnValue([]);
 
-    await agentDoctor();
+    await agentDoctor(OutputFormat.JSON);
 
     const deps = capturedResult!.dependencies as DependencyCheck[];
     for (const dep of deps) {

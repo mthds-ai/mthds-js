@@ -7,18 +7,20 @@ import {
 } from "../../../src/agent/binaries.js";
 
 describe("buildInstallCommand", () => {
-  it("produces correct uv tool install command from recovery info", () => {
+  it("produces correct uv tool install command shape", () => {
     const plxt = BINARY_RECOVERY["plxt"];
     const cmd = buildInstallCommand(plxt);
-    expect(cmd).toBe('uv tool install --upgrade "pipelex-tools>=0.3.2"');
+    expect(cmd).toMatch(/^uv tool install --upgrade ".+"$/);
+    expect(cmd).toContain(plxt.uv_package);
+    expect(cmd).toContain(plxt.version_constraint);
   });
 
   it("includes uv_package and version_constraint in the command", () => {
     const pipelex = BINARY_RECOVERY["pipelex"];
     const cmd = buildInstallCommand(pipelex);
+    expect(cmd).toMatch(/^uv tool install --upgrade ".+"$/);
     expect(cmd).toContain(pipelex.uv_package);
     expect(cmd).toContain(pipelex.version_constraint);
-    expect(cmd).toBe('uv tool install --upgrade "pipelex>=0.22.0"');
   });
 });
 

@@ -9,6 +9,14 @@ import type { BinaryRecoveryInfo } from "../binaries.js";
 import { checkBinaryVersion } from "../../installer/runtime/version-check.js";
 import { listConfig } from "../../config/config.js";
 
+// ── Output format ───────────────────────────────────────────────────
+
+export const OutputFormat = {
+  MARKDOWN: "markdown",
+  JSON: "json",
+} as const;
+export type OutputFormat = (typeof OutputFormat)[keyof typeof OutputFormat];
+
 // ── Types ───────────────────────────────────────────────────────────
 
 interface DependencyCheck {
@@ -45,9 +53,75 @@ function getBinaryPath(bin: string): string | null {
   }
 }
 
+// ── Markdown formatter ──────────────────────────────────────────────
+
+/** Escape pipe characters so they don't break markdown table cells. */
+function escapeCell(value: string): string {
+  return value.replace(/\|/g, "\\|");
+}
+
+function formatDoctorMarkdown(
+  healthy: boolean,
+  dependencies: DependencyCheck[],
+  config: ConfigEntry[],
+  issues: Issue[],
+): string {
+  const lines: string[] = [];
+
+  lines.push(`# Doctor Report`);
+  lines.push("");
+  lines.push(`**Status:** ${healthy ? "healthy" : "unhealthy"}`);
+  lines.push("");
+
+  // Dependencies
+  lines.push("## Dependencies");
+  lines.push("");
+  lines.push("| Binary | Version | Status | Path |");
+  lines.push("| ------ | ------- | ------ | ---- |");
+  for (const dep of dependencies) {
+    const version = dep.version ?? "—";
+    const status = !dep.installed
+      ? "missing"
+      : dep.version_ok
+        ? "ok"
+        : dep.version === null
+          ? "unparseable"
+          : "outdated";
+    const path = dep.path ?? "—";
+    lines.push(`| ${escapeCell(dep.binary)} | ${escapeCell(version)} | ${status} | ${escapeCell(path)} |`);
+  }
+  lines.push("");
+
+  // Configuration
+  lines.push("## Configuration");
+  lines.push("");
+  lines.push("| Key | Value | Source |");
+  lines.push("| --- | ----- | ------ |");
+  for (const entry of config) {
+    lines.push(`| ${escapeCell(entry.key)} | ${escapeCell(entry.value)} | ${escapeCell(entry.source)} |`);
+  }
+  lines.push("");
+
+  // Issues
+  if (issues.length > 0) {
+    lines.push("## Issues");
+    lines.push("");
+    for (const issue of issues) {
+      const icon = issue.severity === "error" ? "[ERROR]" : "[WARN]";
+      lines.push(`- ${icon} ${issue.message}`);
+      if (issue.recovery) {
+        lines.push(`  - Install: \`${buildInstallCommand(issue.recovery)}\``);
+      }
+    }
+    lines.push("");
+  }
+
+  return lines.join("\n");
+}
+
 // ── Main ────────────────────────────────────────────────────────────
 
-export async function agentDoctor(): Promise<void> {
+export async function agentDoctor(format: OutputFormat = OutputFormat.MARKDOWN): Promise<void> {
   const dependencies: DependencyCheck[] = [];
   const issues: Issue[] = [];
 
@@ -133,11 +207,16 @@ export async function agentDoctor(): Promise<void> {
   }
 
   const hasErrors = issues.some((issue) => issue.severity === "error");
+  const healthy = !hasErrors;
 
-  agentSuccess({
-    healthy: !hasErrors,
-    dependencies,
-    config: configEntries,
-    issues,
-  });
+  if (format === OutputFormat.JSON) {
+    agentSuccess({
+      healthy,
+      dependencies,
+      config: configEntries,
+      issues,
+    });
+  } else {
+    process.stdout.write(formatDoctorMarkdown(healthy, dependencies, configEntries, issues));
+  }
 }

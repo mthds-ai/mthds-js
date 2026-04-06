@@ -24,6 +24,14 @@ export function registerPipelexRunnerCommands(
   const stub = (cmd: Command) =>
     cmd.allowUnknownOption().allowExcessArguments(true).exitOverride().action(action);
 
+  // ── init ──
+
+  stub(
+    program
+      .command("init")
+      .description("Initialize Pipelex configuration")
+  );
+
   // ── concept ──
 
   stub(

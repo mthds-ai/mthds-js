@@ -1,5 +1,11 @@
 # Changelog
 
+## [v0.3.5] - 2026-04-06
+
+### Added
+
+- **`mthds-agent init` stub command** — placeholder for initializing Pipelex configuration.
+
 ## [v0.3.4] - 2026-04-05
 
 ### Added

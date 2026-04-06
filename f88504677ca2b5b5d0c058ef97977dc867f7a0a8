@@ -1,0 +1,40 @@
+package.json
+  88efa834f0475834 3
+src/agent/commands/pipelex-commands.ts
+  c63d26fa5f6a20f1 27-34
+CHANGELOG.md
+  88efa834f0475834 3-8
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.2.5",
+  "base_commit_sha": "f88504677ca2b5b5d0c058ef97977dc867f7a0a8",
+  "prompts": {
+    "88efa834f0475834": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "af3f22f8-c2c6-4b46-8ed6-e37f41e14440",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Louis Choquel",
+      "messages": [],
+      "total_additions": 7,
+      "total_deletions": 1,
+      "accepted_lines": 7,
+      "overriden_lines": 0
+    },
+    "c63d26fa5f6a20f1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6c9a6a4f-0476-4df3-be5b-95d3e4d625b0",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Louis Choquel",
+      "messages": [],
+      "total_additions": 8,
+      "total_deletions": 0,
+      "accepted_lines": 8,
+      "overriden_lines": 0
+    }
+  }
+}

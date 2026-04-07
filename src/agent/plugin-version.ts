@@ -78,6 +78,8 @@ export function checkPluginVersion(): BinaryCheckEntry | null {
   try {
     const raw: unknown = JSON.parse(content);
     if (!raw || typeof raw !== "object" || !("plugins" in raw)) return null;
+    const plugins = (raw as Record<string, unknown>).plugins;
+    if (!plugins || typeof plugins !== "object" || Array.isArray(plugins)) return null;
     parsed = raw as InstalledPluginsFile;
   } catch {
     process.stderr.write(

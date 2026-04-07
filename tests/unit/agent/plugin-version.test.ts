@@ -63,6 +63,30 @@ describe("checkPluginVersion", () => {
   });
 
   // ---------------------------------------------------------------------------
+  // plugins key is null or non-object
+  // ---------------------------------------------------------------------------
+  it("returns null when plugins is null", () => {
+    vi.mocked(readFileSync).mockReturnValue(
+      JSON.stringify({ version: 2, plugins: null })
+    );
+    expect(checkPluginVersion()).toBeNull();
+  });
+
+  it("returns null when plugins is a number", () => {
+    vi.mocked(readFileSync).mockReturnValue(
+      JSON.stringify({ version: 2, plugins: 42 })
+    );
+    expect(checkPluginVersion()).toBeNull();
+  });
+
+  it("returns null when plugins is an array", () => {
+    vi.mocked(readFileSync).mockReturnValue(
+      JSON.stringify({ version: 2, plugins: [] })
+    );
+    expect(checkPluginVersion()).toBeNull();
+  });
+
+  // ---------------------------------------------------------------------------
   // Plugin key not present
   // ---------------------------------------------------------------------------
   it("returns missing when plugin key is absent", () => {

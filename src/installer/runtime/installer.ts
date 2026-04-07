@@ -130,7 +130,10 @@ export function uvToolInstallSync(
   const uv = requireUv();
   const spec = versionConstraint ? `${pkg}${versionConstraint}` : pkg;
   try {
-    execFileSync(uv, ["tool", "install", "--upgrade", spec], { stdio: "pipe", timeout: 60000 });
+    execFileSync(uv, ["tool", "install", "--upgrade", "--refresh-package", pkg, spec], {
+      stdio: "pipe",
+      timeout: 60000,
+    });
   } catch (err) {
     const stderr = (err as { stderr?: Buffer })?.stderr?.toString().trim();
     const detail = stderr || (err instanceof Error ? err.message : String(err));

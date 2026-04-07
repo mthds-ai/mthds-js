@@ -1,0 +1,25 @@
+tests/unit/installer/runtime/installer-uv.test.ts
+  2d91a3b348ddd5fc 75,89
+src/installer/runtime/installer.ts
+  2d91a3b348ddd5fc 133-136
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.2.5",
+  "base_commit_sha": "413b23f5f81b7a7cfe31d4421c652b1ebbe3e44f",
+  "prompts": {
+    "2d91a3b348ddd5fc": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9ac3b5bb-e4a2-42e8-8fc9-deaea313ef05",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Louis Choquel",
+      "messages": [],
+      "total_additions": 6,
+      "total_deletions": 3,
+      "accepted_lines": 6,
+      "overriden_lines": 0
+    }
+  }
+}

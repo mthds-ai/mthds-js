@@ -1,0 +1,35 @@
+src/agent/plugin-version.ts
+  d0fee5f7cee60a21 1-122
+src/agent/snooze.ts
+  d0fee5f7cee60a21 50-52
+tests/unit/agent/plugin-version.test.ts
+  d0fee5f7cee60a21 1-192
+src/agent/commands/bootstrap.ts
+  d0fee5f7cee60a21 28,111,214-238
+tests/unit/agent/update-check.test.ts
+  d0fee5f7cee60a21 48-51,71,275-290,370-414
+src/agent/commands/update-check.ts
+  d0fee5f7cee60a21 36,73-74,77-86,169-181,240-242
+src/agent/update-cache.ts
+  d0fee5f7cee60a21 40,78-83,98
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.2.5",
+  "base_commit_sha": "943e0e6433b6a01ef770f4f791631a16c1629356",
+  "prompts": {
+    "d0fee5f7cee60a21": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0769cb13-a28e-46dd-9568-5f8201daacd8",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Louis Choquel",
+      "messages": [],
+      "total_additions": 478,
+      "total_deletions": 31,
+      "accepted_lines": 448,
+      "overriden_lines": 0
+    }
+  }
+}

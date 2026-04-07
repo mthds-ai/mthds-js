@@ -47,6 +47,9 @@ export function computeVersionKey(payload: CachePayload): string {
     parts.push(payload.pipelex_agent.s + (payload.pipelex_agent.r ?? ""));
   }
   parts.push(payload.plxt.s + (payload.plxt.r ?? ""));
+  if (payload.plugin) {
+    parts.push("p:" + payload.plugin.s + (payload.plugin.r ?? ""));
+  }
   return parts.join(":");
 }
 

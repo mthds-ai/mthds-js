@@ -1,5 +1,15 @@
 # Changelog
 
+## [v0.4.0] - 2026-04-07
+
+### Added
+
+- **Claude Code plugin version checking** — agent bootstrap and update-check now detect whether the installed mthds plugin version satisfies the minimum required by this release. Emits `PLUGIN_UPDATE_AVAILABLE` from bootstrap and includes plugin status in the update-check payload. Gracefully skipped when not running inside Claude Code.
+
+### Fixed
+
+- Hardened `plugins` field validation in plugin version check to reject null, number, or array values that would crash on property access.
+
 ## [v0.3.5] - 2026-04-06
 
 ### Added

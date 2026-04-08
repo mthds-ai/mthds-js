@@ -37,6 +37,7 @@ export interface CachePayload {
   mthds_agent: BinaryCheckEntry;
   pipelex_agent?: BinaryCheckEntry; // optional — skipped when runner !== "pipelex"
   plxt: BinaryCheckEntry;
+  plugin?: BinaryCheckEntry; // optional — skipped when not running inside Claude Code
 }
 
 export interface CacheResult {
@@ -74,6 +75,12 @@ function isValidPayload(p: unknown): p is CachePayload {
     if (!entry || typeof entry !== "object") return false;
     if (typeof (entry as Record<string, unknown>).s !== "string") return false;
   }
+  // plugin is optional, but if present must be valid
+  if (obj.plugin !== undefined) {
+    const entry = obj.plugin;
+    if (!entry || typeof entry !== "object") return false;
+    if (typeof (entry as Record<string, unknown>).s !== "string") return false;
+  }
   return true;
 }
 
@@ -88,6 +95,7 @@ export function ensureStateDir(): void {
 export function computeAggregate(payload: CachePayload): AggregateStatus {
   const entries: BinaryCheckEntry[] = [payload.mthds_agent, payload.plxt];
   if (payload.pipelex_agent) entries.push(payload.pipelex_agent);
+  if (payload.plugin) entries.push(payload.plugin);
   // Treat "unparseable" same as "ok" — the binary exists, we just can't parse
   // its version. Treating it as UPGRADE_AVAILABLE would cause an infinite loop:
   // preamble says upgrade available -> upgrade skips unparseable -> repeat.

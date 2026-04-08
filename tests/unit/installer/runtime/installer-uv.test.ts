@@ -72,7 +72,7 @@ describe("uvToolInstallSync", () => {
 
     expect(mockedExecFileSync).toHaveBeenCalledWith(
       "uv",
-      ["tool", "install", "--upgrade", `pipelex${PX_CONSTRAINT}`],
+      ["tool", "install", "--upgrade", "--refresh-package", "pipelex", `pipelex${PX_CONSTRAINT}`],
       { stdio: "pipe", timeout: 60000 }
     );
   });
@@ -86,7 +86,7 @@ describe("uvToolInstallSync", () => {
 
     expect(mockedExecFileSync).toHaveBeenCalledWith(
       "uv",
-      ["tool", "install", "--upgrade", "pipelex"],
+      ["tool", "install", "--upgrade", "--refresh-package", "pipelex", "pipelex"],
       { stdio: "pipe", timeout: 60000 }
     );
   });

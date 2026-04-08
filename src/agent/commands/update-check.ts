@@ -33,6 +33,7 @@ import {
   clearSnooze,
   computeVersionKey,
 } from "../snooze.js";
+import { checkPluginVersion } from "../plugin-version.js";
 
 const require = createRequire(import.meta.url);
 const pkg = require("../../../package.json") as { version: string };
@@ -69,9 +70,20 @@ async function agentUpdateCheckInner(
   if (upgradeMarker) {
     clearCache();
     const payload = runFreshChecks(cfg.runner);
-    writeCache({ aggregate: computeAggregate(payload), payload });
+    const aggregate = computeAggregate(payload);
+    writeCache({ aggregate, payload });
     const output = { previous: upgradeMarker, current: payloadVersions(payload) };
     process.stdout.write("JUST_UPGRADED " + JSON.stringify(output) + "\n");
+    // After announcing the upgrade, also surface any remaining outdated items
+    // (e.g. plugin was outdated before and is still outdated after binary upgrade).
+    if (aggregate !== "UP_TO_DATE") {
+      const versionKey = computeVersionKey(payload);
+      if (!isSnoozed(versionKey)) {
+        process.stdout.write(
+          "UPGRADE_AVAILABLE " + JSON.stringify(payload) + "\n"
+        );
+      }
+    }
     return;
   }
 
@@ -154,6 +166,19 @@ function runFreshChecks(runner: string): CachePayload {
     payload.pipelex_agent = toBinaryEntry(checkBinaryVersion(pipelexRecovery));
   }
 
+  // Check Claude Code plugin version (null when not in Claude Code).
+  // Wrapped in try-catch so a plugin check failure never crashes update-check.
+  try {
+    const pluginCheck = checkPluginVersion();
+    if (pluginCheck) {
+      payload.plugin = pluginCheck;
+    }
+  } catch (err) {
+    process.stderr.write(
+      `Warning: plugin version check failed (${err instanceof Error ? err.message : String(err)}). Skipping plugin check.\n`
+    );
+  }
+
   return payload;
 }
 
@@ -211,6 +236,9 @@ function payloadVersions(
   };
   if (payload.pipelex_agent) {
     result.pipelex_agent = payload.pipelex_agent.v;
+  }
+  if (payload.plugin) {
+    result.plugin = payload.plugin.v;
   }
   return result;
 }

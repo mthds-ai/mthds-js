@@ -45,6 +45,10 @@ vi.mock("../../../src/agent/output.js", () => ({
   AGENT_ERROR_DOMAINS: {},
 }));
 
+vi.mock("../../../src/agent/plugin-version.js", () => ({
+  checkPluginVersion: vi.fn((): import("../../../src/agent/update-cache.js").BinaryCheckEntry | null => null),
+}));
+
 vi.mock("node:fs", async (importOriginal) => {
   const original = await importOriginal<typeof import("node:fs")>();
   return {
@@ -64,6 +68,7 @@ import { checkBinaryVersion } from "../../../src/installer/runtime/version-check
 import { readCache, writeCache, clearCache, computeAggregate } from "../../../src/agent/update-cache.js";
 import { isSnoozed, writeSnooze, clearSnooze, computeVersionKey } from "../../../src/agent/snooze.js";
 import { agentSuccess } from "../../../src/agent/output.js";
+import { checkPluginVersion } from "../../../src/agent/plugin-version.js";
 import { readFileSync, unlinkSync } from "node:fs";
 
 let stdoutOutput: string;
@@ -267,6 +272,23 @@ describe("update-check", () => {
   });
 
   // ---------------------------------------------------------------------------
+  // just-upgraded-from marker + remaining outdated items
+  // ---------------------------------------------------------------------------
+  it("outputs both JUST_UPGRADED and UPGRADE_AVAILABLE when marker exists but items remain outdated", async () => {
+    vi.mocked(readFileSync).mockReturnValue('{"pipelex_agent":"0.21.0"}');
+    vi.mocked(computeAggregate).mockReturnValue("UPGRADE_AVAILABLE");
+    vi.mocked(checkPluginVersion).mockReturnValue({
+      s: "outdated", v: "0.1.0", r: ">=0.7.0",
+    });
+
+    await agentUpdateCheck({});
+    expect(stdoutOutput).toContain("JUST_UPGRADED");
+    expect(stdoutOutput).toContain("UPGRADE_AVAILABLE");
+    expect(unlinkSync).toHaveBeenCalled();
+    expect(clearCache).toHaveBeenCalled();
+  });
+
+  // ---------------------------------------------------------------------------
   // Cache miss with missing binary
   // ---------------------------------------------------------------------------
   it("outputs UPGRADE_AVAILABLE when a binary is missing", async () => {
@@ -344,5 +366,50 @@ describe("update-check", () => {
     await agentUpdateCheck({});
     // runner=pipelex → both pipelex-agent and plxt checked
     expect(checkBinaryVersion).toHaveBeenCalledTimes(2);
+  });
+
+  // ---------------------------------------------------------------------------
+  // Plugin version — outdated triggers UPGRADE_AVAILABLE
+  // ---------------------------------------------------------------------------
+  it("includes plugin in UPGRADE_AVAILABLE when plugin is outdated", async () => {
+    vi.mocked(readCache).mockReturnValue(null);
+    vi.mocked(computeAggregate).mockReturnValue("UPGRADE_AVAILABLE");
+    vi.mocked(checkPluginVersion).mockReturnValue({
+      s: "outdated", v: "0.6.2", r: ">=0.7.0",
+    });
+
+    await agentUpdateCheck({});
+    expect(stdoutOutput).toContain("UPGRADE_AVAILABLE");
+    const json = JSON.parse(stdoutOutput.replace("UPGRADE_AVAILABLE ", "").trim());
+    expect(json.plugin).toEqual({ s: "outdated", v: "0.6.2", r: ">=0.7.0" });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Plugin version — ok does not trigger UPGRADE_AVAILABLE alone
+  // ---------------------------------------------------------------------------
+  it("does not trigger UPGRADE_AVAILABLE when only plugin is ok", async () => {
+    vi.mocked(readCache).mockReturnValue(null);
+    vi.mocked(computeAggregate).mockReturnValue("UP_TO_DATE");
+    vi.mocked(checkPluginVersion).mockReturnValue({ s: "ok", v: "0.7.1" });
+
+    await agentUpdateCheck({});
+    expect(stdoutOutput).toBe("");
+  });
+
+  // ---------------------------------------------------------------------------
+  // Plugin version — null (not in Claude Code) is silently skipped
+  // ---------------------------------------------------------------------------
+  it("skips plugin check when not in Claude Code", async () => {
+    vi.mocked(readCache).mockReturnValue(null);
+    vi.mocked(computeAggregate).mockReturnValue("UP_TO_DATE");
+    vi.mocked(checkPluginVersion).mockReturnValue(null);
+
+    await agentUpdateCheck({});
+    expect(stdoutOutput).toBe("");
+    expect(writeCache).toHaveBeenCalledWith(
+      expect.not.objectContaining({
+        payload: expect.objectContaining({ plugin: expect.anything() }),
+      })
+    );
   });
 });

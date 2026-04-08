@@ -25,6 +25,7 @@ import { clearCache, ensureStateDir, STATE_DIR } from "../update-cache.js";
 import { clearSnooze } from "../snooze.js";
 import { loadConfig } from "../../config/config.js";
 import { Runners } from "../../runners/types.js";
+import { checkPluginVersion, MIN_PLUGIN_VERSION, PLUGIN_UPDATE_CMD } from "../plugin-version.js";
 
 // ── Types ──────────────────────────────────────────────────────────
 
@@ -107,6 +108,7 @@ export async function agentBootstrap(options: BootstrapOptions = {}): Promise<vo
 
   if (targets.length === 0) {
     process.stdout.write("BOOTSTRAP_NOT_NEEDED\n");
+    emitPluginCheck();
     return;
   }
 
@@ -207,6 +209,31 @@ export async function agentBootstrap(options: BootstrapOptions = {}): Promise<vo
       "BOOTSTRAP_PARTIAL " +
         JSON.stringify({ installed: installedEntries, failed: failedEntries }) +
         "\n"
+    );
+  }
+
+  // 8. Check Claude Code plugin version (separate line, does not affect binary status)
+  emitPluginCheck();
+}
+
+/** Emit PLUGIN_UPDATE_AVAILABLE if the Claude Code plugin is outdated or missing. */
+function emitPluginCheck(): void {
+  try {
+    const pluginCheck = checkPluginVersion();
+    if (pluginCheck && (pluginCheck.s === "outdated" || pluginCheck.s === "missing")) {
+      process.stdout.write(
+        "PLUGIN_UPDATE_AVAILABLE " +
+          JSON.stringify({
+            installed: pluginCheck.v,
+            required: MIN_PLUGIN_VERSION,
+            cmd: PLUGIN_UPDATE_CMD,
+          }) +
+          "\n"
+      );
+    }
+  } catch (err) {
+    process.stderr.write(
+      `Warning: plugin version check failed (${err instanceof Error ? err.message : String(err)}). Continuing.\n`
     );
   }
 }

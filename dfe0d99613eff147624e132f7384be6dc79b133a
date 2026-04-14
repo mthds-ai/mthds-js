@@ -1,0 +1,25 @@
+tests/unit/agent/codex.test.ts
+  3c13aba4ac4988d0 200
+src/agent/commands/codex.ts
+  3c13aba4ac4988d0 101
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.2.8",
+  "base_commit_sha": "dfe0d99613eff147624e132f7384be6dc79b133a",
+  "prompts": {
+    "3c13aba4ac4988d0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "3341606c-5277-4334-8e26-8c524025357d",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Louis Choquel",
+      "messages": [],
+      "total_additions": 2,
+      "total_deletions": 1,
+      "accepted_lines": 2,
+      "overriden_lines": 0
+    }
+  }
+}

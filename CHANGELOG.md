@@ -1,5 +1,11 @@
 # Changelog
 
+## [v0.4.1] - 2026-04-14
+
+### Added
+
+- **`mthds-agent codex install-hook`** — idempotently merges the mthds Stop hook into `~/.codex/hooks.json`. Creates the file if missing, preserves existing hooks (Stop or other categories), and no-ops if the entry is already present. Used by `mthds-plugins/bin/install-codex.sh` in place of the previous bash heredoc that could not merge into an existing hooks file.
+
 ## [v0.4.0] - 2026-04-07
 
 ### Added

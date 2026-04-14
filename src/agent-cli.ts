@@ -25,6 +25,7 @@ import { agentDoctor, OutputFormat } from "./agent/commands/doctor.js";
 import { agentUpdateCheck } from "./agent/commands/update-check.js";
 import { agentUpgrade } from "./agent/commands/upgrade.js";
 import { agentBootstrap } from "./agent/commands/bootstrap.js";
+import { agentCodexInstallHook } from "./agent/commands/codex.js";
 import { agentConfigGet, agentConfigList, agentConfigSet } from "./agent/commands/config.js";
 import { agentInstall } from "./agent/commands/install.js";
 import { agentPublish } from "./agent/commands/publish.js";
@@ -371,6 +372,21 @@ program
   .exitOverride()
   .action(async (opts: { dev?: boolean }) => {
     await agentBootstrap({ dev: opts.dev });
+  });
+
+// ── mthds-agent codex ─────────────────────────────────────────────
+
+const codex = program
+  .command("codex")
+  .description("Codex-plugin install helpers")
+  .exitOverride();
+
+codex
+  .command("install-hook")
+  .description("Idempotently merge the mthds Stop hook into ~/.codex/hooks.json")
+  .exitOverride()
+  .action(async () => {
+    await agentCodexInstallHook();
   });
 
 // ── Runner dispatch ──────────────────────────────────────────────────

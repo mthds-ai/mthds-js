@@ -197,7 +197,7 @@ describe("agentCodexInstallHook", () => {
     expect(errorSpy.mock.calls[0]![1]).toBe("ConfigError");
   });
 
-  it("treats an empty hooks.json as a fresh install", async () => {
+  it("treats an empty hooks.json as an existing empty file (MERGED)", async () => {
     mkdirSync(join(scratchHome, ".codex"), { recursive: true });
     writeFileSync(hooksFile(), "");
 

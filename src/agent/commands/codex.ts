@@ -98,6 +98,7 @@ export async function agentCodexInstallHook(): Promise<void> {
         "IOError",
         { error_domain: AGENT_ERROR_DOMAINS.IO }
       );
+      return;
     }
     agentSuccess({ status: "INSTALLED_NEW_FILE", hooks_file: file });
     return;

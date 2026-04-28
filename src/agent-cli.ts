@@ -26,6 +26,7 @@ import { agentUpdateCheck } from "./agent/commands/update-check.js";
 import { agentUpgrade } from "./agent/commands/upgrade.js";
 import { agentBootstrap } from "./agent/commands/bootstrap.js";
 import { agentCodexInstallHook } from "./agent/commands/codex.js";
+import { agentCodexHook } from "./agent/commands/codex-hook.js";
 import { agentConfigGet, agentConfigList, agentConfigSet } from "./agent/commands/config.js";
 import { agentInstall } from "./agent/commands/install.js";
 import { agentPublish } from "./agent/commands/publish.js";
@@ -378,15 +379,23 @@ program
 
 const codex = program
   .command("codex")
-  .description("Codex-plugin install helpers")
+  .description("Codex plugin helpers (hook runtime + install)")
   .exitOverride();
 
 codex
   .command("install-hook")
-  .description("Idempotently merge the mthds Stop hook into ~/.codex/hooks.json")
+  .description("Idempotently wire the mthds PostToolUse(apply_patch) hook into ~/.codex/hooks.json")
   .exitOverride()
   .action(async () => {
     await agentCodexInstallHook();
+  });
+
+codex
+  .command("hook")
+  .description("Codex PostToolUse(apply_patch) hook runtime — invoked by Codex, not directly")
+  .exitOverride()
+  .action(async () => {
+    await agentCodexHook();
   });
 
 // ── Runner dispatch ──────────────────────────────────────────────────

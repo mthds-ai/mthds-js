@@ -18,9 +18,8 @@
  * Tracked as Phase 2D in mthds-plugins/TODOS.md.
  */
 
-import { existsSync, readFileSync, statSync } from "node:fs";
+import { accessSync, constants as fsConstants, existsSync, readFileSync, statSync } from "node:fs";
 import { spawnSync } from "node:child_process";
-import { delimiter, sep } from "node:path";
 
 const PLXT_INSTALL_HINT = "uv tool install pipelex-tools";
 
@@ -88,20 +87,72 @@ function readAllStdin(): string {
 }
 
 /**
+ * Build the ordered list of candidate paths for `name` on PATH.
+ *
+ * Pure — no fs access. Exported for testability.
+ *
+ * On Windows we also try each PATHEXT extension (`plxt.EXE`, `plxt.CMD`, ...)
+ * and skip the bare name, because Windows requires an extension to consider
+ * a file executable. PATHEXT defaults to `.COM;.EXE;.BAT;.CMD` when unset.
+ */
+export function buildPathCandidates(
+  name: string,
+  pathEnv: string,
+  platform: NodeJS.Platform,
+  pathExt: string | undefined
+): string[] {
+  if (!pathEnv) return [];
+  const isWin = platform === "win32";
+  // Don't use node:path's `delimiter`/`sep` — they're baked at module load
+  // from the host platform, so the function would silently behave wrong if
+  // we wanted to reason about Windows lookup on a POSIX host (and vice versa).
+  const pathDelimiter = isWin ? ";" : ":";
+  const pathSep = isWin ? "\\" : "/";
+  const exts = isWin
+    ? (pathExt ?? ".COM;.EXE;.BAT;.CMD")
+        .split(";")
+        .map((e) => e.trim())
+        .filter(Boolean)
+    : [""];
+  const candidates: string[] = [];
+  for (const dir of pathEnv.split(pathDelimiter)) {
+    if (!dir) continue;
+    for (const ext of exts) {
+      const fullName = `${name}${ext}`;
+      candidates.push(
+        dir.endsWith(pathSep)
+          ? `${dir}${fullName}`
+          : `${dir}${pathSep}${fullName}`
+      );
+    }
+  }
+  return candidates;
+}
+
+/**
  * Cross-platform `command -v <name>`. We can't rely on PATH lookup
  * inside spawnSync because we need to detect absence vs. spawn failure
  * before we report "missing tool" to the user.
+ *
+ * `accessSync(X_OK)` enforces the executable bit on POSIX. On Windows
+ * X_OK is satisfied by any readable file, but the PATHEXT loop in
+ * buildPathCandidates already restricts us to extensions Windows treats
+ * as runnable.
  */
-function commandOnPath(name: string): boolean {
-  const pathEnv = process.env.PATH ?? "";
-  if (!pathEnv) return false;
-  for (const dir of pathEnv.split(delimiter)) {
-    if (!dir) continue;
-    const candidate = dir.endsWith(sep) ? `${dir}${name}` : `${dir}${sep}${name}`;
+export function commandOnPath(name: string): boolean {
+  const candidates = buildPathCandidates(
+    name,
+    process.env.PATH ?? "",
+    process.platform,
+    process.env.PATHEXT
+  );
+  for (const candidate of candidates) {
     try {
-      if (statSync(candidate).isFile()) return true;
+      if (!statSync(candidate).isFile()) continue;
+      accessSync(candidate, fsConstants.X_OK);
+      return true;
     } catch {
-      // ENOENT or unreadable entry — keep scanning.
+      // ENOENT, EACCES, or non-executable entry — keep scanning.
     }
   }
   return false;

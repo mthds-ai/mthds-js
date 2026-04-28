@@ -97,7 +97,8 @@ function entryIsOurs(entry: HookEntry | unknown): boolean {
 
 function entryIsCurrent(entry: HookEntry): boolean {
   if (entry?.matcher !== HOOK_MATCHER) return false;
-  return (entry.hooks ?? []).some(
+  if (!Array.isArray(entry.hooks)) return false;
+  return entry.hooks.some(
     (h) => typeof h?.command === "string" && h.command.startsWith(HOOK_COMMAND)
   );
 }

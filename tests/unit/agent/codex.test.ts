@@ -359,6 +359,41 @@ describe("agentCodexInstallHook", () => {
     expect(parsed.hooks.PostToolUse[0].hooks[0].command).toBe(HOOK_COMMAND);
   });
 
+  // ── Malformed entries don't crash the install ────────────────────
+
+  it("does not crash when an existing PostToolUse(apply_patch) entry has a non-array hooks field", async () => {
+    // Regression: entryIsCurrent used `(entry.hooks ?? []).some(...)`, which
+    // only short-circuited on null/undefined. A malformed entry like
+    // `{ matcher: "apply_patch", hooks: "oops" }` would throw TypeError at
+    // .some() and abort the install. The Array.isArray guard fixes it.
+    const existing = {
+      hooks: {
+        PostToolUse: [
+          { matcher: "apply_patch", hooks: "oops" },
+        ],
+      },
+    };
+    mkdirSync(join(scratchHome, ".codex"), { recursive: true });
+    writeFileSync(hooksFile(), JSON.stringify(existing, null, 2));
+
+    await agentCodexInstallHook();
+
+    expect(errorSpy).not.toHaveBeenCalled();
+    expect(successSpy).toHaveBeenCalledWith({
+      status: "MERGED",
+      hooks_file: hooksFile(),
+    });
+    const parsed = JSON.parse(readFileSync(hooksFile(), "utf8"));
+    // Malformed entry is preserved (not "ours" — entryIsOurs checks
+    // Array.isArray too) and our fresh entry is appended alongside.
+    expect(parsed.hooks.PostToolUse).toHaveLength(2);
+    const current = parsed.hooks.PostToolUse.find(
+      (e: { matcher?: string; hooks?: unknown }) =>
+        e.matcher === "apply_patch" && Array.isArray(e.hooks)
+    );
+    expect(current.hooks[0].command).toBe(HOOK_COMMAND);
+  });
+
   // ── Edge cases on the existing file ────────────────────────────────
 
   it("handles an existing hooks.json without a hooks key", async () => {

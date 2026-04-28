@@ -1,9 +1,14 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, afterEach } from "vitest";
+import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
   parseMthdsFiles,
   formatLintError,
   formatFmtError,
   buildBlockPayload,
+  buildPathCandidates,
+  commandOnPath,
   runCodexHook,
 } from "../../../src/agent/commands/codex-hook.js";
 
@@ -102,6 +107,128 @@ describe("buildBlockPayload", () => {
     expect(out.endsWith("\n")).toBe(true);
     const parsed = JSON.parse(out.trim());
     expect(parsed).toEqual({ decision: "block", reason: "nope" });
+  });
+});
+
+// PATH lookup ──────────────────────────────────────────────────────────
+
+describe("buildPathCandidates", () => {
+  it("returns empty when PATH is empty", () => {
+    expect(buildPathCandidates("plxt", "", "linux", undefined)).toEqual([]);
+  });
+
+  it("on POSIX yields one candidate per PATH dir, no extension applied", () => {
+    expect(
+      buildPathCandidates("plxt", "/usr/local/bin:/usr/bin", "linux", undefined)
+    ).toEqual(["/usr/local/bin/plxt", "/usr/bin/plxt"]);
+  });
+
+  it("on POSIX ignores PATHEXT even when set", () => {
+    expect(
+      buildPathCandidates("plxt", "/bin", "darwin", ".EXE;.CMD")
+    ).toEqual(["/bin/plxt"]);
+  });
+
+  it("on POSIX skips empty PATH segments", () => {
+    expect(buildPathCandidates("plxt", "/a::/b", "linux", undefined)).toEqual([
+      "/a/plxt",
+      "/b/plxt",
+    ]);
+  });
+
+  it("on POSIX handles a directory with a trailing separator", () => {
+    expect(buildPathCandidates("plxt", "/a/", "linux", undefined)).toEqual([
+      "/a/plxt",
+    ]);
+  });
+
+  it("on Windows applies each PATHEXT extension and excludes the bare name", () => {
+    const candidates = buildPathCandidates(
+      "plxt",
+      "C:\\bin;D:\\tools",
+      "win32",
+      ".COM;.EXE;.CMD"
+    );
+    expect(candidates).toEqual([
+      "C:\\bin\\plxt.COM",
+      "C:\\bin\\plxt.EXE",
+      "C:\\bin\\plxt.CMD",
+      "D:\\tools\\plxt.COM",
+      "D:\\tools\\plxt.EXE",
+      "D:\\tools\\plxt.CMD",
+    ]);
+    expect(candidates).not.toContain("C:\\bin\\plxt");
+  });
+
+  it("on Windows falls back to a sensible PATHEXT default when unset", () => {
+    expect(
+      buildPathCandidates("plxt", "C:\\bin", "win32", undefined)
+    ).toEqual([
+      "C:\\bin\\plxt.COM",
+      "C:\\bin\\plxt.EXE",
+      "C:\\bin\\plxt.BAT",
+      "C:\\bin\\plxt.CMD",
+    ]);
+  });
+
+  it("on Windows treats a directory with a trailing backslash without doubling the separator", () => {
+    expect(
+      buildPathCandidates("plxt", "C:\\bin\\", "win32", ".EXE")
+    ).toEqual(["C:\\bin\\plxt.EXE"]);
+  });
+});
+
+describe("commandOnPath", () => {
+  const isWindows = process.platform === "win32";
+  let scratch: string | undefined;
+  let originalPath: string | undefined;
+
+  afterEach(() => {
+    if (originalPath === undefined) {
+      delete process.env.PATH;
+    } else {
+      process.env.PATH = originalPath;
+    }
+    originalPath = undefined;
+    if (scratch) {
+      rmSync(scratch, { recursive: true, force: true });
+      scratch = undefined;
+    }
+  });
+
+  it.skipIf(isWindows)(
+    "returns false when a file with the right name exists but lacks the executable bit",
+    () => {
+      // Regression: an earlier implementation only called statSync().isFile(),
+      // which lets a non-executable file shadow a real CLI and surfaces as a
+      // confusing 127 from spawnSync rather than the clean "Missing required
+      // CLI tool" block.
+      scratch = mkdtempSync(join(tmpdir(), "mthds-cmdpath-"));
+      const file = join(scratch, "plxt");
+      writeFileSync(file, "#!/bin/sh\necho hi\n");
+      chmodSync(file, 0o644); // not executable
+      originalPath = process.env.PATH;
+      process.env.PATH = scratch;
+
+      expect(commandOnPath("plxt")).toBe(false);
+    }
+  );
+
+  it.skipIf(isWindows)("returns true when the file is marked executable", () => {
+    scratch = mkdtempSync(join(tmpdir(), "mthds-cmdpath-"));
+    const file = join(scratch, "plxt");
+    writeFileSync(file, "#!/bin/sh\necho hi\n");
+    chmodSync(file, 0o755);
+    originalPath = process.env.PATH;
+    process.env.PATH = scratch;
+
+    expect(commandOnPath("plxt")).toBe(true);
+  });
+
+  it("returns false when PATH is empty", () => {
+    originalPath = process.env.PATH;
+    process.env.PATH = "";
+    expect(commandOnPath("plxt")).toBe(false);
   });
 });
 

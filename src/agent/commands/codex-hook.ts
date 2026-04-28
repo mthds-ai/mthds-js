@@ -18,7 +18,7 @@
  * Tracked as Phase 2D in mthds-plugins/TODOS.md.
  */
 
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { delimiter, sep } from "node:path";
 
@@ -66,7 +66,10 @@ export function formatLintError(file: string, result: PlxtRunResult): string {
 }
 
 export function formatFmtError(file: string, result: PlxtRunResult): string {
-  const out = result.stderr.trim() || "no output";
+  const out =
+    result.stderr.trim() ||
+    result.stdout.trim() ||
+    `fmt exited with code ${result.exitCode} (no output)`;
   return `plxt fmt failed on ${file} (exit ${result.exitCode}):\n${out}\n\nFix it.`;
 }
 
@@ -95,7 +98,11 @@ function commandOnPath(name: string): boolean {
   for (const dir of pathEnv.split(delimiter)) {
     if (!dir) continue;
     const candidate = dir.endsWith(sep) ? `${dir}${name}` : `${dir}${sep}${name}`;
-    if (existsSync(candidate)) return true;
+    try {
+      if (statSync(candidate).isFile()) return true;
+    } catch {
+      // ENOENT or unreadable entry — keep scanning.
+    }
   }
   return false;
 }

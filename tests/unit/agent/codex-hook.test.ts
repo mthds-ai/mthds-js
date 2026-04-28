@@ -79,6 +79,21 @@ describe("formatFmtError", () => {
     expect(msg).toContain("exit 3");
     expect(msg).toContain("boom");
   });
+
+  it("falls back to stdout when stderr is empty", () => {
+    const msg = formatFmtError("a.mthds", {
+      exitCode: 4,
+      stdout: "stdout-diagnostic",
+      stderr: "",
+    });
+    expect(msg).toContain("stdout-diagnostic");
+    expect(msg).not.toContain("no output");
+  });
+
+  it("synthesises a placeholder when both streams are empty", () => {
+    const msg = formatFmtError("a.mthds", { exitCode: 5, stdout: "", stderr: "" });
+    expect(msg).toContain("exited with code 5");
+  });
 });
 
 describe("buildBlockPayload", () => {

@@ -1,5 +1,12 @@
 # Changelog
 
+## [v0.5.1] - 2026-04-29
+
+### Changed
+
+- **Minimum required pipelex version bumped to `0.25.0`** (was `0.23.5`). Applies to both the `pipelex` and `pipelex-agent` binaries — `mthds-agent` will report `outdated` and emit `UPGRADE_AVAILABLE` from `update-check` when an older version is on PATH.
+- **Minimum required plxt version bumped to `0.3.3`** (was `0.3.2`). Triggers the same `outdated` flow for the `plxt` binary.
+
 ## [v0.5.0] - 2026-04-28
 
 ### Changed

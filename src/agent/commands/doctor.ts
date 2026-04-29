@@ -8,6 +8,8 @@ import { BINARY_RECOVERY, buildInstallCommand } from "../binaries.js";
 import type { BinaryRecoveryInfo } from "../binaries.js";
 import { checkBinaryVersion } from "../../installer/runtime/version-check.js";
 import { listConfig } from "../../config/config.js";
+import { inspectCodexConfig } from "./codex-config.js";
+import type { CodexConfigInspection } from "./codex-config.js";
 
 // ── Output format ───────────────────────────────────────────────────
 
@@ -65,6 +67,7 @@ function formatDoctorMarkdown(
   dependencies: DependencyCheck[],
   config: ConfigEntry[],
   issues: Issue[],
+  codex: CodexConfigInspection,
 ): string {
   const lines: string[] = [];
 
@@ -99,6 +102,27 @@ function formatDoctorMarkdown(
   lines.push("| --- | ----- | ------ |");
   for (const entry of config) {
     lines.push(`| ${escapeCell(entry.key)} | ${escapeCell(entry.value)} | ${escapeCell(entry.source)} |`);
+  }
+  lines.push("");
+
+  // Codex
+  lines.push("## Codex");
+  lines.push("");
+  if (!codex.exists) {
+    lines.push(`- No ~/.codex/config.toml found. Run \`mthds-agent codex apply-config\` to create one with sandbox network access.`);
+  } else if (codex.parse_error) {
+    lines.push(`- [ERROR] Could not parse ${codex.config_file}: ${codex.parse_error}`);
+  } else {
+    if (codex.needs_change) {
+      lines.push(
+        `- [WARN] Sandbox network access not enabled. Run \`mthds-agent codex apply-config\` to add \`[${codex.needs_change.table}] ${codex.needs_change.key} = ${codex.needs_change.value}\`.`,
+      );
+    } else {
+      lines.push(`- Sandbox network access: ok`);
+    }
+    for (const w of codex.warnings) {
+      lines.push(`- [WARN] ${w.message}`);
+    }
   }
   lines.push("");
 
@@ -206,6 +230,25 @@ export async function agentDoctor(format: OutputFormat = OutputFormat.MARKDOWN):
     }
   }
 
+  // Codex sandbox config (read-only inspection — doctor never writes).
+  const codex = inspectCodexConfig();
+  if (codex.needs_change) {
+    issues.push({
+      severity: "warning",
+      message:
+        `Codex sandbox network not enabled in ${codex.config_file}. Run \`mthds-agent codex apply-config\`.`,
+    });
+  }
+  for (const w of codex.warnings) {
+    issues.push({ severity: "warning", message: `Codex: ${w.message}` });
+  }
+  if (codex.parse_error) {
+    issues.push({
+      severity: "error",
+      message: `Codex config parse error in ${codex.config_file}: ${codex.parse_error}`,
+    });
+  }
+
   const hasErrors = issues.some((issue) => issue.severity === "error");
   const healthy = !hasErrors;
 
@@ -215,8 +258,9 @@ export async function agentDoctor(format: OutputFormat = OutputFormat.MARKDOWN):
       dependencies,
       config: configEntries,
       issues,
+      codex,
     });
   } else {
-    process.stdout.write(formatDoctorMarkdown(healthy, dependencies, configEntries, issues));
+    process.stdout.write(formatDoctorMarkdown(healthy, dependencies, configEntries, issues, codex));
   }
 }

@@ -45,9 +45,13 @@ vi.mock("../../../src/agent/output.js", () => ({
   AGENT_ERROR_DOMAINS: {},
 }));
 
-vi.mock("../../../src/agent/plugin-version.js", () => ({
-  checkPluginVersion: vi.fn((): import("../../../src/agent/update-cache.js").BinaryCheckEntry | null => null),
-}));
+vi.mock("../../../src/agent/plugin-version.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../../src/agent/plugin-version.js")>();
+  return {
+    ...actual,
+    checkPluginVersion: vi.fn((): import("../../../src/agent/update-cache.js").BinaryCheckEntry | null => null),
+  };
+});
 
 vi.mock("node:fs", async (importOriginal) => {
   const original = await importOriginal<typeof import("node:fs")>();
@@ -68,7 +72,7 @@ import { checkBinaryVersion } from "../../../src/installer/runtime/version-check
 import { readCache, writeCache, clearCache, computeAggregate } from "../../../src/agent/update-cache.js";
 import { isSnoozed, writeSnooze, clearSnooze, computeVersionKey } from "../../../src/agent/snooze.js";
 import { agentSuccess } from "../../../src/agent/output.js";
-import { checkPluginVersion } from "../../../src/agent/plugin-version.js";
+import { checkPluginVersion, MIN_PLUGIN_VERSION } from "../../../src/agent/plugin-version.js";
 import { readFileSync, unlinkSync } from "node:fs";
 
 let stdoutOutput: string;
@@ -278,7 +282,7 @@ describe("update-check", () => {
     vi.mocked(readFileSync).mockReturnValue('{"pipelex_agent":"0.21.0"}');
     vi.mocked(computeAggregate).mockReturnValue("UPGRADE_AVAILABLE");
     vi.mocked(checkPluginVersion).mockReturnValue({
-      s: "outdated", v: "0.1.0", r: ">=0.7.0",
+      s: "outdated", v: "0.1.0", r: MIN_PLUGIN_VERSION,
     });
 
     await agentUpdateCheck({});
@@ -375,13 +379,13 @@ describe("update-check", () => {
     vi.mocked(readCache).mockReturnValue(null);
     vi.mocked(computeAggregate).mockReturnValue("UPGRADE_AVAILABLE");
     vi.mocked(checkPluginVersion).mockReturnValue({
-      s: "outdated", v: "0.6.2", r: ">=0.7.0",
+      s: "outdated", v: "0.6.2", r: MIN_PLUGIN_VERSION,
     });
 
     await agentUpdateCheck({});
     expect(stdoutOutput).toContain("UPGRADE_AVAILABLE");
     const json = JSON.parse(stdoutOutput.replace("UPGRADE_AVAILABLE ", "").trim());
-    expect(json.plugin).toEqual({ s: "outdated", v: "0.6.2", r: ">=0.7.0" });
+    expect(json.plugin).toEqual({ s: "outdated", v: "0.6.2", r: MIN_PLUGIN_VERSION });
   });
 
   // ---------------------------------------------------------------------------
@@ -390,7 +394,7 @@ describe("update-check", () => {
   it("does not trigger UPGRADE_AVAILABLE when only plugin is ok", async () => {
     vi.mocked(readCache).mockReturnValue(null);
     vi.mocked(computeAggregate).mockReturnValue("UP_TO_DATE");
-    vi.mocked(checkPluginVersion).mockReturnValue({ s: "ok", v: "0.7.1" });
+    vi.mocked(checkPluginVersion).mockReturnValue({ s: "ok", v: "0.9.1" });
 
     await agentUpdateCheck({});
     expect(stdoutOutput).toBe("");

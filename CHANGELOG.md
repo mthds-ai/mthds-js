@@ -1,5 +1,16 @@
 # Changelog
 
+## [v0.5.0] - 2026-04-28
+
+### Changed
+
+- **Minimum required mthds plugin version bumped to `0.9.0`** (was `0.7.0`). `mthds-agent` running inside Claude Code with an older plugin will now report `outdated` from `update-check` and emit `PLUGIN_UPDATE_AVAILABLE` from bootstrap.
+- **`mthds-agent codex install-hook`** now wires a `PostToolUse` hook with `matcher: "apply_patch"` instead of a `Stop` hook. The command field is `mthds-agent codex hook` — the validation runtime is a sibling agent subcommand, not a bash script copied into `~/.codex/hooks/`. **Breaking** — pre-0.5.0 installs need to re-run `mthds-agent codex install-hook`; the migration sweeps any legacy `Stop` entry pointing at `codex-validate-mthds.sh` and any legacy `PostToolUse(apply_patch)` entry that referenced the bash script. Existing `Stop` entries for unrelated tools are preserved.
+
+### Added
+
+- **`mthds-agent codex hook`** — the Codex `PostToolUse(apply_patch)` hook runtime. Reads the patch envelope from stdin, parses `*** Update File:` / `*** Add File:` / `*** Move to:` headers for `.mthds` paths, and validates each touched bundle with `plxt lint` (block on failure) + `plxt fmt` (block on failure). Emits Codex's hook block protocol (`{"decision":"block","reason":"..."}`) on stdout when validation fails; silent on pass. Replaces the previous bash hook script that mthds-plugins shipped as `codex-validate-mthds.sh`.
+
 ## [v0.4.1] - 2026-04-14
 
 ### Added

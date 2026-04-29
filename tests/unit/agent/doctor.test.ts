@@ -14,6 +14,20 @@ vi.mock("../../../src/config/config.js", () => ({
   listConfig: vi.fn(() => []),
 }));
 
+// Doctor calls inspectCodexConfig for the Codex section. The existing
+// doctor tests pre-date that section and assume `issues` only contains
+// binary/runner findings. Stub it to a clean state so those expectations
+// hold; the codex-specific behavior is covered by codex-config.test.ts and
+// has its own dedicated case below.
+vi.mock("../../../src/agent/commands/codex-config.js", () => ({
+  inspectCodexConfig: vi.fn(() => ({
+    config_file: "/tmp/.codex/config.toml",
+    exists: true,
+    needs_change: null,
+    warnings: [],
+  })),
+}));
+
 // Capture what agentSuccess receives
 let capturedResult: Record<string, unknown> | undefined;
 vi.mock("../../../src/agent/output.js", () => ({
@@ -256,6 +270,37 @@ describe("agentDoctor", () => {
     expect(output).toContain("not installed");
 
     writeSpy.mockRestore();
+  });
+
+  it("surfaces Codex sandbox network issue when inspectCodexConfig flags it", async () => {
+    mockedCheckBinaryVersion.mockReturnValue({
+      status: "ok",
+      installed_version: "0.22.0",
+      version_constraint: PX_CONSTRAINT,
+    });
+    mockedExecFileSync.mockReturnValue(Buffer.from("/usr/local/bin/pipelex"));
+    mockedListConfig.mockReturnValue([]);
+
+    const codexConfig = await import("../../../src/agent/commands/codex-config.js");
+    vi.mocked(codexConfig.inspectCodexConfig).mockReturnValueOnce({
+      config_file: "/tmp/.codex/config.toml",
+      exists: true,
+      needs_change: { table: "sandbox_workspace_write", key: "network_access", value: "true" },
+      warnings: [{ code: "CODEX_HOOKS_DISABLED", message: "codex_hooks is false" }],
+    });
+
+    await agentDoctor(OutputFormat.JSON);
+
+    const issues = capturedResult!.issues as Issue[];
+    expect(issues.some((i) => i.message.includes("Codex sandbox network"))).toBe(true);
+    expect(issues.some((i) => i.message.includes("codex_hooks is false"))).toBe(true);
+
+    const codex = capturedResult!.codex as { needs_change: unknown };
+    expect(codex.needs_change).toEqual({
+      table: "sandbox_workspace_write",
+      key: "network_access",
+      value: "true",
+    });
   });
 
   it("includes install_command using uv tool install format", async () => {

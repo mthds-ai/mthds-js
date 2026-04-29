@@ -18,7 +18,7 @@ import type { BinaryCheckEntry } from "./update-cache.js";
 // ── Constants ──────────────────────────────────────────────────────
 
 /** Minimum plugin version this mthds-agent release requires. */
-export const MIN_PLUGIN_VERSION = ">=0.7.0";
+export const MIN_PLUGIN_VERSION = ">=0.9.0";
 
 /** Keys in installed_plugins.json for the mthds plugin (prod and dev targets). */
 export const PLUGIN_KEYS = [
@@ -57,7 +57,7 @@ interface InstalledPluginsFile {
  *
  * Returns:
  * - `{ s: "ok", v: "0.7.1" }`     — plugin installed and satisfies constraint
- * - `{ s: "outdated", v: "0.6.2", r: ">=0.7.0" }` — plugin too old
+ * - `{ s: "outdated", v: "0.6.2", r: ">=0.9.0" }` — plugin too old
  * - `{ s: "missing", v: null }`    — plugin key exists but no user-scope entry
  * - `null`                         — not in Claude Code (file absent or corrupt)
  */

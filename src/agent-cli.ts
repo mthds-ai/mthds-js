@@ -27,6 +27,7 @@ import { agentUpgrade } from "./agent/commands/upgrade.js";
 import { agentBootstrap } from "./agent/commands/bootstrap.js";
 import { agentCodexInstallHook } from "./agent/commands/codex.js";
 import { agentCodexHook } from "./agent/commands/codex-hook.js";
+import { agentCodexApplyConfig } from "./agent/commands/codex-config.js";
 import { agentConfigGet, agentConfigList, agentConfigSet } from "./agent/commands/config.js";
 import { agentInstall } from "./agent/commands/install.js";
 import { agentPublish } from "./agent/commands/publish.js";
@@ -396,6 +397,16 @@ codex
   .exitOverride()
   .action(async () => {
     await agentCodexHook();
+  });
+
+codex
+  .command("apply-config")
+  .description("Additively merge required sandbox settings into ~/.codex/config.toml so the mthds hook can access the network")
+  .option("--check", "Exit non-zero if anything would change (no writes)")
+  .option("--dry-run", "Print proposed diff and exit without modifying the file")
+  .exitOverride()
+  .action(async (opts: { check?: boolean; dryRun?: boolean }) => {
+    await agentCodexApplyConfig({ check: opts.check, dryRun: opts.dryRun });
   });
 
 // ── Runner dispatch ──────────────────────────────────────────────────

@@ -113,10 +113,10 @@ describe("checkPluginVersion", () => {
   // ---------------------------------------------------------------------------
   it("returns ok when plugin version satisfies constraint", () => {
     vi.mocked(readFileSync).mockReturnValue(
-      makeInstalledPlugins([{ scope: "user", version: "0.7.1" }])
+      makeInstalledPlugins([{ scope: "user", version: "0.9.1" }])
     );
     const result = checkPluginVersion();
-    expect(result).toEqual({ s: "ok", v: "0.7.1" });
+    expect(result).toEqual({ s: "ok", v: "0.9.1" });
   });
 
   // ---------------------------------------------------------------------------
@@ -137,11 +137,11 @@ describe("checkPluginVersion", () => {
     vi.mocked(readFileSync).mockReturnValue(
       makeInstalledPlugins([
         { scope: "local", version: "0.5.0" },
-        { scope: "user", version: "0.7.1" },
+        { scope: "user", version: "0.9.1" },
       ])
     );
     const result = checkPluginVersion();
-    expect(result).toEqual({ s: "ok", v: "0.7.1" });
+    expect(result).toEqual({ s: "ok", v: "0.9.1" });
   });
 
   // ---------------------------------------------------------------------------
@@ -171,10 +171,10 @@ describe("checkPluginVersion", () => {
   // ---------------------------------------------------------------------------
   it("returns ok when version exactly matches minimum", () => {
     vi.mocked(readFileSync).mockReturnValue(
-      makeInstalledPlugins([{ scope: "user", version: "0.7.0" }])
+      makeInstalledPlugins([{ scope: "user", version: "0.9.0" }])
     );
     const result = checkPluginVersion();
-    expect(result).toEqual({ s: "ok", v: "0.7.0" });
+    expect(result).toEqual({ s: "ok", v: "0.9.0" });
   });
 
   // ---------------------------------------------------------------------------
@@ -202,7 +202,7 @@ describe("checkPluginVersion", () => {
       version: 2,
       plugins: {
         [PLUGIN_KEYS[0]]: [
-          { scope: "user", version: "0.7.1", installPath: "/tmp" },
+          { scope: "user", version: "0.9.1", installPath: "/tmp" },
         ],
         [PLUGIN_KEYS[1]]: [
           { scope: "user", version: "0.1.0", installPath: "/tmp" },
@@ -211,6 +211,6 @@ describe("checkPluginVersion", () => {
     });
     vi.mocked(readFileSync).mockReturnValue(data);
     const result = checkPluginVersion();
-    expect(result).toEqual({ s: "ok", v: "0.7.1" });
+    expect(result).toEqual({ s: "ok", v: "0.9.1" });
   });
 });

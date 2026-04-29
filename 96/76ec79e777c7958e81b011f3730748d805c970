@@ -1,0 +1,31 @@
+src/agent-cli.ts
+  449a96b6a35885ea 30,402-411
+src/agent/commands/codex-config.ts
+  449a96b6a35885ea 1-394
+tests/unit/agent/codex-config.test.ts
+  449a96b6a35885ea 1-292
+tests/unit/agent/doctor.test.ts
+  449a96b6a35885ea 17-30,275-305
+src/agent/commands/doctor.ts
+  449a96b6a35885ea 11-12,70,108-128,233-251,261,264
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.4",
+  "base_commit_sha": "9676ec79e777c7958e81b011f3730748d805c970",
+  "prompts": {
+    "449a96b6a35885ea": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2b9550da-aec3-489f-a60b-b7ab210c26da",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Louis Choquel",
+      "messages": [],
+      "total_additions": 792,
+      "total_deletions": 6,
+      "accepted_lines": 787,
+      "overriden_lines": 0
+    }
+  }
+}

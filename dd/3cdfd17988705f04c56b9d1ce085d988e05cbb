@@ -1,0 +1,25 @@
+CHANGELOG.md
+  21e8327f7c1d0ecc 3-9
+package.json
+  21e8327f7c1d0ecc 3
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.4",
+  "base_commit_sha": "dd3cdfd17988705f04c56b9d1ce085d988e05cbb",
+  "prompts": {
+    "21e8327f7c1d0ecc": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9f5c7ba4-0d5a-410d-9672-cd95d7c73c53",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Louis Choquel",
+      "messages": [],
+      "total_additions": 116,
+      "total_deletions": 1,
+      "accepted_lines": 116,
+      "overriden_lines": 0
+    }
+  }
+}

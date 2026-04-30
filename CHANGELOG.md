@@ -9,17 +9,12 @@
 - **`installed_skills` removed from `mthds-agent install` JSON success output.** Consumers that parsed this field will need to drop it.
 - **The interactive `mthds install` no longer prompts about installing MTHDS skills.** The post-install skills prompt and its `npx skills add` execution have been removed.
 - **Minimum required mthds plugin version bumped to `0.10.0`** (was `0.9.0`). Coordinated with mthds-plugins 0.10.0, which bumps its own `min_mthds_version` floor to 0.6.0 — each repo enforces the other's minimum so a partial upgrade fails loudly with a clean version mismatch instead of an "unknown option" error.
+- **Minimum required pipelex version bumped to `0.25.0`** (was `0.23.5`). Applies to both the `pipelex` and `pipelex-agent` binaries — `mthds-agent` will report `outdated` and emit `UPGRADE_AVAILABLE` from `update-check` when an older version is on PATH.
+- **Minimum required plxt version bumped to `0.3.3`** (was `0.3.2`). Triggers the same `outdated` flow for the `plxt` binary.
 
 ### Removed
 
 - **`installer/agents/` per-agent handler abstraction.** The handler map and `Agent` type were vestigial — every agent ran the same default handler. The shared install logic now lives in `installer/methods/{types,writer,install-flow}.ts`, used by both the interactive and non-interactive install commands.
-
-## [v0.5.1] - 2026-04-29
-
-### Changed
-
-- **Minimum required pipelex version bumped to `0.25.0`** (was `0.23.5`). Applies to both the `pipelex` and `pipelex-agent` binaries — `mthds-agent` will report `outdated` and emit `UPGRADE_AVAILABLE` from `update-check` when an older version is on PATH.
-- **Minimum required plxt version bumped to `0.3.3`** (was `0.3.2`). Triggers the same `outdated` flow for the `plxt` binary.
 
 ## [v0.5.0] - 2026-04-28
 

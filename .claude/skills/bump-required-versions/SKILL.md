@@ -62,7 +62,7 @@ Each constant lives in its own block at the top of `binaries.ts`; use the consta
 
 Run `make check` from the `mthds-js` repo root. This builds the project and runs the test suite; tests assert against the imported constants, so a successful run confirms the bumps are coherent.
 
-If checks fail, report the errors. The most likely cause is a hardcoded "below the constraint" version in a test that is now *above* the new constraint — fix by lowering that hardcoded test version, not by reverting the bump.
+If checks fail, report the errors. The most likely cause is a hardcoded "above the constraint" version in a test that is now *below* the new constraint — fix by raising that hardcoded test version, not by reverting the bump.
 
 ### 5. Report
 

@@ -46,10 +46,9 @@ The CLI will:
 1. Fetch the `methods/` folder from the GitHub repository
 2. Validate each method's `METHODS.toml` manifest
 3. If `--method <name>` is provided, install only that method (errors if name not found)
-4. Ask which AI agent to install it for (Claude Code, with more coming soon)
-5. Ask where to install — **local** (current project) or **global** (your machine)
-6. Optionally install a [runner](#runners)
-7. Copy all `.mthds` files to `.claude/methods/<name>/`
+4. Ask where to install — **local** (current project) or **global** (your machine)
+5. Optionally install a [runner](#runners)
+6. Copy all `.mthds` files to `.mthds/methods/<name>/`
 
 You can also install from a local directory:
 
@@ -61,8 +60,8 @@ npx mthds install --local /path/to/repo
 
 | Location | Path |
 |----------|------|
-| Local | `<cwd>/.claude/methods/<name>/` |
-| Global | `~/.claude/methods/<name>/` |
+| Local | `<cwd>/.mthds/methods/<name>/` |
+| Global | `~/.mthds/methods/<name>/` |
 
 ## Publishing a method
 

@@ -1,26 +1,22 @@
-import { join, dirname, resolve, sep, delimiter } from "node:path";
+import { join, resolve, delimiter } from "node:path";
 import { homedir } from "node:os";
-import { mkdirSync, writeFileSync, existsSync } from "node:fs";
-import { exec } from "node:child_process";
-import { promisify } from "node:util";
-
-const execAsync = promisify(exec);
+import { existsSync } from "node:fs";
 import * as p from "@clack/prompts";
 import chalk from "chalk";
 import { isPipelexInstalled } from "../../installer/runtime/check.js";
 import { ensureRuntime } from "../../installer/runtime/installer.js";
-import { trackInstall, shutdown } from "../../installer/telemetry/posthog.js";
+import { shutdown } from "../../installer/telemetry/posthog.js";
 import { printLogo } from "./index.js";
 import { parseAddress } from "../../installer/resolver/address.js";
 import { resolveFromGitHub } from "../../installer/resolver/github.js";
 import { resolveFromLocal } from "../../installer/resolver/local.js";
-import { generateShim } from "../../installer/agents/registry.js";
+import { runInstallFlow } from "../../installer/methods/install-flow.js";
+import type { InstallFlowResult } from "../../installer/methods/install-flow.js";
+import { InstallLocation } from "../../installer/methods/types.js";
 import { createRunner } from "../../runners/registry.js";
 import { collectAllExportedPipes } from "../../package/manifest/validate.js";
-import type { ResolvedRepo } from "../../package/manifest/types.js";
+import type { ParsedAddress, ResolvedRepo } from "../../package/manifest/types.js";
 import type { Runner, RunnerType } from "../../runners/types.js";
-
-type InstallLocation = "project" | "global";
 
 function getShellRcFile(): string {
   const shell = process.env.SHELL ?? "";
@@ -67,7 +63,7 @@ export async function installMethod(options: {
       orgRepo = addr.replace(/^github\.com\//, "");
     }
   } else if (address) {
-    let parsed;
+    let parsed: ParsedAddress;
     try {
       parsed = parseAddress(address);
     } catch (err) {
@@ -97,9 +93,9 @@ export async function installMethod(options: {
 
   // Filter by --method if provided
   if (methodFilter) {
-    const match = resolved.methods.find((m) => m.name === methodFilter);
+    const match = resolved.methods.find((method) => method.name === methodFilter);
     if (!match) {
-      const available = resolved.methods.map((m) => m.name).join(", ");
+      const available = resolved.methods.map((method) => method.name).join(", ");
       p.log.error(
         `Method "${methodFilter}" not found. Available methods: ${available || "(none)"}`
       );
@@ -122,12 +118,12 @@ export async function installMethod(options: {
 
   // Show valid methods
   for (const method of resolved.methods) {
-    const m = method.manifest.package;
+    const pkg = method.manifest.package;
     const fileCount = method.files.length;
     p.log.success(
       [
-        `${chalk.bold(method.name)} — ${m.display_name ?? m.address} v${m.version}`,
-        `  ${m.description}`,
+        `${chalk.bold(method.name)} — ${pkg.display_name ?? pkg.address} v${pkg.version}`,
+        `  ${pkg.description}`,
         `  ${fileCount} .mthds file${fileCount !== 1 ? "s" : ""}`,
       ].join("\n")
     );
@@ -135,7 +131,7 @@ export async function installMethod(options: {
 
   // Show skipped methods with errors
   for (const skip of resolved.skipped) {
-    const errList = skip.errors.map((e) => `    - ${e}`).join("\n");
+    const errList = skip.errors.map((errMsg) => `    - ${errMsg}`).join("\n");
     p.log.warning(
       `${chalk.bold(skip.dirName)} — skipped:\n${errList}`
     );
@@ -226,12 +222,12 @@ export async function installMethod(options: {
     message: "Where do you want to install these methods?",
     options: [
       {
-        value: "project" as const,
+        value: InstallLocation.Local,
         label: "Project",
         hint: projectDir,
       },
       {
-        value: "global" as const,
+        value: InstallLocation.Global,
         label: "Global",
         hint: globalDir,
       },
@@ -243,83 +239,43 @@ export async function installMethod(options: {
     process.exit(0);
   }
 
-  // Step 3: Write methods
-  const targetDir = selectedLocation === "global" ? globalDir : projectDir;
-  mkdirSync(targetDir, { recursive: true });
-
+  // Step 3: Write methods (shared flow handles target dir + telemetry + writes + shims)
   const installSpinner = p.spinner();
+  installSpinner.start(
+    validCount === 1
+      ? `Installing "${resolved.methods[0]!.name}"...`
+      : `Installing ${validCount} methods...`
+  );
+  let result: InstallFlowResult;
+  try {
+    result = runInstallFlow({ resolved, location: selectedLocation, orgRepo });
+  } catch (err) {
+    installSpinner.stop("Installation failed.");
+    p.log.error((err as Error).message);
+    p.outro("");
+    process.exit(1);
+  }
+  installSpinner.stop(`Installed to ${result.targetDir}`);
+
   for (const method of resolved.methods) {
-    const installDir = resolve(join(targetDir, method.name));
-    if (!installDir.startsWith(targetDir + sep)) {
-      p.log.error(`Path traversal detected: name "${method.name}" escapes install directory.`);
-      p.outro("");
-      process.exit(1);
-    }
-    installSpinner.start(`Installing "${method.name}" to ${installDir}...`);
-
-    mkdirSync(installDir, { recursive: true });
-
-    // Write METHODS.toml (verbatim raw string)
-    writeFileSync(join(installDir, "METHODS.toml"), method.rawManifest, "utf-8");
-
-    // Write all .mthds files, preserving directory structure
-    for (const file of method.files) {
-      const filePath = resolve(join(installDir, file.relativePath));
-      if (!filePath.startsWith(installDir + sep)) {
-        installSpinner.stop("Installation failed.");
-        p.log.error(`Path traversal detected: "${file.relativePath}" escapes install directory.`);
-        p.outro("");
-        process.exit(1);
-      }
-      mkdirSync(dirname(filePath), { recursive: true });
-      writeFileSync(filePath, file.content, "utf-8");
-    }
-
     const fileCount = method.files.length;
     const filesMsg = fileCount === 0
       ? "(manifest only)"
       : `(${fileCount} .mthds file${fileCount > 1 ? "s" : ""})`;
-
-    installSpinner.stop(`Installed "${method.name}" to ${installDir} ${filesMsg}`);
-
-    // Generate CLI shim
-    generateShim(method.name, installDir);
+    p.log.success(`${method.name} ${filesMsg}`);
   }
 
   // PATH advisory for CLI shims
-  const shimBinDir = join(homedir(), ".mthds", "bin");
-  if (existsSync(shimBinDir) && !process.env.PATH?.split(delimiter).includes(shimBinDir)) {
+  if (existsSync(result.shimDir) && !process.env.PATH?.split(delimiter).includes(result.shimDir)) {
     const rcFile = getShellRcFile();
     p.log.warning(
-      `Add ${shimBinDir} to your PATH to use methods as CLI commands:\n` +
-      `  echo 'export PATH="${shimBinDir}:$PATH"' >> ${rcFile} && source ${rcFile}`
+      `Add ${result.shimDir} to your PATH to use methods as CLI commands:\n` +
+      `  echo 'export PATH="${result.shimDir}:$PATH"' >> ${rcFile} && source ${rcFile}`
     );
   }
 
-  // Step 4: Track telemetry only for public GitHub repositories
-  if (resolved.source === "github" && resolved.isPublic) {
-    for (const method of resolved.methods) {
-      const pkg = method.manifest.package;
-      trackInstall({
-        address: orgRepo ?? pkg.address.replace(/^github\.com\//, ""),
-        name: pkg.name,
-        main_pipe: pkg.main_pipe,
-        version: pkg.version,
-        description: pkg.description,
-        display_name: pkg.display_name,
-        authors: pkg.authors,
-        license: pkg.license,
-        mthds_version: pkg.mthds_version,
-        exports: method.manifest.exports,
-        manifest_raw: method.rawManifest,
-      });
-    }
-  }
-
-  // Step 5: Optional pipelex runner install (only if not already available)
-  let hasPipelex = isPipelexInstalled();
-
-  if (!hasPipelex) {
+  // Step 4: Optional pipelex runner install (only if not already available)
+  if (!isPipelexInstalled()) {
     const wantsRunner = await p.confirm({
       message: "Do you want to install the pipelex runner? (https://github.com/Pipelex/pipelex)",
       initialValue: false,
@@ -333,63 +289,6 @@ export async function installMethod(options: {
     if (wantsRunner) {
       await ensureRuntime();
       p.log.success("pipelex installed.");
-      hasPipelex = true;
-    }
-  }
-
-  // Step 6: Optional MTHDS skills
-  const PLUGINS_REPO = "https://github.com/mthds-ai/mthds-plugins";
-
-  const wantsSkills = await p.confirm({
-    message: "Do you want to install the MTHDS skills?",
-    initialValue: true,
-  });
-
-  if (p.isCancel(wantsSkills)) {
-    p.cancel("Installation cancelled.");
-    process.exit(0);
-  }
-
-  if (wantsSkills) {
-    const skillsLocation = await p.select<string>({
-      message: "Where should the skills be installed?",
-      options: [
-        { value: "global", label: "Global", hint: "Available everywhere" },
-        { value: "project", label: "Project", hint: "Current project only" },
-      ],
-    });
-
-    if (p.isCancel(skillsLocation)) {
-      p.cancel("Installation cancelled.");
-      process.exit(0);
-    }
-
-    const selectedAgent = await p.select<string>({
-      message: "Which agent should the skills be installed for?",
-      options: [
-        { value: "claude-code", label: "Claude Code" },
-        { value: "cursor", label: "Cursor" },
-        { value: "codex", label: "Codex" },
-      ],
-    });
-
-    if (p.isCancel(selectedAgent)) {
-      p.cancel("Installation cancelled.");
-      process.exit(0);
-    }
-
-    const globalFlag = skillsLocation === "global" ? " -g" : "";
-    const locationLabel = skillsLocation === "global" ? "globally" : "locally";
-    const sk = p.spinner();
-    sk.start(`Installing MTHDS skills ${locationLabel} for ${selectedAgent}...`);
-    try {
-      await execAsync(`npx skills add ${PLUGINS_REPO} --skill '*' --agent ${selectedAgent}${globalFlag} -y`, {
-        cwd: process.cwd(),
-      });
-      sk.stop(`MTHDS skills installed ${locationLabel} for ${selectedAgent}.`);
-    } catch {
-      sk.stop("Failed to install MTHDS skills.");
-      p.log.warning(`Could not install MTHDS skills. You can retry manually:\n  npx skills add ${PLUGINS_REPO} --skill '*' --agent ${selectedAgent}${globalFlag}`);
     }
   }
 

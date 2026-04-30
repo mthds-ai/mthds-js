@@ -1,7 +1,7 @@
 import { join, resolve, dirname, sep } from "node:path";
 import { homedir } from "node:os";
 import { mkdirSync, writeFileSync } from "node:fs";
-import type { Agent, AgentHandler, InstallMethodOptions } from "./types.js";
+import type { ResolvedRepo } from "../../package/manifest/types.js";
 
 /**
  * Generate an executable CLI shim for a method in ~/.mthds/bin/.
@@ -25,7 +25,6 @@ export function generateShim(name: string, installDir: string): void {
 
   writeFileSync(shimPath, shimContent, { mode: 0o755 });
 
-  // On Windows, also generate a .cmd shim
   if (process.platform === "win32") {
     const cmdPath = join(binDir, `${name}.cmd`);
     const cmdEscapedDir = installDir.replace(/%/g, "%%").replace(/"/g, '""');
@@ -38,9 +37,16 @@ export function generateShim(name: string, installDir: string): void {
   }
 }
 
-function writeMethodFiles(options: InstallMethodOptions): void {
-  const { repo } = options;
-  const targetDir = resolve(options.targetDir);
+/**
+ * Write all method files from a ResolvedRepo into targetDir/<method-name>/,
+ * generating a CLI shim for each. Refuses any path that escapes targetDir or
+ * the per-method install dir (path traversal protection).
+ *
+ * Agent-agnostic: the on-disk layout is identical regardless of which AI
+ * coding agent triggered the install.
+ */
+export function writeMethodFiles(repo: ResolvedRepo, targetDirInput: string): void {
+  const targetDir = resolve(targetDirInput);
   mkdirSync(targetDir, { recursive: true });
 
   for (const method of repo.methods) {
@@ -63,29 +69,4 @@ function writeMethodFiles(options: InstallMethodOptions): void {
 
     generateShim(method.name, installDir);
   }
-}
-
-const defaultHandler: (id: Agent) => AgentHandler = (id) => ({
-  id,
-  async installMethod(options: InstallMethodOptions): Promise<void> {
-    writeMethodFiles(options);
-  },
-});
-
-const handlers: Record<Agent, AgentHandler> = {
-  "claude-code": defaultHandler("claude-code"),
-  cursor: defaultHandler("cursor"),
-  codex: defaultHandler("codex"),
-};
-
-export function getAllAgents(): AgentHandler[] {
-  return Object.values(handlers);
-}
-
-export function getAgentHandler(agent: Agent): AgentHandler {
-  const handler = handlers[agent];
-  if (!handler) {
-    throw new Error(`Unknown agent: ${agent}`);
-  }
-  return handler;
 }

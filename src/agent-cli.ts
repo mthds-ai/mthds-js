@@ -117,19 +117,15 @@ program
   .command("install")
   .argument("[address]", "GitHub repo (org/repo or https://github.com/org/repo)")
   .option("--local <path>", "Install from a local directory")
-  .option("--agent <id>", "AI agent to install for (required)")
   .option("--location <loc>", "Install location: local or global (required)")
   .option("--method <name>", "Install only the specified method (by name)")
-  .option("--skills", "Install MTHDS skills plugin")
   .option("--no-runner", "Skip Pipelex runner install")
   .description("Install a method package (non-interactive)")
   .exitOverride()
   .action(async (address: string | undefined, opts: {
     local?: string;
-    agent?: string;
     location?: string;
     method?: string;
-    skills?: boolean;
     runner?: boolean;
   }) => {
     await agentInstall(address, { ...opts, noRunner: opts.runner === false });

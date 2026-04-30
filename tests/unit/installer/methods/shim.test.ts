@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { join } from "node:path";
 import { mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
-import { tmpdir, homedir } from "node:os";
-import { generateShim } from "../../../../src/installer/agents/registry.js";
+import { tmpdir } from "node:os";
+import { generateShim } from "../../../../src/installer/methods/writer.js";
 
 describe("generateShim", () => {
   let originalHome: string | undefined;

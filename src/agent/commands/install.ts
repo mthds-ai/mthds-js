@@ -3,31 +3,22 @@
  * All choices are required CLI flags — no prompts, no clack.
  */
 
-import { join } from "node:path";
-import { homedir } from "node:os";
-import { mkdirSync, existsSync } from "node:fs";
-import { exec } from "node:child_process";
-import { promisify } from "node:util";
 import { agentSuccess, agentError, AGENT_ERROR_DOMAINS } from "../output.js";
 import { parseAddress } from "../../installer/resolver/address.js";
 import { resolveFromGitHub } from "../../installer/resolver/github.js";
 import { resolveFromLocal } from "../../installer/resolver/local.js";
-import { getAllAgents, getAgentHandler } from "../../installer/agents/registry.js";
 import { isPipelexInstalled } from "../../installer/runtime/check.js";
 import { ensureRuntime } from "../../installer/runtime/installer.js";
-import { trackInstall, shutdown } from "../../installer/telemetry/posthog.js";
-import { InstallLocation as Loc } from "../../installer/agents/types.js";
-import type { Agent, InstallLocation } from "../../installer/agents/types.js";
-import type { ResolvedRepo } from "../../package/manifest/types.js";
-
-const execAsync = promisify(exec);
+import { shutdown } from "../../installer/telemetry/posthog.js";
+import { InstallLocation } from "../../installer/methods/types.js";
+import { runInstallFlow } from "../../installer/methods/install-flow.js";
+import type { InstallFlowResult } from "../../installer/methods/install-flow.js";
+import type { ParsedAddress, ResolvedRepo } from "../../package/manifest/types.js";
 
 interface AgentInstallOptions {
   local?: string;
-  agent?: string;
   location?: string;
   method?: string;
-  skills?: boolean;
   noRunner?: boolean;
 }
 
@@ -35,13 +26,6 @@ export async function agentInstall(
   address: string | undefined,
   options: AgentInstallOptions
 ): Promise<void> {
-  // Validate required flags
-  if (!options.agent) {
-    agentError("--agent is required", "ArgumentError", {
-      error_domain: AGENT_ERROR_DOMAINS.ARGUMENT,
-    });
-  }
-
   if (!options.location) {
     agentError("--location is required (local or global)", "ArgumentError", {
       error_domain: AGENT_ERROR_DOMAINS.ARGUMENT,
@@ -51,17 +35,6 @@ export async function agentInstall(
   if (options.location !== "local" && options.location !== "global") {
     agentError(
       `Invalid location: ${options.location}. Must be "local" or "global".`,
-      "ArgumentError",
-      { error_domain: AGENT_ERROR_DOMAINS.ARGUMENT }
-    );
-  }
-
-  // Validate agent ID
-  const agents = getAllAgents();
-  const validAgentIds = agents.map((a) => a.id);
-  if (!validAgentIds.includes(options.agent as Agent)) {
-    agentError(
-      `Unknown agent: ${options.agent}. Valid agents: ${validAgentIds.join(", ")}`,
       "ArgumentError",
       { error_domain: AGENT_ERROR_DOMAINS.ARGUMENT }
     );
@@ -83,11 +56,9 @@ export async function agentInstall(
     );
   }
 
-  const selectedAgent = options.agent as Agent;
   const selectedLocation = options.location as InstallLocation;
   const methodFilter = options.method;
 
-  // Resolve repo
   let resolved: ResolvedRepo;
   let orgRepo: string | undefined;
 
@@ -106,7 +77,7 @@ export async function agentInstall(
       orgRepo = addr.replace(/^github\.com\//, "");
     }
   } else if (address) {
-    let parsed;
+    let parsed: ParsedAddress;
     try {
       parsed = parseAddress(address);
     } catch (err) {
@@ -132,11 +103,10 @@ export async function agentInstall(
     });
   }
 
-  // Filter by --method
   if (methodFilter) {
-    const match = resolved.methods.find((m) => m.name === methodFilter);
+    const match = resolved.methods.find((method) => method.name === methodFilter);
     if (!match) {
-      const available = resolved.methods.map((m) => m.name).join(", ");
+      const available = resolved.methods.map((method) => method.name).join(", ");
       agentError(
         `Method "${methodFilter}" not found. Available methods: ${available || "(none)"}`,
         "InstallError",
@@ -152,7 +122,6 @@ export async function agentInstall(
     });
   }
 
-  // Optional runner install
   if (!options.noRunner) {
     if (!isPipelexInstalled()) {
       try {
@@ -167,42 +136,9 @@ export async function agentInstall(
     }
   }
 
-  // Determine target directory
-  const localDir = join(process.cwd(), ".claude", "methods");
-  const globalDir = join(homedir(), ".claude", "methods");
-  const targetDir = selectedLocation === Loc.Global ? globalDir : localDir;
-
-  mkdirSync(targetDir, { recursive: true });
-
-  // Telemetry for public GitHub repos
-  if (resolved.source === "github" && resolved.isPublic) {
-    for (const method of resolved.methods) {
-      const pkg = method.manifest.package;
-      trackInstall({
-        address: orgRepo ?? pkg.address.replace(/^github\.com\//, ""),
-        name: pkg.name,
-        main_pipe: pkg.main_pipe,
-        version: pkg.version,
-        description: pkg.description,
-        display_name: pkg.display_name,
-        authors: pkg.authors,
-        license: pkg.license,
-        mthds_version: pkg.mthds_version,
-        exports: method.manifest.exports,
-        manifest_raw: method.rawManifest,
-      });
-    }
-  }
-
-  // Install methods
-  const handler = getAgentHandler(selectedAgent);
+  let result: InstallFlowResult;
   try {
-    await handler.installMethod({
-      repo: resolved,
-      agent: selectedAgent,
-      location: selectedLocation,
-      targetDir,
-    });
+    result = runInstallFlow({ resolved, location: selectedLocation, orgRepo });
   } catch (err) {
     agentError(
       `Install failed: ${(err as Error).message}`,
@@ -211,37 +147,14 @@ export async function agentInstall(
     );
   }
 
-  // Optional skills install
-  const installedSkills: string[] = [];
-  if (options.skills) {
-    const PLUGINS_REPO = "https://github.com/mthds-ai/mthds-plugins";
-    const globalFlag = selectedLocation === Loc.Global ? " -g" : "";
-
-    try {
-      await execAsync(
-        `npx --yes skills add ${PLUGINS_REPO} --skill '*' --agent ${selectedAgent}${globalFlag} -y`,
-        { cwd: process.cwd() }
-      );
-      installedSkills.push("*");
-    } catch {
-      // Skills install failures are non-fatal
-    }
-  }
-
   await shutdown();
-
-  const shimDir = join(homedir(), ".mthds", "bin");
-  const shimsGenerated = existsSync(shimDir)
-    ? resolved.methods.map((m) => m.name)
-    : [];
 
   agentSuccess({
     success: true,
-    installed_methods: resolved.methods.map((m) => m.name),
+    installed_methods: result.installedMethods,
     location: selectedLocation,
-    target_dir: targetDir,
-    installed_skills: installedSkills,
-    shim_dir: shimDir,
-    shims_generated: shimsGenerated,
+    target_dir: result.targetDir,
+    shim_dir: result.shimDir,
+    shims_generated: result.shimsGenerated,
   });
 }

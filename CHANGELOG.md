@@ -1,5 +1,19 @@
 # Changelog
 
+## [v0.6.0] - 2026-04-30
+
+### Changed
+
+- **`mthds-agent install` no longer accepts `--agent` or `--skills`.** **Breaking.** The on-disk layout for installed methods is agent-agnostic, so `--agent` was meaningless; passing it now fails with `unknown option '--agent'`. Skills are installed via the Claude Code / Codex plugin systems, not by the method install command — the `npx skills add` shell-out is gone, and `--skills` likewise fails.
+- **Method packages now install under `.mthds/methods/`.** **Breaking.** Project-local installs land at `<cwd>/.mthds/methods/<name>/` and global installs at `~/.mthds/methods/<name>/` (was `.claude/methods/`). The interactive `mthds install` command already used this path; the agent CLI now matches.
+- **`installed_skills` removed from `mthds-agent install` JSON success output.** Consumers that parsed this field will need to drop it.
+- **The interactive `mthds install` no longer prompts about installing MTHDS skills.** The post-install skills prompt and its `npx skills add` execution have been removed.
+- **Minimum required mthds plugin version bumped to `0.10.0`** (was `0.9.0`). Coordinated with mthds-plugins 0.10.0, which bumps its own `min_mthds_version` floor to 0.6.0 — each repo enforces the other's minimum so a partial upgrade fails loudly with a clean version mismatch instead of an "unknown option" error.
+
+### Removed
+
+- **`installer/agents/` per-agent handler abstraction.** The handler map and `Agent` type were vestigial — every agent ran the same default handler. The shared install logic now lives in `installer/methods/{types,writer,install-flow}.ts`, used by both the interactive and non-interactive install commands.
+
 ## [v0.5.1] - 2026-04-29
 
 ### Changed

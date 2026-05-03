@@ -65,8 +65,9 @@ export class ApiResponseError extends PipelineRequestError {
     responseBody: string,
     errorType: string | undefined,
     serverMessage: string | undefined,
+    options?: { cause?: unknown },
   ) {
-    super(message);
+    super(message, options);
     this.name = "ApiResponseError";
     this.apiUrl = apiUrl;
     this.status = status;

@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help install check c test t clean build rebuild run dev pack
+.PHONY: help install check c test t clean build rebuild run dev pack all
 
 # Colors
 BLUE := \033[0;34m
@@ -25,6 +25,7 @@ help:
 	@echo ""
 	@echo "$(YELLOW)Quick Start:$(NC)"
 	@echo "  $(GREEN)make install$(NC)        Install dependencies"
+	@echo "  $(GREEN)make all$(NC)            Clean + build + test"
 	@echo "  $(GREEN)make check$(NC)          Run quality checks (typecheck + tests)"
 	@echo "  $(GREEN)make test$(NC)           Run the test suite"
 	@echo "  $(GREEN)make dev$(NC)            Watch mode — auto rebuild on changes"
@@ -73,6 +74,9 @@ clean:
 	@echo "$(GREEN)✓ Clean complete$(NC)"
 
 rebuild: clean build
+
+all: clean build test
+	@echo "$(GREEN)✓ All complete$(NC)"
 
 run: rebuild
 	@node dist/cli.js

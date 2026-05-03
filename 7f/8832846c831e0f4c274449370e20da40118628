@@ -1,0 +1,44 @@
+src/client/client.ts
+  3ccafa176babcc5e 9-10,50-69,72-81,132-176
+src/client/index.ts
+  3ccafa176babcc5e 4-5
+tests/unit/client/client.test.ts
+  3ccafa176babcc5e 1-224
+src/client/exceptions.ts
+  3ccafa176babcc5e 9-10,14-76
+CHANGELOG.md
+  3ccafa176babcc5e 5-8,11-12
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.4",
+  "base_commit_sha": "7f8832846c831e0f4c274449370e20da40118628",
+  "prompts": {
+    "3ccafa176babcc5e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "26348cda-8cc0-46db-9f24-e2686b6f6ffc",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Louis Choquel",
+      "messages": [],
+      "total_additions": 385,
+      "total_deletions": 19,
+      "accepted_lines": 381,
+      "overriden_lines": 0
+    },
+    "44473d0454a4e4bf": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "7049b00e-21c5-450b-8593-44d91a518180",
+        "model": "unknown"
+      },
+      "human_author": "Louis Choquel",
+      "messages": [],
+      "total_additions": 1,
+      "total_deletions": 1,
+      "accepted_lines": 1,
+      "overriden_lines": 0
+    }
+  }
+}

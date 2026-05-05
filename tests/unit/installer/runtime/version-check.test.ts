@@ -117,7 +117,7 @@ describe("checkBinaryVersion", () => {
   });
 
   it("handles plxt version format", () => {
-    mockedExecFileSync.mockReturnValue(Buffer.from("plxt 0.3.2"));
+    mockedExecFileSync.mockReturnValue(Buffer.from("plxt 99.0.0"));
 
     const result = checkBinaryVersion(
       makeRecovery({
@@ -128,7 +128,7 @@ describe("checkBinaryVersion", () => {
     );
 
     expect(result.status).toBe("ok");
-    expect(result.installed_version).toBe("0.3.2");
+    expect(result.installed_version).toBe("99.0.0");
   });
 
   it("handles version with trailing whitespace/newlines", () => {

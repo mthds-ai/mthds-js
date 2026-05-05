@@ -499,7 +499,6 @@ The install flow is interactive:
 4. Prompts for install location (local `.mthds/methods/` or global `~/.mthds/methods/`)
 5. Writes method files to the selected location
 6. Optionally installs the pipelex runner (only if not already installed)
-7. Optionally installs MTHDS skills (includes agent selection)
 
 **Examples:**
 

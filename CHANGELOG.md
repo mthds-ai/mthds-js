@@ -1,5 +1,27 @@
 # Changelog
 
+## [v0.6.0] - 2026-04-30
+
+### Added
+
+- **`ApiUnreachableError` and `ApiResponseError` — typed subclasses of `PipelineRequestError`** with structured fields, so consumers can render meaningful error UIs without parsing message strings. `ApiUnreachableError` carries `apiUrl` and a `code` (`ECONNREFUSED`, `ENOTFOUND`, `ETIMEDOUT`, `EAI_AGAIN`, `ABORT_TIMEOUT`); `ApiResponseError` carries `apiUrl`, `status`, `statusText`, `responseBody`, `errorType` and `serverMessage` (the latter two parsed from the API's `{"detail": {"error_type", "message"}}` and `{"detail": "..."}` shapes).
+
+### Changed
+
+- **`MthdsApiClient.makeApiCall` now wraps fetch failures in `ApiUnreachableError` and non-2xx HTTP responses in `ApiResponseError`.** **Behavior change** — previously, network failures (DNS / connect / TLS / timeout) propagated as the raw `TypeError("fetch failed")` from undici, and HTTP errors threw a flat `PipelineRequestError` whose only carrier was a stringified message. The new errors both extend `PipelineRequestError`, so existing `instanceof PipelineRequestError` and `instanceof Error` checks keep working; callers that specifically caught `TypeError` for network failures must switch to `ApiUnreachableError`.
+- **`PipelineRequestError` constructor now accepts `{ cause }` options** and forwards them to `Error`, so cause chains are preserved through wrapping.
+- **`mthds-agent install` no longer accepts `--agent` or `--skills`.** **Breaking.** The on-disk layout for installed methods is agent-agnostic, so `--agent` was meaningless; passing it now fails with `unknown option '--agent'`. Skills are installed via the Claude Code / Codex plugin systems, not by the method install command — the `npx skills add` shell-out is gone, and `--skills` likewise fails.
+- **Method packages now install under `.mthds/methods/`.** **Breaking.** Project-local installs land at `<cwd>/.mthds/methods/<name>/` and global installs at `~/.mthds/methods/<name>/` (was `.claude/methods/`). The interactive `mthds install` command already used this path; the agent CLI now matches.
+- **`installed_skills` removed from `mthds-agent install` JSON success output.** Consumers that parsed this field will need to drop it.
+- **The interactive `mthds install` no longer prompts about installing MTHDS skills.** The post-install skills prompt and its `npx skills add` execution have been removed.
+- **Minimum required mthds plugin version bumped to `0.10.0`** (was `0.9.0`). Coordinated with mthds-plugins 0.10.0, which bumps its own `min_mthds_version` floor to 0.6.0 — each repo enforces the other's minimum so a partial upgrade fails loudly with a clean version mismatch instead of an "unknown option" error.
+- **Minimum required pipelex version bumped to `0.25.0`** (was `0.23.5`). Applies to both the `pipelex` and `pipelex-agent` binaries — `mthds-agent` will report `outdated` and emit `UPGRADE_AVAILABLE` from `update-check` when an older version is on PATH.
+- **Minimum required plxt version bumped to `0.3.3`** (was `0.3.2`). Triggers the same `outdated` flow for the `plxt` binary.
+
+### Removed
+
+- **`installer/agents/` per-agent handler abstraction.** The handler map and `Agent` type were vestigial — every agent ran the same default handler. The shared install logic now lives in `installer/methods/{types,writer,install-flow}.ts`, used by both the interactive and non-interactive install commands.
+
 ## [v0.5.0] - 2026-04-28
 
 ### Changed

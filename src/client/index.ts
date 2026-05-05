@@ -1,6 +1,8 @@
 export { MthdsApiClient } from "./client.js";
 export type { RunnerProtocol } from "./protocol.js";
 export {
+  ApiResponseError,
+  ApiUnreachableError,
   ClientAuthenticationError,
   PipelineRequestError,
 } from "./exceptions.js";

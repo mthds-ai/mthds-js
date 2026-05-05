@@ -198,7 +198,7 @@ export async function agentDoctor(format: OutputFormat = OutputFormat.MARKDOWN):
       });
     } else if (check.status === "outdated") {
       issues.push({
-        severity: "warning",
+        severity: "error",
         message: `${recovery.binary} is outdated (${check.installed_version}, needs ${recovery.version_constraint}).`,
         recovery,
       });

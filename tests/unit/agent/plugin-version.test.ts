@@ -171,10 +171,10 @@ describe("checkPluginVersion", () => {
   // ---------------------------------------------------------------------------
   it("returns ok when version exactly matches minimum", () => {
     vi.mocked(readFileSync).mockReturnValue(
-      makeInstalledPlugins([{ scope: "user", version: "0.10.0" }])
+      makeInstalledPlugins([{ scope: "user", version: "0.10.1" }])
     );
     const result = checkPluginVersion();
-    expect(result).toEqual({ s: "ok", v: "0.10.0" });
+    expect(result).toEqual({ s: "ok", v: "0.10.1" });
   });
 
   // ---------------------------------------------------------------------------

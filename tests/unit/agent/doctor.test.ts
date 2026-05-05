@@ -94,7 +94,7 @@ describe("agentDoctor", () => {
     }
   });
 
-  it("reports outdated binaries as warnings with version details", async () => {
+  it("reports outdated binaries as errors with version details", async () => {
     mockedCheckBinaryVersion.mockReturnValue({
       status: "outdated",
       installed_version: "0.20.0",
@@ -109,11 +109,10 @@ describe("agentDoctor", () => {
     const issues = capturedResult!.issues as Issue[];
     expect(issues.length).toBeGreaterThan(0);
     for (const issue of issues) {
-      expect(issue.severity).toBe("warning"); // NOT error — must not conflict with snooze
+      expect(issue.severity).toBe("error");
       expect(issue.message).toContain("outdated");
     }
-    // Outdated is a warning, not an error → still healthy
-    expect(capturedResult!.healthy).toBe(true);
+    expect(capturedResult!.healthy).toBe(false);
 
     const deps = capturedResult!.dependencies as DependencyCheck[];
     for (const dep of deps) {

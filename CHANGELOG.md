@@ -1,5 +1,13 @@
 # Changelog
 
+## [v0.6.2] - 2026-05-05
+
+### Changed
+
+- **Minimum required pipelex version bumped to `0.26.1`** (was `0.26.0`). Applies to both the `pipelex` and `pipelex-agent` binaries — `mthds-agent` will report `outdated` and emit `UPGRADE_AVAILABLE` from `update-check` when an older version is on PATH.
+- **Minimum required mthds plugin version bumped to `0.10.1`** (was `0.10.0`). `mthds-agent` running inside Claude Code with an older plugin will now report `outdated` from `update-check` and emit `PLUGIN_UPDATE_AVAILABLE` from bootstrap.
+- **`mthds-agent doctor` now reports outdated runtime binaries as `error` severity** (was `warning`). Outdated `pipelex`, `pipelex-agent`, or `plxt` therefore makes `doctor` exit unhealthy, surfacing version drift more loudly. Tests for the doctor command updated accordingly.
+
 ## [v0.6.1] - 2026-05-05
 
 ### Changed

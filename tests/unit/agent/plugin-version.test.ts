@@ -128,16 +128,21 @@ function installCodexPlugin(
 // ── Tests ──────────────────────────────────────────────────────────
 
 const ORIGINAL_CODEX_HOME = process.env.CODEX_HOME;
+const ORIGINAL_CLAUDECODE = process.env.CLAUDECODE;
 
 beforeEach(() => {
   fsState = freshState();
   delete process.env.CODEX_HOME;
+  // Tests assume "no host hints" by default; opt in per test.
+  delete process.env.CLAUDECODE;
 });
 
 afterEach(() => {
   vi.clearAllMocks();
   if (ORIGINAL_CODEX_HOME === undefined) delete process.env.CODEX_HOME;
   else process.env.CODEX_HOME = ORIGINAL_CODEX_HOME;
+  if (ORIGINAL_CLAUDECODE === undefined) delete process.env.CLAUDECODE;
+  else process.env.CLAUDECODE = ORIGINAL_CLAUDECODE;
 });
 
 // ── detectHost ────────────────────────────────────────────────────
@@ -172,9 +177,27 @@ describe("detectHost", () => {
     expect(detectHost()).toBe("claude");
   });
 
-  it("prefers 'codex' when both Codex cache and Claude registry exist", () => {
+  it("prefers 'codex' when both Codex cache and Claude registry exist and CLAUDECODE is unset", () => {
     fsState.dirs.set(join(defaultCodexHome(), "plugins", "cache"), []);
     installPrimaryClaude("0.10.1");
+    expect(detectHost()).toBe("codex");
+  });
+
+  it("returns 'claude' when CLAUDECODE=1 even if Codex cache exists too", () => {
+    // CLAUDECODE=1 is only set by Claude Code at runtime (not in user shell
+    // profiles), so it's a stronger signal than filesystem state alone when
+    // both hosts are installed on the same machine.
+    process.env.CLAUDECODE = "1";
+    fsState.dirs.set(join(defaultCodexHome(), "plugins", "cache"), []);
+    installPrimaryClaude("0.10.1");
+    expect(detectHost()).toBe("claude");
+  });
+
+  it("ignores CLAUDECODE=1 when Claude registry is absent", () => {
+    // CLAUDECODE alone doesn't conjure a Claude install. If only the Codex
+    // cache exists on disk, that's still where we'd find the plugin.
+    process.env.CLAUDECODE = "1";
+    fsState.dirs.set(join(defaultCodexHome(), "plugins", "cache"), []);
     expect(detectHost()).toBe("codex");
   });
 });
@@ -398,6 +421,25 @@ describe("readCodexPluginVersion", () => {
   it("returns null when only 'local' sentinel is present", () => {
     fsState.dirs.set(codexPluginDir("mthds"), ["local"]);
     fsState.dirs.set(codexVersionDir("mthds", "local"), [".codex-plugin"]);
+    expect(readCodexPluginVersion()).toEqual({ kind: "null" });
+  });
+
+  it("falls back to mthds-dev when mthds has only non-semver dirs", () => {
+    // Regression: previously the function returned { kind: "null" } as soon
+    // as mthds had only unparseable version dirs, skipping the mthds-dev
+    // fallback entirely. If a future Codex build writes an unrecognized
+    // version format, we'd miss a valid mthds-dev install.
+    fsState.dirs.set(codexPluginDir("mthds"), ["weird-format"]);
+    fsState.dirs.set(codexVersionDir("mthds", "weird-format"), [".codex-plugin"]);
+    installCodexPlugin("mthds-dev", ["0.10.1"]);
+    expect(readCodexPluginVersion()).toEqual({ kind: "version", version: "0.10.1" });
+  });
+
+  it("returns null when every plugin dir has only non-semver entries", () => {
+    fsState.dirs.set(codexPluginDir("mthds"), ["weird-format"]);
+    fsState.dirs.set(codexVersionDir("mthds", "weird-format"), [".codex-plugin"]);
+    fsState.dirs.set(codexPluginDir("mthds-dev"), ["alsoweird"]);
+    fsState.dirs.set(codexVersionDir("mthds-dev", "alsoweird"), [".codex-plugin"]);
     expect(readCodexPluginVersion()).toEqual({ kind: "null" });
   });
 

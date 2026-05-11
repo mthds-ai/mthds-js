@@ -83,14 +83,25 @@ function codexCacheDir(): string {
  * irrelevant upgrade command. We require the cache directory to exist as
  * corroborating evidence (Codex creates it on first plugin install).
  *
+ * When a user has *both* hosts installed (Codex cache dir AND Claude
+ * registry both present), filesystem state alone can't tell us which one
+ * is currently running us. We use `CLAUDECODE=1` — set by Claude Code at
+ * runtime, not something users would set in a shell profile — as the
+ * tiebreaker. Codex doesn't have an equivalent runtime-only env var we
+ * can trust the same way, so absence of `CLAUDECODE` falls back to the
+ * filesystem-based preference (Codex cache wins).
+ *
  * Order of checks:
- *   1. ~/.codex/plugins/cache/ exists (honoring $CODEX_HOME) → "codex"
- *   2. ~/.claude/plugins/installed_plugins.json exists       → "claude"
- *   3. neither                                               → null
+ *   1. CLAUDECODE=1 AND ~/.claude/plugins/installed_plugins.json exists → "claude"
+ *   2. ~/.codex/plugins/cache/ exists (honoring $CODEX_HOME)            → "codex"
+ *   3. ~/.claude/plugins/installed_plugins.json exists                  → "claude"
+ *   4. neither                                                          → null
  */
 export function detectHost(): PluginHost | null {
+  const claudeInstalled = existsSync(INSTALLED_PLUGINS_PATH);
+  if (process.env.CLAUDECODE === "1" && claudeInstalled) return "claude";
   if (existsSync(codexCacheDir())) return "codex";
-  if (existsSync(INSTALLED_PLUGINS_PATH)) return "claude";
+  if (claudeInstalled) return "claude";
   return null;
 }
 
@@ -185,6 +196,10 @@ export function readCodexPluginVersion():
   // (EACCES, EIO, ...). If so, don't claim "missing" at the end — that would
   // tell the user to reinstall a plugin we couldn't actually inspect.
   let sawReadError = false;
+  // Track whether any plugin dir had entries but none parsed as semver. If so,
+  // don't claim "missing" at the end — the install exists, we just don't
+  // recognize the version layout (e.g. a future Codex build).
+  let sawUnparseableDirs = false;
 
   for (const pluginName of CODEX_PLUGIN_NAMES) {
     const pluginDir = join(cacheRoot, CODEX_MARKETPLACE, pluginName);
@@ -231,8 +246,10 @@ export function readCodexPluginVersion():
       }
     }
     if (!bestDirName) {
-      // Directories exist but none parse as semver — treat as unknown.
-      return { kind: "null" };
+      // Directories exist but none parse as semver — treat as unknown and
+      // fall through to the next candidate plugin name (e.g. mthds-dev).
+      sawUnparseableDirs = true;
+      continue;
     }
 
     // Prefer the manifest's version field when present (covers renamed dirs).
@@ -255,9 +272,10 @@ export function readCodexPluginVersion():
   }
 
   // No matching plugin directory under the Codex cache. If we couldn't even
-  // read one of the candidate dirs, treat as "skip" — telling the user to
-  // reinstall when the real cause was unreadable perms would be misleading.
-  return sawReadError ? { kind: "null" } : { kind: "missing" };
+  // read one of the candidate dirs, or if we saw dirs with non-semver names,
+  // treat as "skip" — telling the user to reinstall when the real cause was
+  // unreadable perms or an unrecognized version layout would be misleading.
+  return sawReadError || sawUnparseableDirs ? { kind: "null" } : { kind: "missing" };
 }
 
 // ── Main ───────────────────────────────────────────────────────────

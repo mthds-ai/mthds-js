@@ -2,6 +2,10 @@
 
 ## [v0.6.4] - 2026-05-12
 
+### Changed
+
+- **Minimum required mthds plugin version bumped to `0.10.3`** (was `0.10.2`). `mthds-agent` running inside Claude Code or Codex with an older plugin will report `outdated` from `update-check` and emit `PLUGIN_UPDATE_AVAILABLE` from bootstrap.
+
 ### Fixed
 
 - **`detectHost()` now trusts `CLAUDECODE=1` without requiring `installed_plugins.json` to exist.** Previously the function only returned `"claude"` when both `CLAUDECODE=1` was set *and* `~/.claude/plugins/installed_plugins.json` existed, so a Claude Code session with no plugins installed yet (fresh install, or a session that never ran an install) would fall through to the Codex cache check. On a machine with a leftover Codex cache directory that surfaced the wrong upgrade command (e.g. `/plugins install mthds`) to a Claude Code user. `CLAUDECODE=1` is a runtime signal Claude Code sets itself — if it's present we are definitively inside Claude Code, and `checkPluginVersion("claude")` correctly returns `null` when no registry file exists, so nothing spurious is emitted.

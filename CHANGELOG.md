@@ -2,6 +2,11 @@
 
 ## [v0.6.3] - 2026-05-12
 
+### Changed
+
+- **Minimum required pipelex version bumped to `0.27.0`** (was `0.26.1`). Applies to both the `pipelex` and `pipelex-agent` binaries — `mthds-agent` will report `outdated` and emit `UPGRADE_AVAILABLE` from `update-check` when an older version is on PATH.
+- **Minimum required mthds plugin version bumped to `0.10.2`** (was `0.10.1`). `mthds-agent` running inside Claude Code or Codex with an older plugin will now report `outdated` from `update-check` and emit `PLUGIN_UPDATE_AVAILABLE` from bootstrap.
+
 ### Fixed
 
 - **`mthds-agent` now detects the Codex plugin install when running under Codex.** Previously `plugin-version.ts` only read `~/.claude/plugins/installed_plugins.json`, so a user with the Codex plugin installed at v0.10.1 but a stale Claude install at v0.10.0 saw the agent report `plugin: outdated 0.10.0, required >=0.10.1`. Detection now picks the host via `$CODEX_HOME` env var → `~/.codex/plugins/cache/` existence → `~/.claude/plugins/installed_plugins.json` existence, and reads the appropriate registry. The Codex registry is the directory-name-as-version layout at `$CODEX_HOME/plugins/cache/mthds-plugins/<plugin>/<version>/.codex-plugin/plugin.json`; the plugin manifest's `version` field takes precedence over the directory name when both are present. Codex's `local` dev sentinel is treated like `unknown` (no nag).

@@ -193,12 +193,22 @@ describe("detectHost", () => {
     expect(detectHost()).toBe("claude");
   });
 
-  it("ignores CLAUDECODE=1 when Claude registry is absent", () => {
-    // CLAUDECODE alone doesn't conjure a Claude install. If only the Codex
-    // cache exists on disk, that's still where we'd find the plugin.
+  it("returns 'claude' when CLAUDECODE=1 even if installed_plugins.json is absent", () => {
+    // CLAUDECODE=1 is a runtime signal — if it's set, we are inside Claude
+    // Code. Falling through to "codex" just because a stale Codex cache dir
+    // exists would surface the wrong upgrade command (e.g. "/plugins install
+    // mthds") to a Claude Code user with no plugins installed yet.
     process.env.CLAUDECODE = "1";
     fsState.dirs.set(join(defaultCodexHome(), "plugins", "cache"), []);
-    expect(detectHost()).toBe("codex");
+    expect(detectHost()).toBe("claude");
+  });
+
+  it("returns 'claude' when CLAUDECODE=1 even when nothing is installed on disk", () => {
+    // Fresh Claude Code session, no plugins installed anywhere. We still
+    // pick "claude" so caller emits no spurious Codex upgrade command;
+    // checkPluginVersion("claude") returns null on missing file.
+    process.env.CLAUDECODE = "1";
+    expect(detectHost()).toBe("claude");
   });
 });
 

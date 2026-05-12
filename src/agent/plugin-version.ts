@@ -77,31 +77,32 @@ function codexCacheDir(): string {
 /**
  * Detect the host that this mthds-agent process is running under.
  *
- * `$CODEX_HOME` alone is not enough to claim Codex — a user might export it
- * in their shell profile for customization while running from Claude Code, in
- * which case picking "codex" would surface a wrong `missing` warning and an
- * irrelevant upgrade command. We require the cache directory to exist as
- * corroborating evidence (Codex creates it on first plugin install).
+ * `CLAUDECODE=1` is the strongest signal: it's set by Claude Code at runtime
+ * (not something users would export in a shell profile), so if it's present
+ * we are definitively running inside Claude Code. We trust it even when the
+ * Claude registry file is absent — that just means no plugin is installed
+ * yet (fresh Claude Code install, or a session that never installed
+ * anything). In that case `checkPluginVersion("claude")` returns null and
+ * nothing is emitted; importantly we avoid falling through to "codex" and
+ * surfacing the wrong upgrade command (e.g. "/plugins install mthds") to a
+ * Claude Code user just because a leftover Codex cache dir happens to exist
+ * on disk.
  *
- * When a user has *both* hosts installed (Codex cache dir AND Claude
- * registry both present), filesystem state alone can't tell us which one
- * is currently running us. We use `CLAUDECODE=1` — set by Claude Code at
- * runtime, not something users would set in a shell profile — as the
- * tiebreaker. Codex doesn't have an equivalent runtime-only env var we
- * can trust the same way, so absence of `CLAUDECODE` falls back to the
- * filesystem-based preference (Codex cache wins).
+ * `$CODEX_HOME` alone is not enough to claim Codex — a user might export it
+ * in their shell profile for customization. We require the cache directory
+ * to exist as corroborating evidence (Codex creates it on first plugin
+ * install).
  *
  * Order of checks:
- *   1. CLAUDECODE=1 AND ~/.claude/plugins/installed_plugins.json exists → "claude"
- *   2. ~/.codex/plugins/cache/ exists (honoring $CODEX_HOME)            → "codex"
- *   3. ~/.claude/plugins/installed_plugins.json exists                  → "claude"
- *   4. neither                                                          → null
+ *   1. CLAUDECODE=1                                          → "claude"
+ *   2. ~/.codex/plugins/cache/ exists (honoring $CODEX_HOME) → "codex"
+ *   3. ~/.claude/plugins/installed_plugins.json exists       → "claude"
+ *   4. none of the above                                     → null
  */
 export function detectHost(): PluginHost | null {
-  const claudeInstalled = existsSync(INSTALLED_PLUGINS_PATH);
-  if (process.env.CLAUDECODE === "1" && claudeInstalled) return "claude";
+  if (process.env.CLAUDECODE === "1") return "claude";
   if (existsSync(codexCacheDir())) return "codex";
-  if (claudeInstalled) return "claude";
+  if (existsSync(INSTALLED_PLUGINS_PATH)) return "claude";
   return null;
 }
 

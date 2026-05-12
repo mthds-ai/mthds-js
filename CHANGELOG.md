@@ -1,12 +1,14 @@
 # Changelog
 
-## [v0.6.3] - 2026-05-11
+## [v0.6.3] - 2026-05-12
 
 ### Fixed
 
 - **`mthds-agent` now detects the Codex plugin install when running under Codex.** Previously `plugin-version.ts` only read `~/.claude/plugins/installed_plugins.json`, so a user with the Codex plugin installed at v0.10.1 but a stale Claude install at v0.10.0 saw the agent report `plugin: outdated 0.10.0, required >=0.10.1`. Detection now picks the host via `$CODEX_HOME` env var → `~/.codex/plugins/cache/` existence → `~/.claude/plugins/installed_plugins.json` existence, and reads the appropriate registry. The Codex registry is the directory-name-as-version layout at `$CODEX_HOME/plugins/cache/mthds-plugins/<plugin>/<version>/.codex-plugin/plugin.json`; the plugin manifest's `version` field takes precedence over the directory name when both are present. Codex's `local` dev sentinel is treated like `unknown` (no nag).
 - **`PLUGIN_UPDATE_AVAILABLE` now emits the right upgrade command per host.** Codex sessions see `/plugins install mthds` (the Codex slash command); Claude Code sessions continue to see `claude plugin install mthds@mthds-plugins`. The emitted JSON also includes a new `host` field (`"claude" | "codex"`) so skill docs / preambles can render host-specific instructions. The event is only emitted when a host is detected, so there is no null case.
 - **`update-cache.ts` falls back to `$TMPDIR/mthds-agent/last-update-check` when `~/.mthds/state/` is unwritable.** Codex's `workspaceWrite` sandbox permits writes only under cwd, configured roots, and `$TMPDIR`, so writes to the user's home dir hit EPERM from Seatbelt — not a filesystem permission the user can grant. The cache reader now prefers the primary path and falls through to the fallback. `clearCache()` removes both paths. When both writes fail the warning fires at most once per process instead of on every invocation.
+- **`detectHost()` now uses `CLAUDECODE=1` as a runtime tiebreaker** when both the Codex cache and the Claude registry are present on disk. Previously the function returned `"codex"` whenever the Codex cache directory existed, which misclassified Claude Code sessions on machines where both hosts had been used. `CLAUDECODE=1` is set by Claude Code itself (not something a user would export in a shell profile), so it disambiguates the two-host case without false positives. Single-host machines are unaffected.
+- **`readCodexPluginVersion()` falls back to `mthds-dev` when `mthds` contains only non-semver subdirectories.** Previously a single unparseable directory name under `mthds` made the function return `null` immediately, skipping the `mthds-dev` candidate entirely. The loop now `continue`s to the next plugin name, and a new `sawUnparseableDirs` flag ensures the final return is still `null` (not `missing`) when every candidate has only unrecognized version layouts — we don't want to tell the user to reinstall a plugin we just couldn't parse.
 
 ### Changed
 

@@ -1,8 +1,19 @@
 /**
  * Snooze state for update-check upgrade prompts.
  *
- * Manages ~/.mthds/state/update-snoozed — a single-line file:
+ * Manages a single-line file:
  *   <versionKey> <level> <epoch>
+ *
+ * Primary location: ~/.mthds/state/update-snoozed.
+ * Fallback location: $TMPDIR/mthds-agent/update-snoozed — used when the
+ * primary location is not writable (Codex `workspaceWrite` sandbox permits
+ * writes only under cwd / configured roots / $TMPDIR, not under the user's
+ * home dir). Same dual-path policy as the update-check cache and the
+ * just-upgraded marker — see update-cache.ts.
+ *
+ * Reads consult both paths and prefer the newer mtime, so escalation
+ * (level 1 → 2 → 3+) stays correct as sessions move between sandboxed and
+ * non-sandboxed contexts.
  *
  * Version key is a plain concatenation of binary statuses (human-readable).
  * Escalating backoff: level 1 = 24h, level 2 = 48h, level 3+ = 7d.
@@ -10,8 +21,13 @@
  */
 
 import { join } from "node:path";
-import { readFileSync, writeFileSync, unlinkSync } from "node:fs";
-import { STATE_DIR, ensureStateDir } from "./update-cache.js";
+import { readFileSync, statSync, existsSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
+import {
+  SANDBOX_WRITE_ERRORS,
+  writeFileAt,
+  invalidateFileAt,
+} from "./update-cache.js";
 import type { CachePayload } from "./update-cache.js";
 
 // ── Types ──────────────────────────────────────────────────────────
@@ -24,13 +40,22 @@ export interface SnoozeState {
 
 // ── Constants ──────────────────────────────────────────────────────
 
-const SNOOZE_PATH = join(STATE_DIR, "update-snoozed");
+const STATE_DIR = join(homedir(), ".mthds", "state");
+const PRIMARY_SNOOZE_PATH = join(STATE_DIR, "update-snoozed");
+
+const FALLBACK_DIR = join(tmpdir(), "mthds-agent");
+const FALLBACK_SNOOZE_PATH = join(FALLBACK_DIR, "update-snoozed");
 
 const SNOOZE_DURATIONS_MS: Record<number, number> = {
   1: 24 * 60 * 60 * 1000, // 24h
   2: 48 * 60 * 60 * 1000, // 48h
 };
 const SNOOZE_DEFAULT_MS = 7 * 24 * 60 * 60 * 1000; // 7d for level 3+
+
+// ── Per-process warning latches ────────────────────────────────────
+
+let warnedAboutSnoozeWrite = false;
+let warnedAboutSnoozeClear = false;
 
 // ── Functions ──────────────────────────────────────────────────────
 
@@ -53,22 +78,22 @@ export function computeVersionKey(payload: CachePayload): string {
   return parts.join(":");
 }
 
-/** Read current snooze state. Returns null if missing or corrupt. */
-export function readSnooze(): SnoozeState | null {
-  let content: string;
-  try {
-    content = readFileSync(SNOOZE_PATH, "utf-8").trim();
-  } catch {
-    return null;
-  }
+interface SnoozeReadAttempt {
+  state: SnoozeState;
+  mtimeMs: number;
+}
+
+function parseSnoozeContent(content: string): SnoozeState | null {
+  const trimmed = content.trim();
+  if (!trimmed) return null;
 
   // Format: "<versionKey> <level> <epoch>"
   // The version key may contain colons but not spaces, so split from the right.
-  const lastSpace = content.lastIndexOf(" ");
+  const lastSpace = trimmed.lastIndexOf(" ");
   if (lastSpace === -1) return null;
-  const epochStr = content.slice(lastSpace + 1);
+  const epochStr = trimmed.slice(lastSpace + 1);
 
-  const rest = content.slice(0, lastSpace);
+  const rest = trimmed.slice(0, lastSpace);
   const secondLastSpace = rest.lastIndexOf(" ");
   if (secondLastSpace === -1) return null;
 
@@ -82,29 +107,69 @@ export function readSnooze(): SnoozeState | null {
   return { versionKey, level, epoch };
 }
 
+function readSnoozeAt(path: string): SnoozeReadAttempt | null {
+  let mtimeMs: number;
+  let content: string;
+  try {
+    mtimeMs = statSync(path).mtimeMs;
+    content = readFileSync(path, "utf-8");
+  } catch {
+    return null;
+  }
+  const state = parseSnoozeContent(content);
+  if (!state) return null;
+  return { state, mtimeMs };
+}
+
 /**
- * Write snooze state. Escalates level if same versionKey, resets if different.
+ * Read current snooze state. Returns null if missing or corrupt.
+ *
+ * Inspects both the primary and the fallback path; when both have valid
+ * contents, the one with the newer mtime wins. This keeps escalation
+ * correct when a session moves between sandboxed and non-sandboxed contexts:
+ * the older file is a stale snapshot from before the redirect happened.
+ */
+export function readSnooze(): SnoozeState | null {
+  const primary = readSnoozeAt(PRIMARY_SNOOZE_PATH);
+  const fallback = readSnoozeAt(FALLBACK_SNOOZE_PATH);
+  if (!primary) return fallback?.state ?? null;
+  if (!fallback) return primary.state;
+  return fallback.mtimeMs > primary.mtimeMs ? fallback.state : primary.state;
+}
+
+/**
+ * Write snooze state. Escalates level if same versionKey, resets to 1 if
+ * different. Sandbox-aware: falls back to $TMPDIR when ~/.mthds/state/ is
+ * not writable. Write failures emit a one-shot stderr warning per process.
  */
 export function writeSnooze(versionKey: string): void {
-  ensureStateDir();
-
   const existing = readSnooze();
-  let level: number;
-  if (existing && existing.versionKey === versionKey) {
-    level = existing.level + 1;
-  } else {
-    level = 1;
+  const level =
+    existing && existing.versionKey === versionKey ? existing.level + 1 : 1;
+  const content = `${versionKey} ${level} ${Date.now()}\n`;
+
+  const primary = writeFileAt(STATE_DIR, PRIMARY_SNOOZE_PATH, content);
+  if (primary.ok) return;
+
+  if (primary.code && SANDBOX_WRITE_ERRORS.has(primary.code)) {
+    const fallback = writeFileAt(FALLBACK_DIR, FALLBACK_SNOOZE_PATH, content);
+    if (fallback.ok) return;
+    emitSnoozeWriteWarning(primary.code, fallback.code);
+    return;
   }
 
-  const content = `${versionKey} ${level} ${Date.now()}\n`;
-  try {
-    writeFileSync(SNOOZE_PATH, content, "utf-8");
-  } catch (err) {
-    const code = (err as NodeJS.ErrnoException).code;
-    process.stderr.write(
-      `Warning: could not write snooze state (${code ?? String(err)}).\n`
-    );
-  }
+  emitSnoozeWriteWarning(primary.code);
+}
+
+function emitSnoozeWriteWarning(primaryCode?: string, fallbackCode?: string): void {
+  if (warnedAboutSnoozeWrite) return;
+  warnedAboutSnoozeWrite = true;
+  const detail = fallbackCode
+    ? `primary=${primaryCode ?? "?"}, fallback=${fallbackCode}`
+    : (primaryCode ?? "?");
+  process.stderr.write(
+    `Warning: could not write snooze state (${detail}). The upgrade prompt may re-appear next time.\n`
+  );
 }
 
 /** Check if snooze is active for the given versionKey. */
@@ -121,11 +186,23 @@ export function isSnoozed(versionKey: string): boolean {
   return elapsed >= -60_000 && elapsed < duration;
 }
 
-/** Clear snooze file. */
+/**
+ * Clear snooze. Hits both primary and fallback paths. When unlink is blocked
+ * (sandbox EPERM), overwrites with empty content so the next read parses as
+ * null. Warns at most once per process when a present file cannot be cleared
+ * by either route. Silent when both paths were absent to begin with — no
+ * spurious 0-byte file is created in that case.
+ */
 export function clearSnooze(): void {
-  try {
-    unlinkSync(SNOOZE_PATH);
-  } catch {
-    // File may not exist — that's fine
+  let blocked = false;
+  for (const path of [PRIMARY_SNOOZE_PATH, FALLBACK_SNOOZE_PATH]) {
+    if (!existsSync(path)) continue;
+    if (!invalidateFileAt(path)) blocked = true;
+  }
+  if (blocked && !warnedAboutSnoozeClear) {
+    warnedAboutSnoozeClear = true;
+    process.stderr.write(
+      `Warning: could not clear snooze state. The upgrade prompt may stay suppressed until the TTL expires.\n`
+    );
   }
 }

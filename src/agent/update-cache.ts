@@ -59,7 +59,7 @@ export interface CacheResult {
 
 // ── Constants ──────────────────────────────────────────────────────
 
-export const STATE_DIR = join(homedir(), ".mthds", "state");
+const STATE_DIR = join(homedir(), ".mthds", "state");
 const PRIMARY_CACHE_PATH = join(STATE_DIR, "last-update-check");
 const PRIMARY_MARKER_PATH = join(STATE_DIR, "just-upgraded-from");
 
@@ -80,7 +80,7 @@ const VALID_AGGREGATES: ReadonlySet<string> = new Set([
   "UPGRADE_AVAILABLE",
 ]);
 
-const SANDBOX_WRITE_ERRORS: ReadonlySet<string> = new Set([
+export const SANDBOX_WRITE_ERRORS: ReadonlySet<string> = new Set([
   "EPERM",
   "EACCES",
   "EROFS",
@@ -119,11 +119,6 @@ let warnedAboutMarkerWrite = false;
 let warnedAboutMarkerClear = false;
 
 // ── Functions ──────────────────────────────────────────────────────
-
-/** Ensure the state directory exists. */
-export function ensureStateDir(): void {
-  mkdirSync(STATE_DIR, { recursive: true });
-}
 
 /** Compute aggregate status from a payload. */
 export function computeAggregate(payload: CachePayload): AggregateStatus {
@@ -200,12 +195,18 @@ export function readCache(): CacheResult | null {
     : primary.result;
 }
 
-interface WriteAttempt {
+export interface WriteAttempt {
   ok: boolean;
   code?: string;
 }
 
-function writeCacheAt(dir: string, file: string, content: string): WriteAttempt {
+/**
+ * Best-effort `mkdir -p` + `writeFile`. Returns `{ok: true}` on success, or
+ * `{ok: false, code}` on any failure (errno code if available, else stringified
+ * error). Callers decide whether to retry on a fallback path based on `code`
+ * — see `SANDBOX_WRITE_ERRORS` for the sandbox-fallback predicate.
+ */
+export function writeFileAt(dir: string, file: string, content: string): WriteAttempt {
   try {
     mkdirSync(dir, { recursive: true });
     writeFileSync(file, content, "utf-8");
@@ -224,14 +225,14 @@ export function writeCache(result: CacheResult): void {
   const content =
     result.aggregate + "\n" + JSON.stringify(result.payload) + "\n";
 
-  const primary = writeCacheAt(STATE_DIR, PRIMARY_CACHE_PATH, content);
+  const primary = writeFileAt(STATE_DIR, PRIMARY_CACHE_PATH, content);
   if (primary.ok) return;
 
   // Only fall back for the sandbox/perm family of errors. Other failures
   // (ENOSPC, IO errors, ...) are not improved by retrying in $TMPDIR, so we
   // surface them via the same one-shot warning path.
   if (primary.code && SANDBOX_WRITE_ERRORS.has(primary.code)) {
-    const fallback = writeCacheAt(FALLBACK_DIR, FALLBACK_CACHE_PATH, content);
+    const fallback = writeFileAt(FALLBACK_DIR, FALLBACK_CACHE_PATH, content);
     if (fallback.ok) return;
     emitWriteWarning(primary.code, fallback.code);
     return;
@@ -283,11 +284,11 @@ export function clearCache(): void {
 export function writeUpgradeMarker(data: Record<string, unknown>): void {
   const content = JSON.stringify(data);
 
-  const primary = writeCacheAt(STATE_DIR, PRIMARY_MARKER_PATH, content);
+  const primary = writeFileAt(STATE_DIR, PRIMARY_MARKER_PATH, content);
   if (primary.ok) return;
 
   if (primary.code && SANDBOX_WRITE_ERRORS.has(primary.code)) {
-    const fallback = writeCacheAt(FALLBACK_DIR, FALLBACK_MARKER_PATH, content);
+    const fallback = writeFileAt(FALLBACK_DIR, FALLBACK_MARKER_PATH, content);
     if (fallback.ok) return;
     emitMarkerWriteWarning(primary.code, fallback.code);
     return;
@@ -336,10 +337,11 @@ function readMarkerAt(path: string): MarkerReadAttempt | null {
 /**
  * Best-effort invalidation. unlinkSync first (the desired outcome); if that
  * fails — typically EPERM under the sandbox — overwrite with empty content so
- * JSON.parse rejects it on the next read. Returns true when the file is
+ * the next read parses as invalid (empty content fails JSON.parse and is also
+ * rejected by the single-line snooze parser). Returns true when the file is
  * either gone or guaranteed unparseable.
  */
-function invalidateMarkerAt(path: string): boolean {
+export function invalidateFileAt(path: string): boolean {
   try {
     unlinkSync(path);
     return true;
@@ -381,8 +383,8 @@ export function readAndClearUpgradeMarker(): Record<string, unknown> | null {
   // Clean up both paths whether or not we honor the marker. We only attempt
   // invalidation for paths that actually had content; otherwise an existsSync
   // miss-then-create race could leave a zero-byte file we just created.
-  const primaryCleared = primary ? invalidateMarkerAt(PRIMARY_MARKER_PATH) : true;
-  const fallbackCleared = fallback ? invalidateMarkerAt(FALLBACK_MARKER_PATH) : true;
+  const primaryCleared = primary ? invalidateFileAt(PRIMARY_MARKER_PATH) : true;
+  const fallbackCleared = fallback ? invalidateFileAt(FALLBACK_MARKER_PATH) : true;
   if ((!primaryCleared || !fallbackCleared) && !warnedAboutMarkerClear) {
     warnedAboutMarkerClear = true;
     process.stderr.write(

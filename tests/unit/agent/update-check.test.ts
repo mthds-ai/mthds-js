@@ -49,6 +49,9 @@ vi.mock("../../../src/agent/plugin-version.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../../src/agent/plugin-version.js")>();
   return {
     ...actual,
+    // Default: pretend we're in Claude Code so the plugin check is reached.
+    // Tests that need the "no host" path can re-mock this.
+    detectHost: vi.fn((): "claude" | "codex" | null => "claude"),
     checkPluginVersion: vi.fn((): import("../../../src/agent/update-cache.js").BinaryCheckEntry | null => null),
   };
 });

@@ -1,15 +1,16 @@
 /**
- * Plugin version checking for the Claude Code mthds plugin.
+ * Plugin version checking for the mthds plugin under Claude Code and Codex.
  *
- * Reads ~/.claude/plugins/installed_plugins.json to detect whether the
- * installed plugin version satisfies the minimum required by this mthds-agent
- * release. Returns null when not running inside Claude Code (file absent).
+ * Detects the active host (Claude Code or Codex), reads the appropriate
+ * plugin registry, and checks the installed version against
+ * MIN_PLUGIN_VERSION. Returns null when no known host is detected (file
+ * absent on disk and no CODEX_HOME env).
  *
  * Bump MIN_PLUGIN_VERSION each release alongside min_mthds_version in the
  * plugin's targets/defaults.toml.
  */
 
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync, statSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import semver from "semver";
@@ -26,8 +27,12 @@ export const PLUGIN_KEYS = [
   "mthds-dev@mthds-plugins",
 ] as const;
 
-/** Command to update the plugin (prod). */
-export const PLUGIN_UPDATE_CMD = "claude plugin install mthds@mthds-plugins";
+/** Codex marketplace + plugin names searched under $CODEX_HOME/plugins/cache. */
+const CODEX_MARKETPLACE = "mthds-plugins";
+const CODEX_PLUGIN_NAMES = ["mthds", "mthds-dev"] as const;
+
+/** Sentinel directory name Codex uses for local dev installs. */
+const CODEX_LOCAL_VERSION = "local";
 
 /** Path to Claude Code's installed plugins registry. */
 export const INSTALLED_PLUGINS_PATH = join(
@@ -38,6 +43,9 @@ export const INSTALLED_PLUGINS_PATH = join(
 );
 
 // ── Types ──────────────────────────────────────────────────────────
+
+/** A host that exposes an mthds plugin install. `detectHost()` returns this or null. */
+export type PluginHost = "claude" | "codex";
 
 interface PluginEntry {
   scope: string;
@@ -50,45 +58,105 @@ interface InstalledPluginsFile {
   plugins: Record<string, PluginEntry[]>;
 }
 
-// ── Main ───────────────────────────────────────────────────────────
+interface CodexPluginManifest {
+  version?: unknown;
+  [key: string]: unknown;
+}
+
+// ── Host detection ─────────────────────────────────────────────────
+
+/** Resolve $CODEX_HOME (defaulting to ~/.codex). */
+function codexHomeDir(): string {
+  return process.env.CODEX_HOME ?? join(homedir(), ".codex");
+}
+
+function codexCacheDir(): string {
+  return join(codexHomeDir(), "plugins", "cache");
+}
 
 /**
- * Check the installed Claude Code plugin version against MIN_PLUGIN_VERSION.
+ * Detect the host that this mthds-agent process is running under.
+ *
+ * `$CODEX_HOME` alone is not enough to claim Codex — a user might export it
+ * in their shell profile for customization while running from Claude Code, in
+ * which case picking "codex" would surface a wrong `missing` warning and an
+ * irrelevant upgrade command. We require the cache directory to exist as
+ * corroborating evidence (Codex creates it on first plugin install).
+ *
+ * When a user has *both* hosts installed (Codex cache dir AND Claude
+ * registry both present), filesystem state alone can't tell us which one
+ * is currently running us. We use `CLAUDECODE=1` — set by Claude Code at
+ * runtime, not something users would set in a shell profile — as the
+ * tiebreaker. Codex doesn't have an equivalent runtime-only env var we
+ * can trust the same way, so absence of `CLAUDECODE` falls back to the
+ * filesystem-based preference (Codex cache wins).
+ *
+ * Order of checks:
+ *   1. CLAUDECODE=1 AND ~/.claude/plugins/installed_plugins.json exists → "claude"
+ *   2. ~/.codex/plugins/cache/ exists (honoring $CODEX_HOME)            → "codex"
+ *   3. ~/.claude/plugins/installed_plugins.json exists                  → "claude"
+ *   4. neither                                                          → null
+ */
+export function detectHost(): PluginHost | null {
+  const claudeInstalled = existsSync(INSTALLED_PLUGINS_PATH);
+  if (process.env.CLAUDECODE === "1" && claudeInstalled) return "claude";
+  if (existsSync(codexCacheDir())) return "codex";
+  if (claudeInstalled) return "claude";
+  return null;
+}
+
+// ── Update command per host ────────────────────────────────────────
+
+/** Command to run inside the host to install / upgrade the plugin. */
+export function pluginUpdateCommand(host: PluginHost): string {
+  switch (host) {
+    case "codex":
+      return "/plugins install mthds";
+    case "claude":
+      return "claude plugin install mthds@mthds-plugins";
+  }
+}
+
+// ── Claude registry reader ─────────────────────────────────────────
+
+/**
+ * Read the installed plugin version from Claude Code's registry.
  *
  * Returns:
- * - `{ s: "ok", v: "0.7.1" }`     — plugin installed and satisfies constraint
- * - `{ s: "outdated", v: "0.6.2", r: ">=0.10.0" }` — plugin too old
- * - `{ s: "missing", v: null }`    — plugin key exists but no user-scope entry
- * - `null`                         — not in Claude Code (file absent or corrupt)
+ *   - { version: "0.10.1" }   — plugin entry parsed successfully
+ *   - { version: null }       — registry missing / corrupt / unknown sentinel
+ *   - { version: "missing" }  — registry present, plugin not installed
  */
-export function checkPluginVersion(): BinaryCheckEntry | null {
+function readClaudePluginVersion():
+  | { kind: "version"; version: string }
+  | { kind: "missing" }
+  | { kind: "null" } {
   let content: string;
   try {
     content = readFileSync(INSTALLED_PLUGINS_PATH, "utf-8");
   } catch (err) {
     const code = (err as NodeJS.ErrnoException).code;
-    if (code === "ENOENT") return null; // File doesn't exist — not in Claude Code
+    if (code === "ENOENT") return { kind: "null" };
     process.stderr.write(
       `Warning: could not read ${INSTALLED_PLUGINS_PATH} (${code ?? String(err)}). Plugin version check skipped.\n`
     );
-    return null;
+    return { kind: "null" };
   }
 
   let parsed: InstalledPluginsFile;
   try {
     const raw: unknown = JSON.parse(content);
-    if (!raw || typeof raw !== "object" || !("plugins" in raw)) return null;
+    if (!raw || typeof raw !== "object" || !("plugins" in raw)) return { kind: "null" };
     const plugins = (raw as Record<string, unknown>).plugins;
-    if (!plugins || typeof plugins !== "object" || Array.isArray(plugins)) return null;
+    if (!plugins || typeof plugins !== "object" || Array.isArray(plugins)) return { kind: "null" };
     parsed = raw as InstalledPluginsFile;
   } catch {
     process.stderr.write(
       `Warning: ${INSTALLED_PLUGINS_PATH} contains invalid JSON. Plugin version check skipped.\n`
     );
-    return null;
+    return { kind: "null" };
   }
 
-  // Try each known plugin key (prod first, then dev)
   let entries: PluginEntry[] | undefined;
   for (const key of PLUGIN_KEYS) {
     const candidate = parsed.plugins[key];
@@ -97,22 +165,146 @@ export function checkPluginVersion(): BinaryCheckEntry | null {
       break;
     }
   }
-  if (!entries) {
-    // No known plugin key found — plugin not installed at all
-    return { s: "missing", v: null, r: MIN_PLUGIN_VERSION };
-  }
+  if (!entries) return { kind: "missing" };
 
-  // Prefer scope=user; fall back to first entry
   const userEntry = entries.find((e) => e.scope === "user") ?? entries[0]!;
   const version = userEntry.version;
+  if (!version || typeof version !== "string") return { kind: "missing" };
 
-  if (!version || typeof version !== "string") {
+  return { kind: "version", version };
+}
+
+// ── Codex registry reader ──────────────────────────────────────────
+
+/**
+ * Read the installed plugin version from Codex's plugin cache.
+ *
+ * Codex stores plugins at:
+ *   $CODEX_HOME/plugins/cache/<marketplace>/<plugin>/<version>/.codex-plugin/plugin.json
+ *
+ * The directory name is the version. A directory named "local" is Codex's
+ * dev sentinel — treat it like an unparseable version (don't nag).
+ *
+ * Returns the same shape as readClaudePluginVersion().
+ */
+export function readCodexPluginVersion():
+  | { kind: "version"; version: string }
+  | { kind: "missing" }
+  | { kind: "null" } {
+  const cacheRoot = codexCacheDir();
+  // Track whether any plugin dir was unreadable for a non-"absent" reason
+  // (EACCES, EIO, ...). If so, don't claim "missing" at the end — that would
+  // tell the user to reinstall a plugin we couldn't actually inspect.
+  let sawReadError = false;
+  // Track whether any plugin dir had entries but none parsed as semver. If so,
+  // don't claim "missing" at the end — the install exists, we just don't
+  // recognize the version layout (e.g. a future Codex build).
+  let sawUnparseableDirs = false;
+
+  for (const pluginName of CODEX_PLUGIN_NAMES) {
+    const pluginDir = join(cacheRoot, CODEX_MARKETPLACE, pluginName);
+
+    let names: string[];
+    try {
+      names = readdirSync(pluginDir);
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code;
+      if (code !== "ENOENT" && code !== "ENOTDIR") {
+        sawReadError = true;
+        process.stderr.write(
+          `Warning: could not read Codex plugin dir ${pluginDir} (${code ?? String(err)}). Plugin version check skipped.\n`
+        );
+      }
+      continue;
+    }
+
+    const versionDirs: string[] = [];
+    for (const name of names) {
+      if (name.startsWith(".")) continue;
+      try {
+        if (!statSync(join(pluginDir, name)).isDirectory()) continue;
+      } catch {
+        continue;
+      }
+      versionDirs.push(name);
+    }
+
+    if (versionDirs.length === 0) continue;
+
+    // Codex's dev sentinel — caller should treat this like "unparseable".
+    if (versionDirs.includes(CODEX_LOCAL_VERSION)) return { kind: "null" };
+
+    // Pick the highest semver-coercible version directory.
+    let bestDirName: string | null = null;
+    let bestVersion: string | null = null;
+    for (const name of versionDirs) {
+      const coerced = semver.coerce(name);
+      if (!coerced) continue;
+      if (!bestVersion || semver.gt(coerced.version, bestVersion)) {
+        bestDirName = name;
+        bestVersion = coerced.version;
+      }
+    }
+    if (!bestDirName) {
+      // Directories exist but none parse as semver — treat as unknown and
+      // fall through to the next candidate plugin name (e.g. mthds-dev).
+      sawUnparseableDirs = true;
+      continue;
+    }
+
+    // Prefer the manifest's version field when present (covers renamed dirs).
+    const manifestPath = join(pluginDir, bestDirName, ".codex-plugin", "plugin.json");
+    let manifestVersion: string | null = null;
+    try {
+      const raw: unknown = JSON.parse(readFileSync(manifestPath, "utf-8"));
+      if (raw && typeof raw === "object") {
+        const v = (raw as CodexPluginManifest).version;
+        if (typeof v === "string" && v.length > 0) {
+          manifestVersion = v;
+        }
+      }
+    } catch {
+      /* fall back to directory name */
+    }
+
+    const finalVersion = manifestVersion ?? bestDirName;
+    return { kind: "version", version: finalVersion };
+  }
+
+  // No matching plugin directory under the Codex cache. If we couldn't even
+  // read one of the candidate dirs, or if we saw dirs with non-semver names,
+  // treat as "skip" — telling the user to reinstall when the real cause was
+  // unreadable perms or an unrecognized version layout would be misleading.
+  return sawReadError || sawUnparseableDirs ? { kind: "null" } : { kind: "missing" };
+}
+
+// ── Main ───────────────────────────────────────────────────────────
+
+/**
+ * Check the installed plugin version against MIN_PLUGIN_VERSION for the
+ * given host.
+ *
+ * Returns:
+ *   - `{ s: "ok", v: "0.10.1" }`                                  — satisfies constraint
+ *   - `{ s: "outdated", v: "0.6.2", r: ">=0.10.1" }`              — too old
+ *   - `{ s: "missing", v: null, r: ">=0.10.1" }`                  — registry present, plugin absent
+ *   - `null`                                                       — registry unreadable, unparseable, or dev install
+ *
+ * Caller is expected to call `detectHost()` first and skip when it returns
+ * null — there is no "no host" return value here.
+ */
+export function checkPluginVersion(host: PluginHost): BinaryCheckEntry | null {
+  const result =
+    host === "codex" ? readCodexPluginVersion() : readClaudePluginVersion();
+
+  if (result.kind === "null") return null;
+  if (result.kind === "missing") {
     return { s: "missing", v: null, r: MIN_PLUGIN_VERSION };
   }
 
-  const coerced = semver.coerce(version);
+  const coerced = semver.coerce(result.version);
   if (!coerced) {
-    // Unparseable version (e.g. "unknown") — don't nag
+    // Unparseable version string — don't nag (matches "unknown" handling).
     return null;
   }
 

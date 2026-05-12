@@ -19,7 +19,7 @@ import type { BinaryCheckEntry } from "./update-cache.js";
 // ── Constants ──────────────────────────────────────────────────────
 
 /** Minimum plugin version this mthds-agent release requires. */
-export const MIN_PLUGIN_VERSION = ">=0.10.2";
+export const MIN_PLUGIN_VERSION = ">=0.10.3";
 
 /** Keys in installed_plugins.json for the mthds plugin (prod and dev targets). */
 export const PLUGIN_KEYS = [

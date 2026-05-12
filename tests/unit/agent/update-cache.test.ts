@@ -300,13 +300,19 @@ describe("update-cache", () => {
       expect(result!.aggregate).toBe("UP_TO_DATE");
     });
 
-    it("readCache prefers the primary file over the fallback", async () => {
+    it("readCache prefers the newer file when both primary and fallback have unexpired contents", async () => {
+      // Primary is older — simulates a stale snapshot from before writes were
+      // redirected to the fallback path (e.g. user moved from non-sandbox to a
+      // sandboxed session). The fresher fallback must win.
       mkdirSync(stateDir(), { recursive: true });
       writeFileSync(
         cachePath(),
         "UPGRADE_AVAILABLE\n" + JSON.stringify(OUTDATED_PAYLOAD) + "\n",
         "utf-8"
       );
+      const old = new Date(Date.now() - 30 * 60 * 1000);
+      utimesSync(cachePath(), old, old);
+
       mkdirSync(fallbackDir(), { recursive: true });
       writeFileSync(
         fallbackCachePath(),
@@ -316,7 +322,31 @@ describe("update-cache", () => {
 
       const { readCache } = await importModule();
       const result = readCache();
-      expect(result!.aggregate).toBe("UPGRADE_AVAILABLE");
+      expect(result!.aggregate).toBe("UP_TO_DATE");
+    });
+
+    it("readCache prefers primary when primary is newer than fallback", async () => {
+      // Inverse case: fallback holds an older snapshot from a previous
+      // sandboxed session, primary was refreshed afterwards.
+      mkdirSync(fallbackDir(), { recursive: true });
+      writeFileSync(
+        fallbackCachePath(),
+        "UPGRADE_AVAILABLE\n" + JSON.stringify(OUTDATED_PAYLOAD) + "\n",
+        "utf-8"
+      );
+      const old = new Date(Date.now() - 30 * 60 * 1000);
+      utimesSync(fallbackCachePath(), old, old);
+
+      mkdirSync(stateDir(), { recursive: true });
+      writeFileSync(
+        cachePath(),
+        "UP_TO_DATE\n" + JSON.stringify(OK_PAYLOAD) + "\n",
+        "utf-8"
+      );
+
+      const { readCache } = await importModule();
+      const result = readCache();
+      expect(result!.aggregate).toBe("UP_TO_DATE");
     });
 
     it("clearCache deletes both primary and fallback paths", async () => {

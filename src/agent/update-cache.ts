@@ -123,8 +123,13 @@ export function computeAggregate(payload: CachePayload): AggregateStatus {
     : "UPGRADE_AVAILABLE";
 }
 
+interface CacheAttempt {
+  result: CacheResult;
+  mtimeMs: number;
+}
+
 /** Read a cache file at the given path. Returns null on any failure. */
-function readCacheAt(path: string): CacheResult | null {
+function readCacheAt(path: string): CacheAttempt | null {
   let mtimeMs: number;
   let content: string;
   try {
@@ -155,17 +160,29 @@ function readCacheAt(path: string): CacheResult | null {
   // Negative age beyond 1 minute means clock skew — treat as expired
   if (age < -60_000 || age > ttl) return null;
 
-  return { aggregate: aggregate as AggregateStatus, payload };
+  return {
+    result: { aggregate: aggregate as AggregateStatus, payload },
+    mtimeMs,
+  };
 }
 
 /**
  * Read the update-check cache.
  *
- * Tries the primary path first; on miss / corrupt / expired falls back to
- * the $TMPDIR location. Returns null only when both lookups fail.
+ * Both the primary and the fallback path may hold valid contents — primary
+ * from a session where the home dir was writable, fallback from a session
+ * where writes had to be redirected (sandbox EPERM). When both exist and
+ * have unexpired contents, return whichever was written most recently; the
+ * older one is a stale snapshot from before the redirect happened.
  */
 export function readCache(): CacheResult | null {
-  return readCacheAt(PRIMARY_CACHE_PATH) ?? readCacheAt(FALLBACK_CACHE_PATH);
+  const primary = readCacheAt(PRIMARY_CACHE_PATH);
+  const fallback = readCacheAt(FALLBACK_CACHE_PATH);
+  if (!primary) return fallback?.result ?? null;
+  if (!fallback) return primary.result;
+  return fallback.mtimeMs > primary.mtimeMs
+    ? fallback.result
+    : primary.result;
 }
 
 interface WriteAttempt {

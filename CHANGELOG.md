@@ -1,5 +1,16 @@
 # Changelog
 
+## [v0.6.5] - 2026-05-12
+
+### Fixed
+
+- **`just-upgraded-from` marker now falls back to `$TMPDIR/mthds-agent/` when `~/.mthds/state/` is unwritable.** Mirrors the fix v0.6.3 applied to the update-check cache: under Codex's `workspaceWrite` sandbox the home dir is read-only, so the marker write previously hit EPERM and the "just upgraded" announcement never fired. `mthds-agent upgrade` and `mthds-agent bootstrap` now go through `writeUpgradeMarker()` which tries the primary path first and falls back to `$TMPDIR` on sandbox errors. Write failures emit a one-shot stderr warning per process instead of throwing.
+- **Stuck markers no longer replay forever.** Previously, if the marker was written in a non-sandboxed session and the next `update-check` ran in a sandboxed session that couldn't `unlinkSync` it, the announcement re-fired on every subsequent invocation. `readAndClearUpgradeMarker()` now (a) ignores markers older than 60 minutes — well past the seconds-scale skill flow that consumes them — and (b) falls through to overwriting the file with empty content when `unlink` fails, so the next read parses as invalid JSON and returns null. Both primary and fallback paths are inspected on read (newer mtime wins) and both are cleaned up on every consume, so a stuck marker stops replaying as soon as either directory becomes writable.
+
+### Changed
+
+- **`update-check.ts` no longer touches `node:fs` directly for the upgrade marker.** The `readAndClearUpgradeMarker()` logic moved into `update-cache.ts` alongside `writeUpgradeMarker()`, so the sandbox-aware primary/fallback layout has a single owner. `STATE_DIR` and `ensureStateDir` are no longer exported.
+
 ## [v0.6.4] - 2026-05-12
 
 ### Changed

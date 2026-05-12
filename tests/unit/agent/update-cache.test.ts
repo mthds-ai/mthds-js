@@ -22,6 +22,7 @@ let tempTmp: string | undefined;
 // on the primary cache write path without touching real filesystem perms.
 let writeFailPredicate: ((path: string) => NodeJS.ErrnoException | null) | null = null;
 let mkdirFailPredicate: ((path: string) => NodeJS.ErrnoException | null) | null = null;
+let unlinkFailPredicate: ((path: string) => NodeJS.ErrnoException | null) | null = null;
 
 vi.mock("node:os", async (importOriginal) => {
   const original = await importOriginal<typeof import("node:os")>();
@@ -57,6 +58,13 @@ vi.mock("node:fs", async (importOriginal) => {
         opts as Parameters<typeof real.mkdirSync>[1]
       );
     }),
+    unlinkSync: vi.fn((p: unknown) => {
+      if (unlinkFailPredicate) {
+        const err = unlinkFailPredicate(String(p));
+        if (err) throw err;
+      }
+      return real.unlinkSync(p as Parameters<typeof real.unlinkSync>[0]);
+    }),
   };
 });
 
@@ -79,6 +87,14 @@ function fallbackDir() {
 
 function fallbackCachePath() {
   return join(fallbackDir(), "last-update-check");
+}
+
+function markerPath() {
+  return join(stateDir(), "just-upgraded-from");
+}
+
+function fallbackMarkerPath() {
+  return join(fallbackDir(), "just-upgraded-from");
 }
 
 function eperm(path: string): NodeJS.ErrnoException {
@@ -105,6 +121,7 @@ describe("update-cache", () => {
     // leaked from a prior test (which throws EPERM) would fire on our setup.
     writeFailPredicate = null;
     mkdirFailPredicate = null;
+    unlinkFailPredicate = null;
     // Clear tempTmp before allocating tempHome so the mocked tmpdir() inside
     // mkdtempSync falls through to the real OS tmpdir.
     tempTmp = undefined;
@@ -497,6 +514,178 @@ describe("update-cache", () => {
       const result = readCache();
       expect(result).not.toBeNull();
       expect(result!.payload.pipelex_agent).toBeDefined();
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // upgrade marker (writeUpgradeMarker + readAndClearUpgradeMarker)
+  // ---------------------------------------------------------------------------
+  describe("upgrade marker", () => {
+    const MARKER_DATA = { pipelex_agent: "0.26.3", plxt: "missing" };
+
+    describe("writeUpgradeMarker", () => {
+      it("writes to the primary path when home dir is writable", async () => {
+        const { writeUpgradeMarker } = await importModule();
+        writeUpgradeMarker(MARKER_DATA);
+
+        expect(existsSync(markerPath())).toBe(true);
+        expect(existsSync(fallbackMarkerPath())).toBe(false);
+        expect(JSON.parse(readFileSync(markerPath(), "utf-8"))).toEqual(MARKER_DATA);
+      });
+
+      it("falls back to $TMPDIR when primary writeFileSync throws EPERM", async () => {
+        writeFailPredicate = (p) => (p === markerPath() ? eperm(p) : null);
+
+        const { writeUpgradeMarker } = await importModule();
+        writeUpgradeMarker(MARKER_DATA);
+
+        expect(existsSync(markerPath())).toBe(false);
+        expect(existsSync(fallbackMarkerPath())).toBe(true);
+        expect(JSON.parse(readFileSync(fallbackMarkerPath(), "utf-8"))).toEqual(MARKER_DATA);
+      });
+
+      it("falls back to $TMPDIR when primary mkdirSync throws EPERM", async () => {
+        mkdirFailPredicate = (p) => (p === stateDir() ? eperm(p) : null);
+
+        const { writeUpgradeMarker } = await importModule();
+        writeUpgradeMarker(MARKER_DATA);
+
+        expect(existsSync(markerPath())).toBe(false);
+        expect(existsSync(fallbackMarkerPath())).toBe(true);
+      });
+
+      it("emits the warning at most once per process when both writes fail", async () => {
+        writeFailPredicate = (_p) => eperm("anywhere");
+        mkdirFailPredicate = (_p) => eperm("anywhere");
+
+        const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+
+        const { writeUpgradeMarker } = await importModule();
+        writeUpgradeMarker(MARKER_DATA);
+        writeUpgradeMarker(MARKER_DATA);
+        writeUpgradeMarker(MARKER_DATA);
+
+        const warnings = stderrSpy.mock.calls.filter((args) =>
+          String(args[0]).includes("could not write upgrade marker")
+        );
+        expect(warnings.length).toBe(1);
+
+        stderrSpy.mockRestore();
+      });
+    });
+
+    describe("readAndClearUpgradeMarker", () => {
+      it("returns null when no marker exists", async () => {
+        const { readAndClearUpgradeMarker } = await importModule();
+        expect(readAndClearUpgradeMarker()).toBeNull();
+      });
+
+      it("returns parsed data from the primary path", async () => {
+        mkdirSync(stateDir(), { recursive: true });
+        writeFileSync(markerPath(), JSON.stringify(MARKER_DATA), "utf-8");
+
+        const { readAndClearUpgradeMarker } = await importModule();
+        expect(readAndClearUpgradeMarker()).toEqual(MARKER_DATA);
+      });
+
+      it("returns parsed data from the fallback path when only it exists", async () => {
+        mkdirSync(fallbackDir(), { recursive: true });
+        writeFileSync(fallbackMarkerPath(), JSON.stringify(MARKER_DATA), "utf-8");
+
+        const { readAndClearUpgradeMarker } = await importModule();
+        expect(readAndClearUpgradeMarker()).toEqual(MARKER_DATA);
+      });
+
+      it("prefers the newer file when both primary and fallback exist", async () => {
+        // Primary is older — simulates a stuck marker from a pre-fallback
+        // session. The fresher fallback must win.
+        mkdirSync(stateDir(), { recursive: true });
+        writeFileSync(markerPath(), JSON.stringify({ pipelex_agent: "0.20.0" }), "utf-8");
+        const old = new Date(Date.now() - 5 * 60 * 1000);
+        utimesSync(markerPath(), old, old);
+
+        mkdirSync(fallbackDir(), { recursive: true });
+        writeFileSync(fallbackMarkerPath(), JSON.stringify(MARKER_DATA), "utf-8");
+
+        const { readAndClearUpgradeMarker } = await importModule();
+        expect(readAndClearUpgradeMarker()).toEqual(MARKER_DATA);
+      });
+
+      it("removes the file on successful read", async () => {
+        mkdirSync(stateDir(), { recursive: true });
+        writeFileSync(markerPath(), JSON.stringify(MARKER_DATA), "utf-8");
+
+        const { readAndClearUpgradeMarker } = await importModule();
+        readAndClearUpgradeMarker();
+        expect(existsSync(markerPath())).toBe(false);
+      });
+
+      it("returns null and cleans up when the marker is older than the TTL", async () => {
+        // This is exactly the stuck-marker case the fix is aimed at — a
+        // previous session wrote the marker successfully but the next session
+        // could not delete it. After enough time, we stop honoring it.
+        mkdirSync(stateDir(), { recursive: true });
+        writeFileSync(markerPath(), JSON.stringify(MARKER_DATA), "utf-8");
+        const old = new Date(Date.now() - 61 * 60 * 1000);
+        utimesSync(markerPath(), old, old);
+
+        const { readAndClearUpgradeMarker } = await importModule();
+        expect(readAndClearUpgradeMarker()).toBeNull();
+        // Cleanup still runs even when we don't honor the marker
+        expect(existsSync(markerPath())).toBe(false);
+      });
+
+      it("self-heals by overwriting with empty content when unlink fails", async () => {
+        // Codex's sandbox blocks unlink under ~/.mthds/state/ even when
+        // writes there happened to succeed earlier. Falling through to
+        // writeFileSync('') makes the next read return null (JSON.parse fails).
+        mkdirSync(stateDir(), { recursive: true });
+        writeFileSync(markerPath(), JSON.stringify(MARKER_DATA), "utf-8");
+        unlinkFailPredicate = (p) => (p === markerPath() ? eperm(p) : null);
+
+        const mod = await importModule();
+        // First read consumes the marker (overwrites with empty since unlink fails)
+        expect(mod.readAndClearUpgradeMarker()).toEqual(MARKER_DATA);
+        expect(readFileSync(markerPath(), "utf-8")).toBe("");
+        // Second read sees the empty file and returns null
+        expect(mod.readAndClearUpgradeMarker()).toBeNull();
+      });
+
+      it("warns once when neither unlink nor overwrite can clear the marker", async () => {
+        mkdirSync(stateDir(), { recursive: true });
+        writeFileSync(markerPath(), JSON.stringify(MARKER_DATA), "utf-8");
+        unlinkFailPredicate = (p) => (p === markerPath() ? eperm(p) : null);
+        writeFailPredicate = (p) => (p === markerPath() ? eperm(p) : null);
+
+        const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+        const { readAndClearUpgradeMarker } = await importModule();
+
+        readAndClearUpgradeMarker();
+        readAndClearUpgradeMarker();
+
+        const warnings = stderrSpy.mock.calls.filter((args) =>
+          String(args[0]).includes("could not clear upgrade marker")
+        );
+        expect(warnings.length).toBe(1);
+
+        stderrSpy.mockRestore();
+      });
+
+      it("returns null when content is not valid JSON", async () => {
+        mkdirSync(stateDir(), { recursive: true });
+        writeFileSync(markerPath(), "not-json", "utf-8");
+
+        const { readAndClearUpgradeMarker } = await importModule();
+        expect(readAndClearUpgradeMarker()).toBeNull();
+      });
+
+      it("returns null when JSON parses to a non-object", async () => {
+        mkdirSync(stateDir(), { recursive: true });
+        writeFileSync(markerPath(), '["array","not","object"]', "utf-8");
+
+        const { readAndClearUpgradeMarker } = await importModule();
+        expect(readAndClearUpgradeMarker()).toBeNull();
+      });
     });
   });
 });

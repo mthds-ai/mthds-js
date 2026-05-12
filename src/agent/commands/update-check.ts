@@ -10,8 +10,6 @@
  * and checks for the presence of these keywords. Plain text, not agentSuccess JSON.
  */
 
-import { readFileSync, unlinkSync } from "node:fs";
-import { join } from "node:path";
 import { createRequire } from "node:module";
 import { agentSuccess } from "../output.js";
 import { BINARY_RECOVERY } from "../binaries.js";
@@ -24,7 +22,7 @@ import {
   writeCache,
   clearCache,
   computeAggregate,
-  STATE_DIR,
+  readAndClearUpgradeMarker,
 } from "../update-cache.js";
 import type { CachePayload, BinaryCheckEntry } from "../update-cache.js";
 import {
@@ -37,8 +35,6 @@ import { checkPluginVersion, detectHost } from "../plugin-version.js";
 
 const require = createRequire(import.meta.url);
 const pkg = require("../../../package.json") as { version: string };
-
-const JUST_UPGRADED_PATH = join(STATE_DIR, "just-upgraded-from");
 
 // ── Types ──────────────────────────────────────────────────────────
 
@@ -202,30 +198,6 @@ function getOrRefreshPayload(runner: string): CachePayload {
   const aggregate = computeAggregate(payload);
   writeCache({ aggregate, payload });
   return payload;
-}
-
-function readAndClearUpgradeMarker(): Record<string, unknown> | null {
-  let content: string;
-  try {
-    content = readFileSync(JUST_UPGRADED_PATH, "utf-8");
-  } catch {
-    return null; // File doesn't exist or unreadable
-  }
-  // Delete marker before parsing — even corrupt markers should be consumed
-  try {
-    unlinkSync(JUST_UPGRADED_PATH);
-  } catch {
-    // ignore
-  }
-  try {
-    const parsed: unknown = JSON.parse(content);
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-      return null;
-    }
-    return parsed as Record<string, unknown>;
-  } catch {
-    return null;
-  }
 }
 
 function payloadVersions(

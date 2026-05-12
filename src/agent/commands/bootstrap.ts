@@ -25,7 +25,12 @@ import { clearCache, ensureStateDir, STATE_DIR } from "../update-cache.js";
 import { clearSnooze } from "../snooze.js";
 import { loadConfig } from "../../config/config.js";
 import { Runners } from "../../runners/types.js";
-import { checkPluginVersion, MIN_PLUGIN_VERSION, PLUGIN_UPDATE_CMD } from "../plugin-version.js";
+import {
+  checkPluginVersion,
+  detectHost,
+  MIN_PLUGIN_VERSION,
+  pluginUpdateCommand,
+} from "../plugin-version.js";
 
 // ── Types ──────────────────────────────────────────────────────────
 
@@ -216,17 +221,20 @@ export async function agentBootstrap(options: BootstrapOptions = {}): Promise<vo
   emitPluginCheck();
 }
 
-/** Emit PLUGIN_UPDATE_AVAILABLE if the Claude Code plugin is outdated or missing. */
+/** Emit PLUGIN_UPDATE_AVAILABLE if the host's mthds plugin is outdated or missing. */
 function emitPluginCheck(): void {
   try {
-    const pluginCheck = checkPluginVersion();
+    const host = detectHost();
+    if (!host) return;
+    const pluginCheck = checkPluginVersion(host);
     if (pluginCheck && (pluginCheck.s === "outdated" || pluginCheck.s === "missing")) {
       process.stdout.write(
         "PLUGIN_UPDATE_AVAILABLE " +
           JSON.stringify({
             installed: pluginCheck.v,
             required: MIN_PLUGIN_VERSION,
-            cmd: PLUGIN_UPDATE_CMD,
+            cmd: pluginUpdateCommand(host),
+            host,
           }) +
           "\n"
       );

@@ -33,7 +33,7 @@ import {
   clearSnooze,
   computeVersionKey,
 } from "../snooze.js";
-import { checkPluginVersion } from "../plugin-version.js";
+import { checkPluginVersion, detectHost } from "../plugin-version.js";
 
 const require = createRequire(import.meta.url);
 const pkg = require("../../../package.json") as { version: string };
@@ -166,12 +166,13 @@ function runFreshChecks(runner: string): CachePayload {
     payload.pipelex_agent = toBinaryEntry(checkBinaryVersion(pipelexRecovery));
   }
 
-  // Check Claude Code plugin version (null when not in Claude Code).
+  // Check the host's mthds plugin version (skip when no host is detected).
   // Wrapped in try-catch so a plugin check failure never crashes update-check.
   try {
-    const pluginCheck = checkPluginVersion();
-    if (pluginCheck) {
-      payload.plugin = pluginCheck;
+    const host = detectHost();
+    if (host) {
+      const pluginCheck = checkPluginVersion(host);
+      if (pluginCheck) payload.plugin = pluginCheck;
     }
   } catch (err) {
     process.stderr.write(

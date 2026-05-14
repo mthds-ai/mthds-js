@@ -271,7 +271,7 @@ describe("agentDoctor", () => {
     writeSpy.mockRestore();
   });
 
-  it("surfaces Codex sandbox network issue when inspectCodexConfig flags it", async () => {
+  it("surfaces Codex sandbox network issue when inspectCodexConfig flags it (codex_hooks key)", async () => {
     mockedCheckBinaryVersion.mockReturnValue({
       status: "ok",
       installed_version: "0.22.0",
@@ -285,14 +285,14 @@ describe("agentDoctor", () => {
       config_file: "/tmp/.codex/config.toml",
       exists: true,
       needs_change: { table: "sandbox_workspace_write", key: "network_access", value: "true" },
-      warnings: [{ code: "CODEX_HOOKS_DISABLED", message: "codex_hooks is false" }],
+      warnings: [{ code: "CODEX_HOOKS_DISABLED", message: "[features] codex_hooks is explicitly set to false" }],
     });
 
     await agentDoctor(OutputFormat.JSON);
 
     const issues = capturedResult!.issues as Issue[];
     expect(issues.some((i) => i.message.includes("Codex sandbox network"))).toBe(true);
-    expect(issues.some((i) => i.message.includes("codex_hooks is false"))).toBe(true);
+    expect(issues.some((i) => i.message.includes("codex_hooks"))).toBe(true);
 
     const codex = capturedResult!.codex as { needs_change: unknown };
     expect(codex.needs_change).toEqual({
@@ -300,6 +300,30 @@ describe("agentDoctor", () => {
       key: "network_access",
       value: "true",
     });
+  });
+
+  it("surfaces Codex sandbox network issue when inspectCodexConfig flags it (hooks key)", async () => {
+    mockedCheckBinaryVersion.mockReturnValue({
+      status: "ok",
+      installed_version: "0.22.0",
+      version_constraint: PX_CONSTRAINT,
+    });
+    mockedExecFileSync.mockReturnValue(Buffer.from("/usr/local/bin/pipelex"));
+    mockedListConfig.mockReturnValue([]);
+
+    const codexConfig = await import("../../../src/agent/commands/codex-config.js");
+    vi.mocked(codexConfig.inspectCodexConfig).mockReturnValueOnce({
+      config_file: "/tmp/.codex/config.toml",
+      exists: true,
+      needs_change: { table: "sandbox_workspace_write", key: "network_access", value: "true" },
+      warnings: [{ code: "CODEX_HOOKS_DISABLED", message: "[features] hooks is explicitly set to false" }],
+    });
+
+    await agentDoctor(OutputFormat.JSON);
+
+    const issues = capturedResult!.issues as Issue[];
+    expect(issues.some((i) => i.message.includes("Codex sandbox network"))).toBe(true);
+    expect(issues.some((i) => i.message.includes("hooks"))).toBe(true);
   });
 
   it("includes install_command using uv tool install format", async () => {

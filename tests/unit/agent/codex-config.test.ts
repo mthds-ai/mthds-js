@@ -207,12 +207,72 @@ codex_hooks = false
     expect(errorSpy).not.toHaveBeenCalled();
     const call = successSpy.mock.calls[0][0] as Record<string, unknown>;
     expect(call.status).toBe("APPLIED");
-    const warnings = call.warnings as Array<{ code: string }>;
-    expect(warnings.some((w) => w.code === "CODEX_HOOKS_DISABLED")).toBe(true);
+    const warnings = call.warnings as Array<{ code: string; message: string }>;
+    const hooksWarning = warnings.find((w) => w.code === "CODEX_HOOKS_DISABLED");
+    expect(hooksWarning).toBeDefined();
+    // Anchor on the leading "[features] <key> is" phrase to distinguish
+    // which key the warning is naming.
+    expect(hooksWarning?.message).toContain("[features] codex_hooks is");
 
     // Did NOT touch the codex_hooks key
     const parsed = parseToml(readConfig()) as Record<string, Record<string, unknown>>;
     expect(parsed.features.codex_hooks).toBe(false);
+  });
+
+  it("warns when [features] hooks is explicitly false but does not modify it", async () => {
+    writeConfig(`[features]
+hooks = false
+`);
+
+    await agentCodexApplyConfig();
+
+    expect(errorSpy).not.toHaveBeenCalled();
+    const call = successSpy.mock.calls[0][0] as Record<string, unknown>;
+    expect(call.status).toBe("APPLIED");
+    const warnings = call.warnings as Array<{ code: string; message: string }>;
+    const hooksWarning = warnings.find((w) => w.code === "CODEX_HOOKS_DISABLED");
+    expect(hooksWarning).toBeDefined();
+    // Anchor on the leading "[features] <key> is" phrase to distinguish
+    // which key the warning is naming.
+    expect(hooksWarning?.message).toContain("[features] hooks is");
+
+    // Did NOT touch the hooks key
+    const parsed = parseToml(readConfig()) as Record<string, Record<string, unknown>>;
+    expect(parsed.features.hooks).toBe(false);
+  });
+
+  it("emits exactly one CODEX_HOOKS_DISABLED warning (hooks key wins) when both keys are false", async () => {
+    writeConfig(`[features]
+hooks = false
+codex_hooks = false
+`);
+
+    await agentCodexApplyConfig();
+
+    expect(errorSpy).not.toHaveBeenCalled();
+    const call = successSpy.mock.calls[0][0] as Record<string, unknown>;
+    const warnings = call.warnings as Array<{ code: string; message: string }>;
+    const hooksWarnings = warnings.filter((w) => w.code === "CODEX_HOOKS_DISABLED");
+    expect(hooksWarnings).toHaveLength(1);
+    // `hooks` takes precedence over `codex_hooks` in the message.
+    expect(hooksWarnings[0].message).toContain("[features] hooks is");
+  });
+
+  it("does not warn when [features] hooks is true", async () => {
+    writeConfig(`[features]
+hooks = true
+
+[sandbox_workspace_write]
+network_access = true
+`);
+
+    await agentCodexApplyConfig();
+
+    expect(errorSpy).not.toHaveBeenCalled();
+    const call = successSpy.mock.calls[0][0] as Record<string, unknown>;
+    expect(call.status).toBe("ALREADY_OK");
+    const warnings = call.warnings as Array<{ code: string }>;
+    expect(warnings.some((w) => w.code === "CODEX_HOOKS_DISABLED")).toBe(false);
   });
 
   it("warns when sandbox_mode is read-only", async () => {
@@ -253,9 +313,20 @@ network_access = true
     });
   });
 
-  it("--check exits non-zero when warnings present even if required key is set", async () => {
+  it("--check exits non-zero when warnings present even if required key is set (codex_hooks key)", async () => {
     writeConfig(`[features]
 codex_hooks = false
+
+[sandbox_workspace_write]
+network_access = true
+`);
+
+    await expect(agentCodexApplyConfig({ check: true })).rejects.toBeInstanceOf(AgentErrorThrow);
+  });
+
+  it("--check exits non-zero when warnings present even if required key is set (hooks key)", async () => {
+    writeConfig(`[features]
+hooks = false
 
 [sandbox_workspace_write]
 network_access = true

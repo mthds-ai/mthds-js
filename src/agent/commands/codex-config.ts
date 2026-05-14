@@ -8,8 +8,8 @@
  * outbound request) hangs/fails inside the sandbox.
  *
  * Warning-only checks (we never modify these — too high-risk):
- *   - `[features] codex_hooks = false` — explicitly disables hooks
- *     (default is on as of Codex 0.124.0; codex-rs/features/src/lib.rs:768).
+ *   - `[features] hooks = false` (or its alias `codex_hooks = false`)
+ *     explicitly disables hooks; we check both keys defensively.
  *   - `sandbox_mode = "read-only"` — hook can't run apply_patch validation.
  *
  * Output statuses (via agentSuccess):
@@ -103,7 +103,7 @@ function insertIntoExistingTable(
   value: string,
 ): string {
   const lines = existing.split("\n");
-  const headerRegex = new RegExp(`^\\s*\\[\\s*${table.replace(/[.*+?^${}()|[\\]\\\\]/g, "\\$&")}\\s*\\]\\s*(#.*)?$`);
+  const headerRegex = new RegExp(`^\\s*\\[\\s*${table.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*\\]\\s*(#.*)?$`);
   // Treat both `[table]` and `[[array_of_tables]]` as section boundaries —
   // the inner `\[\[?...\]\]?` lets the boundary scan stop at array-of-tables
   // headers too, so we don't accidentally insert into one.
@@ -168,17 +168,19 @@ function collectWarnings(parsed: Record<string, unknown>): CodexConfigWarning[] 
   const warnings: CodexConfigWarning[] = [];
 
   const features = parsed.features;
-  if (
-    features &&
-    typeof features === "object" &&
-    !Array.isArray(features) &&
-    (features as Record<string, unknown>).codex_hooks === false
-  ) {
-    warnings.push({
-      code: "CODEX_HOOKS_DISABLED",
-      message:
-        "[features] codex_hooks is explicitly set to false; the mthds hook will not load. Remove this key (Codex 0.124+ enables hooks by default).",
-    });
+  if (features && typeof features === "object" && !Array.isArray(features)) {
+    const featuresTable = features as Record<string, unknown>;
+    // Check both `hooks` and its alias `codex_hooks` defensively.
+    // Either being explicitly false breaks the mthds hook.
+    const hooksDisabled = featuresTable.hooks === false;
+    const codexHooksDisabled = featuresTable.codex_hooks === false;
+    if (hooksDisabled || codexHooksDisabled) {
+      const keyName = hooksDisabled ? "hooks" : "codex_hooks";
+      warnings.push({
+        code: "CODEX_HOOKS_DISABLED",
+        message: `[features] ${keyName} is explicitly set to false; the mthds hook will not load. Remove this key — hooks are enabled by default.`,
+      });
+    }
   }
 
   if (parsed.sandbox_mode === "read-only") {

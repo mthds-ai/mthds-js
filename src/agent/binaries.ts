@@ -38,7 +38,7 @@ const VERSION_RE = /^[\w-]+\s+(\d+\.\d+\.\d+)/;
 const PIPELEX_PKG = {
   package: "pipelex",
   uv_package: "pipelex",
-  version_constraint: ">=0.27.0",
+  version_constraint: ">=0.28.0",
   version_extract: VERSION_RE,
   install_url: "https://pypi.org/project/pipelex/",
   auto_installable: true,
@@ -48,7 +48,7 @@ const PIPELEX_PKG = {
 const PIPELEX_TOOLS_PKG = {
   package: "pipelex-tools",
   uv_package: "pipelex-tools",
-  version_constraint: ">=0.3.3",
+  version_constraint: ">=0.4.0",
   version_extract: VERSION_RE,
   install_url: "https://pypi.org/project/pipelex-tools/",
   auto_installable: true,

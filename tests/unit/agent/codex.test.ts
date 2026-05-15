@@ -125,11 +125,11 @@ describe("legacy codex hook cleanup", () => {
     expect(removeLegacyCodexHook().status).toBe("removed");
 
     const parsed = JSON.parse(readFileSync(hooksFile(), "utf8"));
-    // The PostToolUse array became empty, so the key is dropped entirely.
-    expect(parsed.hooks.PostToolUse).toBeUndefined();
+    // PostToolUse was the only slot and it emptied, so the whole hooks key is dropped.
+    expect(parsed.hooks).toBeUndefined();
   });
 
-  it("removes a legacy Stop entry and drops the emptied Stop key", () => {
+  it("removes a legacy Stop entry and drops the emptied hooks key", () => {
     writeHooks({
       hooks: { Stop: [{ hooks: [{ type: "command", command: LEGACY_SCRIPT }] }] },
     });
@@ -137,7 +137,7 @@ describe("legacy codex hook cleanup", () => {
     expect(removeLegacyCodexHook().status).toBe("removed");
 
     const parsed = JSON.parse(readFileSync(hooksFile(), "utf8"));
-    expect(parsed.hooks.Stop).toBeUndefined();
+    expect(parsed.hooks).toBeUndefined();
   });
 
   it("removes both a legacy Stop entry and a legacy PostToolUse entry at once", () => {
@@ -153,8 +153,25 @@ describe("legacy codex hook cleanup", () => {
     expect(removeLegacyCodexHook().status).toBe("removed");
 
     const parsed = JSON.parse(readFileSync(hooksFile(), "utf8"));
-    expect(parsed.hooks.Stop).toBeUndefined();
-    expect(parsed.hooks.PostToolUse).toBeUndefined();
+    // Both slots emptied → the now-empty hooks object is dropped, not left as {}.
+    expect(parsed.hooks).toBeUndefined();
+  });
+
+  it("drops the emptied hooks key but keeps unrelated top-level keys", () => {
+    writeHooks({
+      hooks: {
+        PostToolUse: [
+          { matcher: "apply_patch", hooks: [{ type: "command", command: HOOK_COMMAND }] },
+        ],
+      },
+      otherKey: "preserved",
+    });
+
+    expect(removeLegacyCodexHook().status).toBe("removed");
+
+    const parsed = JSON.parse(readFileSync(hooksFile(), "utf8"));
+    expect(parsed.hooks).toBeUndefined();
+    expect(parsed.otherKey).toBe("preserved");
   });
 
   it("preserves unrelated hook entries, hook events, and top-level keys", () => {

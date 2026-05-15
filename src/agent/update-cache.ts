@@ -378,7 +378,10 @@ export function readAndClearUpgradeMarker(): Record<string, unknown> | null {
 
   if (!chosen) return null;
 
-  const isStale = Date.now() - chosen.mtimeMs > MARKER_TTL_MS;
+  // Negative age beyond 1 minute means clock skew — treat as stale so a
+  // future-dated marker can't replay the announcement forever.
+  const ageMs = Date.now() - chosen.mtimeMs;
+  const isStale = ageMs < -60_000 || ageMs > MARKER_TTL_MS;
 
   // Clean up both paths whether or not we honor the marker. We only attempt
   // invalidation for paths that actually had content; otherwise an existsSync

@@ -635,6 +635,21 @@ describe("update-cache", () => {
         expect(existsSync(markerPath())).toBe(false);
       });
 
+      it("returns null when the marker mtime is in the future (clock skew)", async () => {
+        // A future-dated marker (clock skew between sessions) has negative age;
+        // without the skew guard it would never look stale and would replay the
+        // upgrade announcement on every update-check.
+        mkdirSync(stateDir(), { recursive: true });
+        writeFileSync(markerPath(), JSON.stringify(MARKER_DATA), "utf-8");
+        const future = new Date(Date.now() + 10 * 60 * 1000);
+        utimesSync(markerPath(), future, future);
+
+        const { readAndClearUpgradeMarker } = await importModule();
+        expect(readAndClearUpgradeMarker()).toBeNull();
+        // Cleanup still runs even when we don't honor the marker.
+        expect(existsSync(markerPath())).toBe(false);
+      });
+
       it("self-heals by overwriting with empty content when unlink fails", async () => {
         // Codex's sandbox blocks unlink under ~/.mthds/state/ even when
         // writes there happened to succeed earlier. Falling through to

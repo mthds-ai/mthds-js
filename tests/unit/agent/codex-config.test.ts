@@ -276,6 +276,23 @@ codex_hooks = false
     expect(warning?.message).toContain("[features] codex_hooks is");
   });
 
+  it("names both keys when [features] hooks and codex_hooks are both false", async () => {
+    // Regression: a first-match ternary named only `hooks`, silently omitting
+    // `codex_hooks` from the warning when both were disabled.
+    writeConfig(`[features]
+hooks = false
+codex_hooks = false
+`);
+
+    await agentCodexApplyConfig();
+
+    expect(errorSpy).not.toHaveBeenCalled();
+    const warnings = lastSuccess().warnings as Array<{ code: string; message: string }>;
+    const warning = warnings.find((w) => w.code === "CODEX_HOOKS_DISABLED");
+    expect(warning?.message).toContain("[features] hooks");
+    expect(warning?.message).toContain("[features] codex_hooks");
+  });
+
   it("warns when sandbox_mode is read-only without modifying it", async () => {
     writeConfig(`sandbox_mode = "read-only"
 `);
@@ -352,9 +369,14 @@ plugin_hooks = true
     await agentCodexApplyConfig({ check: true });
 
     expect(errorSpy).not.toHaveBeenCalled();
+    // --check ALREADY_OK returns the same shape as --dry-run / apply so
+    // consumers see a consistent schema across every mode.
     expect(successSpy).toHaveBeenCalledWith({
       status: "ALREADY_OK",
       config_file: configFile(),
+      applied: [],
+      legacy_hook: { hooks_file: hooksFile(), status: "absent" },
+      warnings: [],
     });
   });
 
@@ -438,5 +460,19 @@ plugin_hooks = true
 
     await expect(agentCodexApplyConfig()).rejects.toBeInstanceOf(AgentErrorThrow);
     expect(errorSpy.mock.calls[0][1]).toBe("ConfigError");
+  });
+
+  it("surfaces a ConfigError when an intermediate edit produces unparseable TOML", async () => {
+    // A dotted-key implicit table has no `[header]` line, so appendTomlTable
+    // emits a second `[sandbox_workspace_write]` header that smol-toml rejects
+    // as a duplicate. applyChanges re-parses between changes, so the bad
+    // intermediate state throws inside applyChanges — it must surface as a
+    // ConfigError, not an uncaught crash that bypasses the error path.
+    writeConfig(`sandbox_workspace_write.foo = 1
+`);
+
+    await expect(agentCodexApplyConfig()).rejects.toBeInstanceOf(AgentErrorThrow);
+    expect(errorSpy.mock.calls[0][1]).toBe("ConfigError");
+    expect(errorSpy.mock.calls[0][0]).toContain("would not re-parse");
   });
 });

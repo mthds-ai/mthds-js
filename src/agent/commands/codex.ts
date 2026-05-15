@@ -164,6 +164,12 @@ export function removeLegacyCodexHook(): LegacyHookRemoval {
       hooks[slot] = kept;
     }
   }
+  // Drop the `hooks` key entirely once it is empty, mirroring the per-slot
+  // cleanup above — a residual `{}` would leave the file in a shape no tool
+  // wrote.
+  if (Object.keys(hooks).length === 0) {
+    delete parsed.hooks;
+  }
 
   try {
     writeAtomic(file, JSON.stringify(parsed, null, 2) + "\n");

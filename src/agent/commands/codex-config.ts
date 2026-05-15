@@ -215,14 +215,17 @@ function collectWarnings(parsed: TomlTable): CodexConfigWarning[] {
   if (features && typeof features === "object" && !Array.isArray(features)) {
     const featuresTable = features as TomlTable;
     // Check both `hooks` and its alias `codex_hooks` defensively. Either being
-    // explicitly false disables hooks entirely and breaks the mthds hook.
-    const hooksDisabled = featuresTable.hooks === false;
-    const codexHooksDisabled = featuresTable.codex_hooks === false;
-    if (hooksDisabled || codexHooksDisabled) {
-      const keyName = hooksDisabled ? "hooks" : "codex_hooks";
+    // explicitly false disables hooks entirely and breaks the mthds hook. When
+    // both are false, name both so neither is silently omitted.
+    const disabledKeys = (["hooks", "codex_hooks"] as const).filter(
+      (key) => featuresTable[key] === false,
+    );
+    if (disabledKeys.length > 0) {
+      const keyList = disabledKeys.map((key) => `[features] ${key}`).join(" and ");
+      const plural = disabledKeys.length > 1;
       warnings.push({
         code: "CODEX_HOOKS_DISABLED",
-        message: `[features] ${keyName} is explicitly set to false; the mthds hook will not load. Remove this key — hooks are enabled by default.`,
+        message: `${keyList} ${plural ? "are" : "is"} explicitly set to false; the mthds hook will not load. Remove ${plural ? "these keys" : "this key"} — hooks are enabled by default.`,
       });
     }
   }
@@ -408,17 +411,25 @@ export async function agentCodexApplyConfig(
       );
       return;
     }
-    agentSuccess({ status: "ALREADY_OK", config_file: file });
+    agentSuccess({
+      status: "ALREADY_OK",
+      config_file: file,
+      applied: [],
+      legacy_hook: { hooks_file: legacy.hooks_file, status: "absent" },
+      warnings: [],
+    });
     return;
   }
 
   // Validate the prospective config.toml contents before any write.
   let nextRaw = raw;
   if (changes.length > 0) {
-    nextRaw = applyChanges(raw, changes);
-    // Sanity-parse: an implicit table created by a dotted-key header can make
-    // appendTomlTable emit a duplicate header that smol-toml rejects.
     try {
+      nextRaw = applyChanges(raw, changes);
+      // Sanity-parse: an implicit table created by a dotted-key header can make
+      // appendTomlTable emit a duplicate header that smol-toml rejects.
+      // applyChanges itself re-parses between changes, so a malformed
+      // intermediate state throws here too — caught the same way.
       parseToml(nextRaw);
     } catch (err) {
       agentError(

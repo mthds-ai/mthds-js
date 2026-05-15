@@ -1,25 +1,32 @@
 /**
- * mthds-agent codex apply-config — additively merge required Codex sandbox
- * settings into ~/.codex/config.toml so the mthds PostToolUse hook can run
- * without being blocked by Codex's default workspace-write sandbox.
+ * mthds-agent codex apply-config — make ~/.codex/ correct for the mthds plugin.
  *
- * Currently the only required key is `[sandbox_workspace_write] network_access = true`.
- * Without it, any hook that fetches remote pipelex config (or any other
- * outbound request) hangs/fails inside the sandbox.
+ * Two jobs:
+ *  1. Additively merge required keys into ~/.codex/config.toml:
+ *       [sandbox_workspace_write] network_access = true
+ *         — Codex's default workspace-write sandbox blocks outbound network for
+ *           hook commands; without it any remote fetch hangs/fails.
+ *       [features] plugin_hooks = true
+ *         — plugin-bundled hooks are opt-in; without it Codex never loads the
+ *           mthds validation hook shipped inside the plugin.
+ *  2. Remove any obsolete mthds entry left in ~/.codex/hooks.json by the retired
+ *     `install-hook` command (see codex.ts) — it would double-fire alongside the
+ *     plugin-bundled hook.
  *
- * Warning-only checks (we never modify these — too high-risk):
- *   - `[features] hooks = false` (or its alias `codex_hooks = false`)
- *     explicitly disables hooks; we check both keys defensively.
- *   - `sandbox_mode = "read-only"` — hook can't run apply_patch validation.
+ * Warning-only checks (never modified — too high-risk):
+ *   - `[features] hooks = false` (or its alias `codex_hooks = false`) disables
+ *     hooks entirely; we check both keys defensively.
+ *   - `sandbox_mode = "read-only"` — apply_patch can't run, so the hook can't
+ *     either.
  *
  * Output statuses (via agentSuccess):
- *   - { status: "ALREADY_OK", config_file, warnings? }     — no changes needed
- *   - { status: "APPLIED", config_file, applied, warnings? } — diff merged + written
- *   - { status: "WOULD_APPLY", config_file, applied, warnings? } — --dry-run only
+ *   - { status: "ALREADY_OK", ... }   — nothing needed changing
+ *   - { status: "APPLIED", ... }      — config.toml merged and/or stale hook removed
+ *   - { status: "WOULD_APPLY", ... }  — --dry-run only
  *
  * Flags:
  *   --check    exits non-zero if anything would change (no writes, no warnings demoted)
- *   --dry-run  prints proposed diff and exits 0 without touching the file
+ *   --dry-run  prints proposed diff and exits 0 without touching any file
  */
 
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
@@ -27,18 +34,23 @@ import { dirname, join } from "node:path";
 import { homedir } from "node:os";
 import { parse as parseToml } from "smol-toml";
 import { agentError, agentSuccess, AGENT_ERROR_DOMAINS } from "../output.js";
+import { inspectLegacyCodexHook, removeLegacyCodexHook } from "./codex.js";
 
 // ── Constants ──────────────────────────────────────────────────────
-//
-// Single-key invariant: this command currently enforces exactly one
-// (table, key, value) tuple. `diffRequired` and `collectWarnings` are
-// structured around that assumption — if a future requirement adds a
-// second required key (e.g. a sandbox_mode default), both will need to
-// fan out to a list rather than the singleton structure used here.
 
-const REQUIRED_TABLE = "sandbox_workspace_write";
-const REQUIRED_KEY = "network_access";
-const REQUIRED_VALUE = true;
+/** Each (table, key, value) the mthds plugin needs in ~/.codex/config.toml.
+ *  `apply-config` adds missing keys and errors (without writing) on a key that
+ *  is explicitly set to a conflicting value. */
+interface RequiredSetting {
+  table: string;
+  key: string;
+  value: boolean;
+}
+
+const REQUIRED_SETTINGS: RequiredSetting[] = [
+  { table: "sandbox_workspace_write", key: "network_access", value: true },
+  { table: "features", key: "plugin_hooks", value: true },
+];
 
 // ── Types ──────────────────────────────────────────────────────────
 
@@ -46,6 +58,13 @@ export interface AppliedChange {
   table: string;
   key: string;
   value: string;
+}
+
+export interface SettingConflict {
+  table: string;
+  key: string;
+  current: string;
+  required: string;
 }
 
 export interface CodexConfigWarning {
@@ -56,7 +75,8 @@ export interface CodexConfigWarning {
 export interface CodexConfigInspection {
   config_file: string;
   exists: boolean;
-  needs_change: AppliedChange | null;
+  needs_changes: AppliedChange[];
+  conflicts: SettingConflict[];
   warnings: CodexConfigWarning[];
   parse_error?: string;
 }
@@ -65,6 +85,8 @@ interface ApplyConfigOptions {
   check?: boolean;
   dryRun?: boolean;
 }
+
+type TomlTable = Record<string, unknown>;
 
 // ── Helpers ────────────────────────────────────────────────────────
 
@@ -79,9 +101,14 @@ function writeAtomic(path: string, contents: string): void {
   renameSync(tmp, path);
 }
 
+/** Parse TOML text, treating empty/whitespace-only input as an empty table. */
+function parseTomlOrEmpty(text: string): TomlTable {
+  return text.trim().length === 0 ? {} : (parseToml(text) as TomlTable);
+}
+
 /**
- * Append a [table] section with key=value to existing TOML text. Used when
- * the table is missing entirely. We append rather than re-serialize so user
+ * Append a [table] section with key=value to existing TOML text. Used when the
+ * table is missing entirely. We append rather than re-serialize so user
  * formatting/comments elsewhere in the file are preserved verbatim.
  */
 function appendTomlTable(existing: string, table: string, key: string, value: string): string {
@@ -91,10 +118,10 @@ function appendTomlTable(existing: string, table: string, key: string, value: st
 }
 
 /**
- * Insert key=value into an existing [table] section without re-serializing
- * the document. Locates the table header line, finds the end of its body
- * (next [section] header or EOF), and inserts the line just before that
- * boundary. This preserves comments and ordering of every other table.
+ * Insert key=value into an existing [table] section without re-serializing the
+ * document. Locates the table header line, finds the end of its body (next
+ * [section] header or EOF), and inserts the line just before that boundary.
+ * This preserves comments and ordering of every other table.
  */
 function insertIntoExistingTable(
   existing: string,
@@ -103,16 +130,18 @@ function insertIntoExistingTable(
   value: string,
 ): string {
   const lines = existing.split("\n");
-  const headerRegex = new RegExp(`^\\s*\\[\\s*${table.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*\\]\\s*(#.*)?$`);
-  // Treat both `[table]` and `[[array_of_tables]]` as section boundaries —
-  // the inner `\[\[?...\]\]?` lets the boundary scan stop at array-of-tables
+  const headerRegex = new RegExp(
+    `^\\s*\\[\\s*${table.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*\\]\\s*(#.*)?$`,
+  );
+  // Treat both `[table]` and `[[array_of_tables]]` as section boundaries — the
+  // inner `\[\[?...\]\]?` lets the boundary scan stop at array-of-tables
   // headers too, so we don't accidentally insert into one.
   const anyHeaderRegex = /^\s*\[\[?[^\]]+\]\]?\s*(#.*)?$/;
 
   let tableStart = -1;
-  for (let i = 0; i < lines.length; i++) {
-    if (headerRegex.test(lines[i])) {
-      tableStart = i;
+  for (let index = 0; index < lines.length; index++) {
+    if (headerRegex.test(lines[index])) {
+      tableStart = index;
       break;
     }
   }
@@ -123,9 +152,9 @@ function insertIntoExistingTable(
   }
 
   let insertAt = lines.length;
-  for (let i = tableStart + 1; i < lines.length; i++) {
-    if (anyHeaderRegex.test(lines[i])) {
-      insertAt = i;
+  for (let index = tableStart + 1; index < lines.length; index++) {
+    if (anyHeaderRegex.test(lines[index])) {
+      insertAt = index;
       break;
     }
   }
@@ -137,41 +166,56 @@ function insertIntoExistingTable(
 
   const before = lines.slice(0, insertAt);
   const after = lines.slice(insertAt);
-  const newLine = `${key} = ${value}`;
-  return [...before, newLine, ...after].join("\n");
+  return [...before, `${key} = ${value}`, ...after].join("\n");
+}
+
+function readSettingValue(parsed: TomlTable, setting: RequiredSetting): unknown {
+  const table = parsed[setting.table];
+  if (table && typeof table === "object" && !Array.isArray(table)) {
+    return (table as TomlTable)[setting.key];
+  }
+  return undefined;
 }
 
 /**
- * Decide whether the parsed config already satisfies the required key.
- * Returns null if satisfied, otherwise an AppliedChange describing what
- * needs to be added.
+ * Compare the parsed config against REQUIRED_SETTINGS:
+ *   - missing key  → an AppliedChange to add it
+ *   - wrong value  → a SettingConflict (the user must hand-fix; we never flip
+ *                    a key that is explicitly set)
+ *   - right value  → satisfied, ignored
  */
-function diffRequired(parsed: Record<string, unknown>): AppliedChange | null {
-  const table = parsed[REQUIRED_TABLE];
-  if (
-    table &&
-    typeof table === "object" &&
-    !Array.isArray(table) &&
-    (table as Record<string, unknown>)[REQUIRED_KEY] === REQUIRED_VALUE
-  ) {
-    return null;
+function evaluateSettings(parsed: TomlTable): {
+  changes: AppliedChange[];
+  conflicts: SettingConflict[];
+} {
+  const changes: AppliedChange[] = [];
+  const conflicts: SettingConflict[] = [];
+  for (const setting of REQUIRED_SETTINGS) {
+    const current = readSettingValue(parsed, setting);
+    if (current === setting.value) continue;
+    if (current === undefined) {
+      changes.push({ table: setting.table, key: setting.key, value: String(setting.value) });
+    } else {
+      conflicts.push({
+        table: setting.table,
+        key: setting.key,
+        current: JSON.stringify(current),
+        required: String(setting.value),
+      });
+    }
   }
-  return {
-    table: REQUIRED_TABLE,
-    key: REQUIRED_KEY,
-    value: String(REQUIRED_VALUE),
-  };
+  return { changes, conflicts };
 }
 
 /** Collect non-fatal warnings about the user's config without modifying it. */
-function collectWarnings(parsed: Record<string, unknown>): CodexConfigWarning[] {
+function collectWarnings(parsed: TomlTable): CodexConfigWarning[] {
   const warnings: CodexConfigWarning[] = [];
 
   const features = parsed.features;
   if (features && typeof features === "object" && !Array.isArray(features)) {
-    const featuresTable = features as Record<string, unknown>;
-    // Check both `hooks` and its alias `codex_hooks` defensively.
-    // Either being explicitly false breaks the mthds hook.
+    const featuresTable = features as TomlTable;
+    // Check both `hooks` and its alias `codex_hooks` defensively. Either being
+    // explicitly false disables hooks entirely and breaks the mthds hook.
     const hooksDisabled = featuresTable.hooks === false;
     const codexHooksDisabled = featuresTable.codex_hooks === false;
     if (hooksDisabled || codexHooksDisabled) {
@@ -194,6 +238,30 @@ function collectWarnings(parsed: Record<string, unknown>): CodexConfigWarning[] 
   return warnings;
 }
 
+function legacyHookWarning(parseError: string): CodexConfigWarning {
+  return {
+    code: "LEGACY_HOOK_UNREADABLE",
+    message: `Could not read ~/.codex/hooks.json to remove any obsolete mthds hook entry (${parseError}). If you previously ran \`mthds-agent codex install-hook\`, delete that entry by hand so the validation hook does not run twice.`,
+  };
+}
+
+/** Apply each change to the TOML text in sequence, re-parsing between changes
+ *  so the table-exists decision reflects edits already made. */
+function applyChanges(raw: string, changes: AppliedChange[]): string {
+  let next = raw;
+  for (const change of changes) {
+    const parsed = parseTomlOrEmpty(next);
+    const table = parsed[change.table];
+    const tableExists = table !== undefined && typeof table === "object" && !Array.isArray(table);
+    next = tableExists
+      ? insertIntoExistingTable(next, change.table, change.key, change.value)
+      : appendTomlTable(next, change.table, change.key, change.value);
+  }
+  return next;
+}
+
+// ── Read-only inspection ───────────────────────────────────────────
+
 /**
  * Read-only inspection of ~/.codex/config.toml. Used by doctor to surface
  * issues without writing anything. Never throws — parse errors are reported
@@ -203,15 +271,16 @@ export function inspectCodexConfig(): CodexConfigInspection {
   const file = configFilePath();
   const exists = existsSync(file);
   if (!exists) {
-    // No config file ⇒ definitely needs a change (the required key is missing).
+    // No config file ⇒ every required key is missing.
     return {
       config_file: file,
       exists: false,
-      needs_change: {
-        table: REQUIRED_TABLE,
-        key: REQUIRED_KEY,
-        value: String(REQUIRED_VALUE),
-      },
+      needs_changes: REQUIRED_SETTINGS.map((setting) => ({
+        table: setting.table,
+        key: setting.key,
+        value: String(setting.value),
+      })),
+      conflicts: [],
       warnings: [],
     };
   }
@@ -223,20 +292,22 @@ export function inspectCodexConfig(): CodexConfigInspection {
     return {
       config_file: file,
       exists: true,
-      needs_change: null,
+      needs_changes: [],
+      conflicts: [],
       warnings: [],
       parse_error: `Failed to read ${file}: ${(err as Error).message}`,
     };
   }
 
-  let parsed: Record<string, unknown>;
+  let parsed: TomlTable;
   try {
-    parsed = raw.trim().length === 0 ? {} : (parseToml(raw) as Record<string, unknown>);
+    parsed = parseTomlOrEmpty(raw);
   } catch (err) {
     return {
       config_file: file,
       exists: true,
-      needs_change: null,
+      needs_changes: [],
+      conflicts: [],
       warnings: [],
       parse_error: (err as Error).message,
     };
@@ -246,16 +317,19 @@ export function inspectCodexConfig(): CodexConfigInspection {
     return {
       config_file: file,
       exists: true,
-      needs_change: null,
+      needs_changes: [],
+      conflicts: [],
       warnings: [],
       parse_error: "Top-level value is not a TOML table",
     };
   }
 
+  const { changes, conflicts } = evaluateSettings(parsed);
   return {
     config_file: file,
     exists: true,
-    needs_change: diffRequired(parsed),
+    needs_changes: changes,
+    conflicts,
     warnings: collectWarnings(parsed),
   };
 }
@@ -274,18 +348,16 @@ export async function agentCodexApplyConfig(
     try {
       raw = readFileSync(file, "utf8");
     } catch (err) {
-      agentError(
-        `Failed to read ${file}: ${(err as Error).message}`,
-        "IOError",
-        { error_domain: AGENT_ERROR_DOMAINS.IO },
-      );
+      agentError(`Failed to read ${file}: ${(err as Error).message}`, "IOError", {
+        error_domain: AGENT_ERROR_DOMAINS.IO,
+      });
       return;
     }
   }
 
-  let parsed: Record<string, unknown>;
+  let parsed: TomlTable;
   try {
-    parsed = raw.trim().length === 0 ? {} : (parseToml(raw) as Record<string, unknown>);
+    parsed = parseTomlOrEmpty(raw);
   } catch (err) {
     agentError(
       `Invalid TOML in ${file}: ${(err as Error).message}. Fix the file by hand or delete it and re-run.`,
@@ -296,21 +368,39 @@ export async function agentCodexApplyConfig(
   }
 
   if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    agentError(`${file} does not contain a TOML table at the top level.`, "ConfigError", {
+      error_domain: AGENT_ERROR_DOMAINS.CONFIG,
+    });
+    return;
+  }
+
+  const { changes, conflicts } = evaluateSettings(parsed);
+  const warnings = collectWarnings(parsed);
+
+  // A key explicitly set to a conflicting value is a hard error in every mode:
+  // apply-config never overrides an explicit user choice.
+  if (conflicts.length > 0) {
+    const lines = conflicts.map(
+      (conflict) =>
+        `  [${conflict.table}] ${conflict.key} = ${conflict.current} (the mthds plugin needs ${conflict.required})`,
+    );
     agentError(
-      `${file} does not contain a TOML table at the top level.`,
+      `~/.codex/config.toml has settings that conflict with the mthds plugin:\n${lines.join("\n")}\nChange them by hand, then re-run \`mthds-agent codex apply-config\`.`,
       "ConfigError",
       { error_domain: AGENT_ERROR_DOMAINS.CONFIG },
     );
     return;
   }
 
-  const change = diffRequired(parsed);
-  const warnings = collectWarnings(parsed);
-
-  // --check mode: exit non-zero if anything would change. Warnings count
-  // because they signal explicit user state that breaks the hook.
+  // ── --check mode: report only, exit non-zero if anything needs attention ──
   if (checkMode) {
-    if (change || warnings.length > 0) {
+    const legacy = inspectLegacyCodexHook();
+    const needsAttention =
+      changes.length > 0 ||
+      warnings.length > 0 ||
+      legacy.has_legacy_entry ||
+      legacy.parse_error !== undefined;
+    if (needsAttention) {
       agentError(
         `Codex config needs attention. Run 'mthds-agent codex apply-config' (and review warnings).`,
         "ConfigError",
@@ -322,75 +412,73 @@ export async function agentCodexApplyConfig(
     return;
   }
 
-  if (!change) {
-    agentSuccess({
-      status: "ALREADY_OK",
-      config_file: file,
-      warnings,
-    });
-    return;
+  // Validate the prospective config.toml contents before any write.
+  let nextRaw = raw;
+  if (changes.length > 0) {
+    nextRaw = applyChanges(raw, changes);
+    // Sanity-parse: an implicit table created by a dotted-key header can make
+    // appendTomlTable emit a duplicate header that smol-toml rejects.
+    try {
+      parseToml(nextRaw);
+    } catch (err) {
+      agentError(
+        `Generated config would not re-parse: ${(err as Error).message}`,
+        "ConfigError",
+        { error_domain: AGENT_ERROR_DOMAINS.CONFIG },
+      );
+      return;
+    }
   }
 
-  // Build the new file contents additively.
-  //
-  // Edge case: `parsed[REQUIRED_TABLE]` may be a TOML-implicit table
-  // created by a dotted-key header like `[sandbox_workspace_write.sub]`
-  // even when no literal `[sandbox_workspace_write]` header exists in the
-  // source text. In that case `insertIntoExistingTable` falls back to
-  // appending a fresh header, which would cause smol-toml to reject the
-  // result on the sanity-parse below (table redefinition). The sanity
-  // parse catches it and we surface a ConfigError — not pretty, but safe.
-  // If this becomes a real problem, switch to writing the dotted form
-  // `sandbox_workspace_write.network_access = true` at top-of-file.
-  let nextRaw: string;
-  const tableExists =
-    parsed[REQUIRED_TABLE] !== undefined &&
-    typeof parsed[REQUIRED_TABLE] === "object" &&
-    !Array.isArray(parsed[REQUIRED_TABLE]);
-
-  if (tableExists) {
-    nextRaw = insertIntoExistingTable(raw, change.table, change.key, change.value);
-  } else {
-    nextRaw = appendTomlTable(raw, change.table, change.key, change.value);
-  }
-
-  // Sanity-parse the new contents before committing.
-  try {
-    parseToml(nextRaw);
-  } catch (err) {
-    agentError(
-      `Generated config would not re-parse: ${(err as Error).message}`,
-      "ConfigError",
-      { error_domain: AGENT_ERROR_DOMAINS.CONFIG },
-    );
-    return;
-  }
-
+  // ── --dry-run mode: report the proposed diff, write nothing ──
   if (dryRunMode) {
+    const legacy = inspectLegacyCodexHook();
+    const allWarnings =
+      legacy.parse_error !== undefined
+        ? [...warnings, legacyHookWarning(legacy.parse_error)]
+        : warnings;
+    const wouldChange = changes.length > 0 || legacy.has_legacy_entry;
     agentSuccess({
-      status: "WOULD_APPLY",
+      status: wouldChange ? "WOULD_APPLY" : "ALREADY_OK",
       config_file: file,
-      applied: [change],
-      warnings,
+      applied: changes,
+      legacy_hook: {
+        hooks_file: legacy.hooks_file,
+        status: legacy.has_legacy_entry
+          ? "would-remove"
+          : legacy.parse_error !== undefined
+            ? "error"
+            : "absent",
+      },
+      warnings: allWarnings,
     });
     return;
   }
 
-  try {
-    writeAtomic(file, nextRaw);
-  } catch (err) {
-    agentError(
-      `Failed to write ${file}: ${(err as Error).message}`,
-      "IOError",
-      { error_domain: AGENT_ERROR_DOMAINS.IO },
-    );
-    return;
+  // ── Apply ──
+  if (changes.length > 0) {
+    try {
+      writeAtomic(file, nextRaw);
+    } catch (err) {
+      agentError(`Failed to write ${file}: ${(err as Error).message}`, "IOError", {
+        error_domain: AGENT_ERROR_DOMAINS.IO,
+      });
+      return;
+    }
   }
+
+  const removal = removeLegacyCodexHook();
+  const allWarnings =
+    removal.status === "error" && removal.error !== undefined
+      ? [...warnings, legacyHookWarning(removal.error)]
+      : warnings;
+  const didChange = changes.length > 0 || removal.status === "removed";
 
   agentSuccess({
-    status: "APPLIED",
+    status: didChange ? "APPLIED" : "ALREADY_OK",
     config_file: file,
-    applied: [change],
-    warnings,
+    applied: changes,
+    legacy_hook: { hooks_file: removal.hooks_file, status: removal.status },
+    warnings: allWarnings,
   });
 }

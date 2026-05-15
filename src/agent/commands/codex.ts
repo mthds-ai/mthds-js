@@ -1,106 +1,69 @@
 /**
- * mthds-agent codex install-hook — idempotently wire the mthds
- * PostToolUse(apply_patch) hook into ~/.codex/hooks.json.
+ * Codex ~/.codex/hooks.json legacy cleanup.
  *
- * Codex reads ~/.codex/hooks.json at startup and runs each registered hook
- * after the matching tool call. We register a PostToolUse hook with
- * matcher=apply_patch whose command is `mthds-agent codex hook` — the actual
- * validation runtime, registered under the same `codex` subcommand group as
- * this install command.
+ * mthds-plugins used to wire the .mthds validation hook into ~/.codex/hooks.json
+ * via `mthds-agent codex install-hook`. The hook now ships inside the plugin
+ * (mthds-codex/hooks/codex-hooks.json, discovered through the plugin manifest),
+ * so `install-hook` is gone.
  *
- * Migration: pre-0.5.0 versions of this command wrote `hooks.Stop[]` entries
- * pointing at a bash script (~/.codex/hooks/codex-validate-mthds.sh). The
- * mthds-plugins WIP 0.9.0 install-codex.sh wrote `hooks.PostToolUse[]`
- * entries pointing at the same bash script. Both are obsolete: the bash
- * script is gone, and the new entry routes through `mthds-agent codex hook`
- * directly. We sweep both legacy shapes here so users coming from any
- * earlier install end up with a clean hooks.json.
+ * Any leftover ~/.codex/hooks.json entry from an older install would fire a
+ * SECOND `mthds-agent codex hook` concurrently with the plugin-bundled hook —
+ * two `plxt fmt` runs racing on the same file. `apply-config` removes the stale
+ * entry and `doctor` reports it.
  *
- * Output statuses (via agentSuccess):
- *   - { status: "INSTALLED_NEW_FILE", hooks_file } — hooks.json didn't exist
- *   - { status: "ALREADY_INSTALLED", hooks_file } — new-shape entry already present
- *   - { status: "MERGED", hooks_file }            — entry appended (fresh or post-migration)
+ * "Ours" = any hook handler whose command matches a known mthds marker, in
+ * either the legacy `Stop` slot (pre-0.5.0 bash script) or `PostToolUse` (the
+ * bash script or the `mthds-agent codex hook` runtime). The plugin-bundled copy
+ * lives inside the plugin directory, never in ~/.codex/hooks.json, so removing
+ * every mthds entry from ~/.codex/hooks.json is unambiguously correct.
  */
 
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { homedir } from "node:os";
-import { agentError, agentSuccess, AGENT_ERROR_DOMAINS } from "../output.js";
 
 // ── Constants ──────────────────────────────────────────────────────
 
-const HOOK_COMMAND = "mthds-agent codex hook";
-const HOOK_MATCHER = "apply_patch";
-const HOOK_TIMEOUT = 30;
-
-// Substrings that identify entries previously written by this command or
-// the retired install-codex.sh script. Any entry whose command contains
-// either is "ours" and gets cleaned up before the new entry is appended.
+// Substrings that identify entries previously written by `install-hook` or
+// the retired install-codex.sh script. Any handler whose command contains one
+// of these is "ours" and gets swept.
 const LEGACY_MARKERS = ["codex-validate-mthds", "mthds-agent codex hook"];
 
 // ── Types ──────────────────────────────────────────────────────────
 
 interface HookCommand {
-  type: string;
-  command: string;
+  type?: string;
+  command?: string;
   timeout?: number;
 }
 
 interface HookEntry {
   matcher?: string;
-  hooks: HookCommand[];
+  hooks?: HookCommand[];
 }
 
-interface HooksFile {
-  hooks?: {
-    Stop?: HookEntry[];
-    PostToolUse?: HookEntry[];
-    [key: string]: unknown;
-  };
+interface ParsedHooks {
+  hooks?: Record<string, unknown>;
   [key: string]: unknown;
+}
+
+export interface LegacyHookInspection {
+  hooks_file: string;
+  exists: boolean;
+  has_legacy_entry: boolean;
+  parse_error?: string;
+}
+
+export interface LegacyHookRemoval {
+  hooks_file: string;
+  status: "removed" | "absent" | "error";
+  error?: string;
 }
 
 // ── Helpers ────────────────────────────────────────────────────────
 
 function hooksFilePath(): string {
   return join(homedir(), ".codex", "hooks.json");
-}
-
-function buildPostToolUseEntry(): HookEntry {
-  return {
-    matcher: HOOK_MATCHER,
-    hooks: [
-      {
-        type: "command",
-        command: HOOK_COMMAND,
-        timeout: HOOK_TIMEOUT,
-      },
-    ],
-  };
-}
-
-// "Ours" is a fuzzy substring match across all known shapes (current +
-// legacy bash-script entries) — used to identify entries to clean up.
-// "Current" is an exact-prefix match on the new shape only — used to
-// detect idempotent re-installs. The asymmetry is deliberate: a legacy
-// entry should be removed and replaced, not treated as already-installed.
-function entryIsOurs(entry: HookEntry | unknown): boolean {
-  if (!entry || typeof entry !== "object") return false;
-  const cmds = (entry as HookEntry).hooks;
-  if (!Array.isArray(cmds)) return false;
-  return cmds.some(
-    (h) =>
-      typeof h?.command === "string" &&
-      LEGACY_MARKERS.some((m) => h.command.includes(m))
-  );
-}
-
-function entryIsCurrent(entry: HookEntry): boolean {
-  if (entry?.matcher !== HOOK_MATCHER) return false;
-  if (!Array.isArray(entry.hooks)) return false;
-  return entry.hooks.some(
-    (h) => typeof h?.command === "string" && h.command.startsWith(HOOK_COMMAND)
-  );
 }
 
 function writeAtomic(path: string, contents: string): void {
@@ -110,160 +73,102 @@ function writeAtomic(path: string, contents: string): void {
   renameSync(tmp, path);
 }
 
-// ── Main ───────────────────────────────────────────────────────────
+function entryIsOurs(entry: unknown): boolean {
+  if (!entry || typeof entry !== "object") return false;
+  const cmds = (entry as HookEntry).hooks;
+  if (!Array.isArray(cmds)) return false;
+  return cmds.some(
+    (h) =>
+      typeof h?.command === "string" &&
+      LEGACY_MARKERS.some((m) => h.command!.includes(m)),
+  );
+}
 
-export async function agentCodexInstallHook(): Promise<void> {
-  const file = hooksFilePath();
+interface ReadResult {
+  exists: boolean;
+  parsed?: ParsedHooks;
+  parseError?: string;
+}
 
-  // Case 1: hooks.json does not exist — create it fresh with the new shape.
-  if (!existsSync(file)) {
-    const fresh: HooksFile = {
-      hooks: {
-        PostToolUse: [buildPostToolUseEntry()],
-      },
-    };
-    try {
-      writeAtomic(file, JSON.stringify(fresh, null, 2) + "\n");
-    } catch (err) {
-      agentError(
-        `Failed to create ${file}: ${(err as Error).message}`,
-        "IOError",
-        { error_domain: AGENT_ERROR_DOMAINS.IO }
-      );
-      return;
-    }
-    agentSuccess({ status: "INSTALLED_NEW_FILE", hooks_file: file });
-    return;
-  }
-
-  // Case 2: hooks.json exists — read, validate, migrate legacy entries, merge.
+/** Read and JSON-parse ~/.codex/hooks.json. Never throws — malformed input is
+ *  reported via `parseError` so callers can treat it as a warning rather than
+ *  a crash. An empty file parses to {} (an existing-but-empty hooks.json). */
+function readHooksFile(file: string): ReadResult {
+  if (!existsSync(file)) return { exists: false };
   let raw: string;
   try {
     raw = readFileSync(file, "utf8");
   } catch (err) {
-    agentError(
-      `Failed to read ${file}: ${(err as Error).message}`,
-      "IOError",
-      { error_domain: AGENT_ERROR_DOMAINS.IO }
-    );
-    return;
+    return { exists: true, parseError: `Failed to read ${file}: ${(err as Error).message}` };
   }
-
-  let parsed: HooksFile;
+  if (raw.trim().length === 0) return { exists: true, parsed: {} };
+  let parsed: unknown;
   try {
-    parsed = raw.trim().length === 0 ? {} : (JSON.parse(raw) as HooksFile);
+    parsed = JSON.parse(raw);
   } catch (err) {
-    agentError(
-      `Invalid JSON in ${file}: ${(err as Error).message}. Fix the file by hand or delete it and re-run.`,
-      "ConfigError",
-      { error_domain: AGENT_ERROR_DOMAINS.CONFIG }
-    );
-    return;
+    return { exists: true, parseError: `Invalid JSON in ${file}: ${(err as Error).message}` };
   }
-
   if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
-    agentError(
-      `${file} does not contain a JSON object at the top level.`,
-      "ConfigError",
-      { error_domain: AGENT_ERROR_DOMAINS.CONFIG }
-    );
-    return;
+    return { exists: true, parseError: `${file} does not contain a JSON object at the top level.` };
   }
+  return { exists: true, parsed: parsed as ParsedHooks };
+}
 
-  if (parsed.hooks === undefined) {
-    parsed.hooks = {};
-  } else if (
-    typeof parsed.hooks !== "object" ||
-    parsed.hooks === null ||
-    Array.isArray(parsed.hooks)
-  ) {
-    agentError(
-      `${file} has an invalid \`hooks\` field (expected object, got ${
-        Array.isArray(parsed.hooks) ? "array" : typeof parsed.hooks
-      }). Fix the file by hand.`,
-      "ConfigError",
-      { error_domain: AGENT_ERROR_DOMAINS.CONFIG }
-    );
-    return;
-  }
-
-  const hooks = parsed.hooks as {
-    Stop?: HookEntry[];
-    PostToolUse?: HookEntry[];
-    [k: string]: unknown;
-  };
-
-  // Validate hooks.PostToolUse if present.
-  if (hooks.PostToolUse !== undefined && !Array.isArray(hooks.PostToolUse)) {
-    agentError(
-      `${file} has an invalid \`hooks.PostToolUse\` field (expected array, got ${typeof hooks.PostToolUse}). Fix the file by hand.`,
-      "ConfigError",
-      { error_domain: AGENT_ERROR_DOMAINS.CONFIG }
-    );
-    return;
-  }
-
-  // Validate hooks.Stop if present (we may need to mutate it).
-  if (hooks.Stop !== undefined && !Array.isArray(hooks.Stop)) {
-    agentError(
-      `${file} has an invalid \`hooks.Stop\` field (expected array, got ${typeof hooks.Stop}). Fix the file by hand.`,
-      "ConfigError",
-      { error_domain: AGENT_ERROR_DOMAINS.CONFIG }
-    );
-    return;
-  }
-
-  // Track whether we mutated anything in memory. If yes, we must write —
-  // even when a current-shape entry already exists, because a stale legacy
-  // entry alongside it is still pollution that should be cleaned up.
-  let dirty = false;
-
-  // Migration: drop any legacy Stop entry pointing at our old script.
-  if (Array.isArray(hooks.Stop)) {
-    const before = hooks.Stop.length;
-    hooks.Stop = hooks.Stop.filter((e) => !entryIsOurs(e));
-    if (hooks.Stop.length !== before) dirty = true;
-    if (hooks.Stop.length === 0) {
-      delete hooks.Stop;
-    }
-  }
-
-  // Initialise PostToolUse if absent.
-  if (hooks.PostToolUse === undefined) {
-    hooks.PostToolUse = [];
-  }
-
-  // Detect whether a current-shape entry already exists, then strip any
-  // legacy PostToolUse(apply_patch) entries that pointed at the old bash
-  // script. Doing both in this order means a hooks.json with both a current
-  // and a legacy entry gets cleaned up on re-run.
-  const hasCurrent = hooks.PostToolUse.some(entryIsCurrent);
-  const beforePtu = hooks.PostToolUse.length;
-  hooks.PostToolUse = hooks.PostToolUse.filter(
-    (e) => entryIsCurrent(e) || !entryIsOurs(e)
+/** True when any mthds entry is present in the `Stop` or `PostToolUse` slot. */
+function hasLegacyEntry(parsed: ParsedHooks): boolean {
+  const hooks = parsed.hooks;
+  if (!hooks || typeof hooks !== "object" || Array.isArray(hooks)) return false;
+  const table = hooks as Record<string, unknown>;
+  return [table.Stop, table.PostToolUse].some(
+    (slot) => Array.isArray(slot) && slot.some(entryIsOurs),
   );
-  if (hooks.PostToolUse.length !== beforePtu) dirty = true;
+}
 
-  if (!hasCurrent) {
-    hooks.PostToolUse.push(buildPostToolUseEntry());
-    dirty = true;
+// ── Public API ─────────────────────────────────────────────────────
+
+/** Read-only inspection of ~/.codex/hooks.json — used by doctor and the
+ *  apply-config --check / --dry-run paths. */
+export function inspectLegacyCodexHook(): LegacyHookInspection {
+  const file = hooksFilePath();
+  const read = readHooksFile(file);
+  if (!read.exists) {
+    return { hooks_file: file, exists: false, has_legacy_entry: false };
   }
+  if (read.parseError !== undefined) {
+    return { hooks_file: file, exists: true, has_legacy_entry: false, parse_error: read.parseError };
+  }
+  return { hooks_file: file, exists: true, has_legacy_entry: hasLegacyEntry(read.parsed!) };
+}
 
-  if (!dirty) {
-    agentSuccess({ status: "ALREADY_INSTALLED", hooks_file: file });
-    return;
+/** Remove every mthds entry from ~/.codex/hooks.json, preserving all unrelated
+ *  hooks, hook events, and top-level keys. A `Stop` / `PostToolUse` array that
+ *  becomes empty is dropped. Never throws — failures surface via `status`. */
+export function removeLegacyCodexHook(): LegacyHookRemoval {
+  const file = hooksFilePath();
+  const read = readHooksFile(file);
+  if (!read.exists) return { hooks_file: file, status: "absent" };
+  if (read.parseError !== undefined) {
+    return { hooks_file: file, status: "error", error: read.parseError };
+  }
+  const parsed = read.parsed!;
+  if (!hasLegacyEntry(parsed)) return { hooks_file: file, status: "absent" };
+
+  const hooks = parsed.hooks as Record<string, unknown>;
+  for (const slot of ["Stop", "PostToolUse"]) {
+    const arr = hooks[slot];
+    if (!Array.isArray(arr)) continue;
+    const kept = arr.filter((entry) => !entryIsOurs(entry));
+    if (kept.length === 0) {
+      delete hooks[slot];
+    } else {
+      hooks[slot] = kept;
+    }
   }
 
   try {
     writeAtomic(file, JSON.stringify(parsed, null, 2) + "\n");
   } catch (err) {
-    agentError(
-      `Failed to write ${file}: ${(err as Error).message}`,
-      "IOError",
-      { error_domain: AGENT_ERROR_DOMAINS.IO }
-    );
-    return;
+    return { hooks_file: file, status: "error", error: `Failed to write ${file}: ${(err as Error).message}` };
   }
-
-  agentSuccess({ status: "MERGED", hooks_file: file });
+  return { hooks_file: file, status: "removed" };
 }

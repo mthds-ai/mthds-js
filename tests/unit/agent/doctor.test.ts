@@ -14,17 +14,26 @@ vi.mock("../../../src/config/config.js", () => ({
   listConfig: vi.fn(() => []),
 }));
 
-// Doctor calls inspectCodexConfig for the Codex section. The existing
-// doctor tests pre-date that section and assume `issues` only contains
-// binary/runner findings. Stub it to a clean state so those expectations
-// hold; the codex-specific behavior is covered by codex-config.test.ts and
-// has its own dedicated case below.
+// Doctor calls inspectCodexConfig + inspectLegacyCodexHook for the Codex
+// section. The generic doctor tests pre-date that section and assume `issues`
+// only contains binary/runner findings. Stub both to a clean state so those
+// expectations hold; the codex-specific behavior is covered by
+// codex-config.test.ts / codex.test.ts and the dedicated cases below.
 vi.mock("../../../src/agent/commands/codex-config.js", () => ({
   inspectCodexConfig: vi.fn(() => ({
     config_file: "/tmp/.codex/config.toml",
     exists: true,
-    needs_change: null,
+    needs_changes: [],
+    conflicts: [],
     warnings: [],
+  })),
+}));
+
+vi.mock("../../../src/agent/commands/codex.js", () => ({
+  inspectLegacyCodexHook: vi.fn(() => ({
+    hooks_file: "/tmp/.codex/hooks.json",
+    exists: false,
+    has_legacy_entry: false,
   })),
 }));
 
@@ -271,7 +280,7 @@ describe("agentDoctor", () => {
     writeSpy.mockRestore();
   });
 
-  it("surfaces Codex sandbox network issue when inspectCodexConfig flags it (codex_hooks key)", async () => {
+  it("surfaces Codex config issues when inspectCodexConfig flags them (codex_hooks key)", async () => {
     mockedCheckBinaryVersion.mockReturnValue({
       status: "ok",
       installed_version: "0.22.0",
@@ -284,25 +293,24 @@ describe("agentDoctor", () => {
     vi.mocked(codexConfig.inspectCodexConfig).mockReturnValueOnce({
       config_file: "/tmp/.codex/config.toml",
       exists: true,
-      needs_change: { table: "sandbox_workspace_write", key: "network_access", value: "true" },
+      needs_changes: [{ table: "sandbox_workspace_write", key: "network_access", value: "true" }],
+      conflicts: [],
       warnings: [{ code: "CODEX_HOOKS_DISABLED", message: "[features] codex_hooks is explicitly set to false" }],
     });
 
     await agentDoctor(OutputFormat.JSON);
 
     const issues = capturedResult!.issues as Issue[];
-    expect(issues.some((i) => i.message.includes("Codex sandbox network"))).toBe(true);
+    expect(issues.some((i) => i.message.includes("missing required keys"))).toBe(true);
     expect(issues.some((i) => i.message.includes("codex_hooks"))).toBe(true);
 
-    const codex = capturedResult!.codex as { needs_change: unknown };
-    expect(codex.needs_change).toEqual({
-      table: "sandbox_workspace_write",
-      key: "network_access",
-      value: "true",
-    });
+    const codex = capturedResult!.codex as { needs_changes: unknown };
+    expect(codex.needs_changes).toEqual([
+      { table: "sandbox_workspace_write", key: "network_access", value: "true" },
+    ]);
   });
 
-  it("surfaces Codex sandbox network issue when inspectCodexConfig flags it (hooks key)", async () => {
+  it("surfaces Codex config issues when inspectCodexConfig flags them (hooks key)", async () => {
     mockedCheckBinaryVersion.mockReturnValue({
       status: "ok",
       installed_version: "0.22.0",
@@ -315,15 +323,41 @@ describe("agentDoctor", () => {
     vi.mocked(codexConfig.inspectCodexConfig).mockReturnValueOnce({
       config_file: "/tmp/.codex/config.toml",
       exists: true,
-      needs_change: { table: "sandbox_workspace_write", key: "network_access", value: "true" },
+      needs_changes: [{ table: "sandbox_workspace_write", key: "network_access", value: "true" }],
+      conflicts: [],
       warnings: [{ code: "CODEX_HOOKS_DISABLED", message: "[features] hooks is explicitly set to false" }],
     });
 
     await agentDoctor(OutputFormat.JSON);
 
     const issues = capturedResult!.issues as Issue[];
-    expect(issues.some((i) => i.message.includes("Codex sandbox network"))).toBe(true);
+    expect(issues.some((i) => i.message.includes("missing required keys"))).toBe(true);
     expect(issues.some((i) => i.message.includes("hooks"))).toBe(true);
+  });
+
+  it("surfaces an obsolete ~/.codex/hooks.json entry as a warning", async () => {
+    mockedCheckBinaryVersion.mockReturnValue({
+      status: "ok",
+      installed_version: "0.22.0",
+      version_constraint: PX_CONSTRAINT,
+    });
+    mockedExecFileSync.mockReturnValue(Buffer.from("/usr/local/bin/pipelex"));
+    mockedListConfig.mockReturnValue([]);
+
+    const codex = await import("../../../src/agent/commands/codex.js");
+    vi.mocked(codex.inspectLegacyCodexHook).mockReturnValueOnce({
+      hooks_file: "/tmp/.codex/hooks.json",
+      exists: true,
+      has_legacy_entry: true,
+    });
+
+    await agentDoctor(OutputFormat.JSON);
+
+    const issues = capturedResult!.issues as Issue[];
+    const warning = issues.find((i) => i.message.includes("Obsolete mthds hook entry"));
+    expect(warning).toBeDefined();
+    expect(warning!.severity).toBe("warning");
+    expect(capturedResult!.healthy).toBe(true);
   });
 
   it("includes install_command using uv tool install format", async () => {

@@ -10,6 +10,8 @@ import { checkBinaryVersion } from "../../installer/runtime/version-check.js";
 import { listConfig } from "../../config/config.js";
 import { inspectCodexConfig } from "./codex-config.js";
 import type { CodexConfigInspection } from "./codex-config.js";
+import { inspectLegacyCodexHook } from "./codex.js";
+import type { LegacyHookInspection } from "./codex.js";
 
 // ── Output format ───────────────────────────────────────────────────
 
@@ -68,6 +70,7 @@ function formatDoctorMarkdown(
   config: ConfigEntry[],
   issues: Issue[],
   codex: CodexConfigInspection,
+  legacyHook: LegacyHookInspection,
 ): string {
   const lines: string[] = [];
 
@@ -109,20 +112,33 @@ function formatDoctorMarkdown(
   lines.push("## Codex");
   lines.push("");
   if (!codex.exists) {
-    lines.push(`- No ~/.codex/config.toml found. Run \`mthds-agent codex apply-config\` to create one with sandbox network access.`);
+    lines.push(`- No ~/.codex/config.toml found. Run \`mthds-agent codex apply-config\` to create one.`);
   } else if (codex.parse_error) {
     lines.push(`- [ERROR] Could not parse ${codex.config_file}: ${codex.parse_error}`);
   } else {
-    if (codex.needs_change) {
-      lines.push(
-        `- [WARN] Sandbox network access not enabled. Run \`mthds-agent codex apply-config\` to add \`[${codex.needs_change.table}] ${codex.needs_change.key} = ${codex.needs_change.value}\`.`,
-      );
+    if (codex.needs_changes.length > 0) {
+      const keys = codex.needs_changes
+        .map((change) => `[${change.table}] ${change.key} = ${change.value}`)
+        .join(", ");
+      lines.push(`- [WARN] Required config not set (${keys}). Run \`mthds-agent codex apply-config\`.`);
     } else {
-      lines.push(`- Sandbox network access: ok`);
+      lines.push(`- Required config: ok`);
     }
-    for (const w of codex.warnings) {
-      lines.push(`- [WARN] ${w.message}`);
+    for (const conflict of codex.conflicts) {
+      lines.push(
+        `- [ERROR] [${conflict.table}] ${conflict.key} = ${conflict.current} conflicts with the mthds plugin (needs ${conflict.required}). Fix it by hand.`,
+      );
     }
+    for (const warning of codex.warnings) {
+      lines.push(`- [WARN] ${warning.message}`);
+    }
+  }
+  if (legacyHook.parse_error) {
+    lines.push(`- [WARN] Could not read ${legacyHook.hooks_file}: ${legacyHook.parse_error}`);
+  } else if (legacyHook.has_legacy_entry) {
+    lines.push(
+      `- [WARN] Obsolete mthds hook entry in ${legacyHook.hooks_file}. Run \`mthds-agent codex apply-config\` to remove it — the hook now ships with the plugin.`,
+    );
   }
   lines.push("");
 
@@ -230,22 +246,44 @@ export async function agentDoctor(format: OutputFormat = OutputFormat.MARKDOWN):
     }
   }
 
-  // Codex sandbox config (read-only inspection — doctor never writes).
+  // Codex config + hooks (read-only inspection — doctor never writes).
   const codex = inspectCodexConfig();
-  if (codex.needs_change) {
+  if (codex.needs_changes.length > 0) {
+    const keys = codex.needs_changes
+      .map((change) => `[${change.table}] ${change.key} = ${change.value}`)
+      .join(", ");
     issues.push({
       severity: "warning",
-      message:
-        `Codex sandbox network not enabled in ${codex.config_file}. Run \`mthds-agent codex apply-config\`.`,
+      message: `Codex config missing required keys (${keys}) in ${codex.config_file}. Run \`mthds-agent codex apply-config\`.`,
     });
   }
-  for (const w of codex.warnings) {
-    issues.push({ severity: "warning", message: `Codex: ${w.message}` });
+  for (const conflict of codex.conflicts) {
+    issues.push({
+      severity: "error",
+      message: `Codex config conflict: [${conflict.table}] ${conflict.key} = ${conflict.current} (the mthds plugin needs ${conflict.required}). Fix it by hand in ${codex.config_file}.`,
+    });
+  }
+  for (const warning of codex.warnings) {
+    issues.push({ severity: "warning", message: `Codex: ${warning.message}` });
   }
   if (codex.parse_error) {
     issues.push({
       severity: "error",
       message: `Codex config parse error in ${codex.config_file}: ${codex.parse_error}`,
+    });
+  }
+
+  const legacyHook = inspectLegacyCodexHook();
+  if (legacyHook.has_legacy_entry) {
+    issues.push({
+      severity: "warning",
+      message: `Obsolete mthds hook entry in ${legacyHook.hooks_file}. Run \`mthds-agent codex apply-config\` to remove it — the hook now ships with the plugin.`,
+    });
+  }
+  if (legacyHook.parse_error) {
+    issues.push({
+      severity: "warning",
+      message: `Could not read ${legacyHook.hooks_file} to check for an obsolete mthds hook entry: ${legacyHook.parse_error}`,
     });
   }
 
@@ -259,8 +297,11 @@ export async function agentDoctor(format: OutputFormat = OutputFormat.MARKDOWN):
       config: configEntries,
       issues,
       codex,
+      legacy_hook: legacyHook,
     });
   } else {
-    process.stdout.write(formatDoctorMarkdown(healthy, dependencies, configEntries, issues, codex));
+    process.stdout.write(
+      formatDoctorMarkdown(healthy, dependencies, configEntries, issues, codex, legacyHook),
+    );
   }
 }

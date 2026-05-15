@@ -25,7 +25,6 @@ import { agentDoctor, OutputFormat } from "./agent/commands/doctor.js";
 import { agentUpdateCheck } from "./agent/commands/update-check.js";
 import { agentUpgrade } from "./agent/commands/upgrade.js";
 import { agentBootstrap } from "./agent/commands/bootstrap.js";
-import { agentCodexInstallHook } from "./agent/commands/codex.js";
 import { agentCodexHook } from "./agent/commands/codex-hook.js";
 import { agentCodexApplyConfig } from "./agent/commands/codex-config.js";
 import { agentConfigGet, agentConfigList, agentConfigSet } from "./agent/commands/config.js";
@@ -376,16 +375,8 @@ program
 
 const codex = program
   .command("codex")
-  .description("Codex plugin helpers (hook runtime + install)")
+  .description("Codex plugin helpers (hook runtime + setup)")
   .exitOverride();
-
-codex
-  .command("install-hook")
-  .description("Idempotently wire the mthds PostToolUse(apply_patch) hook into ~/.codex/hooks.json")
-  .exitOverride()
-  .action(async () => {
-    await agentCodexInstallHook();
-  });
 
 codex
   .command("hook")
@@ -397,7 +388,7 @@ codex
 
 codex
   .command("apply-config")
-  .description("Additively merge required sandbox settings into ~/.codex/config.toml so the mthds hook can access the network")
+  .description("Configure ~/.codex/ for the mthds plugin: enable sandbox network + plugin hooks, drop any obsolete hook entry")
   .option("--check", "Exit non-zero if anything would change (no writes)")
   .option("--dry-run", "Print proposed diff and exit without modifying the file")
   .exitOverride()

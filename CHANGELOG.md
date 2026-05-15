@@ -1,5 +1,16 @@
 # Changelog
 
+## [v0.7.0] - 2026-05-15
+
+### Changed
+
+- **`mthds-agent codex apply-config` now configures `~/.codex/` end-to-end for the mthds plugin.** It still merges `[sandbox_workspace_write] network_access = true`, and now also merges `[features] plugin_hooks = true` — the key Codex requires to discover the validation hook bundled in the mthds plugin manifest. Both keys are added additively; a key explicitly set to a conflicting value is reported as a clear error instead of silently producing a duplicate-key file. `apply-config` additionally removes any obsolete `PostToolUse`/`Stop` entry left in `~/.codex/hooks.json` by the retired `install-hook`, so the plugin-bundled hook never fires twice. `--check` and `mthds-agent doctor` flag a missing required key, a conflicting key, and a leftover hook entry.
+- **Minimum required mthds plugin version bumped to `0.11.0`** (was `0.10.3`). Plugin `0.11.0` is the first release to bundle the Codex validation hook in its manifest; earlier plugins relied on `install-hook`, which this release removes. `mthds-agent` running under Codex or Claude Code with an older plugin reports `outdated` from `update-check` and emits `PLUGIN_UPDATE_AVAILABLE` from bootstrap.
+
+### Removed
+
+- **`mthds-agent codex install-hook`.** **Breaking.** The `.mthds` validation hook now ships inside the mthds plugin (`hooks/codex-hooks.json`, referenced from the Codex plugin manifest) and is discovered by Codex directly — no per-user wiring step. Requires Codex 0.130+ with `[features] plugin_hooks = true`, which `apply-config` sets. The standalone command that merged a `PostToolUse(apply_patch)` entry into `~/.codex/hooks.json` is gone; `apply-config` sweeps any entry it left behind. The Codex install flow drops a step — `mthds-agent codex apply-config` alone replaces `install-hook && apply-config`.
+
 ## [v0.6.5] - 2026-05-12
 
 ### Fixed

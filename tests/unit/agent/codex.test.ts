@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, readFileSync, writeFileSync, existsSync, mkdirSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-// ── Mock homedir so all filesystem writes land in a scratch dir ─────
+// ── Mock homedir so all filesystem access lands in a scratch dir ────
 
 let scratchHome: string;
 
@@ -15,47 +15,29 @@ vi.mock("node:os", async () => {
   };
 });
 
-// ── Mock agent output to capture results without writing to stdout ──
-
-class AgentErrorThrow extends Error {
-  constructor(
-    public errorType: string,
-    public extras?: Record<string, unknown>
-  ) {
-    super(errorType);
-  }
-}
-
-const successSpy = vi.fn();
-const errorSpy = vi.fn(
-  (message: string, errorType: string, extras?: Record<string, unknown>) => {
-    throw new AgentErrorThrow(errorType, { message, ...extras });
-  }
-);
-
-vi.mock("../../../src/agent/output.js", () => ({
-  agentSuccess: (result: Record<string, unknown>) => successSpy(result),
-  agentError: (message: string, errorType: string, extras?: Record<string, unknown>) =>
-    errorSpy(message, errorType, extras),
-  AGENT_ERROR_DOMAINS: {
-    CONFIG: "config",
-    IO: "io",
-  },
-}));
-
-let agentCodexInstallHook: () => Promise<void>;
+let inspectLegacyCodexHook: () => {
+  hooks_file: string;
+  exists: boolean;
+  has_legacy_entry: boolean;
+  parse_error?: string;
+};
+let removeLegacyCodexHook: () => {
+  hooks_file: string;
+  status: "removed" | "absent" | "error";
+  error?: string;
+};
 
 const HOOK_COMMAND = "mthds-agent codex hook";
+const LEGACY_SCRIPT = "~/.codex/hooks/codex-validate-mthds.sh";
 
-describe("agentCodexInstallHook", () => {
+describe("legacy codex hook cleanup", () => {
   beforeEach(async () => {
-    scratchHome = mkdtempSync(join(tmpdir(), "mthds-codex-test-"));
-    successSpy.mockClear();
-    errorSpy.mockClear();
+    scratchHome = mkdtempSync(join(tmpdir(), "mthds-codex-cleanup-test-"));
     // Re-import after mocks are set up so homedir() resolves correctly.
     vi.resetModules();
     const mod = await import("../../../src/agent/commands/codex.js");
-    agentCodexInstallHook = mod.agentCodexInstallHook;
+    inspectLegacyCodexHook = mod.inspectLegacyCodexHook;
+    removeLegacyCodexHook = mod.removeLegacyCodexHook;
   });
 
   afterEach(() => {
@@ -64,413 +46,167 @@ describe("agentCodexInstallHook", () => {
 
   const hooksFile = () => join(scratchHome, ".codex", "hooks.json");
 
-  // ── Fresh-install paths ────────────────────────────────────────────
+  function writeHooks(value: unknown): void {
+    mkdirSync(join(scratchHome, ".codex"), { recursive: true });
+    writeFileSync(hooksFile(), typeof value === "string" ? value : JSON.stringify(value, null, 2));
+  }
 
-  it("creates a fresh hooks.json with PostToolUse(apply_patch) when none exists", async () => {
-    await agentCodexInstallHook();
+  // ── inspectLegacyCodexHook ──────────────────────────────────────────
 
-    expect(errorSpy).not.toHaveBeenCalled();
-    expect(successSpy).toHaveBeenCalledWith({
-      status: "INSTALLED_NEW_FILE",
-      hooks_file: hooksFile(),
+  it("reports no entry when hooks.json does not exist", () => {
+    const result = inspectLegacyCodexHook();
+    expect(result.exists).toBe(false);
+    expect(result.has_legacy_entry).toBe(false);
+    expect(result.hooks_file).toBe(hooksFile());
+  });
+
+  it("detects a current-shape PostToolUse entry pointing at mthds-agent codex hook", () => {
+    writeHooks({
+      hooks: {
+        PostToolUse: [
+          { matcher: "apply_patch", hooks: [{ type: "command", command: HOOK_COMMAND, timeout: 30 }] },
+        ],
+      },
     });
-    expect(existsSync(hooksFile())).toBe(true);
+    expect(inspectLegacyCodexHook().has_legacy_entry).toBe(true);
+  });
+
+  it("detects a legacy Stop entry pointing at the old bash script", () => {
+    writeHooks({
+      hooks: { Stop: [{ hooks: [{ type: "command", command: LEGACY_SCRIPT }] }] },
+    });
+    expect(inspectLegacyCodexHook().has_legacy_entry).toBe(true);
+  });
+
+  it("reports no entry when only unrelated hooks are present", () => {
+    writeHooks({
+      hooks: {
+        PostToolUse: [{ matcher: "Read", hooks: [{ type: "command", command: "echo unrelated" }] }],
+      },
+    });
+    expect(inspectLegacyCodexHook().has_legacy_entry).toBe(false);
+  });
+
+  it("treats an empty hooks.json as no entry", () => {
+    writeHooks("");
+    const result = inspectLegacyCodexHook();
+    expect(result.exists).toBe(true);
+    expect(result.has_legacy_entry).toBe(false);
+    expect(result.parse_error).toBeUndefined();
+  });
+
+  it("reports a parse_error for malformed JSON without crashing", () => {
+    writeHooks("not valid json {");
+    const result = inspectLegacyCodexHook();
+    expect(result.has_legacy_entry).toBe(false);
+    expect(result.parse_error).toBeDefined();
+  });
+
+  it("reports a parse_error when the top-level value is not an object", () => {
+    writeHooks(["not", "an", "object"]);
+    expect(inspectLegacyCodexHook().parse_error).toBeDefined();
+  });
+
+  // ── removeLegacyCodexHook ───────────────────────────────────────────
+
+  it("returns absent when hooks.json does not exist", () => {
+    expect(removeLegacyCodexHook().status).toBe("absent");
+  });
+
+  it("removes a current-shape PostToolUse(apply_patch) entry", () => {
+    writeHooks({
+      hooks: {
+        PostToolUse: [
+          { matcher: "apply_patch", hooks: [{ type: "command", command: HOOK_COMMAND, timeout: 30 }] },
+        ],
+      },
+    });
+
+    expect(removeLegacyCodexHook().status).toBe("removed");
 
     const parsed = JSON.parse(readFileSync(hooksFile(), "utf8"));
-    expect(parsed.hooks.PostToolUse).toHaveLength(1);
-    expect(parsed.hooks.PostToolUse[0].matcher).toBe("apply_patch");
-    expect(parsed.hooks.PostToolUse[0].hooks[0].command).toBe(HOOK_COMMAND);
-    expect(parsed.hooks.PostToolUse[0].hooks[0].timeout).toBe(30);
-    expect(parsed.hooks.PostToolUse[0].hooks[0].type).toBe("command");
-    // No legacy keys
+    // The PostToolUse array became empty, so the key is dropped entirely.
+    expect(parsed.hooks.PostToolUse).toBeUndefined();
+  });
+
+  it("removes a legacy Stop entry and drops the emptied Stop key", () => {
+    writeHooks({
+      hooks: { Stop: [{ hooks: [{ type: "command", command: LEGACY_SCRIPT }] }] },
+    });
+
+    expect(removeLegacyCodexHook().status).toBe("removed");
+
+    const parsed = JSON.parse(readFileSync(hooksFile(), "utf8"));
     expect(parsed.hooks.Stop).toBeUndefined();
   });
 
-  // ── Idempotency ────────────────────────────────────────────────────
-
-  it("is idempotent when the new-shape entry is already present", async () => {
-    const existing = {
+  it("removes both a legacy Stop entry and a legacy PostToolUse entry at once", () => {
+    writeHooks({
       hooks: {
+        Stop: [{ hooks: [{ type: "command", command: LEGACY_SCRIPT }] }],
         PostToolUse: [
-          {
-            matcher: "apply_patch",
-            hooks: [
-              { type: "command", command: HOOK_COMMAND, timeout: 30 },
-            ],
-          },
+          { matcher: "apply_patch", hooks: [{ type: "command", command: LEGACY_SCRIPT }] },
         ],
       },
-    };
-    mkdirSync(join(scratchHome, ".codex"), { recursive: true });
-    writeFileSync(hooksFile(), JSON.stringify(existing, null, 2));
-
-    await agentCodexInstallHook();
-
-    expect(errorSpy).not.toHaveBeenCalled();
-    expect(successSpy).toHaveBeenCalledWith({
-      status: "ALREADY_INSTALLED",
-      hooks_file: hooksFile(),
     });
+
+    expect(removeLegacyCodexHook().status).toBe("removed");
+
     const parsed = JSON.parse(readFileSync(hooksFile(), "utf8"));
-    expect(parsed.hooks.PostToolUse).toHaveLength(1);
+    expect(parsed.hooks.Stop).toBeUndefined();
+    expect(parsed.hooks.PostToolUse).toBeUndefined();
   });
 
-  // ── Coexistence with unrelated entries ─────────────────────────────
-
-  it("merges into an existing hooks.json with unrelated PostToolUse entries", async () => {
-    const existing = {
+  it("preserves unrelated hook entries, hook events, and top-level keys", () => {
+    writeHooks({
       hooks: {
+        PreToolUse: [{ hooks: [{ type: "command", command: "echo before" }] }],
         PostToolUse: [
-          {
-            matcher: "Read",
-            hooks: [
-              { type: "command", command: "echo unrelated", timeout: 10 },
-            ],
-          },
+          { matcher: "Read", hooks: [{ type: "command", command: "echo unrelated" }] },
+          { matcher: "apply_patch", hooks: [{ type: "command", command: HOOK_COMMAND, timeout: 30 }] },
         ],
-      },
-    };
-    mkdirSync(join(scratchHome, ".codex"), { recursive: true });
-    writeFileSync(hooksFile(), JSON.stringify(existing, null, 2));
-
-    await agentCodexInstallHook();
-
-    expect(errorSpy).not.toHaveBeenCalled();
-    expect(successSpy).toHaveBeenCalledWith({
-      status: "MERGED",
-      hooks_file: hooksFile(),
-    });
-    const parsed = JSON.parse(readFileSync(hooksFile(), "utf8"));
-    expect(parsed.hooks.PostToolUse).toHaveLength(2);
-    expect(parsed.hooks.PostToolUse[0].matcher).toBe("Read");
-    expect(parsed.hooks.PostToolUse[1].matcher).toBe("apply_patch");
-    expect(parsed.hooks.PostToolUse[1].hooks[0].command).toBe(HOOK_COMMAND);
-  });
-
-  it("preserves unrelated top-level keys and other hook categories", async () => {
-    const existing = {
-      hooks: {
-        PreToolUse: [
-          { hooks: [{ type: "command", command: "echo before" }] },
-        ],
+        Stop: [{ hooks: [{ type: "command", command: "/some/other-tool.sh" }] }],
       },
       otherKey: "preserved",
-    };
-    mkdirSync(join(scratchHome, ".codex"), { recursive: true });
-    writeFileSync(hooksFile(), JSON.stringify(existing, null, 2));
+    });
 
-    await agentCodexInstallHook();
+    expect(removeLegacyCodexHook().status).toBe("removed");
 
-    expect(errorSpy).not.toHaveBeenCalled();
     const parsed = JSON.parse(readFileSync(hooksFile(), "utf8"));
-    expect(parsed.hooks.PreToolUse).toHaveLength(1);
-    expect(parsed.hooks.PostToolUse).toHaveLength(1);
     expect(parsed.otherKey).toBe("preserved");
-  });
-
-  // ── Legacy-Stop migration (pre-0.5.0 mthds-agent) ──────────────────
-
-  it("removes a legacy Stop entry pointing at our old bash script", async () => {
-    const existing = {
-      hooks: {
-        Stop: [
-          {
-            hooks: [
-              {
-                type: "command",
-                command: "~/.codex/hooks/codex-validate-mthds.sh",
-                timeout: 30,
-              },
-            ],
-          },
-        ],
-      },
-    };
-    mkdirSync(join(scratchHome, ".codex"), { recursive: true });
-    writeFileSync(hooksFile(), JSON.stringify(existing, null, 2));
-
-    await agentCodexInstallHook();
-
-    expect(errorSpy).not.toHaveBeenCalled();
-    const parsed = JSON.parse(readFileSync(hooksFile(), "utf8"));
-    // Stop was the only entry pointing at our script — the entire Stop key drops.
-    expect(parsed.hooks.Stop).toBeUndefined();
-    // PostToolUse(apply_patch) is now present.
+    expect(parsed.hooks.PreToolUse).toHaveLength(1);
+    // Only the mthds PostToolUse entry was removed; the unrelated one stays.
     expect(parsed.hooks.PostToolUse).toHaveLength(1);
-    expect(parsed.hooks.PostToolUse[0].matcher).toBe("apply_patch");
-    expect(parsed.hooks.PostToolUse[0].hooks[0].command).toBe(HOOK_COMMAND);
-  });
-
-  it("preserves unrelated Stop entries while removing ours", async () => {
-    const existing = {
-      hooks: {
-        Stop: [
-          {
-            hooks: [
-              { type: "command", command: "/some/other-tool.sh", timeout: 15 },
-            ],
-          },
-          {
-            hooks: [
-              {
-                type: "command",
-                command: "~/.codex/hooks/codex-validate-mthds.sh",
-                timeout: 30,
-              },
-            ],
-          },
-        ],
-      },
-    };
-    mkdirSync(join(scratchHome, ".codex"), { recursive: true });
-    writeFileSync(hooksFile(), JSON.stringify(existing, null, 2));
-
-    await agentCodexInstallHook();
-
-    expect(errorSpy).not.toHaveBeenCalled();
-    const parsed = JSON.parse(readFileSync(hooksFile(), "utf8"));
+    expect(parsed.hooks.PostToolUse[0].matcher).toBe("Read");
     expect(parsed.hooks.Stop).toHaveLength(1);
     expect(parsed.hooks.Stop[0].hooks[0].command).toContain("other-tool");
   });
 
-  // ── Legacy-PostToolUse migration (mthds-plugins WIP 0.9.0 install-codex.sh) ─
-
-  it("cleans up a stale Stop entry even when the current PostToolUse entry already exists", async () => {
-    // Regression: previously the function early-returned ALREADY_INSTALLED
-    // as soon as it saw the current entry, skipping the write step — so any
-    // in-memory Stop cleanup was discarded. The dirty-tracking rewrite must
-    // persist the Stop removal even when nothing else changes.
-    const existing = {
+  it("returns absent and leaves the file untouched when no mthds entry is present", () => {
+    writeHooks({
       hooks: {
-        Stop: [
-          {
-            hooks: [
-              {
-                type: "command",
-                command: "~/.codex/hooks/codex-validate-mthds.sh",
-                timeout: 30,
-              },
-            ],
-          },
-        ],
-        PostToolUse: [
-          {
-            matcher: "apply_patch",
-            hooks: [{ type: "command", command: HOOK_COMMAND, timeout: 30 }],
-          },
-        ],
+        PostToolUse: [{ matcher: "Read", hooks: [{ type: "command", command: "echo unrelated" }] }],
       },
-    };
-    mkdirSync(join(scratchHome, ".codex"), { recursive: true });
-    writeFileSync(hooksFile(), JSON.stringify(existing, null, 2));
-
-    await agentCodexInstallHook();
-
-    expect(errorSpy).not.toHaveBeenCalled();
-    expect(successSpy).toHaveBeenCalledWith({
-      status: "MERGED",
-      hooks_file: hooksFile(),
     });
-    const parsed = JSON.parse(readFileSync(hooksFile(), "utf8"));
-    expect(parsed.hooks.Stop).toBeUndefined();
-    expect(parsed.hooks.PostToolUse).toHaveLength(1);
-    expect(parsed.hooks.PostToolUse[0].hooks[0].command).toBe(HOOK_COMMAND);
+    const before = readFileSync(hooksFile(), "utf8");
+
+    expect(removeLegacyCodexHook().status).toBe("absent");
+    expect(readFileSync(hooksFile(), "utf8")).toBe(before);
   });
 
-  it("migrates a hooks.json that has BOTH legacy Stop and legacy PostToolUse entries", async () => {
-    // A user upgrading from pre-0.5.0 mthds-agent (Stop entry) to a transitional
-    // WIP-0.9.0 install-codex.sh build (which added a PostToolUse entry without
-    // removing the Stop entry) ends up with both. The migration must remove
-    // both legacy entries and write exactly one current-shape entry.
-    const existing = {
-      hooks: {
-        Stop: [
-          {
-            hooks: [
-              {
-                type: "command",
-                command: "~/.codex/hooks/codex-validate-mthds.sh",
-                timeout: 30,
-              },
-            ],
-          },
-        ],
-        PostToolUse: [
-          {
-            matcher: "apply_patch",
-            hooks: [
-              {
-                type: "command",
-                command: "~/.codex/hooks/codex-validate-mthds.sh",
-                timeout: 30,
-              },
-            ],
-          },
-        ],
-      },
-    };
-    mkdirSync(join(scratchHome, ".codex"), { recursive: true });
-    writeFileSync(hooksFile(), JSON.stringify(existing, null, 2));
+  it("returns error and leaves the file untouched when hooks.json is malformed", () => {
+    writeHooks("not valid json {");
+    const before = readFileSync(hooksFile(), "utf8");
 
-    await agentCodexInstallHook();
-
-    expect(errorSpy).not.toHaveBeenCalled();
-    expect(successSpy).toHaveBeenCalledWith({
-      status: "MERGED",
-      hooks_file: hooksFile(),
-    });
-    const parsed = JSON.parse(readFileSync(hooksFile(), "utf8"));
-    expect(parsed.hooks.Stop).toBeUndefined();
-    expect(parsed.hooks.PostToolUse).toHaveLength(1);
-    expect(parsed.hooks.PostToolUse[0].matcher).toBe("apply_patch");
-    expect(parsed.hooks.PostToolUse[0].hooks[0].command).toBe(HOOK_COMMAND);
+    const result = removeLegacyCodexHook();
+    expect(result.status).toBe("error");
+    expect(result.error).toBeDefined();
+    expect(readFileSync(hooksFile(), "utf8")).toBe(before);
   });
 
-  it("replaces a legacy PostToolUse(apply_patch) entry that pointed at the bash script", async () => {
-    const existing = {
-      hooks: {
-        PostToolUse: [
-          {
-            matcher: "apply_patch",
-            hooks: [
-              {
-                type: "command",
-                command: "~/.codex/hooks/codex-validate-mthds.sh",
-                timeout: 30,
-              },
-            ],
-          },
-        ],
-      },
-    };
-    mkdirSync(join(scratchHome, ".codex"), { recursive: true });
-    writeFileSync(hooksFile(), JSON.stringify(existing, null, 2));
-
-    await agentCodexInstallHook();
-
-    expect(errorSpy).not.toHaveBeenCalled();
-    expect(successSpy).toHaveBeenCalledWith({
-      status: "MERGED",
-      hooks_file: hooksFile(),
-    });
-    const parsed = JSON.parse(readFileSync(hooksFile(), "utf8"));
-    expect(parsed.hooks.PostToolUse).toHaveLength(1);
-    expect(parsed.hooks.PostToolUse[0].matcher).toBe("apply_patch");
-    expect(parsed.hooks.PostToolUse[0].hooks[0].command).toBe(HOOK_COMMAND);
-  });
-
-  // ── Malformed entries don't crash the install ────────────────────
-
-  it("does not crash when an existing PostToolUse(apply_patch) entry has a non-array hooks field", async () => {
-    // Regression: entryIsCurrent used `(entry.hooks ?? []).some(...)`, which
-    // only short-circuited on null/undefined. A malformed entry like
-    // `{ matcher: "apply_patch", hooks: "oops" }` would throw TypeError at
-    // .some() and abort the install. The Array.isArray guard fixes it.
-    const existing = {
-      hooks: {
-        PostToolUse: [
-          { matcher: "apply_patch", hooks: "oops" },
-        ],
-      },
-    };
-    mkdirSync(join(scratchHome, ".codex"), { recursive: true });
-    writeFileSync(hooksFile(), JSON.stringify(existing, null, 2));
-
-    await agentCodexInstallHook();
-
-    expect(errorSpy).not.toHaveBeenCalled();
-    expect(successSpy).toHaveBeenCalledWith({
-      status: "MERGED",
-      hooks_file: hooksFile(),
-    });
-    const parsed = JSON.parse(readFileSync(hooksFile(), "utf8"));
-    // Malformed entry is preserved (not "ours" — entryIsOurs checks
-    // Array.isArray too) and our fresh entry is appended alongside.
-    expect(parsed.hooks.PostToolUse).toHaveLength(2);
-    const current = parsed.hooks.PostToolUse.find(
-      (e: { matcher?: string; hooks?: unknown }) =>
-        e.matcher === "apply_patch" && Array.isArray(e.hooks)
-    );
-    expect(current.hooks[0].command).toBe(HOOK_COMMAND);
-  });
-
-  // ── Edge cases on the existing file ────────────────────────────────
-
-  it("handles an existing hooks.json without a hooks key", async () => {
-    mkdirSync(join(scratchHome, ".codex"), { recursive: true });
-    writeFileSync(hooksFile(), JSON.stringify({ unrelated: true }));
-
-    await agentCodexInstallHook();
-
-    expect(errorSpy).not.toHaveBeenCalled();
-    expect(successSpy).toHaveBeenCalledWith({
-      status: "MERGED",
-      hooks_file: hooksFile(),
-    });
-    const parsed = JSON.parse(readFileSync(hooksFile(), "utf8"));
-    expect(parsed.unrelated).toBe(true);
-    expect(parsed.hooks.PostToolUse).toHaveLength(1);
-  });
-
-  it("treats an empty hooks.json as an existing empty file (MERGED)", async () => {
-    mkdirSync(join(scratchHome, ".codex"), { recursive: true });
-    writeFileSync(hooksFile(), "");
-
-    await agentCodexInstallHook();
-
-    expect(errorSpy).not.toHaveBeenCalled();
-    expect(successSpy).toHaveBeenCalledWith({
-      status: "MERGED",
-      hooks_file: hooksFile(),
-    });
-    const parsed = JSON.parse(readFileSync(hooksFile(), "utf8"));
-    expect(parsed.hooks.PostToolUse).toHaveLength(1);
-  });
-
-  // ── Validation failures ────────────────────────────────────────────
-
-  it("fails loudly on invalid JSON", async () => {
-    mkdirSync(join(scratchHome, ".codex"), { recursive: true });
-    writeFileSync(hooksFile(), "not valid json {");
-
-    await expect(agentCodexInstallHook()).rejects.toThrow();
-    expect(errorSpy).toHaveBeenCalled();
-    expect(errorSpy.mock.calls[0]![1]).toBe("ConfigError");
-  });
-
-  it("fails loudly when top-level is not an object", async () => {
-    mkdirSync(join(scratchHome, ".codex"), { recursive: true });
-    writeFileSync(hooksFile(), JSON.stringify(["not", "an", "object"]));
-
-    await expect(agentCodexInstallHook()).rejects.toThrow();
-    expect(errorSpy).toHaveBeenCalled();
-    expect(errorSpy.mock.calls[0]![1]).toBe("ConfigError");
-  });
-
-  it("fails loudly when the hooks key is not an object", async () => {
-    mkdirSync(join(scratchHome, ".codex"), { recursive: true });
-    writeFileSync(hooksFile(), JSON.stringify({ hooks: "not-an-object" }));
-
-    await expect(agentCodexInstallHook()).rejects.toThrow();
-    expect(errorSpy).toHaveBeenCalled();
-    expect(errorSpy.mock.calls[0]![1]).toBe("ConfigError");
-  });
-
-  it("fails loudly when hooks.PostToolUse is not an array", async () => {
-    mkdirSync(join(scratchHome, ".codex"), { recursive: true });
-    writeFileSync(hooksFile(), JSON.stringify({ hooks: { PostToolUse: { bogus: true } } }));
-
-    await expect(agentCodexInstallHook()).rejects.toThrow();
-    expect(errorSpy).toHaveBeenCalled();
-    expect(errorSpy.mock.calls[0]![1]).toBe("ConfigError");
-  });
-
-  it("fails loudly when hooks.Stop is not an array", async () => {
-    mkdirSync(join(scratchHome, ".codex"), { recursive: true });
-    writeFileSync(hooksFile(), JSON.stringify({ hooks: { Stop: { bogus: true } } }));
-
-    await expect(agentCodexInstallHook()).rejects.toThrow();
-    expect(errorSpy).toHaveBeenCalled();
-    expect(errorSpy.mock.calls[0]![1]).toBe("ConfigError");
+  it("treats a malformed (non-array) PostToolUse slot as nothing to remove", () => {
+    writeHooks({ hooks: { PostToolUse: "oops" } });
+    expect(removeLegacyCodexHook().status).toBe("absent");
+    expect(existsSync(hooksFile())).toBe(true);
   });
 });

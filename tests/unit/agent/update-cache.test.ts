@@ -572,6 +572,28 @@ describe("update-cache", () => {
 
         stderrSpy.mockRestore();
       });
+
+      it("warns without falling back when the primary write fails with a non-sandbox error", async () => {
+        // ENOSPC is not a sandbox/permission error — $TMPDIR would not help,
+        // so writeUpgradeMarker must skip the fallback and warn directly.
+        const enospc = new Error("ENOSPC: no space left on device") as NodeJS.ErrnoException;
+        enospc.code = "ENOSPC";
+        writeFailPredicate = (p) => (p === markerPath() ? enospc : null);
+        const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+
+        const { writeUpgradeMarker } = await importModule();
+        writeUpgradeMarker(MARKER_DATA);
+
+        expect(existsSync(fallbackMarkerPath())).toBe(false);
+        const warning = stderrSpy.mock.calls.find((args) =>
+          String(args[0]).includes("could not write upgrade marker")
+        );
+        expect(warning).toBeDefined();
+        expect(String(warning![0])).toContain("ENOSPC");
+        expect(String(warning![0])).not.toContain("primary=");
+
+        stderrSpy.mockRestore();
+      });
     });
 
     describe("readAndClearUpgradeMarker", () => {

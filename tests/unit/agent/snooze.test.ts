@@ -347,6 +347,28 @@ describe("snooze", () => {
 
       stderrSpy.mockRestore();
     });
+
+    it("warns without trying the fallback when the primary write fails with a non-sandbox error", async () => {
+      // ENOSPC is not a sandbox/permission error — $TMPDIR would not help, so
+      // writeSnooze must skip the fallback and warn with the bare errno code.
+      const enospc = new Error("ENOSPC: no space left on device") as NodeJS.ErrnoException;
+      enospc.code = "ENOSPC";
+      writeFailPredicate = (p) => (p === snoozePath() ? enospc : null);
+      const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+
+      const { writeSnooze } = await importModule();
+      writeSnooze("K");
+
+      expect(existsSync(fallbackSnoozePath())).toBe(false);
+      const warning = stderrSpy.mock.calls.find((c) =>
+        String(c[0]).includes("could not write snooze state")
+      );
+      expect(warning).toBeDefined();
+      expect(String(warning![0])).toContain("ENOSPC");
+      expect(String(warning![0])).not.toContain("primary=");
+
+      stderrSpy.mockRestore();
+    });
   });
 
   // ---------------------------------------------------------------------------

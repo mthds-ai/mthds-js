@@ -22,10 +22,11 @@
 
 import { join } from "node:path";
 import { readFileSync, statSync, existsSync } from "node:fs";
-import { homedir, tmpdir } from "node:os";
 import {
-  SANDBOX_WRITE_ERRORS,
-  writeFileAt,
+  MS_PER_MINUTE,
+  STATE_DIR,
+  FALLBACK_DIR,
+  writeWithFallback,
   invalidateFileAt,
 } from "./update-cache.js";
 import type { CachePayload } from "./update-cache.js";
@@ -40,10 +41,7 @@ export interface SnoozeState {
 
 // ── Constants ──────────────────────────────────────────────────────
 
-const STATE_DIR = join(homedir(), ".mthds", "state");
 const PRIMARY_SNOOZE_PATH = join(STATE_DIR, "update-snoozed");
-
-const FALLBACK_DIR = join(tmpdir(), "mthds-agent");
 const FALLBACK_SNOOZE_PATH = join(FALLBACK_DIR, "update-snoozed");
 
 const SNOOZE_DURATIONS_MS: Record<number, number> = {
@@ -148,17 +146,15 @@ export function writeSnooze(versionKey: string): void {
     existing && existing.versionKey === versionKey ? existing.level + 1 : 1;
   const content = `${versionKey} ${level} ${Date.now()}\n`;
 
-  const primary = writeFileAt(STATE_DIR, PRIMARY_SNOOZE_PATH, content);
-  if (primary.ok) return;
-
-  if (primary.code && SANDBOX_WRITE_ERRORS.has(primary.code)) {
-    const fallback = writeFileAt(FALLBACK_DIR, FALLBACK_SNOOZE_PATH, content);
-    if (fallback.ok) return;
-    emitSnoozeWriteWarning(primary.code, fallback.code);
-    return;
-  }
-
-  emitSnoozeWriteWarning(primary.code);
+  const res = writeWithFallback(
+    STATE_DIR,
+    PRIMARY_SNOOZE_PATH,
+    FALLBACK_DIR,
+    FALLBACK_SNOOZE_PATH,
+    content,
+  );
+  if (res.ok) return;
+  emitSnoozeWriteWarning(res.code, res.fallbackCode);
 }
 
 function emitSnoozeWriteWarning(primaryCode?: string, fallbackCode?: string): void {
@@ -183,7 +179,7 @@ export function isSnoozed(versionKey: string): boolean {
   const duration = SNOOZE_DURATIONS_MS[state.level] ?? SNOOZE_DEFAULT_MS;
   const elapsed = Date.now() - state.epoch;
   // Negative elapsed beyond 1 minute means clock skew — treat snooze as expired
-  return elapsed >= -60_000 && elapsed < duration;
+  return elapsed >= -MS_PER_MINUTE && elapsed < duration;
 }
 
 /**

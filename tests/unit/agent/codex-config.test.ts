@@ -334,20 +334,20 @@ plugin_hooks = true
     expect(readFileSync(hooksFile(), "utf8")).not.toContain(HOOK_COMMAND);
   });
 
-  it("warns but still applies config when ~/.codex/hooks.json is malformed", async () => {
+  it("errors on a malformed ~/.codex/hooks.json but still writes the required config keys", async () => {
     mkdirSync(join(scratchHome, ".codex"), { recursive: true });
     writeFileSync(hooksFile(), "not valid json {", "utf8");
 
-    await agentCodexApplyConfig();
-
-    expect(errorSpy).not.toHaveBeenCalled();
-    const call = lastSuccess();
-    expect(call.status).toBe("APPLIED");
-    const warnings = call.warnings as Array<{ code: string }>;
-    expect(warnings.some((w) => w.code === "LEGACY_HOOK_UNREADABLE")).toBe(true);
-    // The required config keys were still written.
+    // A hooks.json we cannot parse can't be confirmed free of an obsolete
+    // double-firing entry — apply-config errors (matching `apply-config
+    // --check`) instead of reporting success while the problem persists.
+    await expect(agentCodexApplyConfig()).rejects.toBeInstanceOf(AgentErrorThrow);
+    expect(errorSpy.mock.calls[0][1]).toBe("ConfigError");
+    expect(errorSpy.mock.calls[0][0]).toContain("hooks.json");
+    // config.toml was still written before the hooks.json check ran.
     const parsed = parseToml(readConfig()) as Record<string, Record<string, unknown>>;
     expect(parsed.sandbox_workspace_write.network_access).toBe(true);
+    expect(parsed.features.plugin_hooks).toBe(true);
   });
 
   // ── --check mode ───────────────────────────────────────────────────
@@ -406,6 +406,22 @@ plugin_hooks = true
         ],
       },
     });
+
+    await expect(agentCodexApplyConfig({ check: true })).rejects.toBeInstanceOf(AgentErrorThrow);
+  });
+
+  it("--check exits non-zero when ~/.codex/hooks.json is malformed", async () => {
+    // config.toml is fully OK, but an unreadable hooks.json means we cannot
+    // confirm no obsolete entry double-fires — --check must flag it, matching
+    // the apply path which errors on the same state.
+    writeConfig(`[sandbox_workspace_write]
+network_access = true
+
+[features]
+plugin_hooks = true
+`);
+    mkdirSync(join(scratchHome, ".codex"), { recursive: true });
+    writeFileSync(hooksFile(), "not valid json {", "utf8");
 
     await expect(agentCodexApplyConfig({ check: true })).rejects.toBeInstanceOf(AgentErrorThrow);
   });

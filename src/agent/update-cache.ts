@@ -59,21 +59,29 @@ export interface CacheResult {
 
 // ── Constants ──────────────────────────────────────────────────────
 
-const STATE_DIR = join(homedir(), ".mthds", "state");
+/** One minute in milliseconds. Base unit for the TTLs below and for the
+ *  clock-skew tolerance applied when comparing file mtimes to the wall clock. */
+export const MS_PER_MINUTE = 60_000;
+
+/** Primary state directory (~/.mthds/state). Exported so snooze.ts shares the
+ *  same dual-path layout from a single source of truth. */
+export const STATE_DIR = join(homedir(), ".mthds", "state");
+/** Fallback state directory ($TMPDIR/mthds-agent), used when STATE_DIR is not
+ *  writable (Codex's workspaceWrite sandbox). Exported for snooze.ts. */
+export const FALLBACK_DIR = join(tmpdir(), "mthds-agent");
+
 const PRIMARY_CACHE_PATH = join(STATE_DIR, "last-update-check");
 const PRIMARY_MARKER_PATH = join(STATE_DIR, "just-upgraded-from");
-
-const FALLBACK_DIR = join(tmpdir(), "mthds-agent");
 const FALLBACK_CACHE_PATH = join(FALLBACK_DIR, "last-update-check");
 const FALLBACK_MARKER_PATH = join(FALLBACK_DIR, "just-upgraded-from");
 
-const TTL_UP_TO_DATE_MS = 60 * 60 * 1000; // 60 min
-const TTL_UPGRADE_AVAILABLE_MS = 720 * 60 * 1000; // 720 min (12 hours)
+const TTL_UP_TO_DATE_MS = 60 * MS_PER_MINUTE; // 60 min
+const TTL_UPGRADE_AVAILABLE_MS = 720 * MS_PER_MINUTE; // 720 min (12 hours)
 // Real markers are consumed within seconds (skill flow re-runs preamble
 // immediately after upgrade). Anything markedly older is almost certainly
 // stuck because the sandbox blocked cleanup last time — ignore it instead of
 // replaying the announcement on every update-check.
-const MARKER_TTL_MS = 60 * 60 * 1000; // 60 min
+const MARKER_TTL_MS = 60 * MS_PER_MINUTE; // 60 min
 
 const VALID_AGGREGATES: ReadonlySet<string> = new Set([
   "UP_TO_DATE",
@@ -168,7 +176,7 @@ function readCacheAt(path: string): CacheAttempt | null {
     aggregate === "UP_TO_DATE" ? TTL_UP_TO_DATE_MS : TTL_UPGRADE_AVAILABLE_MS;
   const age = Date.now() - mtimeMs;
   // Negative age beyond 1 minute means clock skew — treat as expired
-  if (age < -60_000 || age > ttl) return null;
+  if (age < -MS_PER_MINUTE || age > ttl) return null;
 
   return {
     result: { aggregate: aggregate as AggregateStatus, payload },
@@ -208,13 +216,43 @@ export interface WriteAttempt {
  */
 export function writeFileAt(dir: string, file: string, content: string): WriteAttempt {
   try {
-    mkdirSync(dir, { recursive: true });
+    // mode 0o700 keeps the fallback dir ($TMPDIR/mthds-agent on a possibly
+    // world-writable /tmp) private to the current user. No-op on dirs that
+    // already exist; harmless and equally appropriate for ~/.mthds/state.
+    mkdirSync(dir, { recursive: true, mode: 0o700 });
     writeFileSync(file, content, "utf-8");
     return { ok: true };
   } catch (err) {
     const code = (err as NodeJS.ErrnoException).code ?? String(err);
     return { ok: false, code };
   }
+}
+
+/**
+ * Write `content` to `primaryPath`; on a sandbox/permission failure (see
+ * `SANDBOX_WRITE_ERRORS`) retry once at `fallbackPath`. Other failure classes
+ * (ENOSPC, IO errors) are not improved by retrying elsewhere, so they are
+ * reported without a fallback attempt. The single owner of the
+ * try-primary-then-fallback policy shared by the cache, marker, and snooze
+ * writers — callers only supply their own one-shot warning text.
+ */
+export function writeWithFallback(
+  primaryDir: string,
+  primaryPath: string,
+  fallbackDir: string,
+  fallbackPath: string,
+  content: string,
+): WriteAttempt & { fallbackCode?: string } {
+  const primary = writeFileAt(primaryDir, primaryPath, content);
+  if (primary.ok) return { ok: true };
+
+  if (primary.code && SANDBOX_WRITE_ERRORS.has(primary.code)) {
+    const fallback = writeFileAt(fallbackDir, fallbackPath, content);
+    if (fallback.ok) return { ok: true };
+    return { ok: false, code: primary.code, fallbackCode: fallback.code };
+  }
+
+  return { ok: false, code: primary.code };
 }
 
 /**
@@ -225,20 +263,15 @@ export function writeCache(result: CacheResult): void {
   const content =
     result.aggregate + "\n" + JSON.stringify(result.payload) + "\n";
 
-  const primary = writeFileAt(STATE_DIR, PRIMARY_CACHE_PATH, content);
-  if (primary.ok) return;
-
-  // Only fall back for the sandbox/perm family of errors. Other failures
-  // (ENOSPC, IO errors, ...) are not improved by retrying in $TMPDIR, so we
-  // surface them via the same one-shot warning path.
-  if (primary.code && SANDBOX_WRITE_ERRORS.has(primary.code)) {
-    const fallback = writeFileAt(FALLBACK_DIR, FALLBACK_CACHE_PATH, content);
-    if (fallback.ok) return;
-    emitWriteWarning(primary.code, fallback.code);
-    return;
-  }
-
-  emitWriteWarning(primary.code);
+  const res = writeWithFallback(
+    STATE_DIR,
+    PRIMARY_CACHE_PATH,
+    FALLBACK_DIR,
+    FALLBACK_CACHE_PATH,
+    content,
+  );
+  if (res.ok) return;
+  emitWriteWarning(res.code, res.fallbackCode);
 }
 
 function emitWriteWarning(primaryCode?: string, fallbackCode?: string): void {
@@ -282,19 +315,15 @@ export function clearCache(): void {
  * failure is warned (once per process) but never thrown.
  */
 export function writeUpgradeMarker(data: Record<string, unknown>): void {
-  const content = JSON.stringify(data);
-
-  const primary = writeFileAt(STATE_DIR, PRIMARY_MARKER_PATH, content);
-  if (primary.ok) return;
-
-  if (primary.code && SANDBOX_WRITE_ERRORS.has(primary.code)) {
-    const fallback = writeFileAt(FALLBACK_DIR, FALLBACK_MARKER_PATH, content);
-    if (fallback.ok) return;
-    emitMarkerWriteWarning(primary.code, fallback.code);
-    return;
-  }
-
-  emitMarkerWriteWarning(primary.code);
+  const res = writeWithFallback(
+    STATE_DIR,
+    PRIMARY_MARKER_PATH,
+    FALLBACK_DIR,
+    FALLBACK_MARKER_PATH,
+    JSON.stringify(data),
+  );
+  if (res.ok) return;
+  emitMarkerWriteWarning(res.code, res.fallbackCode);
 }
 
 function emitMarkerWriteWarning(primaryCode?: string, fallbackCode?: string): void {
@@ -381,7 +410,7 @@ export function readAndClearUpgradeMarker(): Record<string, unknown> | null {
   // Negative age beyond 1 minute means clock skew — treat as stale so a
   // future-dated marker can't replay the announcement forever.
   const ageMs = Date.now() - chosen.mtimeMs;
-  const isStale = ageMs < -60_000 || ageMs > MARKER_TTL_MS;
+  const isStale = ageMs < -MS_PER_MINUTE || ageMs > MARKER_TTL_MS;
 
   // Clean up both paths whether or not we honor the marker. We only attempt
   // invalidation for paths that actually had content; otherwise an existsSync
@@ -391,7 +420,7 @@ export function readAndClearUpgradeMarker(): Record<string, unknown> | null {
   if ((!primaryCleared || !fallbackCleared) && !warnedAboutMarkerClear) {
     warnedAboutMarkerClear = true;
     process.stderr.write(
-      `Warning: could not clear upgrade marker (primary=${primaryCleared ? "ok" : "blocked"}, fallback=${fallbackCleared ? "ok" : "blocked"}). It will be ignored after ${MARKER_TTL_MS / 60_000}min.\n`
+      `Warning: could not clear upgrade marker (primary=${primaryCleared ? "ok" : "blocked"}, fallback=${fallbackCleared ? "ok" : "blocked"}). It will be ignored after ${MARKER_TTL_MS / MS_PER_MINUTE}min.\n`
     );
   }
 

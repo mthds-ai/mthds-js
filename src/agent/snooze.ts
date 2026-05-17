@@ -5,11 +5,12 @@
  *   <versionKey> <level> <epoch>
  *
  * Primary location: ~/.mthds/state/update-snoozed.
- * Fallback location: $TMPDIR/mthds-agent/update-snoozed — used when the
+ * Fallback location: $TMPDIR/mthds-agent-<uid>/update-snoozed — used when the
  * primary location is not writable (Codex `workspaceWrite` sandbox permits
  * writes only under cwd / configured roots / $TMPDIR, not under the user's
  * home dir). Same dual-path policy as the update-check cache and the
- * just-upgraded marker — see update-cache.ts.
+ * just-upgraded marker, including the symlink/TOCTOU hardening of the
+ * fallback directory — see update-cache.ts.
  *
  * Reads consult both paths and prefer the newer mtime, so escalation
  * (level 1 → 2 → 3+) stays correct as sessions move between sandboxed and

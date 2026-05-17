@@ -606,8 +606,10 @@ function readMarkerAt(path: string): MarkerReadAttempt | null {
  * Best-effort invalidation. unlinkSync first (the desired outcome); if that
  * fails — typically EPERM under the sandbox — overwrite with empty content so
  * the next read parses as invalid (empty content fails JSON.parse and is also
- * rejected by the single-line snooze parser). Returns true when the file is
- * either gone or guaranteed unparseable.
+ * rejected by the single-line snooze parser). The overwrite goes through
+ * `writeFileNoFollow`, so a symlink swapped in for the file is rejected
+ * (`ELOOP`) and reported as a failed invalidation rather than followed.
+ * Returns true when the file is either gone or guaranteed unparseable.
  */
 export function invalidateFileAt(path: string): boolean {
   try {

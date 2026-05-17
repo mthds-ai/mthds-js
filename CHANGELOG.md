@@ -1,5 +1,16 @@
 # Changelog
 
+## [v0.7.1] - 2026-05-17
+
+### Fixed
+
+- **`mthds-agent codex apply-config` now hard-errors on an unreadable `~/.codex/hooks.json`.** A `hooks.json` that cannot be read or parsed leaves `apply-config` unable to confirm that no obsolete entry double-fires the validation hook. `apply-config --check` already treated that as a hard failure, so the apply path now does too — the two modes no longer report opposite verdicts (and opposite exit codes) for the same state. Required `config.toml` keys are still written first, so re-running `apply-config` converges the config once the file is hand-fixed. `apply-config --check` also now reports `WOULD_APPLY` (not `ALREADY_OK`) when a parse error is present, since a real apply would surface a hard error.
+
+### Changed
+
+- **State writes share a single `writeWithFallback` helper.** The try-primary-then-fallback policy — write to `~/.mthds/state/`, retry in `$TMPDIR/mthds-agent/` only on sandbox/permission errors — is now owned by one function in `update-cache.ts` and reused by the cache, upgrade-marker, and snooze writers. `snooze.ts` no longer re-derives the state-directory paths or the sandbox-error set; it imports the exported `STATE_DIR`, `FALLBACK_DIR`, and `MS_PER_MINUTE` constants. No behavior change for callers.
+- **State directories are created with mode `0o700`.** `mkdirSync` for both `~/.mthds/state/` and the `$TMPDIR/mthds-agent/` fallback now sets owner-only permissions, keeping the fallback directory private on a world-writable `/tmp`.
+
 ## [v0.7.0] - 2026-05-15
 
 ### Changed

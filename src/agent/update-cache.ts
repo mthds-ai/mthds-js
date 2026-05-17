@@ -25,6 +25,7 @@ import { join } from "node:path";
 import { homedir, tmpdir } from "node:os";
 import {
   mkdirSync,
+  chmodSync,
   readFileSync,
   writeFileSync,
   unlinkSync,
@@ -217,9 +218,15 @@ export interface WriteAttempt {
 export function writeFileAt(dir: string, file: string, content: string): WriteAttempt {
   try {
     // mode 0o700 keeps the fallback dir ($TMPDIR/mthds-agent on a possibly
-    // world-writable /tmp) private to the current user. No-op on dirs that
-    // already exist; harmless and equally appropriate for ~/.mthds/state.
+    // world-writable /tmp) private to the current user. `mode` is honored only
+    // when mkdirSync creates the directory, so a dir left by an older version
+    // — or pre-created on a shared /tmp — would otherwise keep its existing
+    // permissions. chmodSync re-asserts 0o700 on every write; it throws (and we
+    // report a failure) if the directory is owned by another user, which is the
+    // correct outcome for a hijacked fallback path. Harmless and equally
+    // appropriate for ~/.mthds/state.
     mkdirSync(dir, { recursive: true, mode: 0o700 });
+    chmodSync(dir, 0o700);
     writeFileSync(file, content, "utf-8");
     return { ok: true };
   } catch (err) {

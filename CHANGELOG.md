@@ -9,7 +9,7 @@
 ### Changed
 
 - **State writes share a single `writeWithFallback` helper.** The try-primary-then-fallback policy — write to `~/.mthds/state/`, retry in `$TMPDIR/mthds-agent/` only on sandbox/permission errors — is now owned by one function in `update-cache.ts` and reused by the cache, upgrade-marker, and snooze writers. `snooze.ts` no longer re-derives the state-directory paths or the sandbox-error set; it imports the exported `STATE_DIR`, `FALLBACK_DIR`, and `MS_PER_MINUTE` constants. No behavior change for callers.
-- **State directories are created with mode `0o700`.** `mkdirSync` for both `~/.mthds/state/` and the `$TMPDIR/mthds-agent/` fallback now sets owner-only permissions, keeping the fallback directory private on a world-writable `/tmp`.
+- **State directories are kept private (mode `0o700`).** Both `~/.mthds/state/` and the `$TMPDIR/mthds-agent/` fallback are created — and, when they already exist, `chmod`-ed — to owner-only permissions on every write. `mkdirSync`'s `mode` applies only on creation, so a fallback directory left world-traversable by an older version on a shared `/tmp` is corrected on the next write rather than staying public.
 
 ## [v0.7.0] - 2026-05-15
 

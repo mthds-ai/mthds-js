@@ -7,6 +7,8 @@ import {
   existsSync,
   utimesSync,
   rmSync,
+  statSync,
+  chmodSync,
 } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -274,6 +276,19 @@ describe("update-cache", () => {
       expect(existsSync(cachePath())).toBe(true);
       expect(existsSync(fallbackCachePath())).toBe(false);
     });
+
+    it("re-asserts 0o700 on a pre-existing state directory", async () => {
+      // mkdirSync's `mode` is honored only on creation, so a directory left
+      // world-traversable by an older version must be chmod-ed back to
+      // owner-only on the next write.
+      mkdirSync(stateDir(), { recursive: true });
+      chmodSync(stateDir(), 0o777);
+
+      const { writeCache } = await importModule();
+      writeCache({ aggregate: "UP_TO_DATE", payload: OK_PAYLOAD });
+
+      expect(statSync(stateDir()).mode & 0o777).toBe(0o700);
+    });
   });
 
   // ---------------------------------------------------------------------------
@@ -301,6 +316,22 @@ describe("update-cache", () => {
 
       expect(existsSync(cachePath())).toBe(false);
       expect(existsSync(fallbackCachePath())).toBe(true);
+    });
+
+    it("re-asserts 0o700 on a pre-existing fallback directory with broad permissions", async () => {
+      // Simulates $TMPDIR/mthds-agent left world-traversable by an older
+      // version, or pre-created on a shared /tmp. mkdirSync's `mode` is a no-op
+      // on an existing dir, so the fallback write must chmod it owner-only.
+      mkdirSync(fallbackDir(), { recursive: true });
+      chmodSync(fallbackDir(), 0o777);
+
+      writeFailPredicate = (p) => (p === cachePath() ? eperm(p) : null);
+
+      const { writeCache } = await importModule();
+      writeCache({ aggregate: "UP_TO_DATE", payload: OK_PAYLOAD });
+
+      expect(existsSync(fallbackCachePath())).toBe(true);
+      expect(statSync(fallbackDir()).mode & 0o777).toBe(0o700);
     });
 
     it("readCache reads the fallback when only the fallback file exists", async () => {

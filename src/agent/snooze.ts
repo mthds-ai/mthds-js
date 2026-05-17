@@ -26,6 +26,7 @@ import {
   MS_PER_MINUTE,
   STATE_DIR,
   FALLBACK_DIR,
+  ensureFallbackDir,
   writeWithFallback,
   invalidateFileAt,
 } from "./update-cache.js";
@@ -129,7 +130,9 @@ function readSnoozeAt(path: string): SnoozeReadAttempt | null {
  */
 export function readSnooze(): SnoozeState | null {
   const primary = readSnoozeAt(PRIMARY_SNOOZE_PATH);
-  const fallback = readSnoozeAt(FALLBACK_SNOOZE_PATH);
+  const fallback = ensureFallbackDir(false).usable
+    ? readSnoozeAt(FALLBACK_SNOOZE_PATH)
+    : null;
   if (!primary) return fallback?.state ?? null;
   if (!fallback) return primary.state;
   return fallback.mtimeMs > primary.mtimeMs ? fallback.state : primary.state;
@@ -149,7 +152,6 @@ export function writeSnooze(versionKey: string): void {
   const res = writeWithFallback(
     STATE_DIR,
     PRIMARY_SNOOZE_PATH,
-    FALLBACK_DIR,
     FALLBACK_SNOOZE_PATH,
     content,
   );
@@ -183,15 +185,18 @@ export function isSnoozed(versionKey: string): boolean {
 }
 
 /**
- * Clear snooze. Hits both primary and fallback paths. When unlink is blocked
- * (sandbox EPERM), overwrites with empty content so the next read parses as
- * null. Warns at most once per process when a present file cannot be cleared
- * by either route. Silent when both paths were absent to begin with — no
- * spurious 0-byte file is created in that case.
+ * Clear snooze. Hits the primary path and — when its directory passes the
+ * hardening check — the fallback path. When unlink is blocked (sandbox EPERM),
+ * overwrites with empty content so the next read parses as null. Warns at most
+ * once per process when a present file cannot be cleared by either route.
+ * Silent when both paths were absent to begin with — no spurious 0-byte file
+ * is created in that case.
  */
 export function clearSnooze(): void {
   let blocked = false;
-  for (const path of [PRIMARY_SNOOZE_PATH, FALLBACK_SNOOZE_PATH]) {
+  const paths = [PRIMARY_SNOOZE_PATH];
+  if (ensureFallbackDir(false).usable) paths.push(FALLBACK_SNOOZE_PATH);
+  for (const path of paths) {
     if (!existsSync(path)) continue;
     if (!invalidateFileAt(path)) blocked = true;
   }

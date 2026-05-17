@@ -9,6 +9,7 @@ import {
   rmSync,
   statSync,
   chmodSync,
+  symlinkSync,
 } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -60,6 +61,19 @@ vi.mock("node:fs", async (importOriginal) => {
         opts as Parameters<typeof real.mkdirSync>[1]
       );
     }),
+    // Hardened writes go through openSync (for O_NOFOLLOW), so the
+    // primary-write failure injection now happens here.
+    openSync: vi.fn((p: unknown, flags?: unknown, mode?: unknown) => {
+      if (writeFailPredicate) {
+        const err = writeFailPredicate(String(p));
+        if (err) throw err;
+      }
+      return real.openSync(
+        p as Parameters<typeof real.openSync>[0],
+        flags as Parameters<typeof real.openSync>[1],
+        mode as Parameters<typeof real.openSync>[2]
+      );
+    }),
     unlinkSync: vi.fn((p: unknown) => {
       if (unlinkFailPredicate) {
         const err = unlinkFailPredicate(String(p));
@@ -84,7 +98,10 @@ function cachePath() {
 }
 
 function fallbackDir() {
-  return join(tempTmp ?? tmpdir(), "mthds-agent");
+  // Mirrors update-cache.ts: the fallback dir name carries the uid so users
+  // on a shared host never collide on ownership.
+  const uid = typeof process.getuid === "function" ? `-${process.getuid()}` : "";
+  return join(tempTmp ?? tmpdir(), `mthds-agent${uid}`);
 }
 
 function fallbackCachePath() {
@@ -754,6 +771,164 @@ describe("update-cache", () => {
         const { readAndClearUpgradeMarker } = await importModule();
         expect(readAndClearUpgradeMarker()).toBeNull();
       });
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Fallback directory hardening (symlink / TOCTOU)
+  // ---------------------------------------------------------------------------
+  describe("fallback dir hardening", () => {
+    // These tests deliberately trip the hardening warnings; silence the
+    // expected stderr noise. Tests that assert on a warning stack their own
+    // spy on top, which works fine and is restored here too.
+    beforeEach(() => {
+      vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    });
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
+    it("creates a fresh 0o700 directory owned by the current user", async () => {
+      const { ensureFallbackDir } = await importModule();
+      expect(ensureFallbackDir(true)).toEqual({ usable: true, reason: "ok" });
+      expect(existsSync(fallbackDir())).toBe(true);
+      expect(statSync(fallbackDir()).mode & 0o777).toBe(0o700);
+    });
+
+    it("refuses a fallback directory that is a symlink", async () => {
+      const evil = join(tempHome, "evil");
+      mkdirSync(evil, { recursive: true });
+      symlinkSync(evil, fallbackDir());
+
+      const stderrSpy = vi
+        .spyOn(process.stderr, "write")
+        .mockImplementation(() => true);
+      const { ensureFallbackDir } = await importModule();
+      const res = ensureFallbackDir(true);
+      expect(res).toEqual({ usable: false, reason: "symlink" });
+      expect(
+        stderrSpy.mock.calls.some((a) =>
+          String(a[0]).includes("refusing fallback state directory")
+        )
+      ).toBe(true);
+      stderrSpy.mockRestore();
+    });
+
+    it("refuses a fallback path that exists as a regular file", async () => {
+      writeFileSync(fallbackDir(), "not a directory", "utf-8");
+      const { ensureFallbackDir } = await importModule();
+      expect(ensureFallbackDir(true).reason).toBe("not-a-dir");
+    });
+
+    it("chmods a pre-existing owned fallback directory back to 0o700", async () => {
+      mkdirSync(fallbackDir(), { recursive: true });
+      chmodSync(fallbackDir(), 0o777);
+      const { ensureFallbackDir } = await importModule();
+      expect(ensureFallbackDir(true)).toEqual({ usable: true, reason: "ok" });
+      expect(statSync(fallbackDir()).mode & 0o777).toBe(0o700);
+    });
+
+    it("refuses the fallback when $TMPDIR is world-writable without the sticky bit", async () => {
+      chmodSync(tempTmp!, 0o777);
+      const { ensureFallbackDir } = await importModule();
+      expect(ensureFallbackDir(true).reason).toBe("insecure-tmp");
+      expect(existsSync(fallbackDir())).toBe(false);
+    });
+
+    it("allows the fallback when $TMPDIR is world-writable but sticky", async () => {
+      chmodSync(tempTmp!, 0o1777);
+      const { ensureFallbackDir } = await importModule();
+      expect(ensureFallbackDir(true)).toEqual({ usable: true, reason: "ok" });
+    });
+
+    it("refuses a fallback directory owned by another user", async () => {
+      // Spy getuid to a bogus uid *before* importing, so FALLBACK_DIR is named
+      // for the bogus uid; the directory we create is owned by the real test
+      // uid, producing the ownership mismatch.
+      const bogus = (process.getuid?.() ?? 0) + 99999;
+      const uidSpy = vi.spyOn(process, "getuid").mockReturnValue(bogus);
+      mkdirSync(fallbackDir(), { recursive: true, mode: 0o700 });
+      const { ensureFallbackDir } = await importModule();
+      expect(ensureFallbackDir(true).reason).toBe("foreign-owner");
+      uidSpy.mockRestore();
+    });
+
+    it("reports the fallback as absent without warning when the directory is missing", async () => {
+      const stderrSpy = vi
+        .spyOn(process.stderr, "write")
+        .mockImplementation(() => true);
+      const { ensureFallbackDir } = await importModule();
+      expect(ensureFallbackDir(false)).toEqual({ usable: false, reason: "absent" });
+      expect(
+        stderrSpy.mock.calls.some((a) => String(a[0]).includes("refusing"))
+      ).toBe(false);
+      stderrSpy.mockRestore();
+    });
+
+    it("memoizes a suspicious refusal and warns at most once", async () => {
+      const evil = join(tempHome, "evil");
+      mkdirSync(evil, { recursive: true });
+      symlinkSync(evil, fallbackDir());
+
+      const stderrSpy = vi
+        .spyOn(process.stderr, "write")
+        .mockImplementation(() => true);
+      const { ensureFallbackDir } = await importModule();
+      expect(ensureFallbackDir(true).reason).toBe("symlink");
+      expect(ensureFallbackDir(false).reason).toBe("symlink");
+      expect(ensureFallbackDir(true).reason).toBe("symlink");
+      const warnings = stderrSpy.mock.calls.filter((a) =>
+        String(a[0]).includes("refusing fallback state directory")
+      );
+      expect(warnings.length).toBe(1);
+      stderrSpy.mockRestore();
+    });
+
+    it("refuses to write through a symlinked fallback file (O_NOFOLLOW)", async () => {
+      mkdirSync(fallbackDir(), { recursive: true, mode: 0o700 });
+      const evilTarget = join(tempHome, "evil-target");
+      writeFileSync(evilTarget, "original", "utf-8");
+      symlinkSync(evilTarget, fallbackCachePath());
+
+      writeFailPredicate = (p) => (p === cachePath() ? eperm(p) : null);
+      const { writeCache } = await importModule();
+      writeCache({ aggregate: "UP_TO_DATE", payload: OK_PAYLOAD });
+
+      // O_NOFOLLOW must have rejected the write — the target stays untouched.
+      expect(readFileSync(evilTarget, "utf-8")).toBe("original");
+    });
+
+    it("readCache ignores a symlinked fallback directory and uses the primary", async () => {
+      mkdirSync(stateDir(), { recursive: true });
+      writeFileSync(
+        cachePath(),
+        "UP_TO_DATE\n" + JSON.stringify(OK_PAYLOAD) + "\n",
+        "utf-8"
+      );
+      const evil = join(tempHome, "evil");
+      mkdirSync(evil, { recursive: true });
+      symlinkSync(evil, fallbackDir());
+
+      const { readCache } = await importModule();
+      expect(readCache()?.aggregate).toBe("UP_TO_DATE");
+    });
+
+    it("falls back to the legacy unsuffixed name when process.getuid is unavailable", async () => {
+      const orig = process.getuid;
+      Object.defineProperty(process, "getuid", {
+        value: undefined,
+        configurable: true,
+      });
+      try {
+        const mod = await importModule();
+        expect(mod.FALLBACK_DIR.endsWith(join("tmp", "mthds-agent"))).toBe(true);
+        expect(mod.ensureFallbackDir(true).usable).toBe(true);
+      } finally {
+        Object.defineProperty(process, "getuid", {
+          value: orig,
+          configurable: true,
+        });
+      }
     });
   });
 });

@@ -2,9 +2,11 @@
  * Cache for update-check results, plus the just-upgraded marker.
  *
  * Primary location: ~/.mthds/state/.
- * Fallback location: $TMPDIR/mthds-agent/ — used when the primary location is
- * not writable (e.g. Codex's workspaceWrite sandbox permits writes only under
- * cwd / configured roots / $TMPDIR, not under the user's home dir).
+ * Fallback location: $TMPDIR/mthds-agent-<uid>/ — used when the primary
+ * location is not writable (e.g. Codex's workspaceWrite sandbox permits writes
+ * only under cwd / configured roots / $TMPDIR, not under the user's home dir).
+ * The fallback path is predictable, so it is validated against symlink/TOCTOU
+ * tampering before use — see `ensureFallbackDir`.
  *
  * Two files live in each location:
  *
@@ -30,6 +32,10 @@ import {
   writeFileSync,
   unlinkSync,
   statSync,
+  lstatSync,
+  openSync,
+  closeSync,
+  constants as fsConstants,
 } from "node:fs";
 import type { VersionStatus } from "../installer/runtime/version-check.js";
 
@@ -58,6 +64,24 @@ export interface CacheResult {
   payload: CachePayload;
 }
 
+/** Why the fallback directory is or isn't usable. The `symlink`,
+ *  `foreign-owner`, `not-a-dir`, and `insecure-tmp` reasons are *suspicious*
+ *  (possible tampering) and trigger a one-shot warning; `absent`/`error` are
+ *  benign (the dir simply isn't there yet, or a transient FS error). */
+export type FallbackDirReason =
+  | "ok"
+  | "absent"
+  | "symlink"
+  | "foreign-owner"
+  | "not-a-dir"
+  | "insecure-tmp"
+  | "error";
+
+export interface FallbackDirStatus {
+  usable: boolean;
+  reason: FallbackDirReason;
+}
+
 // ── Constants ──────────────────────────────────────────────────────
 
 /** One minute in milliseconds. Base unit for the TTLs below and for the
@@ -67,9 +91,32 @@ export const MS_PER_MINUTE = 60_000;
 /** Primary state directory (~/.mthds/state). Exported so snooze.ts shares the
  *  same dual-path layout from a single source of truth. */
 export const STATE_DIR = join(homedir(), ".mthds", "state");
-/** Fallback state directory ($TMPDIR/mthds-agent), used when STATE_DIR is not
- *  writable (Codex's workspaceWrite sandbox). Exported for snooze.ts. */
-export const FALLBACK_DIR = join(tmpdir(), "mthds-agent");
+
+/** uid of the current process, or null on Windows where `process.getuid` is
+ *  absent. The /tmp symlink/TOCTOU hardening is POSIX-specific; on Windows the
+ *  fallback keeps the legacy unsuffixed name and skips the strict checks. */
+const FALLBACK_UID: number | null =
+  typeof process.getuid === "function" ? process.getuid() : null;
+
+/** Fallback state directory, used when STATE_DIR is not writable (Codex's
+ *  workspaceWrite sandbox). The name carries the current uid so that multiple
+ *  users on a shared host never collide on ownership — an unsuffixed name
+ *  created by user A would fail user B's ownership check and permanently deny
+ *  them the fallback. Exported for snooze.ts. */
+export const FALLBACK_DIR = join(
+  tmpdir(),
+  FALLBACK_UID === null ? "mthds-agent" : `mthds-agent-${FALLBACK_UID}`,
+);
+
+/** O_NOFOLLOW makes a write refuse a symlink as the final path component
+ *  (throws ELOOP) rather than following it. Undefined on Windows — `?? 0`
+ *  makes it a no-op there. */
+const O_NOFOLLOW = fsConstants.O_NOFOLLOW ?? 0;
+/** Flags for a create-or-truncate write — equivalent to the default `"w"`
+ *  (O_WRONLY|O_CREAT|O_TRUNC) plus O_NOFOLLOW, so a hijacked leaf symlink is
+ *  rejected instead of followed. */
+const WRITE_FLAGS =
+  fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_TRUNC | O_NOFOLLOW;
 
 const PRIMARY_CACHE_PATH = join(STATE_DIR, "last-update-check");
 const PRIMARY_MARKER_PATH = join(STATE_DIR, "just-upgraded-from");
@@ -93,6 +140,16 @@ export const SANDBOX_WRITE_ERRORS: ReadonlySet<string> = new Set([
   "EPERM",
   "EACCES",
   "EROFS",
+]);
+
+/** Fallback-dir refusal reasons that indicate possible tampering (as opposed
+ *  to a benign "not there yet" / transient error). These get a one-shot
+ *  warning and a `unsafe:` prefix in the write-failure detail. */
+const SUSPICIOUS_REASONS: ReadonlySet<FallbackDirReason> = new Set([
+  "symlink",
+  "foreign-owner",
+  "not-a-dir",
+  "insecure-tmp",
 ]);
 
 // ── Validation ──────────────────────────────────────────────────────
@@ -126,6 +183,7 @@ function isValidPayload(p: unknown): p is CachePayload {
 let warnedAboutCacheWrite = false;
 let warnedAboutMarkerWrite = false;
 let warnedAboutMarkerClear = false;
+let warnedAboutFallbackUnsafe = false;
 
 // ── Functions ──────────────────────────────────────────────────────
 
@@ -140,6 +198,149 @@ export function computeAggregate(payload: CachePayload): AggregateStatus {
   return entries.every((e) => e.s === "ok" || e.s === "unparseable")
     ? "UP_TO_DATE"
     : "UPGRADE_AVAILABLE";
+}
+
+// ── Fallback directory hardening ────────────────────────────────────
+//
+// $TMPDIR/mthds-agent-<uid> is a predictable path on a shared, world-writable
+// /tmp. A *different-uid* local attacker could pre-create it as a symlink, or
+// as a directory they own, so that our writes land somewhere they control or
+// our chmod follows a symlink. `ensureFallbackDir` closes this: once we hold a
+// real directory we own at mode 0o700 under a sticky parent, that attacker can
+// neither rename/delete/swap it (sticky bit) nor enter it (0o700) — so it
+// stays safe for the rest of the process, and the result is memoized.
+//
+// NOT defended: a *same-uid* attacker (a compromised sibling process). POSIX
+// permissions cannot defend a uid against itself. O_NOFOLLOW on every fallback
+// file write (see `writeFileNoFollow`) is the per-operation backstop there.
+
+/** Memoized sticky outcome: a validated-safe directory or a suspicious
+ *  refusal. A benign `absent`/`error` is never memoized — a later call may
+ *  legitimately create the directory, or the transient error may clear. */
+let fallbackDirMemo: FallbackDirStatus | null = null;
+
+function memoizeFallback(status: FallbackDirStatus): FallbackDirStatus {
+  fallbackDirMemo = status;
+  return status;
+}
+
+function refuseFallback(reason: FallbackDirReason): FallbackDirStatus {
+  emitFallbackUnsafeWarning(reason);
+  return memoizeFallback({ usable: false, reason });
+}
+
+function emitFallbackUnsafeWarning(reason: FallbackDirReason): void {
+  if (warnedAboutFallbackUnsafe) return;
+  warnedAboutFallbackUnsafe = true;
+  const why: Partial<Record<FallbackDirReason, string>> = {
+    symlink: "it is a symlink (possible tampering)",
+    "foreign-owner": "it is owned by another user (possible tampering)",
+    "not-a-dir": "it exists but is not a directory",
+    "insecure-tmp": `its parent ${tmpdir()} is world-writable without the sticky bit`,
+  };
+  process.stderr.write(
+    `Warning: refusing fallback state directory ${FALLBACK_DIR} — ${why[reason] ?? reason}. Update state will not be cached this run.\n`
+  );
+}
+
+/** Validate an already-existing FALLBACK_DIR via `lstatSync` (which does not
+ *  follow a symlinked leaf). Owned-but-loose permissions are corrected in
+ *  place; anything else suspicious is refused. */
+function validateExistingFallbackDir(): FallbackDirStatus {
+  let st;
+  try {
+    st = lstatSync(FALLBACK_DIR);
+  } catch (err) {
+    // ENOENT on a read-only (create:false) probe just means "nothing cached".
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") {
+      return { usable: false, reason: "absent" };
+    }
+    return { usable: false, reason: "error" };
+  }
+
+  if (st.isSymbolicLink()) return refuseFallback("symlink");
+  if (!st.isDirectory()) return refuseFallback("not-a-dir");
+  if (st.uid !== FALLBACK_UID) return refuseFallback("foreign-owner");
+
+  // Owned by us but group/other have access (e.g. created by a version before
+  // the 0o700 hardening). chmod it back and re-check rather than refuse.
+  if ((st.mode & 0o077) !== 0) {
+    try {
+      chmodSync(FALLBACK_DIR, 0o700);
+      if ((lstatSync(FALLBACK_DIR).mode & 0o077) !== 0) {
+        return { usable: false, reason: "error" };
+      }
+    } catch {
+      return { usable: false, reason: "error" };
+    }
+  }
+
+  return memoizeFallback({ usable: true, reason: "ok" });
+}
+
+/**
+ * Validate — and, when `create` is true, create — the per-uid fallback
+ * directory. Returns whether it is safe to read or write state files inside
+ * it; callers skip the fallback path entirely on `{usable: false}`.
+ *
+ * Exported so snooze.ts gates its own fallback access through the same check.
+ */
+export function ensureFallbackDir(create: boolean): FallbackDirStatus {
+  if (fallbackDirMemo) return fallbackDirMemo;
+
+  // Windows: process.getuid is absent and the /tmp symlink class of attack is
+  // POSIX-specific (%TEMP% is per-user). Keep the legacy behavior — create on
+  // demand, no strict checks — and do not memoize, so a later create:true
+  // still makes the directory after an earlier create:false probe.
+  if (FALLBACK_UID === null) {
+    if (create) {
+      try {
+        mkdirSync(FALLBACK_DIR, { recursive: true, mode: 0o700 });
+        return { usable: true, reason: "ok" };
+      } catch {
+        return { usable: false, reason: "error" };
+      }
+    }
+    try {
+      lstatSync(FALLBACK_DIR);
+      return { usable: true, reason: "ok" };
+    } catch {
+      return { usable: false, reason: "absent" };
+    }
+  }
+
+  // Parent check: a world-writable $TMPDIR without the sticky bit lets a
+  // different-uid attacker rename our directory out from under us; a symlinked
+  // $TMPDIR redirects everything. lstatSync (not statSync) so a symlinked
+  // tmpdir is seen as a symlink, not as its target.
+  try {
+    const parent = lstatSync(tmpdir());
+    if (parent.isSymbolicLink() || !parent.isDirectory()) {
+      return refuseFallback("insecure-tmp");
+    }
+    const worldWritable = (parent.mode & 0o002) !== 0;
+    const sticky = (parent.mode & 0o1000) !== 0;
+    if (worldWritable && !sticky) return refuseFallback("insecure-tmp");
+  } catch {
+    return { usable: false, reason: "error" };
+  }
+
+  // Atomic create: a non-recursive mkdir either makes a fresh 0o700 directory
+  // we own, or throws EEXIST for ANY pre-existing entry (real dir, symlink, or
+  // file alike — so an lstat must follow to tell them apart).
+  if (create) {
+    try {
+      mkdirSync(FALLBACK_DIR, { mode: 0o700 });
+      return memoizeFallback({ usable: true, reason: "ok" });
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== "EEXIST") {
+        return { usable: false, reason: "error" };
+      }
+      // EEXIST — fall through to validate what is already there.
+    }
+  }
+
+  return validateExistingFallbackDir();
 }
 
 interface CacheAttempt {
@@ -196,7 +397,9 @@ function readCacheAt(path: string): CacheAttempt | null {
  */
 export function readCache(): CacheResult | null {
   const primary = readCacheAt(PRIMARY_CACHE_PATH);
-  const fallback = readCacheAt(FALLBACK_CACHE_PATH);
+  const fallback = ensureFallbackDir(false).usable
+    ? readCacheAt(FALLBACK_CACHE_PATH)
+    : null;
   if (!primary) return fallback?.result ?? null;
   if (!fallback) return primary.result;
   return fallback.mtimeMs > primary.mtimeMs
@@ -210,24 +413,37 @@ export interface WriteAttempt {
 }
 
 /**
- * Best-effort `mkdir -p` + `writeFile`. Returns `{ok: true}` on success, or
- * `{ok: false, code}` on any failure (errno code if available, else stringified
- * error). Callers decide whether to retry on a fallback path based on `code`
- * — see `SANDBOX_WRITE_ERRORS` for the sandbox-fallback predicate.
+ * Write `content` to `file` without following a symlinked leaf. The file is
+ * opened with O_NOFOLLOW (so a symlink planted as the final path component
+ * throws `ELOOP` instead of redirecting the write) at an owner-only mode; the
+ * write goes through the fd via `writeFileSync` (which handles partial
+ * writes), and the fd is always closed.
+ */
+function writeFileNoFollow(file: string, content: string): void {
+  const fd = openSync(file, WRITE_FLAGS, 0o600);
+  try {
+    writeFileSync(fd, content);
+  } finally {
+    closeSync(fd);
+  }
+}
+
+/**
+ * Best-effort `mkdir -p` + `writeFile` for the PRIMARY state directory
+ * (~/.mthds/state, under $HOME — not a shared-/tmp attack surface). Returns
+ * `{ok: true}` on success, or `{ok: false, code}` on any failure (errno code
+ * if available, else stringified error). Callers decide whether to retry on
+ * the fallback path based on `code` — see `SANDBOX_WRITE_ERRORS`. The fallback
+ * directory has its own hardened path; see `ensureFallbackDir`.
  */
 export function writeFileAt(dir: string, file: string, content: string): WriteAttempt {
   try {
-    // mode 0o700 keeps the fallback dir ($TMPDIR/mthds-agent on a possibly
-    // world-writable /tmp) private to the current user. `mode` is honored only
-    // when mkdirSync creates the directory, so a dir left by an older version
-    // — or pre-created on a shared /tmp — would otherwise keep its existing
-    // permissions. chmodSync re-asserts 0o700 on every write; it throws (and we
-    // report a failure) if the directory is owned by another user, which is the
-    // correct outcome for a hijacked fallback path. Harmless and equally
-    // appropriate for ~/.mthds/state.
+    // mode 0o700 is honored only when mkdirSync creates the directory, so
+    // chmodSync re-asserts it on every write — correcting a directory left
+    // loose by an older version.
     mkdirSync(dir, { recursive: true, mode: 0o700 });
     chmodSync(dir, 0o700);
-    writeFileSync(file, content, "utf-8");
+    writeFileNoFollow(file, content);
     return { ok: true };
   } catch (err) {
     const code = (err as NodeJS.ErrnoException).code ?? String(err);
@@ -237,16 +453,19 @@ export function writeFileAt(dir: string, file: string, content: string): WriteAt
 
 /**
  * Write `content` to `primaryPath`; on a sandbox/permission failure (see
- * `SANDBOX_WRITE_ERRORS`) retry once at `fallbackPath`. Other failure classes
- * (ENOSPC, IO errors) are not improved by retrying elsewhere, so they are
- * reported without a fallback attempt. The single owner of the
- * try-primary-then-fallback policy shared by the cache, marker, and snooze
- * writers — callers only supply their own one-shot warning text.
+ * `SANDBOX_WRITE_ERRORS`) retry once at `fallbackPath` inside the hardened
+ * fallback directory. Other failure classes (ENOSPC, IO errors) are not
+ * improved by retrying elsewhere, so they are reported without a fallback
+ * attempt. The single owner of the try-primary-then-fallback policy shared by
+ * the cache, marker, and snooze writers — callers only supply their own
+ * one-shot warning text.
+ *
+ * `fallbackPath` must be a file inside `FALLBACK_DIR`; the directory is
+ * created/validated here via `ensureFallbackDir`.
  */
 export function writeWithFallback(
   primaryDir: string,
   primaryPath: string,
-  fallbackDir: string,
   fallbackPath: string,
   content: string,
 ): WriteAttempt & { fallbackCode?: string } {
@@ -254,9 +473,20 @@ export function writeWithFallback(
   if (primary.ok) return { ok: true };
 
   if (primary.code && SANDBOX_WRITE_ERRORS.has(primary.code)) {
-    const fallback = writeFileAt(fallbackDir, fallbackPath, content);
-    if (fallback.ok) return { ok: true };
-    return { ok: false, code: primary.code, fallbackCode: fallback.code };
+    const dir = ensureFallbackDir(true);
+    if (!dir.usable) {
+      const fallbackCode = SUSPICIOUS_REASONS.has(dir.reason)
+        ? `unsafe:${dir.reason}`
+        : dir.reason;
+      return { ok: false, code: primary.code, fallbackCode };
+    }
+    try {
+      writeFileNoFollow(fallbackPath, content);
+      return { ok: true };
+    } catch (err) {
+      const fallbackCode = (err as NodeJS.ErrnoException).code ?? String(err);
+      return { ok: false, code: primary.code, fallbackCode };
+    }
   }
 
   return { ok: false, code: primary.code };
@@ -273,7 +503,6 @@ export function writeCache(result: CacheResult): void {
   const res = writeWithFallback(
     STATE_DIR,
     PRIMARY_CACHE_PATH,
-    FALLBACK_DIR,
     FALLBACK_CACHE_PATH,
     content,
   );
@@ -294,7 +523,11 @@ function emitWriteWarning(primaryCode?: string, fallbackCode?: string): void {
 
 /** Delete cache files (used by --force and after upgrade). */
 export function clearCache(): void {
-  for (const p of [PRIMARY_CACHE_PATH, FALLBACK_CACHE_PATH]) {
+  const paths = [PRIMARY_CACHE_PATH];
+  // Only touch the fallback path when its directory passes the hardening
+  // check — never unlink through a symlinked or foreign-owned directory.
+  if (ensureFallbackDir(false).usable) paths.push(FALLBACK_CACHE_PATH);
+  for (const p of paths) {
     try {
       unlinkSync(p);
     } catch {
@@ -325,7 +558,6 @@ export function writeUpgradeMarker(data: Record<string, unknown>): void {
   const res = writeWithFallback(
     STATE_DIR,
     PRIMARY_MARKER_PATH,
-    FALLBACK_DIR,
     FALLBACK_MARKER_PATH,
     JSON.stringify(data),
   );
@@ -385,7 +617,7 @@ export function invalidateFileAt(path: string): boolean {
     // fall through
   }
   try {
-    writeFileSync(path, "", "utf-8");
+    writeFileNoFollow(path, "");
     return true;
   } catch {
     return false;
@@ -404,8 +636,11 @@ export function invalidateFileAt(path: string): boolean {
  * regain write access to its directory.
  */
 export function readAndClearUpgradeMarker(): Record<string, unknown> | null {
+  // Skip the fallback path entirely when its directory fails the hardening
+  // check — both the read and the cleanup below stay off a suspicious dir.
+  const fallbackUsable = ensureFallbackDir(false).usable;
   const primary = readMarkerAt(PRIMARY_MARKER_PATH);
-  const fallback = readMarkerAt(FALLBACK_MARKER_PATH);
+  const fallback = fallbackUsable ? readMarkerAt(FALLBACK_MARKER_PATH) : null;
 
   let chosen: MarkerReadAttempt | null;
   if (!primary) chosen = fallback;

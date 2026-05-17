@@ -1,5 +1,28 @@
 # Changelog
 
+## [v0.7.0] - 2026-05-15
+
+### Changed
+
+- **`mthds-agent codex apply-config` now configures `~/.codex/` end-to-end for the mthds plugin.** It still merges `[sandbox_workspace_write] network_access = true`, and now also merges `[features] plugin_hooks = true` — the key Codex requires to discover the validation hook bundled in the mthds plugin manifest. Both keys are added additively; a key explicitly set to a conflicting value is reported as a clear error instead of silently producing a duplicate-key file. `apply-config` additionally removes any obsolete `PostToolUse`/`Stop` entry left in `~/.codex/hooks.json` by the retired `install-hook`, so the plugin-bundled hook never fires twice. `--check` and `mthds-agent doctor` flag a missing required key, a conflicting key, and a leftover hook entry.
+- **Minimum required mthds plugin version bumped to `0.11.0`** (was `0.10.3`). Plugin `0.11.0` is the first release to bundle the Codex validation hook in its manifest; earlier plugins relied on `install-hook`, which this release removes. `mthds-agent` running under Codex or Claude Code with an older plugin reports `outdated` from `update-check` and emits `PLUGIN_UPDATE_AVAILABLE` from bootstrap.
+
+### Removed
+
+- **`mthds-agent codex install-hook`.** **Breaking.** The `.mthds` validation hook now ships inside the mthds plugin (`hooks/codex-hooks.json`, referenced from the Codex plugin manifest) and is discovered by Codex directly — no per-user wiring step. Requires Codex 0.130+ with `[features] plugin_hooks = true`, which `apply-config` sets. The standalone command that merged a `PostToolUse(apply_patch)` entry into `~/.codex/hooks.json` is gone; `apply-config` sweeps any entry it left behind. The Codex install flow drops a step — `mthds-agent codex apply-config` alone replaces `install-hook && apply-config`.
+
+## [v0.6.5] - 2026-05-12
+
+### Fixed
+
+- **`just-upgraded-from` marker now falls back to `$TMPDIR/mthds-agent/` when `~/.mthds/state/` is unwritable.** Mirrors the fix v0.6.3 applied to the update-check cache: under Codex's `workspaceWrite` sandbox the home dir is read-only, so the marker write previously hit EPERM and the "just upgraded" announcement never fired. `mthds-agent upgrade` and `mthds-agent bootstrap` now go through `writeUpgradeMarker()` which tries the primary path first and falls back to `$TMPDIR` on sandbox errors. Write failures emit a one-shot stderr warning per process instead of throwing.
+- **Stuck markers no longer replay forever.** Previously, if the marker was written in a non-sandboxed session and the next `update-check` ran in a sandboxed session that couldn't `unlinkSync` it, the announcement re-fired on every subsequent invocation. `readAndClearUpgradeMarker()` now (a) ignores markers older than 60 minutes — well past the seconds-scale skill flow that consumes them — and (b) falls through to overwriting the file with empty content when `unlink` fails, so the next read parses as invalid JSON and returns null. Both primary and fallback paths are inspected on read (newer mtime wins) and both are cleaned up on every consume, so a stuck marker stops replaying as soon as either directory becomes writable.
+- **`update-snoozed` state now falls back to `$TMPDIR/mthds-agent/` when `~/.mthds/state/` is unwritable.** Same sandbox class as the cache and marker fixes above: under Codex's `workspaceWrite` sandbox, `writeSnooze()` previously hit EPERM on the home dir and only warned to stderr, so `mthds-agent update-check --snooze` silently failed to register the snooze and the next invocation re-announced the upgrade. `writeSnooze()` now uses the shared `writeFileAt` / `SANDBOX_WRITE_ERRORS` helpers from `update-cache.ts`, trying the primary path first and falling back to `$TMPDIR` on sandbox errors. `readSnooze()` inspects both paths and prefers the newer mtime, so escalation from level 1 → 2 → 3 stays correct when sessions move between sandboxed and non-sandboxed contexts. `clearSnooze()` cleans up both paths and, when `unlinkSync` is blocked, overwrites with empty content so the parser rejects it on next read. Write and clear failures emit at most one stderr warning per process.
+
+### Changed
+
+- **`update-check.ts` no longer touches `node:fs` directly for the upgrade marker.** The `readAndClearUpgradeMarker()` logic moved into `update-cache.ts` alongside `writeUpgradeMarker()`, so the sandbox-aware primary/fallback layout has a single owner. `STATE_DIR` and `ensureStateDir` are no longer exported. `writeFileAt`, `invalidateFileAt`, `SANDBOX_WRITE_ERRORS`, and the `WriteAttempt` interface are now exported so `snooze.ts` can reuse the same dual-path machinery.
+
 ## [v0.6.4] - 2026-05-12
 
 ### Changed

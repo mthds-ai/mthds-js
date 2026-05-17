@@ -1,18 +1,24 @@
 /**
- * Cache for update-check results.
+ * Cache for update-check results, plus the just-upgraded marker.
  *
- * Primary location: ~/.mthds/state/last-update-check.
- * Fallback location: $TMPDIR/mthds-agent/last-update-check — used when the
- * primary location is not writable (e.g. Codex's workspaceWrite sandbox
- * permits writes only under cwd / configured roots / $TMPDIR, not under the
- * user's home dir).
+ * Primary location: ~/.mthds/state/.
+ * Fallback location: $TMPDIR/mthds-agent/ — used when the primary location is
+ * not writable (e.g. Codex's workspaceWrite sandbox permits writes only under
+ * cwd / configured roots / $TMPDIR, not under the user's home dir).
  *
- * Two-line format:
- *   Line 1: aggregate status (UP_TO_DATE or UPGRADE_AVAILABLE)
- *   Line 2: JSON payload with per-binary check results
+ * Two files live in each location:
+ *
+ * 1. `last-update-check` — TTL'd cache of update-check results.
+ *    Two-line format: aggregate status, then JSON payload of per-binary results.
+ *    Split TTL: 60 min for UP_TO_DATE, 720 min for UPGRADE_AVAILABLE.
+ *
+ * 2. `just-upgraded-from` — one-shot marker written by `mthds-agent upgrade`
+ *    (and bootstrap) so the next update-check can announce what was upgraded.
+ *    Consumed within the same skill flow, so a short TTL is enough; older
+ *    markers are treated as stuck (sandbox blocked cleanup last time) and
+ *    ignored to stop the announcement from replaying forever.
  *
  * TTL is based on file mtime (like gstack), not an embedded timestamp.
- * Split TTL: 60 min for UP_TO_DATE, 720 min for UPGRADE_AVAILABLE.
  */
 
 import { join } from "node:path";
@@ -53,21 +59,28 @@ export interface CacheResult {
 
 // ── Constants ──────────────────────────────────────────────────────
 
-export const STATE_DIR = join(homedir(), ".mthds", "state");
+const STATE_DIR = join(homedir(), ".mthds", "state");
 const PRIMARY_CACHE_PATH = join(STATE_DIR, "last-update-check");
+const PRIMARY_MARKER_PATH = join(STATE_DIR, "just-upgraded-from");
 
 const FALLBACK_DIR = join(tmpdir(), "mthds-agent");
 const FALLBACK_CACHE_PATH = join(FALLBACK_DIR, "last-update-check");
+const FALLBACK_MARKER_PATH = join(FALLBACK_DIR, "just-upgraded-from");
 
 const TTL_UP_TO_DATE_MS = 60 * 60 * 1000; // 60 min
 const TTL_UPGRADE_AVAILABLE_MS = 720 * 60 * 1000; // 720 min (12 hours)
+// Real markers are consumed within seconds (skill flow re-runs preamble
+// immediately after upgrade). Anything markedly older is almost certainly
+// stuck because the sandbox blocked cleanup last time — ignore it instead of
+// replaying the announcement on every update-check.
+const MARKER_TTL_MS = 60 * 60 * 1000; // 60 min
 
 const VALID_AGGREGATES: ReadonlySet<string> = new Set([
   "UP_TO_DATE",
   "UPGRADE_AVAILABLE",
 ]);
 
-const SANDBOX_WRITE_ERRORS: ReadonlySet<string> = new Set([
+export const SANDBOX_WRITE_ERRORS: ReadonlySet<string> = new Set([
   "EPERM",
   "EACCES",
   "EROFS",
@@ -99,16 +112,13 @@ function isValidPayload(p: unknown): p is CachePayload {
   return true;
 }
 
-// ── Per-process warning latch ──────────────────────────────────────
+// ── Per-process warning latches ────────────────────────────────────
 
 let warnedAboutCacheWrite = false;
+let warnedAboutMarkerWrite = false;
+let warnedAboutMarkerClear = false;
 
 // ── Functions ──────────────────────────────────────────────────────
-
-/** Ensure the state directory exists. */
-export function ensureStateDir(): void {
-  mkdirSync(STATE_DIR, { recursive: true });
-}
 
 /** Compute aggregate status from a payload. */
 export function computeAggregate(payload: CachePayload): AggregateStatus {
@@ -185,12 +195,18 @@ export function readCache(): CacheResult | null {
     : primary.result;
 }
 
-interface WriteAttempt {
+export interface WriteAttempt {
   ok: boolean;
   code?: string;
 }
 
-function writeCacheAt(dir: string, file: string, content: string): WriteAttempt {
+/**
+ * Best-effort `mkdir -p` + `writeFile`. Returns `{ok: true}` on success, or
+ * `{ok: false, code}` on any failure (errno code if available, else stringified
+ * error). Callers decide whether to retry on a fallback path based on `code`
+ * — see `SANDBOX_WRITE_ERRORS` for the sandbox-fallback predicate.
+ */
+export function writeFileAt(dir: string, file: string, content: string): WriteAttempt {
   try {
     mkdirSync(dir, { recursive: true });
     writeFileSync(file, content, "utf-8");
@@ -209,14 +225,14 @@ export function writeCache(result: CacheResult): void {
   const content =
     result.aggregate + "\n" + JSON.stringify(result.payload) + "\n";
 
-  const primary = writeCacheAt(STATE_DIR, PRIMARY_CACHE_PATH, content);
+  const primary = writeFileAt(STATE_DIR, PRIMARY_CACHE_PATH, content);
   if (primary.ok) return;
 
   // Only fall back for the sandbox/perm family of errors. Other failures
   // (ENOSPC, IO errors, ...) are not improved by retrying in $TMPDIR, so we
   // surface them via the same one-shot warning path.
   if (primary.code && SANDBOX_WRITE_ERRORS.has(primary.code)) {
-    const fallback = writeCacheAt(FALLBACK_DIR, FALLBACK_CACHE_PATH, content);
+    const fallback = writeFileAt(FALLBACK_DIR, FALLBACK_CACHE_PATH, content);
     if (fallback.ok) return;
     emitWriteWarning(primary.code, fallback.code);
     return;
@@ -247,4 +263,138 @@ export function clearCache(): void {
       // nothing to remove.
     }
   }
+}
+
+// ── Upgrade marker ──────────────────────────────────────────────────
+//
+// The marker is a one-shot hand-off from `mthds-agent upgrade` / `bootstrap`
+// to the next `update-check`, so the skill preamble can announce what just
+// changed. It uses the same primary/fallback layout as the cache, for the
+// same reason: ~/.mthds/state/ is not writable under Codex's workspaceWrite
+// sandbox, and the bug we are fixing here is exactly the case where the
+// marker was written successfully in a non-sandboxed context and then could
+// not be cleaned up later from a sandboxed one, replaying the announcement
+// every update-check.
+
+/**
+ * Write the just-upgraded marker. Sandbox-aware: falls back to $TMPDIR when
+ * ~/.mthds/state/ is not writable. The marker is best-effort — a write
+ * failure is warned (once per process) but never thrown.
+ */
+export function writeUpgradeMarker(data: Record<string, unknown>): void {
+  const content = JSON.stringify(data);
+
+  const primary = writeFileAt(STATE_DIR, PRIMARY_MARKER_PATH, content);
+  if (primary.ok) return;
+
+  if (primary.code && SANDBOX_WRITE_ERRORS.has(primary.code)) {
+    const fallback = writeFileAt(FALLBACK_DIR, FALLBACK_MARKER_PATH, content);
+    if (fallback.ok) return;
+    emitMarkerWriteWarning(primary.code, fallback.code);
+    return;
+  }
+
+  emitMarkerWriteWarning(primary.code);
+}
+
+function emitMarkerWriteWarning(primaryCode?: string, fallbackCode?: string): void {
+  if (warnedAboutMarkerWrite) return;
+  warnedAboutMarkerWrite = true;
+  const detail = fallbackCode
+    ? `primary=${primaryCode ?? "?"}, fallback=${fallbackCode}`
+    : (primaryCode ?? "?");
+  process.stderr.write(
+    `Warning: could not write upgrade marker (${detail}). The next update-check may not announce the upgrade.\n`
+  );
+}
+
+interface MarkerReadAttempt {
+  data: Record<string, unknown>;
+  mtimeMs: number;
+}
+
+function readMarkerAt(path: string): MarkerReadAttempt | null {
+  let mtimeMs: number;
+  let content: string;
+  try {
+    mtimeMs = statSync(path).mtimeMs;
+    content = readFileSync(path, "utf-8");
+  } catch {
+    return null;
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(content);
+  } catch {
+    return null;
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    return null;
+  }
+  return { data: parsed as Record<string, unknown>, mtimeMs };
+}
+
+/**
+ * Best-effort invalidation. unlinkSync first (the desired outcome); if that
+ * fails — typically EPERM under the sandbox — overwrite with empty content so
+ * the next read parses as invalid (empty content fails JSON.parse and is also
+ * rejected by the single-line snooze parser). Returns true when the file is
+ * either gone or guaranteed unparseable.
+ */
+export function invalidateFileAt(path: string): boolean {
+  try {
+    unlinkSync(path);
+    return true;
+  } catch {
+    // fall through
+  }
+  try {
+    writeFileSync(path, "", "utf-8");
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Read and consume the just-upgraded marker. Returns null when no marker is
+ * present, when the most recent marker is older than MARKER_TTL_MS (stale —
+ * likely stuck from a session where the sandbox blocked cleanup), or when
+ * the content cannot be parsed.
+ *
+ * Sandbox-aware: inspects both the primary and the fallback path, prefers the
+ * newer one, and best-effort cleans up both regardless of whether the marker
+ * was honored or rejected — so a stuck marker stops replaying as soon as we
+ * regain write access to its directory.
+ */
+export function readAndClearUpgradeMarker(): Record<string, unknown> | null {
+  const primary = readMarkerAt(PRIMARY_MARKER_PATH);
+  const fallback = readMarkerAt(FALLBACK_MARKER_PATH);
+
+  let chosen: MarkerReadAttempt | null;
+  if (!primary) chosen = fallback;
+  else if (!fallback) chosen = primary;
+  else chosen = fallback.mtimeMs > primary.mtimeMs ? fallback : primary;
+
+  if (!chosen) return null;
+
+  // Negative age beyond 1 minute means clock skew — treat as stale so a
+  // future-dated marker can't replay the announcement forever.
+  const ageMs = Date.now() - chosen.mtimeMs;
+  const isStale = ageMs < -60_000 || ageMs > MARKER_TTL_MS;
+
+  // Clean up both paths whether or not we honor the marker. We only attempt
+  // invalidation for paths that actually had content; otherwise an existsSync
+  // miss-then-create race could leave a zero-byte file we just created.
+  const primaryCleared = primary ? invalidateFileAt(PRIMARY_MARKER_PATH) : true;
+  const fallbackCleared = fallback ? invalidateFileAt(FALLBACK_MARKER_PATH) : true;
+  if ((!primaryCleared || !fallbackCleared) && !warnedAboutMarkerClear) {
+    warnedAboutMarkerClear = true;
+    process.stderr.write(
+      `Warning: could not clear upgrade marker (primary=${primaryCleared ? "ok" : "blocked"}, fallback=${fallbackCleared ? "ok" : "blocked"}). It will be ignored after ${MARKER_TTL_MS / 60_000}min.\n`
+    );
+  }
+
+  if (isStale) return null;
+  return chosen.data;
 }

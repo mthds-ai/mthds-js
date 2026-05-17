@@ -1,21 +1,19 @@
 /**
  * mthds-agent codex hook — Codex PostToolUse(apply_patch) hook runtime.
  *
- * Wired into ~/.codex/hooks.json by `mthds-agent codex install-hook`. Runs
- * after every apply_patch tool call in a Codex session: parses the patch
+ * Invoked by the mthds plugin's bundled PostToolUse(apply_patch) hook
+ * (mthds-codex/hooks/codex-hooks.json, discovered through the plugin manifest).
+ * Runs after every apply_patch tool call in a Codex session: parses the patch
  * envelope from tool_input.command, finds touched .mthds files, and validates
  * each one with plxt (lint + fmt). On lint or fmt failure it emits the Codex
  * hook block protocol so the session sees the error.
- *
- * Replaces the bash script previously at ~/.codex/hooks/codex-validate-mthds.sh.
  *
  * Stdout protocol — Codex's hook contract, not the mthds agent JSON:
  *   - empty / no output         → silent pass (no .mthds touched, or all clean)
  *   - {"decision":"block",...}  → block the turn with the given reason
  *
  * Stage 3 (`mthds-agent validate bundle`) stays disabled until offline-mode
- * validation lands in mthds-agent (Codex sandbox blocks the eager S3 fetch).
- * Tracked as Phase 2D in mthds-plugins/TODOS.md.
+ * validation lands in mthds-agent (the Codex sandbox blocks the eager S3 fetch).
  */
 
 import { accessSync, constants as fsConstants, existsSync, readFileSync, statSync } from "node:fs";
@@ -235,8 +233,8 @@ export async function runCodexHook(deps: CodexHookDeps): Promise<void> {
     }
 
     // Stage 3: mthds-agent validate bundle — DISABLED.
-    // Re-enable once mthds-agent supports offline validation
-    // (mthds-plugins/TODOS.md Phase 2D).
+    // Re-enable once mthds-agent supports offline validation (the Codex
+    // sandbox blocks the eager remote-config fetch).
   }
 
   if (errors.length > 0) {

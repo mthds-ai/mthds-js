@@ -15,15 +15,13 @@
  * runner === "pipelex".
  */
 
-import { writeFileSync } from "node:fs";
-import { join } from "node:path";
 import { requireUv, uvToolInstallSync } from "../../installer/runtime/installer.js";
 import { checkBinaryVersion } from "../../installer/runtime/version-check.js";
 import type { VersionCheckResult } from "../../installer/runtime/version-check.js";
 import { BINARY_RECOVERY } from "../binaries.js";
 import type { BinaryRecoveryInfo } from "../binaries.js";
 import { agentError, AGENT_ERROR_DOMAINS } from "../output.js";
-import { clearCache, ensureStateDir, STATE_DIR } from "../update-cache.js";
+import { clearCache, writeUpgradeMarker } from "../update-cache.js";
 import { clearSnooze } from "../snooze.js";
 import { loadConfig } from "../../config/config.js";
 import { Runners } from "../../runners/types.js";
@@ -157,20 +155,8 @@ export async function agentUpgrade(): Promise<void> {
   const allFailed = succeeded.size === 0;
 
   if (allSucceeded) {
-    // Write marker, clear cache + snooze
-    try {
-      ensureStateDir();
-      writeFileSync(
-        join(STATE_DIR, "just-upgraded-from"),
-        JSON.stringify(markerData),
-        "utf-8"
-      );
-    } catch (err) {
-      // Marker write failure should not prevent reporting success
-      process.stderr.write(
-        `Warning: could not write upgrade marker: ${errorMsg(err)}.\n`
-      );
-    }
+    // Write marker (sandbox-aware via $TMPDIR fallback), clear cache + snooze
+    writeUpgradeMarker(markerData);
     clearCache();
     clearSnooze();
     process.stdout.write(

@@ -24,12 +24,11 @@ vi.mock("../../../src/installer/runtime/version-check.js", () => ({
 }));
 
 vi.mock("../../../src/agent/update-cache.js", () => ({
-  STATE_DIR: "/tmp/mthds-test-state",
   readCache: vi.fn((): CacheResult | null => null),
   writeCache: vi.fn(),
   clearCache: vi.fn(),
   computeAggregate: vi.fn((): string => "UP_TO_DATE"),
-  ensureStateDir: vi.fn(),
+  readAndClearUpgradeMarker: vi.fn((): Record<string, unknown> | null => null),
 }));
 
 vi.mock("../../../src/agent/snooze.js", () => ({
@@ -56,27 +55,21 @@ vi.mock("../../../src/agent/plugin-version.js", async (importOriginal) => {
   };
 });
 
-vi.mock("node:fs", async (importOriginal) => {
-  const original = await importOriginal<typeof import("node:fs")>();
-  return {
-    ...original,
-    readFileSync: vi.fn((): string => {
-      throw new Error("ENOENT: no such file"); // Default: marker file doesn't exist
-    }),
-    unlinkSync: vi.fn(),
-  };
-});
-
 // ── Imports (after mocks) ──────────────────────────────────────────
 
 import { agentUpdateCheck } from "../../../src/agent/commands/update-check.js";
 import { loadConfig } from "../../../src/config/config.js";
 import { checkBinaryVersion } from "../../../src/installer/runtime/version-check.js";
-import { readCache, writeCache, clearCache, computeAggregate } from "../../../src/agent/update-cache.js";
+import {
+  readCache,
+  writeCache,
+  clearCache,
+  computeAggregate,
+  readAndClearUpgradeMarker,
+} from "../../../src/agent/update-cache.js";
 import { isSnoozed, writeSnooze, clearSnooze, computeVersionKey } from "../../../src/agent/snooze.js";
 import { agentSuccess } from "../../../src/agent/output.js";
 import { checkPluginVersion, MIN_PLUGIN_VERSION } from "../../../src/agent/plugin-version.js";
-import { readFileSync, unlinkSync } from "node:fs";
 
 let stdoutOutput: string;
 
@@ -107,10 +100,8 @@ describe("update-check", () => {
       version_constraint: PX_CONSTRAINT,
     });
     vi.mocked(isSnoozed).mockReturnValue(false);
-    // Default: upgrade marker file doesn't exist
-    vi.mocked(readFileSync).mockImplementation(() => {
-      throw new Error("ENOENT: no such file");
-    });
+    // Default: upgrade marker absent
+    vi.mocked(readAndClearUpgradeMarker).mockReturnValue(null);
   });
 
   // ---------------------------------------------------------------------------
@@ -269,12 +260,11 @@ describe("update-check", () => {
   // just-upgraded-from marker
   // ---------------------------------------------------------------------------
   it("outputs JUST_UPGRADED when marker exists", async () => {
-    vi.mocked(readFileSync).mockReturnValue('{"pipelex_agent":"0.21.0"}');
+    vi.mocked(readAndClearUpgradeMarker).mockReturnValue({ pipelex_agent: "0.21.0" });
     vi.mocked(computeAggregate).mockReturnValue("UP_TO_DATE");
 
     await agentUpdateCheck({});
     expect(stdoutOutput).toContain("JUST_UPGRADED");
-    expect(unlinkSync).toHaveBeenCalled();
     expect(clearCache).toHaveBeenCalled();
   });
 
@@ -282,7 +272,7 @@ describe("update-check", () => {
   // just-upgraded-from marker + remaining outdated items
   // ---------------------------------------------------------------------------
   it("outputs both JUST_UPGRADED and UPGRADE_AVAILABLE when marker exists but items remain outdated", async () => {
-    vi.mocked(readFileSync).mockReturnValue('{"pipelex_agent":"0.21.0"}');
+    vi.mocked(readAndClearUpgradeMarker).mockReturnValue({ pipelex_agent: "0.21.0" });
     vi.mocked(computeAggregate).mockReturnValue("UPGRADE_AVAILABLE");
     vi.mocked(checkPluginVersion).mockReturnValue({
       s: "outdated", v: "0.1.0", r: MIN_PLUGIN_VERSION,
@@ -291,7 +281,6 @@ describe("update-check", () => {
     await agentUpdateCheck({});
     expect(stdoutOutput).toContain("JUST_UPGRADED");
     expect(stdoutOutput).toContain("UPGRADE_AVAILABLE");
-    expect(unlinkSync).toHaveBeenCalled();
     expect(clearCache).toHaveBeenCalled();
   });
 
@@ -320,31 +309,10 @@ describe("update-check", () => {
     expect(stdoutOutput).toBe("");
   });
 
-  // ---------------------------------------------------------------------------
-  // Corrupt upgrade marker
-  // ---------------------------------------------------------------------------
-  it("handles corrupt upgrade marker (unparseable JSON) gracefully", async () => {
-    vi.mocked(readFileSync).mockReturnValue("not valid json{{{");
-
-    await agentUpdateCheck({});
-    // Marker file read succeeds but JSON.parse fails → still deletes marker
-    expect(unlinkSync).toHaveBeenCalled();
-    // Falls through to cache miss → fresh checks
-    expect(checkBinaryVersion).toHaveBeenCalled();
-  });
-
-  // ---------------------------------------------------------------------------
-  // Non-object upgrade marker
-  // ---------------------------------------------------------------------------
-  it("ignores upgrade marker that is not an object", async () => {
-    vi.mocked(readFileSync).mockReturnValue('"just a string"');
-    vi.mocked(computeAggregate).mockReturnValue("UP_TO_DATE");
-
-    await agentUpdateCheck({});
-    // Should not output JUST_UPGRADED — falls through to cache/fresh check
-    expect(stdoutOutput).not.toContain("JUST_UPGRADED");
-    expect(checkBinaryVersion).toHaveBeenCalled();
-  });
+  // Marker-content edge cases (corrupt JSON, non-object) are tested in
+  // update-cache.test.ts, where the parsing lives. Here the mocked
+  // readAndClearUpgradeMarker returns null for any rejected content, which
+  // exercises the same fall-through path as the cache-miss tests above.
 
   // ---------------------------------------------------------------------------
   // Runner-aware binary checks

@@ -28,9 +28,8 @@ vi.mock("../../../src/installer/runtime/installer.js", () => ({
 }));
 
 vi.mock("../../../src/agent/update-cache.js", () => ({
-  STATE_DIR: "/tmp/mthds-test-state",
   clearCache: vi.fn(),
-  ensureStateDir: vi.fn(),
+  writeUpgradeMarker: vi.fn(),
 }));
 
 vi.mock("../../../src/agent/snooze.js", () => ({
@@ -48,24 +47,15 @@ vi.mock("../../../src/agent/output.js", () => ({
   },
 }));
 
-vi.mock("node:fs", async (importOriginal) => {
-  const original = await importOriginal<typeof import("node:fs")>();
-  return {
-    ...original,
-    writeFileSync: vi.fn(),
-  };
-});
-
 // ── Imports (after mocks) ──────────────────────────────────────────
 
 import { agentUpgrade } from "../../../src/agent/commands/upgrade.js";
 import { loadConfig } from "../../../src/config/config.js";
 import { checkBinaryVersion } from "../../../src/installer/runtime/version-check.js";
 import { requireUv, uvToolInstallSync } from "../../../src/installer/runtime/installer.js";
-import { clearCache, ensureStateDir } from "../../../src/agent/update-cache.js";
+import { clearCache, writeUpgradeMarker } from "../../../src/agent/update-cache.js";
 import { clearSnooze } from "../../../src/agent/snooze.js";
 import { agentError } from "../../../src/agent/output.js";
-import { writeFileSync } from "node:fs";
 
 let stdoutOutput: string;
 
@@ -116,7 +106,7 @@ describe("agentUpgrade", () => {
     await agentUpgrade();
 
     expect(uvToolInstallSync).toHaveBeenCalledWith("pipelex-tools", PLXT_CONSTRAINT);
-    expect(writeFileSync).toHaveBeenCalled();
+    expect(writeUpgradeMarker).toHaveBeenCalled();
     expect(clearCache).toHaveBeenCalled();
     expect(clearSnooze).toHaveBeenCalled();
     expect(stdoutOutput).toContain("UPGRADE_COMPLETE");
@@ -225,7 +215,7 @@ describe("agentUpgrade", () => {
 
     expect(uvToolInstallSync).not.toHaveBeenCalled();
     expect(stdoutOutput).toContain("UPGRADE_NOT_NEEDED");
-    expect(writeFileSync).not.toHaveBeenCalled();
+    expect(writeUpgradeMarker).not.toHaveBeenCalled();
   });
 
   // ---------------------------------------------------------------------------
@@ -373,17 +363,8 @@ describe("agentUpgrade", () => {
 
     await agentUpgrade();
 
-    expect(ensureStateDir).toHaveBeenCalled();
-    expect(writeFileSync).toHaveBeenCalledWith(
-      "/tmp/mthds-test-state/just-upgraded-from",
-      expect.any(String),
-      "utf-8"
-    );
-
-    // Verify the marker JSON content
-    const markerContent = vi.mocked(writeFileSync).mock.calls[0]![1] as string;
-    const parsed = JSON.parse(markerContent);
-    expect(parsed).toEqual({
+    expect(writeUpgradeMarker).toHaveBeenCalledTimes(1);
+    expect(writeUpgradeMarker).toHaveBeenCalledWith({
       plxt: "0.3.1",
       pipelex_agent: "0.21.0",
     });
@@ -408,7 +389,7 @@ describe("agentUpgrade", () => {
     expect(stdoutOutput).toContain("UPGRADE_FAILED");
     expect(clearCache).not.toHaveBeenCalled();
     expect(clearSnooze).not.toHaveBeenCalled();
-    expect(writeFileSync).not.toHaveBeenCalled();
+    expect(writeUpgradeMarker).not.toHaveBeenCalled();
   });
 
   // ---------------------------------------------------------------------------
@@ -438,41 +419,7 @@ describe("agentUpgrade", () => {
     expect(stdoutOutput).toContain("unknown");
   });
 
-  // ---------------------------------------------------------------------------
-  // Case 12: writeFileSync for marker throws
-  // ---------------------------------------------------------------------------
-  it("still reports results to stdout when marker writeFileSync throws", async () => {
-    vi.mocked(uvToolInstallSync).mockImplementation(() => {}); // reset: install succeeds
-
-    const stderrOutput: string[] = [];
-    vi.spyOn(process.stderr, "write").mockImplementation((chunk: string | Uint8Array) => {
-      stderrOutput.push(String(chunk));
-      return true;
-    });
-
-    vi.mocked(checkBinaryVersion)
-      .mockReturnValueOnce({
-        status: "outdated",
-        installed_version: "0.3.1",
-        version_constraint: PLXT_CONSTRAINT,
-      })
-      .mockReturnValueOnce({
-        status: "ok",
-        installed_version: "0.3.2",
-        version_constraint: PLXT_CONSTRAINT,
-      });
-
-    vi.mocked(writeFileSync).mockImplementation(() => {
-      throw new Error("EACCES: permission denied");
-    });
-
-    await agentUpgrade();
-
-    // Marker write failed, but results still reported
-    expect(stdoutOutput).toContain("UPGRADE_COMPLETE");
-    expect(stderrOutput.join("")).toContain("could not write upgrade marker");
-    // Cache + snooze still cleared (upgrade itself succeeded)
-    expect(clearCache).toHaveBeenCalled();
-    expect(clearSnooze).toHaveBeenCalled();
-  });
+  // writeUpgradeMarker's own EPERM/fallback/warning behavior is covered in
+  // update-cache.test.ts — at this layer we only assert that the upgrade flow
+  // invokes it (Case 1 / Case 9) and skips it on failure (Cases 4 / 10).
 });

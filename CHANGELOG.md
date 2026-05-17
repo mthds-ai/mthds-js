@@ -1,5 +1,20 @@
 # Changelog
 
+## [v0.7.1] - 2026-05-17
+
+### Fixed
+
+- **`mthds-agent codex apply-config` now hard-errors on an unreadable `~/.codex/hooks.json`.** A `hooks.json` that cannot be read or parsed leaves `apply-config` unable to confirm that no obsolete entry double-fires the validation hook. `apply-config --check` already treated that as a hard failure, so the apply path now does too — the two modes no longer report opposite verdicts (and opposite exit codes) for the same state. Required `config.toml` keys are still written first, so re-running `apply-config` converges the config once the file is hand-fixed. `apply-config --check` also now reports `WOULD_APPLY` (not `ALREADY_OK`) when a parse error is present, since a real apply would surface a hard error.
+
+### Changed
+
+- **State writes share a single `writeWithFallback` helper.** The try-primary-then-fallback policy — write to `~/.mthds/state/`, retry in the `$TMPDIR` fallback directory only on sandbox/permission errors — is now owned by one function in `update-cache.ts` and reused by the cache, upgrade-marker, and snooze writers. `snooze.ts` no longer re-derives the state-directory paths or the sandbox-error set; it imports the exported `STATE_DIR`, `FALLBACK_DIR`, and `MS_PER_MINUTE` constants. No behavior change for callers.
+- **`~/.mthds/state/` is kept private (mode `0o700`).** The primary state directory is created at — and, when it already exists, `chmod`-ed back to — owner-only permissions on every write. `mkdirSync`'s `mode` applies only on creation, so a directory left world-traversable by an older version is corrected rather than staying public.
+
+### Security
+
+- **The `$TMPDIR` fallback state directory is hardened against `/tmp` symlink/TOCTOU tampering.** It is now named per-uid (`mthds-agent-<uid>`) and validated before every use: the fallback is refused — and silently skipped, so state is simply not cached that run — when the directory is a symlink, is owned by another user, is not a directory, or sits in a world-writable `$TMPDIR` that lacks the sticky bit. Once a real owner-only directory exists under a sticky parent it stays trustworthy, and the result is memoized. All fallback file writes additionally open with `O_NOFOLLOW`, so a symlink planted as the target file is rejected (`ELOOP`) instead of followed. This closes the window in which a different-uid local attacker could pre-create the predictable fallback path to redirect or read agent state. (A same-uid attacker is out of scope — POSIX permissions cannot defend a uid against itself; `~/.mthds/state/` is unaffected, being outside the shared-`/tmp` attack surface.)
+
 ## [v0.7.0] - 2026-05-15
 
 ### Changed

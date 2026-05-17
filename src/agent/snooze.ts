@@ -5,11 +5,12 @@
  *   <versionKey> <level> <epoch>
  *
  * Primary location: ~/.mthds/state/update-snoozed.
- * Fallback location: $TMPDIR/mthds-agent/update-snoozed — used when the
+ * Fallback location: $TMPDIR/mthds-agent-<uid>/update-snoozed — used when the
  * primary location is not writable (Codex `workspaceWrite` sandbox permits
  * writes only under cwd / configured roots / $TMPDIR, not under the user's
  * home dir). Same dual-path policy as the update-check cache and the
- * just-upgraded marker — see update-cache.ts.
+ * just-upgraded marker, including the symlink/TOCTOU hardening of the
+ * fallback directory — see update-cache.ts.
  *
  * Reads consult both paths and prefer the newer mtime, so escalation
  * (level 1 → 2 → 3+) stays correct as sessions move between sandboxed and
@@ -22,10 +23,12 @@
 
 import { join } from "node:path";
 import { readFileSync, statSync, existsSync } from "node:fs";
-import { homedir, tmpdir } from "node:os";
 import {
-  SANDBOX_WRITE_ERRORS,
-  writeFileAt,
+  MS_PER_MINUTE,
+  STATE_DIR,
+  FALLBACK_DIR,
+  ensureFallbackDir,
+  writeWithFallback,
   invalidateFileAt,
 } from "./update-cache.js";
 import type { CachePayload } from "./update-cache.js";
@@ -40,10 +43,7 @@ export interface SnoozeState {
 
 // ── Constants ──────────────────────────────────────────────────────
 
-const STATE_DIR = join(homedir(), ".mthds", "state");
 const PRIMARY_SNOOZE_PATH = join(STATE_DIR, "update-snoozed");
-
-const FALLBACK_DIR = join(tmpdir(), "mthds-agent");
 const FALLBACK_SNOOZE_PATH = join(FALLBACK_DIR, "update-snoozed");
 
 const SNOOZE_DURATIONS_MS: Record<number, number> = {
@@ -131,7 +131,9 @@ function readSnoozeAt(path: string): SnoozeReadAttempt | null {
  */
 export function readSnooze(): SnoozeState | null {
   const primary = readSnoozeAt(PRIMARY_SNOOZE_PATH);
-  const fallback = readSnoozeAt(FALLBACK_SNOOZE_PATH);
+  const fallback = ensureFallbackDir(false).usable
+    ? readSnoozeAt(FALLBACK_SNOOZE_PATH)
+    : null;
   if (!primary) return fallback?.state ?? null;
   if (!fallback) return primary.state;
   return fallback.mtimeMs > primary.mtimeMs ? fallback.state : primary.state;
@@ -148,17 +150,14 @@ export function writeSnooze(versionKey: string): void {
     existing && existing.versionKey === versionKey ? existing.level + 1 : 1;
   const content = `${versionKey} ${level} ${Date.now()}\n`;
 
-  const primary = writeFileAt(STATE_DIR, PRIMARY_SNOOZE_PATH, content);
-  if (primary.ok) return;
-
-  if (primary.code && SANDBOX_WRITE_ERRORS.has(primary.code)) {
-    const fallback = writeFileAt(FALLBACK_DIR, FALLBACK_SNOOZE_PATH, content);
-    if (fallback.ok) return;
-    emitSnoozeWriteWarning(primary.code, fallback.code);
-    return;
-  }
-
-  emitSnoozeWriteWarning(primary.code);
+  const res = writeWithFallback(
+    STATE_DIR,
+    PRIMARY_SNOOZE_PATH,
+    FALLBACK_SNOOZE_PATH,
+    content,
+  );
+  if (res.ok) return;
+  emitSnoozeWriteWarning(res.code, res.fallbackCode);
 }
 
 function emitSnoozeWriteWarning(primaryCode?: string, fallbackCode?: string): void {
@@ -183,19 +182,22 @@ export function isSnoozed(versionKey: string): boolean {
   const duration = SNOOZE_DURATIONS_MS[state.level] ?? SNOOZE_DEFAULT_MS;
   const elapsed = Date.now() - state.epoch;
   // Negative elapsed beyond 1 minute means clock skew — treat snooze as expired
-  return elapsed >= -60_000 && elapsed < duration;
+  return elapsed >= -MS_PER_MINUTE && elapsed < duration;
 }
 
 /**
- * Clear snooze. Hits both primary and fallback paths. When unlink is blocked
- * (sandbox EPERM), overwrites with empty content so the next read parses as
- * null. Warns at most once per process when a present file cannot be cleared
- * by either route. Silent when both paths were absent to begin with — no
- * spurious 0-byte file is created in that case.
+ * Clear snooze. Hits the primary path and — when its directory passes the
+ * hardening check — the fallback path. When unlink is blocked (sandbox EPERM),
+ * overwrites with empty content so the next read parses as null. Warns at most
+ * once per process when a present file cannot be cleared by either route.
+ * Silent when both paths were absent to begin with — no spurious 0-byte file
+ * is created in that case.
  */
 export function clearSnooze(): void {
   let blocked = false;
-  for (const path of [PRIMARY_SNOOZE_PATH, FALLBACK_SNOOZE_PATH]) {
+  const paths = [PRIMARY_SNOOZE_PATH];
+  if (ensureFallbackDir(false).usable) paths.push(FALLBACK_SNOOZE_PATH);
+  for (const path of paths) {
     if (!existsSync(path)) continue;
     if (!invalidateFileAt(path)) blocked = true;
   }

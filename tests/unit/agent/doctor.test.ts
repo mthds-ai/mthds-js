@@ -360,6 +360,63 @@ describe("agentDoctor", () => {
     expect(capturedResult!.healthy).toBe(true);
   });
 
+  it("reports a Codex config conflict as an error and marks the report unhealthy", async () => {
+    mockedCheckBinaryVersion.mockReturnValue({
+      status: "ok",
+      installed_version: "0.22.0",
+      version_constraint: PX_CONSTRAINT,
+    });
+    mockedExecFileSync.mockReturnValue(Buffer.from("/usr/local/bin/pipelex"));
+    mockedListConfig.mockReturnValue([]);
+
+    const codexConfig = await import("../../../src/agent/commands/codex-config.js");
+    vi.mocked(codexConfig.inspectCodexConfig).mockReturnValueOnce({
+      config_file: "/tmp/.codex/config.toml",
+      exists: true,
+      needs_changes: [],
+      conflicts: [
+        { table: "features", key: "plugin_hooks", current: "false", required: "true" },
+      ],
+      warnings: [],
+    });
+
+    await agentDoctor(OutputFormat.JSON);
+
+    const issues = capturedResult!.issues as Issue[];
+    const conflict = issues.find((i) => i.message.includes("Codex config conflict"));
+    expect(conflict).toBeDefined();
+    expect(conflict!.severity).toBe("error");
+    // An error-severity issue must drag the whole report to unhealthy.
+    expect(capturedResult!.healthy).toBe(false);
+  });
+
+  it("surfaces a malformed ~/.codex/hooks.json as a warning without going unhealthy", async () => {
+    mockedCheckBinaryVersion.mockReturnValue({
+      status: "ok",
+      installed_version: "0.22.0",
+      version_constraint: PX_CONSTRAINT,
+    });
+    mockedExecFileSync.mockReturnValue(Buffer.from("/usr/local/bin/pipelex"));
+    mockedListConfig.mockReturnValue([]);
+
+    const codex = await import("../../../src/agent/commands/codex.js");
+    vi.mocked(codex.inspectLegacyCodexHook).mockReturnValueOnce({
+      hooks_file: "/tmp/.codex/hooks.json",
+      exists: true,
+      has_legacy_entry: false,
+      parse_error: "Invalid JSON in /tmp/.codex/hooks.json: Unexpected token",
+    });
+
+    await agentDoctor(OutputFormat.JSON);
+
+    const issues = capturedResult!.issues as Issue[];
+    const warning = issues.find((i) => i.message.includes("obsolete mthds hook entry"));
+    expect(warning).toBeDefined();
+    expect(warning!.severity).toBe("warning");
+    // Couldn't-read is advisory only — doctor stays healthy.
+    expect(capturedResult!.healthy).toBe(true);
+  });
+
   it("includes install_command using uv tool install format", async () => {
     mockedCheckBinaryVersion.mockReturnValue({
       status: "ok",

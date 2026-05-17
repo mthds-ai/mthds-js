@@ -7,6 +7,8 @@ import {
   existsSync,
   utimesSync,
   rmSync,
+  chmodSync,
+  symlinkSync,
 } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -54,6 +56,19 @@ vi.mock("node:fs", async (importOriginal) => {
         opts as Parameters<typeof real.mkdirSync>[1]
       );
     }),
+    // Hardened writes go through openSync (for O_NOFOLLOW), so the
+    // primary-write failure injection now happens here.
+    openSync: vi.fn((p: unknown, flags?: unknown, mode?: unknown) => {
+      if (writeFailPredicate) {
+        const err = writeFailPredicate(String(p));
+        if (err) throw err;
+      }
+      return real.openSync(
+        p as Parameters<typeof real.openSync>[0],
+        flags as Parameters<typeof real.openSync>[1],
+        mode as Parameters<typeof real.openSync>[2]
+      );
+    }),
     unlinkSync: vi.fn((p: unknown) => {
       if (unlinkFailPredicate) {
         const err = unlinkFailPredicate(String(p));
@@ -78,7 +93,9 @@ function snoozePath() {
 }
 
 function fallbackDir() {
-  return join(tempTmp ?? tmpdir(), "mthds-agent");
+  // Mirrors update-cache.ts: the fallback dir name carries the uid.
+  const uid = typeof process.getuid === "function" ? `-${process.getuid()}` : "";
+  return join(tempTmp ?? tmpdir(), `mthds-agent${uid}`);
 }
 
 function fallbackSnoozePath() {
@@ -347,6 +364,28 @@ describe("snooze", () => {
 
       stderrSpy.mockRestore();
     });
+
+    it("warns without trying the fallback when the primary write fails with a non-sandbox error", async () => {
+      // ENOSPC is not a sandbox/permission error — $TMPDIR would not help, so
+      // writeSnooze must skip the fallback and warn with the bare errno code.
+      const enospc = new Error("ENOSPC: no space left on device") as NodeJS.ErrnoException;
+      enospc.code = "ENOSPC";
+      writeFailPredicate = (p) => (p === snoozePath() ? enospc : null);
+      const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+
+      const { writeSnooze } = await importModule();
+      writeSnooze("K");
+
+      expect(existsSync(fallbackSnoozePath())).toBe(false);
+      const warning = stderrSpy.mock.calls.find((c) =>
+        String(c[0]).includes("could not write snooze state")
+      );
+      expect(warning).toBeDefined();
+      expect(String(warning![0])).toContain("ENOSPC");
+      expect(String(warning![0])).not.toContain("primary=");
+
+      stderrSpy.mockRestore();
+    });
   });
 
   // ---------------------------------------------------------------------------
@@ -552,6 +591,68 @@ describe("snooze", () => {
       );
       expect(clearWarnings).toHaveLength(0);
 
+      stderrSpy.mockRestore();
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Fallback directory hardening (symlink / TOCTOU)
+  // ---------------------------------------------------------------------------
+  describe("fallback dir hardening", () => {
+    // These tests deliberately trip the hardening warnings; silence the
+    // expected stderr noise. Tests that assert on a warning stack their own
+    // spy on top, which works fine and is restored here too.
+    beforeEach(() => {
+      vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    });
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
+    it("readSnooze ignores a symlinked fallback directory and uses the primary", async () => {
+      mkdirSync(stateDir(), { recursive: true });
+      writeFileSync(snoozePath(), `KEY 1 ${Date.now()}\n`, "utf-8");
+      const evil = join(tempHome, "evil");
+      mkdirSync(evil, { recursive: true });
+      symlinkSync(evil, fallbackDir());
+
+      const { readSnooze } = await importModule();
+      expect(readSnooze()?.versionKey).toBe("KEY");
+    });
+
+    it("clearSnooze skips a symlinked fallback directory but clears the primary", async () => {
+      mkdirSync(stateDir(), { recursive: true });
+      writeFileSync(snoozePath(), "KEY 1 12345\n", "utf-8");
+      const evil = join(tempHome, "evil");
+      mkdirSync(evil, { recursive: true });
+      const evilFile = join(evil, "update-snoozed");
+      writeFileSync(evilFile, "attacker", "utf-8");
+      symlinkSync(evil, fallbackDir());
+
+      const { clearSnooze } = await importModule();
+      clearSnooze();
+
+      expect(existsSync(snoozePath())).toBe(false);
+      // The fallback path was never touched — the file behind the symlink stays.
+      expect(readFileSync(evilFile, "utf-8")).toBe("attacker");
+    });
+
+    it("writeSnooze refuses an insecure $TMPDIR and reports it in the warning", async () => {
+      chmodSync(tempTmp!, 0o777); // world-writable, no sticky bit
+      writeFailPredicate = (p) => (p === snoozePath() ? eperm(p) : null);
+      const stderrSpy = vi
+        .spyOn(process.stderr, "write")
+        .mockImplementation(() => true);
+
+      const { writeSnooze } = await importModule();
+      writeSnooze("KEY");
+
+      expect(existsSync(fallbackSnoozePath())).toBe(false);
+      const warning = stderrSpy.mock.calls.find((c) =>
+        String(c[0]).includes("could not write snooze state")
+      );
+      expect(warning).toBeDefined();
+      expect(String(warning![0])).toContain("unsafe:insecure-tmp");
       stderrSpy.mockRestore();
     });
   });

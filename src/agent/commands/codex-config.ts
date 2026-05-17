@@ -448,7 +448,12 @@ export async function agentCodexApplyConfig(
       legacy.parse_error !== undefined
         ? [...warnings, legacyHookWarning(legacy.parse_error)]
         : warnings;
-    const wouldChange = changes.length > 0 || legacy.has_legacy_entry;
+    // parse_error counts: a real apply against an unreadable hooks.json would
+    // surface a hard error, so dry-run must not report ALREADY_OK for it.
+    const wouldChange =
+      changes.length > 0 ||
+      legacy.has_legacy_entry ||
+      legacy.parse_error !== undefined;
     agentSuccess({
       status: wouldChange ? "WOULD_APPLY" : "ALREADY_OK",
       config_file: file,
@@ -479,17 +484,28 @@ export async function agentCodexApplyConfig(
   }
 
   const removal = removeLegacyCodexHook();
-  const allWarnings =
-    removal.status === "error" && removal.error !== undefined
-      ? [...warnings, legacyHookWarning(removal.error)]
-      : warnings;
-  const didChange = changes.length > 0 || removal.status === "removed";
 
+  // A hooks.json we cannot read/parse leaves us unable to confirm no obsolete
+  // entry double-fires the validation hook. `apply-config --check` already
+  // treats that as a hard failure, so the apply path must too — otherwise the
+  // two modes report opposite verdicts (and opposite exit codes) for the same
+  // state. Required config.toml keys, if any, were already written above, so
+  // re-running converges the config and only this hand-fixable issue remains.
+  if (removal.status === "error") {
+    agentError(
+      legacyHookWarning(removal.error ?? `Failed to update ${removal.hooks_file}`).message,
+      "ConfigError",
+      { error_domain: AGENT_ERROR_DOMAINS.CONFIG },
+    );
+    return;
+  }
+
+  const didChange = changes.length > 0 || removal.status === "removed";
   agentSuccess({
     status: didChange ? "APPLIED" : "ALREADY_OK",
     config_file: file,
     applied: changes,
     legacy_hook: { hooks_file: removal.hooks_file, status: removal.status },
-    warnings: allWarnings,
+    warnings,
   });
 }

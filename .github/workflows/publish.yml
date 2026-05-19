@@ -26,6 +26,9 @@ jobs:
           node-version: '20'
           registry-url: 'https://registry.npmjs.org'
 
+      - name: Update npm to support trusted publishing
+        run: npm install -g npm@latest
+
       - name: Extract version from package.json
         id: get_version
         run: |
@@ -47,7 +50,7 @@ jobs:
 
       - name: Install dependencies
         if: steps.check_published.outputs.already_published == 'false'
-        run: npm install
+        run: npm ci
 
       - name: Build
         if: steps.check_published.outputs.already_published == 'false'
@@ -56,8 +59,6 @@ jobs:
       - name: Publish to npm
         if: steps.check_published.outputs.already_published == 'false'
         run: npm publish --access public --provenance
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Create git tag
         if: steps.check_published.outputs.already_published == 'false'

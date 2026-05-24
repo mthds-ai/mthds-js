@@ -67,18 +67,47 @@ No code changes in this phase. Goal: lock in the assumptions so Phase 2 is mecha
 
 Before moving to Phase 2, fill in the section below. **Do not start Phase 2 until this section is filled in and reviewed.**
 
-**Checkpoint 1 notes** (fill in during execution):
+**Checkpoint 1 notes** (filled in 2026-05-23, pipelex 0.29.0 installed):
 
-- Result of 1.1 (parses ok / DEBUG noise present):
-- Workaround for log-on-stdout if needed:
-- Result of 1.3 (buildOutput affected? Yes/No):
-- Result of 1.4 (inputs/concept/pipe clean? Yes/No):
-- Additional invocation sites found in 1.5:
-- Tests to update in Phase 2:
+- **Result of 1.1**: Under **upstream-default** pipelex config (clean `HOME`), `pipelex-agent models --format json` and `pipelex-agent check-model gpt-4o --type llm --format json` produce **clean JSON to stdout** that parses correctly. Without `--format json`, both default to markdown (confirmed via direct invocation). Under **this user's local config**, a `DEBUG ... Telemetry is disabled ...` line leaks onto stdout and breaks `JSON.parse`.
+- **Workaround for log-on-stdout if needed**: Not needed for end users. The DEBUG leak is **user-local**, caused by `~/.pipelex/pipelex_override.toml:6-7` setting `package_log_levels.pipelex = "DEBUG"`. Upstream default is `INFO`, and grepping `pipelex/cli/agent_cli/` finds **no `log.info(...)` calls in the agent CLI command paths** — so a stock install produces clean stdout. Pipelex exposes no env var for log target (verified by grepping `pipelex/tools/log/`). The "Known pipelex side issue" framing in the background section overstates the risk: it's a latent foot-gun for users who turn DEBUG on, not a default-config blocker. Phase 2 does **not** need a defensive parser; 2.4 can be dropped.
+- **Result of 1.3 (buildOutput affected? Yes/No)**: **YES, broken** — and not in the way the audit table guessed. `pipelex build output bundle` does **not** emit JSON to stdout at all. It writes the JSON to a file (per `-o` default = "bundle's directory") and prints status text to stdout: `Using pipe '...' from bundle '...'` followed by `Generated output file: ...`. `JSON.parse(stdout)` at `pipelex-runner.ts:184` **cannot succeed** regardless of pipelex version. With `-o /dev/stdout` (or `-o -`), the JSON does land on stdout but is still bracketed by the same status lines, so a plain `JSON.parse(stdout)` still fails. This is a pre-existing bug, latent in the codebase; nobody has been hitting it because no caller exercises `buildOutput()` today.
+- **Result of 1.4 (inputs/concept/pipe clean? Yes/No)**: **Mixed — audit table was wrong on two of three.**
+  - **`inputs`**: ✅ Safe. Docstring on `bundle_cmd.py:40` and `_inputs_core.py` confirm "Outputs JSON to stdout on success, JSON to stderr on error". Stdout is clean JSON on success.
+  - **`concept`**: ❌ **Broken**. Reading `pipelex/cli/agent_cli/commands/concept_cmd.py`: the command title literally says "structure concepts from JSON specs with **raw TOML output**", and the implementation does `print(toml_content, ...)` — raw TOML on stdout, not JSON. Verified by running it: stdout is `[concept.Foo]\ndescription = "..."` etc. Errors go to stderr as JSON via `agent_error()`. The current `JSON.parse(stdout) as ConceptResponse` (with response type `{success, concept_code, toml}`) **cannot succeed**.
+  - **`pipe`**: ❌ **Broken** — same as `concept`. `pipe_cmd.py` docstring: "structure pipes from JSON specs with raw TOML output". Raw TOML on stdout. `JSON.parse(stdout) as PipeSpecResponse` cannot succeed.
+  - Authoritative quote from `pipelex/cli/agent_cli/CLAUDE.md`: "`inputs`, `concept`, `pipe`, `fmt`, `lint`, `accept-gateway-terms` are **always JSON / raw passthrough** — they have neither `--format` nor `--error-format`. Their errors keep flowing through the ContextVar's JSON default." — meaning errors are JSON, but the **success payload format is per-command** (inputs=JSON, concept/pipe=TOML).
+- **Additional invocation sites found in 1.5**:
+  - `src/cli/commands/setup.ts:79` — `pipelex init` (stdio inherit, no parse) — safe.
+  - `src/cli/commands/setup.ts:174` — `pipelex --version` (only `stdout.trim()`, not JSON) — safe.
+  - `src/cli/commands/login.ts:28` — `pipelex login --no-logo` (stdio inherit) — safe.
+  - `src/installer/runtime/spawn.ts:5` — `pipelex <args>` (stdio inherit) — safe.
+  - `src/agent/passthrough.ts:136` — generic `spawnSync` (stdio inherit) — safe.
+  - `src/agent/commands/pipelex-passthrough.ts:42` — `pipelex-agent` passthrough (stdio inherit) — safe; per scope decision, do not force `--format json`.
+  - `src/agent/commands/codex-hook.ts:160` — `plxt` (not pipelex) — out of scope.
+  - **Conclusion**: every `JSON.parse(stdout)` against `pipelex`/`pipelex-agent` lives inside `PipelexRunner` (rows 1-6 of the audit table). No surprises elsewhere.
+- **Tests to update in Phase 2**:
+  - `tests/unit/runners/registry.test.ts` — only covers the factory; no `PipelexRunner` method coverage exists.
+  - Phase 2 should **add** a new file (e.g. `tests/unit/runners/pipelex-runner.test.ts`) that mocks `execFile`/`spawn` and asserts the argv passed to `pipelex-agent`/`pipelex` for each fixed method.
+  - Phase 3 should re-run `tests/unit/installer/runtime/version-check.test.ts` — check whether it hardcodes `"0.28.0"` (grep didn't surface anywhere obvious, but Phase 3 should re-grep before editing).
 
 **Decisions taken at Checkpoint 1:**
-- Fix scope (which of rows #1, #2, #6 from the audit table):
-- Workaround needed for stdout log noise (yes/no, what):
+- **Fix scope expanded**. The original plan named rows #1 (`checkModel`) and #2 (`models`) plus a maybe-#6. Reality: rows **#1, #2, #4, #5, #6** are all broken. Specifically:
+  - #1 `checkModel` — fix by defaulting `request.format ?? "json"` on the wire.
+  - #2 `models` — fix by appending `--format json` unconditionally.
+  - #4 `concept` — **needs design call** (see below).
+  - #5 `pipeSpec` — **needs design call** (see below).
+  - #6 `buildOutput` — **needs design call** (see below).
+  - #3 `buildInputs` — confirmed safe; no change.
+- **Workaround needed for stdout log noise**: **No.** Drop task 2.4 from Phase 2. The DEBUG-on-stdout case is only hit when a user has explicitly raised `package_log_levels.pipelex` to DEBUG in their local config; it does not affect default installs and is upstream's problem to fix (not blocking us).
+- **Open design questions that must be resolved before touching `concept`/`pipe`/`buildOutput`** — these were not anticipated in the original plan, and the right answer affects both the runner's return contract and any caller code. Recommend pausing here and discussing with the user before editing:
+  1. **`concept()` / `pipeSpec()` return shape**: pipelex emits **raw TOML** on stdout. The current TS types declare `{success, concept_code, toml}`. Options: (a) synthesize the wrapper in the runner — set `success: true`, parse the TOML to extract `concept_code`/`pipe_code`, store the raw TOML in `toml`; (b) change the runner contract to return raw TOML string and update callers (none in this repo today — verified via grep — but worth confirming for downstream consumers); (c) ask pipelex upstream to add `--format json` to these commands. Recommend (a) for minimal blast radius.
+  2. **`buildOutput()` strategy**: options: (a) pass `-o <tmp-file>` and read the file back (mirrors `buildRunner()`'s approach in the same file); (b) keep stdout but strip the two status lines; (c) ask pipelex upstream to add a `--quiet` flag that suppresses the status lines. Recommend (a) — it's identical in spirit to `buildRunner()` which already does this for the Python output file, and avoids fragile stdout parsing.
+  3. **Are `concept()`/`pipeSpec()`/`buildOutput()` actually exercised today?** **Yes** — there are live in-repo callers:
+     - `src/agent/commands/api-commands.ts:58` → `runner.concept({ spec })` (under `mthds-agent api ...`).
+     - `src/agent/commands/api-commands.ts:120` → `runner.pipeSpec({ pipe_type, spec })` (same command surface).
+     - `src/cli/commands/build.ts:299` → `runner.buildOutput({ ... })` (under `mthds build output`).
+     - When run against the **pipelex** runner (i.e. local CLI mode), each of these three call sites is silently broken on any pipelex version where the corresponding upstream behavior is in place (concept/pipe = TOML-since-introduction; buildOutput = file-write-since-introduction). The API runner path is unaffected. This is **not** a 0.29.x regression — these have been broken for some time, masked by users defaulting to the API runner. Deferring is not acceptable; the live callers will produce confusing parse errors.
 
 ## 2. Phase 2 — Fix JSON.parse bugs
 

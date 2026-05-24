@@ -26,6 +26,40 @@ import type {
   PipelineStartResponse,
 } from "../client/pipeline.js";
 
+/**
+ * Format an error message from a non-2xx response. The pipelex-api emits
+ * RFC 7807 `application/problem+json` for every error; extract `title` and
+ * `detail` so callers see a human-readable message instead of opaque JSON.
+ * Falls back to status + body text on parse failure or non-RFC-7807 bodies.
+ */
+function formatApiError(
+  method: string,
+  path: string,
+  res: Response,
+  text: string
+): string {
+  const prefix = `API ${method} ${path} failed (${res.status})`;
+  const contentType = res.headers.get("content-type") ?? "";
+
+  if (contentType.includes("application/problem+json") && text) {
+    try {
+      const problem = JSON.parse(text) as {
+        title?: unknown;
+        detail?: unknown;
+      };
+      const title = typeof problem.title === "string" ? problem.title : "";
+      const detail = typeof problem.detail === "string" ? problem.detail : "";
+      if (title && detail) return `${prefix} — ${title}: ${detail}`;
+      if (title) return `${prefix} — ${title}`;
+      if (detail) return `${prefix} — ${detail}`;
+    } catch {
+      // Fall through to the raw-text fallback below.
+    }
+  }
+
+  return `${prefix}: ${text || res.statusText}`;
+}
+
 export class ApiRunner implements Runner {
   readonly type: RunnerType = Runners.API;
 
@@ -67,9 +101,7 @@ export class ApiRunner implements Runner {
 
     if (!res.ok) {
       const text = await res.text().catch(() => "");
-      throw new Error(
-        `API ${method} ${path} failed (${res.status}): ${text || res.statusText}`
-      );
+      throw new Error(formatApiError(method, path, res, text));
     }
 
     return res.json() as Promise<T>;

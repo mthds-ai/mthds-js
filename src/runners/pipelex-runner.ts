@@ -156,11 +156,12 @@ export class PipelexRunner implements Runner {
     }
   }
 
-  // pipelex build output bundle <bundle.mthds> --pipe <pipe_code> [--format <fmt>]
+  // pipelex build output bundle <bundle.mthds> --pipe <pipe_code> -o <file> [--format <fmt>]
   async buildOutput(request: BuildOutputRequest): Promise<unknown> {
     const tmp = makeTmpDir();
     try {
       const bundlePath = writeMthdsContents(tmp, request.mthds_contents);
+      const outPath = join(tmp, "output.json");
 
       const args = [
         "build",
@@ -169,6 +170,8 @@ export class PipelexRunner implements Runner {
         bundlePath,
         "--pipe",
         request.pipe_code,
+        "-o",
+        outPath,
         "-L",
         tmp,
       ];
@@ -177,11 +180,11 @@ export class PipelexRunner implements Runner {
       }
       args.push(...this.libraryArgs());
 
-      const { stdout } = await execFileAsync("pipelex", args, {
+      await execFileAsync("pipelex", args, {
         encoding: "utf-8",
       });
 
-      return JSON.parse(stdout) as unknown;
+      return JSON.parse(readFileSync(outPath, "utf-8")) as unknown;
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }
@@ -231,7 +234,11 @@ export class PipelexRunner implements Runner {
       ["concept", "--spec", JSON.stringify(request.spec)],
       { encoding: "utf-8" }
     );
-    return JSON.parse(stdout) as ConceptResponse;
+    return {
+      success: true,
+      concept_code: (request.spec.concept_code as string) ?? "",
+      toml: stdout,
+    };
   }
 
   // pipelex-agent pipe --type <type> --spec <json>
@@ -247,25 +254,28 @@ export class PipelexRunner implements Runner {
       ],
       { encoding: "utf-8" }
     );
-    return JSON.parse(stdout) as PipeSpecResponse;
+    return {
+      success: true,
+      pipe_code: (request.spec.pipe_code as string) ?? "",
+      pipe_type: request.pipe_type,
+      toml: stdout,
+    };
   }
 
-  // pipelex-agent check-model <reference> [--type <type>] [--format <format>]
+  // pipelex-agent check-model <reference> [--type <type>] --format <format>
   async checkModel(request: CheckModelRequest): Promise<CheckModelResponse> {
     const args = ["check-model", request.reference];
     if (request.type) {
       args.push("--type", request.type);
     }
-    if (request.format) {
-      args.push("--format", request.format);
-    }
+    args.push("--format", request.format ?? "json");
     const { stdout } = await execFileAsync("pipelex-agent", args, {
       encoding: "utf-8",
     });
     return JSON.parse(stdout) as CheckModelResponse;
   }
 
-  // pipelex-agent models [--type <type>...]
+  // pipelex-agent models [--type <type>...] --format json
   async models(request?: ModelsRequest): Promise<ModelsResponse> {
     const args = ["models"];
     if (request?.type) {
@@ -273,6 +283,7 @@ export class PipelexRunner implements Runner {
         args.push("--type", t);
       }
     }
+    args.push("--format", "json");
     const { stdout } = await execFileAsync("pipelex-agent", args, {
       encoding: "utf-8",
     });

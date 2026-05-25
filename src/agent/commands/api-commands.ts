@@ -436,6 +436,7 @@ export function registerApiRunnerCommands(
           "ArgumentError",
           { error_domain: AGENT_ERROR_DOMAINS.ARGUMENT }
         );
+        return;
       }
       const runner = safeCreateRunner(makeRunner);
       try {

@@ -187,6 +187,24 @@ describe("PipelexRunner", () => {
       });
     });
 
+    // Regression: when the caller omits `format`, the runner must pass an explicit
+    // `--format json` to pipelex so the JSON.parse() branch below does not rely on
+    // pipelex's CLI default (which is outside our contract).
+    it("passes --format json when caller omits format", async () => {
+      execFileAsync.mockResolvedValue({ stdout: "", stderr: "" });
+      mockedExistsSync.mockReturnValue(true);
+      mockedReadFileSync.mockReturnValue("{}");
+
+      await runner.buildOutput({
+        mthds_contents: ["bundle content"],
+        pipe_code: "test_pipe",
+      });
+
+      const args = execFileAsync.mock.calls[0]![1] as string[];
+      expect(args).toContain("--format");
+      expect(args[args.indexOf("--format") + 1]).toBe("json");
+    });
+
     // Regression: pipelex build output --format python writes Python source code,
     // not JSON. Parsing it would crash. Schema/json formats remain JSON-parsed.
     it("returns raw string for --format python", async () => {

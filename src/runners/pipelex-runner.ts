@@ -44,6 +44,15 @@ function makeTmpDir(): string {
   return mkdtempSync(join(tmpdir(), "mthds-"));
 }
 
+// Extract the canonical code from the first `[concept.X]` / `[pipe.X]` section of a TOML
+// string. pipelex normalizes these names (ASCII fold, PascalCase / snake_case, namespace
+// strip) before emitting TOML, so the section header is the source of truth — not the
+// caller-supplied spec.
+function extractSectionKey(toml: string, kind: "concept" | "pipe"): string | null {
+  const m = toml.match(new RegExp(`\\[${kind}\\.([^\\]\\s]+)\\]`));
+  return m && m[1] ? m[1] : null;
+}
+
 /**
  * Write an array of .mthds file contents to a temp directory.
  * Returns the path to the first file (the main bundle).
@@ -156,11 +165,13 @@ export class PipelexRunner implements Runner {
     }
   }
 
-  // pipelex build output bundle <bundle.mthds> --pipe <pipe_code> [--format <fmt>]
+  // pipelex build output bundle <bundle.mthds> --pipe <pipe_code> -o <file> [--format <fmt>]
+  // Output format determines the file content: 'json'/'schema' produce JSON, 'python' produces Python code.
   async buildOutput(request: BuildOutputRequest): Promise<unknown> {
     const tmp = makeTmpDir();
     try {
       const bundlePath = writeMthdsContents(tmp, request.mthds_contents);
+      const outPath = join(tmp, "output.json");
 
       const args = [
         "build",
@@ -169,6 +180,8 @@ export class PipelexRunner implements Runner {
         bundlePath,
         "--pipe",
         request.pipe_code,
+        "-o",
+        outPath,
         "-L",
         tmp,
       ];
@@ -177,11 +190,25 @@ export class PipelexRunner implements Runner {
       }
       args.push(...this.libraryArgs());
 
-      const { stdout } = await execFileAsync("pipelex", args, {
+      const { stderr } = await execFileAsync("pipelex", args, {
         encoding: "utf-8",
       });
 
-      return JSON.parse(stdout) as unknown;
+      // pipelex can exit 0 without writing the file (e.g. render_output raises ValueError
+      // and the CLI does `typer.Exit(0)` after printing the message to stderr). Surface
+      // that diagnostic instead of an opaque ENOENT.
+      if (!existsSync(outPath)) {
+        throw new Error(
+          `pipelex build output produced no file at ${outPath}.` +
+            (stderr ? ` Output:\n${stderr.trim()}` : "")
+        );
+      }
+      const raw = readFileSync(outPath, "utf-8");
+      // 'python' format produces Python source code, not JSON. Return it as-is.
+      if (request.format === "python") {
+        return raw;
+      }
+      return JSON.parse(raw) as unknown;
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }
@@ -231,7 +258,13 @@ export class PipelexRunner implements Runner {
       ["concept", "--spec", JSON.stringify(request.spec)],
       { encoding: "utf-8" }
     );
-    return JSON.parse(stdout) as ConceptResponse;
+    return {
+      success: true,
+      concept_code:
+        extractSectionKey(stdout, "concept") ??
+        ((request.spec.concept_code as string) ?? ""),
+      toml: stdout,
+    };
   }
 
   // pipelex-agent pipe --type <type> --spec <json>
@@ -247,25 +280,34 @@ export class PipelexRunner implements Runner {
       ],
       { encoding: "utf-8" }
     );
-    return JSON.parse(stdout) as PipeSpecResponse;
+    return {
+      success: true,
+      pipe_code:
+        extractSectionKey(stdout, "pipe") ??
+        ((request.spec.pipe_code as string) ?? ""),
+      pipe_type: request.pipe_type,
+      toml: stdout,
+    };
   }
 
-  // pipelex-agent check-model <reference> [--type <type>] [--format <format>]
+  // pipelex-agent check-model <reference> --type <type> --format json
+  // The local runner always forces --format json: pipelex-agent's markdown output is plain
+  // text (via print()), which can't satisfy the CheckModelResponse contract. The request's
+  // `format` field is intentionally ignored here.
+  // pipelex-agent declares --type as a required typer option (no default), so we guard
+  // here for SDK consumers that bypass the agent CLI's parser.
   async checkModel(request: CheckModelRequest): Promise<CheckModelResponse> {
-    const args = ["check-model", request.reference];
-    if (request.type) {
-      args.push("--type", request.type);
+    if (!request.type) {
+      throw new Error("checkModel requires `type` (one of: llm, extract, img_gen, search)");
     }
-    if (request.format) {
-      args.push("--format", request.format);
-    }
+    const args = ["check-model", request.reference, "--type", request.type, "--format", "json"];
     const { stdout } = await execFileAsync("pipelex-agent", args, {
       encoding: "utf-8",
     });
     return JSON.parse(stdout) as CheckModelResponse;
   }
 
-  // pipelex-agent models [--type <type>...]
+  // pipelex-agent models [--type <type>...] --format json
   async models(request?: ModelsRequest): Promise<ModelsResponse> {
     const args = ["models"];
     if (request?.type) {
@@ -273,6 +315,7 @@ export class PipelexRunner implements Runner {
         args.push("--type", t);
       }
     }
+    args.push("--format", "json");
     const { stdout } = await execFileAsync("pipelex-agent", args, {
       encoding: "utf-8",
     });

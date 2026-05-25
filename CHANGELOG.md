@@ -1,5 +1,15 @@
 # Changelog
 
+## [v0.8.0] - 2026-05-25
+
+### Fixed
+
+- **Fixed five broken `JSON.parse` paths in `PipelexRunner` (local CLI runner).** `checkModel()` and `models()` now pass `--format json` explicitly to `pipelex-agent` — these commands have defaulted to markdown output since before v0.29.0, so parsing their stdout as JSON was silently broken. `concept()` and `pipeSpec()` no longer attempt `JSON.parse` on raw TOML output — they synthesize the expected response wrapper from the command's TOML stdout. `buildOutput()` now writes to a temp file via `-o` and reads it back, matching the pattern already used by `buildRunner()`, instead of parsing stdout which contains status messages rather than JSON.
+
+### Changed
+
+- **Minimum required pipelex/pipelex-agent version bumped to `>=0.30.0`** (was `>=0.28.0`). Pipelex 0.30.0 fixes log routing to stderr (was stdout, breaking JSON consumers). Pipelex 0.29.0 breaking changes that propagate through the passthrough: (a) agent CLI `run` / `validate` / `init` now default to markdown output — add `--format json` for structured output; (b) `pipelex-agent validate bundle --format` renamed to `--graph-format`.
+
 ## [v0.7.1] - 2026-05-17
 
 ### Fixed

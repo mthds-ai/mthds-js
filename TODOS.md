@@ -113,61 +113,51 @@ Before moving to Phase 2, fill in the section below. **Do not start Phase 2 unti
 
 Goal: make every JSON.parse site in `PipelexRunner` reliable against pipelex 0.29.x.
 
-- [ ] **2.1** In `src/runners/pipelex-runner.ts:254-266` (`checkModel`), always append `--format json` if the caller didn't already pass `request.format`. Don't change the public type signature; just default the wire-level format to `"json"` when undefined.
-- [ ] **2.2** In `src/runners/pipelex-runner.ts:269-280` (`models`), append `--format json` unconditionally (no caller-controllable `format` field on `ModelsRequest` today).
-- [ ] **2.3** If Phase 1 found `buildOutput` is also affected, mirror the same fix.
-- [ ] **2.4** If Phase 1 found stdout log noise still pollutes JSON even with `--format json`, add a defensive parser helper and route all `JSON.parse(stdout)` sites in `PipelexRunner` through it. Keep the helper **strict**: strip only complete log-format lines *before* the first `{` or `[`, and stop stripping the moment a candidate JSON open-brace is seen — never attempt to recover from JSON-with-embedded-noise mid-payload (that path silently eats real errors). Add a unit-test fixture for "stderr log line leaks before JSON payload" so the behavior is locked. Document the rationale in a single-line comment pointing back to this TODOS.md, and **file a pipelex upstream issue** linked from the comment.
-- [ ] **2.5** Update or add unit tests in `tests/unit/runners/`. At minimum:
-  - Mock `execFileAsync` and assert the argv passed to `pipelex-agent` includes `--format json` for `checkModel` (when caller omits `format`) and `models`.
-  - If 2.4 was taken, add a unit test for the defensive parser with a fixture containing a leading log line.
-- [ ] **2.6** Run `make agent-test`. Should be silent on success. Any failure → diagnose before proceeding.
-- [ ] **2.7** Run `make check` to ensure the build still type-checks.
+- [x] **2.1** `checkModel`: replaced conditional `--format` push with `args.push("--format", request.format ?? "json")`.
+- [x] **2.2** `models`: added `args.push("--format", "json")` after the type-push loop.
+- [x] **2.3** `buildOutput`: added `-o <tmpfile>` to args and switched from `JSON.parse(stdout)` to `JSON.parse(readFileSync(outPath, "utf-8"))`. Mirrors `buildRunner()` pattern.
+- [x] **2.3b** `concept`: replaced `JSON.parse(stdout)` with synthesized `{success: true, concept_code: spec.concept_code, toml: stdout}`.
+- [x] **2.3c** `pipeSpec`: replaced `JSON.parse(stdout)` with synthesized `{success: true, pipe_code: spec.pipe_code, pipe_type: request.pipe_type, toml: stdout}`.
+- ~~**2.4**~~ Dropped — pipelex upstream fixed log routing to stderr (`pipelex/fix/Log-target`, shipping as 0.30.0). No defensive parser needed.
+- [x] **2.5** Created `tests/unit/runners/pipelex-runner.test.ts` with 6 tests covering all five fixed methods.
+- [x] **2.6** `make check` passes (674 tests, 0 failures). No `make agent-test` target exists in this repo.
+- [x] **2.7** Build type-checks clean.
 
-### CHECKPOINT 2 — STOP
+### CHECKPOINT 2 — DONE
 
-Before moving to Phase 3, fill in below.
+**Checkpoint 2 notes** (filled in 2026-05-25):
 
-**Checkpoint 2 notes** (fill in during execution):
-
-- Files edited and summary of each change:
-- Test additions / updates:
-- `make agent-test` result:
-- `make check` result:
-- Defensive parser introduced? (yes/no, why):
-- Anything surprising worth flagging upstream to pipelex:
+- **Files edited**: `src/runners/pipelex-runner.ts` (5 method fixes, +21/-10 lines).
+- **Test additions**: `tests/unit/runners/pipelex-runner.test.ts` (new, 6 tests: checkModel default format, checkModel preserve format, models format, concept wrapper, pipeSpec wrapper, buildOutput file read-back).
+- **`make check` result**: 674 passed, 0 failed.
+- **Defensive parser introduced?**: No — dropped (2.4). Pipelex upstream fix (0.30.0) routes logs to stderr; no stdout pollution for standard installs.
+- **Upstream**: pipelex `fix/Log-target` branch carries the log-target fix + version 0.30.0. To be merged to `dev` and released.
 
 **Recommended:** create an intermediate commit at this checkpoint with a focused message. The Phase-3 floor bump should be its own commit so the bisect story stays clean.
 
-## 3. Phase 3 — Bump pipelex floor to `>=0.29.1`
+## 3. Phase 3 — Bump pipelex floor to `>=0.30.0`
 
 Goal: raise the runtime check so users on older pipelex are told to upgrade.
 
-- [ ] **3.1** Consider invoking the project's `bump-required-versions` skill (it knows the conventions for this repo). Trigger phrasing: "bump min pipelex version to 0.29.1". If the skill is unavailable or the user prefers manual, see 3.2-3.4.
-- [ ] **3.2** Edit `src/agent/binaries.ts:42`: change `PIPELEX_PKG.version_constraint` from `">=0.28.0"` to `">=0.29.1"`. This single constant covers both `pipelex` and `pipelex-agent` binary entries.
-- [ ] **3.3** Grep the repo for any other place that hardcodes the floor (`grep -rn "0.28" src tests`). Update consistently.
-- [ ] **3.4** Update `CHANGELOG.md` at the project root with a new `## [Unreleased]` (or next-version) section describing:
-  - Fixed: JSON-parse bug in `PipelexRunner.checkModel` and `PipelexRunner.models` (pipelex-agent has defaulted these commands to markdown for some time; we now pass `--format json` explicitly).
-  - Changed: pipelex/pipelex-agent floor bumped to `>=0.29.1`. Cite the breaking changes from pipelex `v0.29.0` that propagate through the passthrough and users will see directly: (a) agent CLI `run` / `validate` / `init` default to markdown — agents that scripted around the previous JSON-default must add `--format json`; (b) `pipelex-agent validate bundle --format <graph-format>` renamed to `--graph-format` — anyone using mthds-agent for graph generation must rename the flag.
-- [ ] **3.5** Run `make agent-test` again to ensure the floor bump didn't trip anything (version-check unit tests live at `tests/unit/installer/runtime/version-check.test.ts`).
-- [ ] **3.6** Run `make check`.
-- [ ] **3.7** If the user is in a worktree dev setup, `make build && make agent-test` may also be needed before integration tests pick up the change (see project-root `CLAUDE.md` "internal-tools integration tests" note).
+- [x] **3.1** Skipped skill — done manually.
+- [x] **3.2** `src/agent/binaries.ts:41`: `">=0.28.0"` → `">=0.30.0"`. Single constant (`PIPELEX_PKG`) feeds both `pipelex` and `pipelex-agent` entries.
+- [x] **3.3** `grep -rn "0.28" src tests` — only match was `binaries.ts:41` (now updated). No other hardcoded floors.
+- [x] **3.4** `CHANGELOG.md` updated with `## [Unreleased]` section covering both the JSON-parse fixes (Fixed) and the floor bump (Changed).
+- [x] **3.5** `make check` passes (674 tests). Version-check tests in `tests/unit/installer/runtime/version-check.test.ts` use `BINARY_RECOVERY` dynamically — no changes needed.
+- [x] **3.6** `make check` passes.
 
-### CHECKPOINT 3 — STOP / ready to land
+### CHECKPOINT 3 — DONE
 
-**Checkpoint 3 notes** (fill in during execution):
+**Checkpoint 3 notes** (filled in 2026-05-25):
 
-- Final version constraint set:
-- Other hardcoded floors found and updated:
-- `CHANGELOG.md` entry summary:
-- Final `make agent-test` result:
-- Final `make check` result:
-- Outstanding follow-ups for a future session:
-
-**Hand-off when stopping mid-phase:**
-- Branch state (clean / dirty, which files):
-- Commits created in this session:
-- Next concrete step to resume:
-- Any pipelex upstream issues filed (links):
+- **Final version constraint**: `>=0.30.0`.
+- **Other hardcoded floors found**: None — `binaries.ts:41` was the only match.
+- **CHANGELOG.md entry**: Fixed (five JSON.parse paths) + Changed (floor bump to >=0.30.0 with breaking-change notes).
+- **Final `make check` result**: 674 passed, 0 failed.
+- **Outstanding follow-ups**:
+  - Merge `pipelex/fix/Log-target` to `dev` and publish 0.30.0 to PyPI.
+  - Merge `mthds-js/fix/Pipelex-output-changes` and publish to npm.
+  - Then `mthds-plugins` can bump its `min_mthds_version` to whatever this release ships as.
 
 ## 4. Out of scope for this round (don't do, but track)
 

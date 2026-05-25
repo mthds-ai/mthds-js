@@ -424,15 +424,22 @@ export function registerApiRunnerCommands(
     .command("check-model")
     .description("Validate a model reference with fuzzy suggestions")
     .argument("<reference>", "Model reference to check")
-    .option("--type <type>", "Model category (llm, extract, img_gen, search)")
-    .option("--format <format>", "Output format (markdown, json)")
+    .requiredOption("--type <type>", "Model category (llm, extract, img_gen, search)")
+    .option("--format <format>", "DEPRECATED: agent CLI emits JSON only via agentSuccess envelope")
     .allowUnknownOption()
     .allowExcessArguments(true)
     .exitOverride()
-    .action(async (reference: string, options: { type?: string; format?: string }) => {
+    .action(async (reference: string, options: { type: string; format?: string }) => {
+      if (options.format) {
+        agentError(
+          "`--format` is no longer supported on `mthds-agent check-model`. The agent CLI always emits JSON via the agentSuccess envelope.",
+          "ArgumentError",
+          { error_domain: AGENT_ERROR_DOMAINS.ARGUMENT }
+        );
+      }
       const runner = safeCreateRunner(makeRunner);
       try {
-        const result = await runner.checkModel({ reference, type: options.type, format: options.format });
+        const result = await runner.checkModel({ reference, type: options.type });
         agentSuccess({ ...result });
       } catch (err) {
         agentError((err as Error).message, "RunnerError", {

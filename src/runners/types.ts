@@ -68,7 +68,7 @@ export interface PipeSpecRequest {
 
 export interface CheckModelRequest {
   reference: string;
-  type?: string;
+  type: string;
   format?: string;
 }
 

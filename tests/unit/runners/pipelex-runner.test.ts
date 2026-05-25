@@ -50,7 +50,10 @@ describe("PipelexRunner", () => {
       expect(args[args.indexOf("--format") + 1]).toBe("json");
     });
 
-    it("preserves caller-provided format", async () => {
+    // Regression: pipelex-agent's --format markdown writes plain text via print(),
+    // which can't satisfy CheckModelResponse. The runner must force JSON regardless
+    // of what the caller asks for.
+    it("forces --format json even when caller passes markdown", async () => {
       execFileAsync.mockResolvedValue({
         stdout: '{"success":true,"valid":true}',
         stderr: "",
@@ -59,7 +62,7 @@ describe("PipelexRunner", () => {
       await runner.checkModel({ reference: "gpt-4o", format: "markdown" });
 
       const args = execFileAsync.mock.calls[0]![1] as string[];
-      expect(args[args.indexOf("--format") + 1]).toBe("markdown");
+      expect(args[args.indexOf("--format") + 1]).toBe("json");
     });
   });
 
@@ -134,6 +137,39 @@ describe("PipelexRunner", () => {
       expect(result).toEqual({
         concept: "native.Text",
         content: { type: "object" },
+      });
+    });
+
+    // Regression: pipelex build output --format python writes Python source code,
+    // not JSON. Parsing it would crash. Schema/json formats remain JSON-parsed.
+    it("returns raw string for --format python", async () => {
+      const pythonCode = "from pydantic import BaseModel\n\nclass Out(BaseModel):\n    text: str\n";
+      execFileAsync.mockResolvedValue({ stdout: "", stderr: "" });
+      mockedReadFileSync.mockReturnValue(pythonCode);
+
+      const result = await runner.buildOutput({
+        mthds_contents: ["bundle content"],
+        pipe_code: "test_pipe",
+        format: "python",
+      });
+
+      expect(result).toBe(pythonCode);
+    });
+
+    it("JSON-parses --format schema output", async () => {
+      const schemaJson = '{"$schema":"http://json-schema.org/draft-07/schema#","type":"object"}';
+      execFileAsync.mockResolvedValue({ stdout: "", stderr: "" });
+      mockedReadFileSync.mockReturnValue(schemaJson);
+
+      const result = await runner.buildOutput({
+        mthds_contents: ["bundle content"],
+        pipe_code: "test_pipe",
+        format: "schema",
+      });
+
+      expect(result).toEqual({
+        $schema: "http://json-schema.org/draft-07/schema#",
+        type: "object",
       });
     });
   });

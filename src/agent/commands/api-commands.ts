@@ -425,14 +425,13 @@ export function registerApiRunnerCommands(
     .description("Validate a model reference with fuzzy suggestions")
     .argument("<reference>", "Model reference to check")
     .option("--type <type>", "Model category (llm, extract, img_gen, search)")
-    .option("--format <format>", "Output format (markdown, json)")
     .allowUnknownOption()
     .allowExcessArguments(true)
     .exitOverride()
-    .action(async (reference: string, options: { type?: string; format?: string }) => {
+    .action(async (reference: string, options: { type?: string }) => {
       const runner = safeCreateRunner(makeRunner);
       try {
-        const result = await runner.checkModel({ reference, type: options.type, format: options.format });
+        const result = await runner.checkModel({ reference, type: options.type });
         agentSuccess({ ...result });
       } catch (err) {
         agentError((err as Error).message, "RunnerError", {

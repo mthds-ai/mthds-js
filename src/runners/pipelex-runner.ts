@@ -157,6 +157,7 @@ export class PipelexRunner implements Runner {
   }
 
   // pipelex build output bundle <bundle.mthds> --pipe <pipe_code> -o <file> [--format <fmt>]
+  // Output format determines the file content: 'json'/'schema' produce JSON, 'python' produces Python code.
   async buildOutput(request: BuildOutputRequest): Promise<unknown> {
     const tmp = makeTmpDir();
     try {
@@ -184,7 +185,12 @@ export class PipelexRunner implements Runner {
         encoding: "utf-8",
       });
 
-      return JSON.parse(readFileSync(outPath, "utf-8")) as unknown;
+      const raw = readFileSync(outPath, "utf-8");
+      // 'python' format produces Python source code, not JSON. Return it as-is.
+      if (request.format === "python") {
+        return raw;
+      }
+      return JSON.parse(raw) as unknown;
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }
@@ -262,13 +268,16 @@ export class PipelexRunner implements Runner {
     };
   }
 
-  // pipelex-agent check-model <reference> [--type <type>] --format <format>
+  // pipelex-agent check-model <reference> [--type <type>] --format json
+  // The local runner always forces --format json: pipelex-agent's markdown output is plain
+  // text (via print()), which can't satisfy the CheckModelResponse contract. The request's
+  // `format` field is intentionally ignored here.
   async checkModel(request: CheckModelRequest): Promise<CheckModelResponse> {
     const args = ["check-model", request.reference];
     if (request.type) {
       args.push("--type", request.type);
     }
-    args.push("--format", request.format ?? "json");
+    args.push("--format", "json");
     const { stdout } = await execFileAsync("pipelex-agent", args, {
       encoding: "utf-8",
     });

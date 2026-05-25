@@ -4,8 +4,12 @@
 
 ### Changed
 
-- **Minimum required pipelex/pipelex-agent version bumped to `>=0.30.1`** (was `>=0.30.0`). Pipelex 0.30.1 silences every Python logger on `pipelex-agent`'s stderr regardless of user TOML — a user setting `package_log_levels.pipelex = "DEBUG"` (or a transitive dep configuring `anthropic` / `httpx` / `botocore` / `openai` loggers) can no longer corrupt the structured stderr envelope that `PipelexRunner` parses on the validate hook. Pipelex 0.30.1 also removes the `--log-level` flag from `pipelex-agent`; `mthds-js`'s passthrough never set it, so no caller-side change is required.
+- **Minimum required pipelex/pipelex-agent version bumped to `>=0.30.1`** (was `>=0.30.0`). Pipelex 0.30.1 silences every Python logger on `pipelex-agent`'s stderr regardless of user TOML — a user setting `package_log_levels.pipelex = "DEBUG"` (or a transitive dep configuring `anthropic` / `httpx` / `botocore` / `openai` loggers) can no longer corrupt the structured stderr envelope that `PipelexRunner` parses on the validate hook.
 - **Minimum required mthds plugin version bumped to `0.11.3`** (was `0.11.0`). `mthds-agent` running inside Claude Code or Codex with an older plugin will report `outdated` from `update-check` and emit `PLUGIN_UPDATE_AVAILABLE` from bootstrap.
+
+### Fixed
+
+- **`mthds-agent` no longer forwards `--log-level` to `pipelex-agent`.** Pipelex 0.30.1 removed the flag from `pipelex-agent` (log suppression is unconditional by design), so the catch-all passthrough — which previously kept `--log-level` so it could reach `pipelex-agent` — would have surfaced an "unknown option" error on invocations like `mthds-agent --log-level DEBUG models`. The flag is now stripped in `extractArgsForPipelexAgent` (both `--log-level <value>` and `--log-level=<value>` forms) alongside `--runner` and `--auto-install`. The run/validate paths already stripped it; this closes the gap on every other pipelex-runner command. `--log-level` remains accepted at the mthds-agent surface as a silent no-op so existing scripts keep working — for verbose debugging, use the human `pipelex` CLI, which honors the user's TOML log config.
 
 ## [v0.8.0] - 2026-05-25
 

@@ -103,7 +103,7 @@ export class MthdsApiClient implements RunnerProtocol {
       dynamic_output_concept_code: options.dynamic_output_concept_code,
     };
 
-    const data = await this.makeApiCall("api/v1/pipeline/execute", request);
+    const data = await this.makeApiCall("runner/v1/pipeline/execute", request);
     return data as PipelineExecuteResponse;
   }
 
@@ -125,7 +125,7 @@ export class MthdsApiClient implements RunnerProtocol {
       dynamic_output_concept_code: options.dynamic_output_concept_code,
     };
 
-    const data = await this.makeApiCall("api/v1/pipeline/start", request);
+    const data = await this.makeApiCall("runner/v1/pipeline/start", request);
     return data as PipelineStartResponse;
   }
 }

@@ -56,7 +56,7 @@ describe("MthdsApiClient constructor", () => {
       .mockResolvedValue(jsonResponse(200, { pipeline_run_id: "x" }));
     await client.executePipeline({ pipe_code: "p" });
     expect(fetchSpy).toHaveBeenCalledWith(
-      "http://localhost:8081/api/v1/pipeline/execute",
+      "http://localhost:8081/runner/v1/pipeline/execute",
       expect.objectContaining({ method: "POST" }),
     );
   });

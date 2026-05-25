@@ -90,41 +90,41 @@ export class ApiRunner implements Runner {
   }
 
   async version(): Promise<Record<string, string>> {
-    return this.get("/api/v1/pipelex_version");
+    return this.get("/runner/v1/pipelex_version");
   }
 
   async buildInputs(request: BuildInputsRequest): Promise<unknown> {
-    return this.post("/api/v1/build/inputs", request);
+    return this.post("/runner/v1/build/inputs", request);
   }
 
   async buildOutput(request: BuildOutputRequest): Promise<unknown> {
-    return this.post("/api/v1/build/output", request);
+    return this.post("/runner/v1/build/output", request);
   }
 
   async buildRunner(
     request: BuildRunnerRequest
   ): Promise<BuildRunnerResponse> {
-    return this.post("/api/v1/build/runner", request);
+    return this.post("/runner/v1/build/runner", request);
   }
 
   async execute(request: ExecuteRequest): Promise<PipelineResponse> {
-    return this.post("/api/v1/pipeline/execute", request);
+    return this.post("/runner/v1/pipeline/execute", request);
   }
 
   async validate(request: ValidateRequest): Promise<ValidateResponse> {
-    return this.post("/api/v1/validate", request);
+    return this.post("/runner/v1/validate", request);
   }
 
   async concept(request: ConceptRequest): Promise<ConceptResponse> {
-    return this.post("/api/v1/build/concept", request);
+    return this.post("/runner/v1/build/concept", request);
   }
 
   async pipeSpec(request: PipeSpecRequest): Promise<PipeSpecResponse> {
-    return this.post("/api/v1/build/pipe-spec", request);
+    return this.post("/runner/v1/build/pipe-spec", request);
   }
 
   async checkModel(request: CheckModelRequest): Promise<CheckModelResponse> {
-    return this.post("/api/v1/check-model", request);
+    return this.post("/runner/v1/check-model", request);
   }
 
   async models(request?: ModelsRequest): Promise<ModelsResponse> {
@@ -135,7 +135,7 @@ export class ApiRunner implements Runner {
       }
     }
     const qs = params.toString();
-    const path = qs ? `/api/v1/models?${qs}` : "/api/v1/models";
+    const path = qs ? `/runner/v1/models?${qs}` : "/runner/v1/models";
     return this.get(path);
   }
 
@@ -144,12 +144,12 @@ export class ApiRunner implements Runner {
   async executePipeline(
     options: ExecutePipelineOptions
   ): Promise<PipelineExecuteResponse> {
-    return this.post("/api/v1/pipeline/execute", options);
+    return this.post("/runner/v1/pipeline/execute", options);
   }
 
   async startPipeline(
     options: ExecutePipelineOptions
   ): Promise<PipelineStartResponse> {
-    return this.post("/api/v1/pipeline/start", options);
+    return this.post("/runner/v1/pipeline/start", options);
   }
 }

@@ -931,4 +931,191 @@ describe("update-cache", () => {
       }
     });
   });
+
+  // ---------------------------------------------------------------------------
+  // Remote upstream-version cache
+  // ---------------------------------------------------------------------------
+  describe("remote cache", () => {
+    function remotePath() {
+      return join(stateDir(), "last-remote-fetch");
+    }
+    function fallbackRemotePath() {
+      return join(fallbackDir(), "last-remote-fetch");
+    }
+
+    describe("readRemoteCache", () => {
+      it("returns null when file does not exist", async () => {
+        const { readRemoteCache } = await importModule();
+        expect(readRemoteCache()).toBeNull();
+      });
+
+      it("returns null on malformed JSON", async () => {
+        mkdirSync(stateDir(), { recursive: true });
+        writeFileSync(remotePath(), "not-json", "utf-8");
+        const { readRemoteCache } = await importModule();
+        expect(readRemoteCache()).toBeNull();
+      });
+
+      it("returns null on wrong shape (missing required key)", async () => {
+        mkdirSync(stateDir(), { recursive: true });
+        writeFileSync(remotePath(), '{"mthds_agent_latest":"0.8.1"}', "utf-8");
+        const { readRemoteCache } = await importModule();
+        expect(readRemoteCache()).toBeNull();
+      });
+
+      it("returns null when wrong field type", async () => {
+        mkdirSync(stateDir(), { recursive: true });
+        writeFileSync(
+          remotePath(),
+          '{"mthds_agent_latest":42,"plugin_latest":null}',
+          "utf-8",
+        );
+        const { readRemoteCache } = await importModule();
+        expect(readRemoteCache()).toBeNull();
+      });
+
+      it("returns payload when valid and unexpired", async () => {
+        mkdirSync(stateDir(), { recursive: true });
+        const payload = { mthds_agent_latest: "0.8.1", plugin_latest: "0.11.3" };
+        writeFileSync(remotePath(), JSON.stringify(payload), "utf-8");
+        const { readRemoteCache } = await importModule();
+        expect(readRemoteCache()).toEqual(payload);
+      });
+
+      it("returns payload when one field is null and entry is fresh", async () => {
+        mkdirSync(stateDir(), { recursive: true });
+        const payload = { mthds_agent_latest: "0.8.1", plugin_latest: null };
+        writeFileSync(remotePath(), JSON.stringify(payload), "utf-8");
+        const { readRemoteCache } = await importModule();
+        expect(readRemoteCache()).toEqual(payload);
+      });
+
+      it("returns null when older than 24h (TTL expired)", async () => {
+        mkdirSync(stateDir(), { recursive: true });
+        const payload = { mthds_agent_latest: "0.8.1", plugin_latest: "0.11.3" };
+        writeFileSync(remotePath(), JSON.stringify(payload), "utf-8");
+        // Backdate mtime to 25h ago.
+        const old = Math.floor((Date.now() - 25 * 60 * 60 * 1000) / 1000);
+        utimesSync(remotePath(), old, old);
+        const { readRemoteCache } = await importModule();
+        expect(readRemoteCache()).toBeNull();
+      });
+
+      it("treats partial entry older than 1h as expired (re-probe needed)", async () => {
+        mkdirSync(stateDir(), { recursive: true });
+        // One field null → partial → short TTL applies.
+        const payload = { mthds_agent_latest: "0.8.1", plugin_latest: null };
+        writeFileSync(remotePath(), JSON.stringify(payload), "utf-8");
+        // Backdate mtime by 90 min — past the 1h partial TTL but well within
+        // the 24h complete TTL. Without the partial-aware TTL this would
+        // return the stale null and lock the upstream-missing signal for 23h.
+        const old = Math.floor((Date.now() - 90 * 60 * 1000) / 1000);
+        utimesSync(remotePath(), old, old);
+        const { readRemoteCache } = await importModule();
+        expect(readRemoteCache()).toBeNull();
+      });
+
+      it("returns complete entry up to 24h old (full TTL applies when no nulls)", async () => {
+        mkdirSync(stateDir(), { recursive: true });
+        const payload = { mthds_agent_latest: "0.8.1", plugin_latest: "0.11.3" };
+        writeFileSync(remotePath(), JSON.stringify(payload), "utf-8");
+        // Backdate 90 min — past the partial TTL but no field is null, so the
+        // full 24h TTL must still apply.
+        const old = Math.floor((Date.now() - 90 * 60 * 1000) / 1000);
+        utimesSync(remotePath(), old, old);
+        const { readRemoteCache } = await importModule();
+        expect(readRemoteCache()).toEqual(payload);
+      });
+
+      it("readRemoteCacheRaw ignores both TTLs (returns even old partial entries)", async () => {
+        mkdirSync(stateDir(), { recursive: true });
+        const payload = { mthds_agent_latest: "0.8.1", plugin_latest: null };
+        writeFileSync(remotePath(), JSON.stringify(payload), "utf-8");
+        // 25h old — past every TTL.
+        const old = Math.floor((Date.now() - 25 * 60 * 60 * 1000) / 1000);
+        utimesSync(remotePath(), old, old);
+        const { readRemoteCacheRaw } = await importModule();
+        expect(readRemoteCacheRaw()).toEqual(payload);
+      });
+
+      it("prefers newer of primary vs fallback when both present", async () => {
+        mkdirSync(stateDir(), { recursive: true });
+        const primary = { mthds_agent_latest: "0.8.0", plugin_latest: "0.11.0" };
+        const fallback = { mthds_agent_latest: "0.8.1", plugin_latest: "0.11.3" };
+        writeFileSync(remotePath(), JSON.stringify(primary), "utf-8");
+        // Backdate primary by 1h, leave fallback at "now".
+        const hourAgo = Math.floor((Date.now() - 60 * 60 * 1000) / 1000);
+        utimesSync(remotePath(), hourAgo, hourAgo);
+
+        mkdirSync(fallbackDir(), { recursive: true, mode: 0o700 });
+        writeFileSync(fallbackRemotePath(), JSON.stringify(fallback), "utf-8");
+
+        const { readRemoteCache } = await importModule();
+        expect(readRemoteCache()).toEqual(fallback);
+      });
+    });
+
+    describe("writeRemoteCache", () => {
+      it("writes the payload to the primary path", async () => {
+        const { writeRemoteCache } = await importModule();
+        writeRemoteCache({
+          mthds_agent_latest: "0.8.1",
+          plugin_latest: "0.11.3",
+        });
+        const content = readFileSync(remotePath(), "utf-8");
+        expect(JSON.parse(content)).toEqual({
+          mthds_agent_latest: "0.8.1",
+          plugin_latest: "0.11.3",
+        });
+      });
+
+      it("falls back to $TMPDIR on EPERM at the primary path", async () => {
+        const target = remotePath();
+        writeFailPredicate = (p) => (p === target ? eperm(target) : null);
+        const { writeRemoteCache } = await importModule();
+        writeRemoteCache({
+          mthds_agent_latest: "0.8.1",
+          plugin_latest: null,
+        });
+        expect(existsSync(target)).toBe(false);
+        expect(existsSync(fallbackRemotePath())).toBe(true);
+      });
+    });
+
+    describe("readRemoteCacheRaw", () => {
+      it("returns expired payload (no TTL check)", async () => {
+        mkdirSync(stateDir(), { recursive: true });
+        const payload = { mthds_agent_latest: "0.8.1", plugin_latest: "0.11.3" };
+        writeFileSync(remotePath(), JSON.stringify(payload), "utf-8");
+        const week = Math.floor((Date.now() - 7 * 24 * 60 * 60 * 1000) / 1000);
+        utimesSync(remotePath(), week, week);
+
+        const { readRemoteCache, readRemoteCacheRaw } = await importModule();
+        expect(readRemoteCache()).toBeNull(); // TTL gate
+        expect(readRemoteCacheRaw()).toEqual(payload); // bypasses TTL
+      });
+
+      it("still validates payload shape", async () => {
+        mkdirSync(stateDir(), { recursive: true });
+        writeFileSync(remotePath(), "not-json", "utf-8");
+        const { readRemoteCacheRaw } = await importModule();
+        expect(readRemoteCacheRaw()).toBeNull();
+      });
+    });
+
+    describe("clearRemoteCache", () => {
+      it("removes the remote cache file", async () => {
+        mkdirSync(stateDir(), { recursive: true });
+        writeFileSync(remotePath(), '{"mthds_agent_latest":null,"plugin_latest":null}', "utf-8");
+        const { clearRemoteCache } = await importModule();
+        clearRemoteCache();
+        expect(existsSync(remotePath())).toBe(false);
+      });
+
+      it("no-ops when file does not exist", async () => {
+        const { clearRemoteCache } = await importModule();
+        expect(() => clearRemoteCache()).not.toThrow();
+      });
+    });
+  });
 });

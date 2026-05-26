@@ -5,25 +5,34 @@
  * (mthds-codex/hooks/codex-hooks.json, discovered through the plugin manifest).
  * Runs after every apply_patch tool call in a Codex session: parses the patch
  * envelope from tool_input.command, finds touched .mthds files, and validates
- * each one with plxt (lint + fmt). On lint or fmt failure it emits the Codex
- * hook block protocol so the session sees the error.
+ * each one through three stages: plxt lint, plxt fmt, pipelex-agent validate
+ * bundle.
  *
  * Stdout protocol — Codex's hook contract, not the mthds agent JSON:
- *   - empty / no output         → silent pass (no .mthds touched, or all clean)
- *   - {"decision":"block",...}  → block the turn with the given reason
- *
- * Stage 3 (`mthds-agent validate bundle`) stays disabled until offline-mode
- * validation lands in mthds-agent (the Codex sandbox blocks the eager S3 fetch).
+ *   - empty / no output                      → silent pass (no .mthds touched, or all clean)
+ *   - {"decision":"block",...}               → block the turn with the given reason
+ *   - {"hookSpecificOutput":{...}}           → emit additionalContext (no block) for
+ *                                              config/runtime-domain validation issues —
+ *                                              the agent is informed but does NOT edit
+ *                                              the file
  */
 
 import { accessSync, constants as fsConstants, existsSync, readFileSync, statSync } from "node:fs";
 import { spawnSync } from "node:child_process";
+import { posix as path } from "node:path";
 
 const PLXT_INSTALL_HINT = "uv tool install pipelex-tools";
+const PIPELEX_AGENT_INSTALL_HINT = "uv tool install pipelex";
+const ADDITIONAL_CONTEXT_MAX_LEN = 9500;
 
 interface PlxtRunResult {
   exitCode: number;
   stdout: string;
+  stderr: string;
+}
+
+export interface PipelexValidateResult {
+  exitCode: number;
   stderr: string;
 }
 
@@ -72,6 +81,98 @@ export function formatFmtError(file: string, result: PlxtRunResult): string {
 
 export function buildBlockPayload(reason: string): string {
   return JSON.stringify({ decision: "block", reason }) + "\n";
+}
+
+export function buildAdditionalContextPayload(context: string): string {
+  return (
+    JSON.stringify({
+      hookSpecificOutput: {
+        hookEventName: "PostToolUse",
+        additionalContext: context,
+      },
+    }) + "\n"
+  );
+}
+
+/**
+ * Drop the `## Error source` section and everything after it.
+ *
+ * Stopgap: pipelex 0.30.2 already omits this section from `validate bundle`
+ * markdown output, so once the floor is bumped past 0.30.2 this is a no-op.
+ * Kept defensively so a user lagging on pipelex doesn't leak stack frames
+ * into the agent-facing block reason.
+ */
+export function stripErrorSourceSection(markdown: string): string {
+  const match = markdown.match(/^## Error source/m);
+  if (!match || match.index === undefined) return markdown;
+  return markdown.slice(0, match.index);
+}
+
+/**
+ * Parse `- **error_domain:** <value>` out of the `## Details` section.
+ *
+ * Returns the first match (pipelex only emits one). Undefined when the
+ * raised error class has no `error_domain` and is not in pipelex's
+ * `AGENT_ERROR_DOMAINS` lookup (e.g. bare `LibraryError`).
+ */
+export function extractErrorDomain(markdown: string): string | undefined {
+  const match = markdown.match(/^- \*\*error_domain:\*\* *(\S+)/m);
+  return match ? match[1] : undefined;
+}
+
+export function truncateForAdditionalContext(text: string): string {
+  if (text.length <= ADDITIONAL_CONTEXT_MAX_LEN) return text;
+  const omitted = text.length - ADDITIONAL_CONTEXT_MAX_LEN;
+  return (
+    text.slice(0, ADDITIONAL_CONTEXT_MAX_LEN) +
+    `\n\n[truncated, ${omitted} chars omitted]`
+  );
+}
+
+export type Stage3Outcome =
+  | { kind: "pass" }
+  | { kind: "block"; reason: string }
+  | { kind: "warn"; context: string; domain: string };
+
+/**
+ * Decide what to emit for a single file's `pipelex-agent validate bundle`
+ * result. The block/warn split mirrors the bash hook in mthds-plugins.
+ *
+ * - exit 0                        → pass (no output)
+ * - empty stderr (post-strip)     → block with a generic "no stderr" reason
+ * - error_domain ∈ {config,runtime} → warn (additionalContext), no block
+ * - anything else (input, unknown, missing) → block with markdown verbatim
+ *   (default-to-block is the safety choice)
+ */
+export function classifyStage3Result(
+  file: string,
+  result: PipelexValidateResult
+): Stage3Outcome {
+  if (result.exitCode === 0) return { kind: "pass" };
+
+  const trimmed = stripErrorSourceSection(result.stderr);
+  if (trimmed.trim().length === 0) {
+    return {
+      kind: "block",
+      reason: `Validation failed for ${file} (pipelex-agent exited ${result.exitCode} with no stderr output)`,
+    };
+  }
+
+  const body = trimmed.replace(/\s+$/, "");
+  const domain = extractErrorDomain(trimmed);
+  if (domain === "config" || domain === "runtime") {
+    const header = `Validation warning for ${file} (${domain} domain — environment issue, do not edit the file):\n\n`;
+    return {
+      kind: "warn",
+      domain,
+      context: header + truncateForAdditionalContext(body),
+    };
+  }
+
+  return {
+    kind: "block",
+    reason: `Validation failed for ${file}:\n\n${body}`,
+  };
 }
 
 // ── Runtime helpers ───────────────────────────────────────────────────
@@ -172,6 +273,27 @@ function runPlxt(args: string[]): PlxtRunResult {
   };
 }
 
+/**
+ * Run `pipelex-agent validate bundle <file> -L <libraryDir>`. We do NOT
+ * shell out through `mthds-agent` to avoid recursing into this same CLI;
+ * pipelex-agent's bundle validation is offline-safe (no remote-config or
+ * gateway fetch in this code path).
+ */
+function runPipelexValidate(file: string, libraryDir: string): PipelexValidateResult {
+  const result = spawnSync(
+    "pipelex-agent",
+    ["validate", "bundle", file, "-L", libraryDir],
+    { encoding: "utf8" }
+  );
+  if (result.error) {
+    return { exitCode: 127, stderr: result.error.message };
+  }
+  return {
+    exitCode: result.status ?? 1,
+    stderr: result.stderr ?? "",
+  };
+}
+
 // ── Dependency-injectable core (the actual command logic) ─────────────
 
 export interface CodexHookDeps {
@@ -179,6 +301,8 @@ export interface CodexHookDeps {
   fileExists: (path: string) => boolean;
   hasPlxt: () => boolean;
   runPlxt: (args: string[]) => PlxtRunResult;
+  hasPipelexAgent: () => boolean;
+  runPipelexValidate: (file: string, libraryDir: string) => PipelexValidateResult;
   emit: (output: string) => void;
 }
 
@@ -208,7 +332,17 @@ export async function runCodexHook(deps: CodexHookDeps): Promise<void> {
     return;
   }
 
-  const errors: string[] = [];
+  if (!deps.hasPipelexAgent()) {
+    deps.emit(
+      buildBlockPayload(
+        `Missing required CLI tool: pipelex-agent (install via: ${PIPELEX_AGENT_INSTALL_HINT})`
+      )
+    );
+    return;
+  }
+
+  const blocks: string[] = [];
+  const warnings: string[] = [];
 
   for (const file of files) {
     // Renamed-source paths and delete targets won't exist on disk post-patch.
@@ -219,8 +353,8 @@ export async function runCodexHook(deps: CodexHookDeps): Promise<void> {
     // Stage 1: plxt lint (block on failure)
     const lint = deps.runPlxt(["lint", "--quiet", file]);
     if (lint.exitCode !== 0) {
-      errors.push(formatLintError(file, lint));
-      continue; // skip fmt for files that failed lint
+      blocks.push(formatLintError(file, lint));
+      continue; // skip fmt + Stage 3 for files that failed lint
     }
 
     // Stage 2: plxt fmt — also blocks on failure (the bash hook this
@@ -229,16 +363,33 @@ export async function runCodexHook(deps: CodexHookDeps): Promise<void> {
     // surfacing it loudly is better than letting a half-formatted file land.
     const fmt = deps.runPlxt(["fmt", file]);
     if (fmt.exitCode !== 0) {
-      errors.push(formatFmtError(file, fmt));
+      blocks.push(formatFmtError(file, fmt));
+      continue; // skip Stage 3 on a fmt-broken file
     }
 
-    // Stage 3: mthds-agent validate bundle — DISABLED.
-    // Re-enable once mthds-agent supports offline validation (the Codex
-    // sandbox blocks the eager remote-config fetch).
+    // Stage 3: pipelex-agent validate bundle — semantic validation. Markdown
+    // stderr is the canonical agent-facing artifact. Block on input/unknown
+    // domain (agent revises the bundle); warn via additionalContext on
+    // config/runtime (environment issue, agent should not edit the file).
+    const libraryDir = path.dirname(file) + "/";
+    const validateResult = deps.runPipelexValidate(file, libraryDir);
+    const outcome = classifyStage3Result(file, validateResult);
+    if (outcome.kind === "block") {
+      blocks.push(outcome.reason);
+    } else if (outcome.kind === "warn") {
+      warnings.push(outcome.context);
+    }
   }
 
-  if (errors.length > 0) {
-    deps.emit(buildBlockPayload(errors.join("\n\n")));
+  // Aggregation. When both blocks and warnings exist we emit block-only —
+  // the agent has to revise and re-save anyway, so deferring the warning
+  // until the next pass is fine and keeps the response shape simple.
+  if (blocks.length > 0) {
+    deps.emit(buildBlockPayload(blocks.join("\n\n")));
+    return;
+  }
+  if (warnings.length > 0) {
+    deps.emit(buildAdditionalContextPayload(warnings.join("\n\n")));
   }
 }
 
@@ -250,6 +401,8 @@ export async function agentCodexHook(): Promise<void> {
     fileExists: existsSync,
     hasPlxt: () => commandOnPath("plxt"),
     runPlxt,
+    hasPipelexAgent: () => commandOnPath("pipelex-agent"),
+    runPipelexValidate,
     emit: (out) => process.stdout.write(out),
   });
 }

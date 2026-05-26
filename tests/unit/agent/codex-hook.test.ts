@@ -7,9 +7,14 @@ import {
   formatLintError,
   formatFmtError,
   buildBlockPayload,
+  buildAdditionalContextPayload,
   buildPathCandidates,
+  classifyStage3Result,
   commandOnPath,
+  extractErrorDomain,
   runCodexHook,
+  stripErrorSourceSection,
+  truncateForAdditionalContext,
 } from "../../../src/agent/commands/codex-hook.js";
 
 // Pure helpers ────────────────────────────────────────────────────────
@@ -238,13 +243,22 @@ interface FakePlxtCall {
   args: string[];
 }
 
+interface FakePipelexCall {
+  file: string;
+  libraryDir: string;
+}
+
 function makeDeps(overrides: {
   stdin: string;
   files?: Set<string>;
   hasPlxt?: boolean;
   plxtResults?: Map<string, { exitCode: number; stdout?: string; stderr?: string }>;
+  hasPipelexAgent?: boolean;
+  // Keyed by file path → validate result. Missing entry means exit 0 (pass).
+  pipelexResults?: Map<string, { exitCode: number; stderr?: string }>;
 }) {
   const calls: FakePlxtCall[] = [];
+  const pipelexCalls: FakePipelexCall[] = [];
   const emitted: string[] = [];
   const deps = {
     readStdin: () => overrides.stdin,
@@ -260,9 +274,15 @@ function makeDeps(overrides: {
         stderr: cfg?.stderr ?? "",
       };
     },
+    hasPipelexAgent: () => overrides.hasPipelexAgent ?? true,
+    runPipelexValidate: (file: string, libraryDir: string) => {
+      pipelexCalls.push({ file, libraryDir });
+      const cfg = overrides.pipelexResults?.get(file);
+      return { exitCode: cfg?.exitCode ?? 0, stderr: cfg?.stderr ?? "" };
+    },
     emit: (s: string) => emitted.push(s),
   };
-  return { deps, calls, emitted };
+  return { deps, calls, pipelexCalls, emitted };
 }
 
 const PAYLOAD = (envelope: string) =>
@@ -381,5 +401,380 @@ describe("runCodexHook", () => {
     const parsed = JSON.parse(emitted[0]!.trim());
     expect(parsed.reason).toContain("err-a");
     expect(parsed.reason).toContain("err-b");
+  });
+});
+
+// Stage 3 pure helpers ────────────────────────────────────────────────
+
+describe("stripErrorSourceSection", () => {
+  it("drops the `## Error source` section and everything after it", () => {
+    const md =
+      "# Error: LibraryError\n\nPipe not found\n\n## Error source\n\n```\nframe1\nframe2\n```\n";
+    const out = stripErrorSourceSection(md);
+    expect(out).toContain("# Error: LibraryError");
+    expect(out).toContain("Pipe not found");
+    expect(out).not.toContain("## Error source");
+    expect(out).not.toContain("frame1");
+  });
+
+  it("is a no-op when no `## Error source` section is present", () => {
+    const md = "# Error: X\n\nDetails\n\n## Details\n\n- **error_domain:** input\n";
+    expect(stripErrorSourceSection(md)).toBe(md);
+  });
+
+  it("only matches `## Error source` at the start of a line", () => {
+    const md = "# Error\n\nfoo bar ## Error source not at line start\n";
+    expect(stripErrorSourceSection(md)).toBe(md);
+  });
+});
+
+describe("extractErrorDomain", () => {
+  it("returns the value from the `## Details` section", () => {
+    const md =
+      "# Error: X\n\n## Details\n\n- **error_domain:** input\n- **pipe_code:** foo\n";
+    expect(extractErrorDomain(md)).toBe("input");
+  });
+
+  it("returns undefined when no error_domain line is present", () => {
+    expect(extractErrorDomain("# Error: LibraryError\n\nNo details here\n")).toBeUndefined();
+  });
+
+  it("returns the first match when multiple are present (defensive)", () => {
+    const md = "- **error_domain:** config\n- **error_domain:** runtime\n";
+    expect(extractErrorDomain(md)).toBe("config");
+  });
+});
+
+describe("truncateForAdditionalContext", () => {
+  it("returns input unchanged when within the limit", () => {
+    const s = "x".repeat(100);
+    expect(truncateForAdditionalContext(s)).toBe(s);
+  });
+
+  it("truncates oversized input and appends a `[truncated, …]` marker", () => {
+    const s = "x".repeat(12000);
+    const out = truncateForAdditionalContext(s);
+    expect(out.length).toBeLessThan(s.length);
+    expect(out).toContain("[truncated, 2500 chars omitted]");
+    // The original payload must end before the marker.
+    expect(out.endsWith("[truncated, 2500 chars omitted]")).toBe(true);
+  });
+});
+
+describe("buildAdditionalContextPayload", () => {
+  it("emits valid Codex hook additionalContext JSON with a trailing newline", () => {
+    const out = buildAdditionalContextPayload("hello");
+    expect(out.endsWith("\n")).toBe(true);
+    const parsed = JSON.parse(out.trim());
+    expect(parsed).toEqual({
+      hookSpecificOutput: {
+        hookEventName: "PostToolUse",
+        additionalContext: "hello",
+      },
+    });
+  });
+});
+
+describe("classifyStage3Result", () => {
+  it("returns pass when exit code is 0", () => {
+    expect(classifyStage3Result("a.mthds", { exitCode: 0, stderr: "" })).toEqual({
+      kind: "pass",
+    });
+  });
+
+  it("blocks with a generic reason on non-zero exit with empty stderr", () => {
+    const out = classifyStage3Result("a.mthds", { exitCode: 2, stderr: "" });
+    expect(out.kind).toBe("block");
+    if (out.kind !== "block") return;
+    expect(out.reason).toContain("a.mthds");
+    expect(out.reason).toContain("exited 2");
+    expect(out.reason).toContain("no stderr output");
+  });
+
+  it("blocks with a generic reason when stderr is only the stripped stack-trace section", () => {
+    const out = classifyStage3Result("a.mthds", {
+      exitCode: 1,
+      stderr: "## Error source\n\n```\nframe\n```\n",
+    });
+    expect(out.kind).toBe("block");
+    if (out.kind !== "block") return;
+    expect(out.reason).toContain("no stderr output");
+  });
+
+  it("blocks with markdown verbatim when error_domain is input", () => {
+    const md =
+      "# Error: ValidateBundleError\n\nMissing required field 'source'\n\n## Details\n\n- **error_domain:** input\n";
+    const out = classifyStage3Result("bundles/x.mthds", { exitCode: 1, stderr: md });
+    expect(out.kind).toBe("block");
+    if (out.kind !== "block") return;
+    expect(out.reason).toContain("bundles/x.mthds");
+    expect(out.reason).toContain("# Error: ValidateBundleError");
+    expect(out.reason).toContain("Missing required field");
+  });
+
+  it("blocks (safety default) when no error_domain is set", () => {
+    const md = "# Error: LibraryError\n\nPipe 'build_scorecard' not found.\n";
+    const out = classifyStage3Result("a.mthds", { exitCode: 1, stderr: md });
+    expect(out.kind).toBe("block");
+    if (out.kind !== "block") return;
+    expect(out.reason).toContain("LibraryError");
+    expect(out.reason).toContain("build_scorecard");
+  });
+
+  it("strips the `## Error source` section from a block reason", () => {
+    const md =
+      "# Error: LibraryError\n\nPipe not found\n\n## Error source\n\n```\nlibrary.py:140\n```\n";
+    const out = classifyStage3Result("a.mthds", { exitCode: 1, stderr: md });
+    expect(out.kind).toBe("block");
+    if (out.kind !== "block") return;
+    expect(out.reason).not.toContain("## Error source");
+    expect(out.reason).not.toContain("library.py:140");
+  });
+
+  it("warns (additionalContext) on config domain", () => {
+    const md =
+      "# Error: TelemetryConfigValidationError\n\nBad config\n\n## Details\n\n- **error_domain:** config\n";
+    const out = classifyStage3Result("a.mthds", { exitCode: 1, stderr: md });
+    expect(out.kind).toBe("warn");
+    if (out.kind !== "warn") return;
+    expect(out.domain).toBe("config");
+    expect(out.context).toContain("a.mthds");
+    expect(out.context).toContain("config domain");
+    expect(out.context).toContain("do not edit the file");
+    expect(out.context).toContain("TelemetryConfigValidationError");
+  });
+
+  it("warns on runtime domain", () => {
+    const md =
+      "# Error: PipeRunError\n\nconnection refused\n\n## Details\n\n- **error_domain:** runtime\n";
+    const out = classifyStage3Result("a.mthds", { exitCode: 1, stderr: md });
+    expect(out.kind).toBe("warn");
+    if (out.kind !== "warn") return;
+    expect(out.domain).toBe("runtime");
+    expect(out.context).toContain("runtime domain");
+  });
+
+  it("strips the `## Error source` section from a warn context too", () => {
+    const md =
+      "# Error: TelemetryConfigValidationError\n\nBad config\n\n## Details\n\n- **error_domain:** config\n\n## Error source\n\n```\ntelemetry.py:42\n```\n";
+    const out = classifyStage3Result("a.mthds", { exitCode: 1, stderr: md });
+    expect(out.kind).toBe("warn");
+    if (out.kind !== "warn") return;
+    expect(out.context).not.toContain("## Error source");
+    expect(out.context).not.toContain("telemetry.py:42");
+  });
+
+  it("truncates oversized config-domain markdown in the additionalContext", () => {
+    const padding = "x".repeat(12000);
+    const md = `# Error: TelemetryConfigValidationError\n\n${padding}\n\n## Details\n\n- **error_domain:** config\n`;
+    const out = classifyStage3Result("a.mthds", { exitCode: 1, stderr: md });
+    expect(out.kind).toBe("warn");
+    if (out.kind !== "warn") return;
+    expect(out.context).toContain("[truncated,");
+    expect(out.context).toContain("chars omitted]");
+    expect(out.context.length).toBeLessThan(10000);
+  });
+});
+
+// runCodexHook — Stage 3 wiring ──────────────────────────────────────
+
+describe("runCodexHook — Stage 3", () => {
+  it("blocks when pipelex-agent is missing", async () => {
+    const { deps, emitted } = makeDeps({
+      stdin: PAYLOAD("*** Update File: a.mthds"),
+      files: new Set(["a.mthds"]),
+      hasPipelexAgent: false,
+    });
+    await runCodexHook(deps);
+    expect(emitted).toHaveLength(1);
+    const parsed = JSON.parse(emitted[0]!.trim());
+    expect(parsed.decision).toBe("block");
+    expect(parsed.reason).toContain("pipelex-agent");
+  });
+
+  it("invokes pipelex-agent with the file's parent directory and a trailing slash", async () => {
+    const { deps, pipelexCalls } = makeDeps({
+      stdin: PAYLOAD("*** Update File: bundles/core.mthds"),
+      files: new Set(["bundles/core.mthds"]),
+    });
+    await runCodexHook(deps);
+    expect(pipelexCalls).toEqual([{ file: "bundles/core.mthds", libraryDir: "bundles/" }]);
+  });
+
+  it("uses './' as library dir when the file has no parent directory", async () => {
+    const { deps, pipelexCalls } = makeDeps({
+      stdin: PAYLOAD("*** Update File: a.mthds"),
+      files: new Set(["a.mthds"]),
+    });
+    await runCodexHook(deps);
+    expect(pipelexCalls).toEqual([{ file: "a.mthds", libraryDir: "./" }]);
+  });
+
+  it("blocks when validate returns input-domain markdown", async () => {
+    const md =
+      "# Error: ValidateBundleError\n\nMissing required field 'source' in 'extract_info'\n\n## Details\n\n- **error_domain:** input\n";
+    const { deps, emitted } = makeDeps({
+      stdin: PAYLOAD("*** Update File: a.mthds"),
+      files: new Set(["a.mthds"]),
+      pipelexResults: new Map([["a.mthds", { exitCode: 1, stderr: md }]]),
+    });
+    await runCodexHook(deps);
+    expect(emitted).toHaveLength(1);
+    const parsed = JSON.parse(emitted[0]!.trim());
+    expect(parsed.decision).toBe("block");
+    expect(parsed.reason).toContain("a.mthds");
+    expect(parsed.reason).toContain("# Error: ValidateBundleError");
+    expect(parsed.reason).toContain("extract_info");
+  });
+
+  it("blocks (safety default) when validate returns markdown with no error_domain", async () => {
+    const md = "# Error: LibraryError\n\nPipe 'build_scorecard' not found.\n";
+    const { deps, emitted } = makeDeps({
+      stdin: PAYLOAD("*** Update File: a.mthds"),
+      files: new Set(["a.mthds"]),
+      pipelexResults: new Map([["a.mthds", { exitCode: 1, stderr: md }]]),
+    });
+    await runCodexHook(deps);
+    expect(emitted).toHaveLength(1);
+    const parsed = JSON.parse(emitted[0]!.trim());
+    expect(parsed.decision).toBe("block");
+    expect(parsed.reason).toContain("LibraryError");
+    expect(parsed.reason).toContain("build_scorecard");
+  });
+
+  it("emits additionalContext (no block) on config-domain validate error", async () => {
+    const md =
+      "# Error: TelemetryConfigValidationError\n\nTelemetry config missing required field\n\n## Details\n\n- **error_domain:** config\n";
+    const { deps, emitted } = makeDeps({
+      stdin: PAYLOAD("*** Update File: a.mthds"),
+      files: new Set(["a.mthds"]),
+      pipelexResults: new Map([["a.mthds", { exitCode: 1, stderr: md }]]),
+    });
+    await runCodexHook(deps);
+    expect(emitted).toHaveLength(1);
+    const parsed = JSON.parse(emitted[0]!.trim());
+    expect(parsed.decision).toBeUndefined();
+    expect(parsed.hookSpecificOutput.hookEventName).toBe("PostToolUse");
+    expect(parsed.hookSpecificOutput.additionalContext).toContain("config domain");
+    expect(parsed.hookSpecificOutput.additionalContext).toContain("do not edit the file");
+    expect(parsed.hookSpecificOutput.additionalContext).toContain("TelemetryConfigValidationError");
+    expect(parsed.hookSpecificOutput.additionalContext).toContain("a.mthds");
+  });
+
+  it("emits additionalContext on runtime-domain validate error", async () => {
+    const md =
+      "# Error: PipeRunError\n\nconnection refused\n\n## Details\n\n- **error_domain:** runtime\n";
+    const { deps, emitted } = makeDeps({
+      stdin: PAYLOAD("*** Update File: a.mthds"),
+      files: new Set(["a.mthds"]),
+      pipelexResults: new Map([["a.mthds", { exitCode: 1, stderr: md }]]),
+    });
+    await runCodexHook(deps);
+    expect(emitted).toHaveLength(1);
+    const parsed = JSON.parse(emitted[0]!.trim());
+    expect(parsed.hookSpecificOutput.additionalContext).toContain("runtime domain");
+  });
+
+  it("strips the `## Error source` stack-trace from a Stage 3 block reason", async () => {
+    const md =
+      "# Error: LibraryError\n\nPipe not found\n\n## Error source\n\n```\nlibrary.py:140\n```\n";
+    const { deps, emitted } = makeDeps({
+      stdin: PAYLOAD("*** Update File: a.mthds"),
+      files: new Set(["a.mthds"]),
+      pipelexResults: new Map([["a.mthds", { exitCode: 1, stderr: md }]]),
+    });
+    await runCodexHook(deps);
+    const parsed = JSON.parse(emitted[0]!.trim());
+    expect(parsed.reason).not.toContain("## Error source");
+    expect(parsed.reason).not.toContain("library.py:140");
+  });
+
+  it("blocks with a generic reason when validate fails with empty stderr", async () => {
+    const { deps, emitted } = makeDeps({
+      stdin: PAYLOAD("*** Update File: a.mthds"),
+      files: new Set(["a.mthds"]),
+      pipelexResults: new Map([["a.mthds", { exitCode: 2, stderr: "" }]]),
+    });
+    await runCodexHook(deps);
+    const parsed = JSON.parse(emitted[0]!.trim());
+    expect(parsed.decision).toBe("block");
+    expect(parsed.reason).toContain("no stderr output");
+    expect(parsed.reason).toContain("exited 2");
+  });
+
+  it("passes silently when validate exits 0", async () => {
+    const { deps, emitted, pipelexCalls } = makeDeps({
+      stdin: PAYLOAD("*** Update File: a.mthds"),
+      files: new Set(["a.mthds"]),
+    });
+    await runCodexHook(deps);
+    expect(pipelexCalls).toHaveLength(1);
+    expect(emitted).toEqual([]);
+  });
+
+  it("does not run Stage 3 when lint fails", async () => {
+    const { deps, pipelexCalls } = makeDeps({
+      stdin: PAYLOAD("*** Update File: a.mthds"),
+      files: new Set(["a.mthds"]),
+      plxtResults: new Map([["lint --quiet a.mthds", { exitCode: 1, stderr: "lint err" }]]),
+    });
+    await runCodexHook(deps);
+    expect(pipelexCalls).toEqual([]);
+  });
+
+  it("does not run Stage 3 when fmt fails", async () => {
+    const { deps, pipelexCalls } = makeDeps({
+      stdin: PAYLOAD("*** Update File: a.mthds"),
+      files: new Set(["a.mthds"]),
+      plxtResults: new Map([["fmt a.mthds", { exitCode: 1, stderr: "fmt err" }]]),
+    });
+    await runCodexHook(deps);
+    expect(pipelexCalls).toEqual([]);
+  });
+
+  it("when one file blocks and another warns, emits block only (warning is deferred)", async () => {
+    const blockMd = "# Error: ValidateBundleError\n\nbad bundle a\n\n## Details\n\n- **error_domain:** input\n";
+    const warnMd = "# Error: TelemetryConfigValidationError\n\nbad config\n\n## Details\n\n- **error_domain:** config\n";
+    const { deps, emitted } = makeDeps({
+      stdin: PAYLOAD("*** Update File: a.mthds\n*** Add File: b.mthds"),
+      files: new Set(["a.mthds", "b.mthds"]),
+      pipelexResults: new Map([
+        ["a.mthds", { exitCode: 1, stderr: blockMd }],
+        ["b.mthds", { exitCode: 1, stderr: warnMd }],
+      ]),
+    });
+    await runCodexHook(deps);
+    expect(emitted).toHaveLength(1);
+    const parsed = JSON.parse(emitted[0]!.trim());
+    expect(parsed.decision).toBe("block");
+    expect(parsed.reason).toContain("a.mthds");
+    expect(parsed.reason).toContain("bad bundle a");
+    // Warning was deferred — must not leak into the block payload or as
+    // a second emit.
+    expect(parsed.reason).not.toContain("TelemetryConfigValidationError");
+    expect(parsed.reason).not.toContain("do not edit the file");
+    expect(parsed.hookSpecificOutput).toBeUndefined();
+  });
+
+  it("aggregates multiple warnings (no block) into a single additionalContext payload", async () => {
+    const warnA = "# Error: ConfigA\n\nbad cfg a\n\n## Details\n\n- **error_domain:** config\n";
+    const warnB = "# Error: RuntimeB\n\nbad rt b\n\n## Details\n\n- **error_domain:** runtime\n";
+    const { deps, emitted } = makeDeps({
+      stdin: PAYLOAD("*** Update File: a.mthds\n*** Add File: b.mthds"),
+      files: new Set(["a.mthds", "b.mthds"]),
+      pipelexResults: new Map([
+        ["a.mthds", { exitCode: 1, stderr: warnA }],
+        ["b.mthds", { exitCode: 1, stderr: warnB }],
+      ]),
+    });
+    await runCodexHook(deps);
+    expect(emitted).toHaveLength(1);
+    const parsed = JSON.parse(emitted[0]!.trim());
+    expect(parsed.decision).toBeUndefined();
+    const ctx = parsed.hookSpecificOutput.additionalContext;
+    expect(ctx).toContain("a.mthds");
+    expect(ctx).toContain("b.mthds");
+    expect(ctx).toContain("ConfigA");
+    expect(ctx).toContain("RuntimeB");
   });
 });

@@ -2,6 +2,10 @@
 
 ## [v0.8.1] - 2026-05-26
 
+### Added
+
+- **Codex hook now runs Stage 3 (`pipelex-agent validate bundle`).** The PostToolUse(apply_patch) hook in `mthds-agent codex hook` previously stopped after `plxt lint` + `plxt fmt`; semantic validation was disabled because earlier pipelex builds eagerly fetched remote config on startup, which the Codex sandbox blocks. Pipelex's `validate bundle` path is offline-safe (no gateway or remote-config fetch), so Stage 3 is now enabled and brings Codex to parity with the Claude Code hook in `mthds-plugins` v0.11.3. Markdown stderr from pipelex is the canonical agent-facing artifact: input-domain (and unknown / missing-domain — default to block for safety) errors emit `{"decision":"block","reason":<markdown>}` so the agent revises the bundle; `config` / `runtime` domain errors emit `{"hookSpecificOutput":{"hookEventName":"PostToolUse","additionalContext":<markdown>}}` so the agent is informed but does not edit the file (environment issue). The `## Error source` stack-trace section is stripped before the markdown reaches the agent (stopgap for users on pipelex < 0.30.2 — 0.30.2 already drops the section, so this becomes a no-op once the floor is bumped). `additionalContext` is truncated to ~9500 chars with a `[truncated, N chars omitted]` marker. When several `.mthds` files in one apply_patch produce mixed outcomes, block wins: a single block payload is emitted and any warnings are deferred to the next iteration.
+
 ### Changed
 
 - **Minimum required pipelex/pipelex-agent version bumped to `>=0.30.1`** (was `>=0.30.0`). Pipelex 0.30.1 silences every Python logger on `pipelex-agent`'s stderr regardless of user TOML — a user setting `package_log_levels.pipelex = "DEBUG"` (or a transitive dep configuring `anthropic` / `httpx` / `botocore` / `openai` loggers) can no longer corrupt the structured stderr envelope that `PipelexRunner` parses on the validate hook.

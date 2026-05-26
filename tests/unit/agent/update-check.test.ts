@@ -198,7 +198,7 @@ describe("update-check", () => {
     expect(checkBinaryVersion).not.toHaveBeenCalled();
   });
 
-  it("stays silent on cached UP_TO_DATE remote-flip when snoozed", async () => {
+  it("emits snoozed sentinel on cached UP_TO_DATE remote-flip when snoozed", async () => {
     const cachedPayload: CachePayload = {
       mthds_agent: { s: "ok", v: "0.2.1" },
       plxt: { s: "ok", v: "0.3.2" },
@@ -212,9 +212,11 @@ describe("update-check", () => {
     vi.mocked(isSnoozed).mockReturnValue(true);
 
     await agentUpdateCheck({});
-    // Snoozed means "user asked for quiet" — no UPGRADE_AVAILABLE, but the
-    // re-cache still happens so the next non-snoozed run notices.
-    expect(stdoutOutput).toBe("");
+    // Snoozed means "user asked for quiet" — emit the sentinel so the
+    // preamble's no-output WARN rule does not fire. UPGRADE_AVAILABLE is
+    // suppressed, but the re-cache still happens so the next non-snoozed
+    // run notices.
+    expect(stdoutOutput).toBe("UP_TO_DATE update-check=snoozed\n");
     expect(writeCache).toHaveBeenCalledWith(
       expect.objectContaining({ aggregate: "UPGRADE_AVAILABLE" })
     );
@@ -223,7 +225,7 @@ describe("update-check", () => {
   // ---------------------------------------------------------------------------
   // Cache hit — UPGRADE_AVAILABLE + snoozed
   // ---------------------------------------------------------------------------
-  it("returns no output when re-verify still UPGRADE_AVAILABLE but snoozed", async () => {
+  it("emits snoozed sentinel on cached UPGRADE_AVAILABLE when snoozed (no re-verify)", async () => {
     const payload: CachePayload = {
       mthds_agent: { s: "ok", v: "0.2.1" },
       pipelex_agent: { s: "outdated", v: "0.21.0", r: PX_CONSTRAINT },
@@ -234,7 +236,7 @@ describe("update-check", () => {
     vi.mocked(isSnoozed).mockReturnValue(true);
 
     await agentUpdateCheck({});
-    expect(stdoutOutput).toBe("");
+    expect(stdoutOutput).toBe("UP_TO_DATE update-check=snoozed\n");
     // Snooze check happens before re-verify — no subprocess spawns
     expect(checkBinaryVersion).not.toHaveBeenCalled();
   });
@@ -525,7 +527,7 @@ describe("update-check", () => {
       expect(stdoutOutput.endsWith("\n")).toBe(true);
     });
 
-    it("stays silent when snoozed even on cached UPGRADE_AVAILABLE", async () => {
+    it("emits snoozed sentinel (not UP_TO_DATE versions) on cached UPGRADE_AVAILABLE when snoozed", async () => {
       const payload: CachePayload = {
         mthds_agent: { s: "ok", v: "0.2.1" },
         plxt: { s: "outdated", v: "0.3.1", r: PLXT_CONSTRAINT },
@@ -535,9 +537,29 @@ describe("update-check", () => {
       vi.mocked(isSnoozed).mockReturnValue(true);
 
       await agentUpdateCheck({});
-      // Snooze means "user asked for quiet" — no UP_TO_DATE either, because
-      // we're not up to date.
-      expect(stdoutOutput).toBe("");
+      // Snoozed: emit the sentinel (so the preamble's no-output WARN doesn't
+      // fire) — but NOT the version-listing UP_TO_DATE form, because we are
+      // not actually up to date.
+      expect(stdoutOutput).toBe("UP_TO_DATE update-check=snoozed\n");
+    });
+
+    it("emits snoozed sentinel on fresh-check snoozed (cache miss + outdated)", async () => {
+      vi.mocked(readCache).mockReturnValue(null);
+      vi.mocked(computeAggregate).mockReturnValue("UPGRADE_AVAILABLE");
+      vi.mocked(checkBinaryVersion).mockReturnValue({
+        status: "outdated",
+        installed_version: "0.3.1",
+        version_constraint: PLXT_CONSTRAINT,
+      });
+      vi.mocked(isSnoozed).mockReturnValue(true);
+
+      await agentUpdateCheck({});
+      expect(stdoutOutput).toBe("UP_TO_DATE update-check=snoozed\n");
+      // Cache still writes so a future non-snoozed run reads the
+      // UPGRADE_AVAILABLE state.
+      expect(writeCache).toHaveBeenCalledWith(
+        expect.objectContaining({ aggregate: "UPGRADE_AVAILABLE" })
+      );
     });
   });
 

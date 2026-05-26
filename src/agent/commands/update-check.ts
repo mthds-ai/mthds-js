@@ -3,15 +3,21 @@
  *
  * Stdout protocol (consumed by skill preamble bash block):
  *   - UP_TO_DATE k=v ...        → explicit "all current" line; preamble proceeds.
- *                                  Also emitted as `UP_TO_DATE update-check=disabled`
- *                                  when the user has turned update-check off via
- *                                  config — same shape so the preamble's split
- *                                  rule treats it as a clean env-check.
+ *                                  Two "quiet" variants share the same prefix so
+ *                                  the preamble's split rule treats them all as
+ *                                  clean env-checks:
+ *                                    `UP_TO_DATE update-check=disabled` — user
+ *                                       turned update-check off via config.
+ *                                    `UP_TO_DATE update-check=snoozed`  — user
+ *                                       has an active snooze on the current
+ *                                       version key (would-be UPGRADE_AVAILABLE
+ *                                       suppressed for this run).
  *   - UPGRADE_AVAILABLE <json>  → trigger upgrade flow (read shared/upgrade-flow.md)
  *   - JUST_UPGRADED <json>      → announce what was upgraded, then continue
- *   - No output                 → snoozed (caller respects silence). Anything
- *                                  else is a script bug; preamble treats empty
- *                                  stdout as a degraded env-check.
+ *   - No output                 → script bug. Preamble treats empty stdout as
+ *                                  a degraded env-check; every legitimate
+ *                                  branch (including snooze) emits one of the
+ *                                  signals above.
  *
  * The preamble captures stdout via: mthds-agent update-check 2>/dev/null || true
  * and checks for the presence of these keywords. Plain text, not agentSuccess JSON.
@@ -164,7 +170,10 @@ async function agentUpdateCheckInner(
       // emit UPGRADE_AVAILABLE through the same snooze gate as below.
       writeCache({ aggregate: overlaidAggregate, payload: overlaid });
       const overlaidKey = computeVersionKey(overlaid);
-      if (isSnoozed(overlaidKey)) return;
+      if (isSnoozed(overlaidKey)) {
+        emitSnoozedSentinel();
+        return;
+      }
       process.stdout.write(
         "UPGRADE_AVAILABLE " + JSON.stringify(overlaid) + "\n"
       );
@@ -172,9 +181,13 @@ async function agentUpdateCheckInner(
     }
 
     // UPGRADE_AVAILABLE — check snooze first to avoid unnecessary subprocess spawns.
-    // Snooze means "user explicitly asked for quiet"; respect it with no output.
+    // Snooze means "user explicitly asked for quiet"; emit the snoozed sentinel
+    // so the preamble's "no output → WARN" rule does not fire on every run.
     const cachedKey = computeVersionKey(cached.payload);
-    if (isSnoozed(cachedKey)) return;
+    if (isSnoozed(cachedKey)) {
+      emitSnoozedSentinel();
+      return;
+    }
 
     // Re-verify to catch manual upgrades (e.g. uv tool install --upgrade)
     const freshPayload = await runFreshChecks(cfg.runner);
@@ -187,7 +200,10 @@ async function agentUpdateCheckInner(
     }
 
     const freshKey = computeVersionKey(freshPayload);
-    if (isSnoozed(freshKey)) return;
+    if (isSnoozed(freshKey)) {
+      emitSnoozedSentinel();
+      return;
+    }
     process.stdout.write(
       "UPGRADE_AVAILABLE " + JSON.stringify(freshPayload) + "\n"
     );
@@ -202,14 +218,16 @@ async function agentUpdateCheckInner(
   //    not creatable), the preamble still gets the signal.
   if (aggregate !== "UP_TO_DATE") {
     const versionKey = computeVersionKey(payload);
-    if (!isSnoozed(versionKey)) {
+    if (isSnoozed(versionKey)) {
+      // Fresh outdated payload but the user has snoozed this version key —
+      // emit the snoozed sentinel rather than staying silent, so the preamble
+      // can tell a quiet-by-choice run apart from a broken env-check.
+      emitSnoozedSentinel();
+    } else {
       process.stdout.write(
         "UPGRADE_AVAILABLE " + JSON.stringify(payload) + "\n"
       );
     }
-    // When snoozed on a fresh outdated payload, stay silent — same rule as
-    // the cached UPGRADE_AVAILABLE branch above. UP_TO_DATE is not the truth
-    // here either, so don't emit it.
   } else {
     emitUpToDate(payload);
   }
@@ -325,6 +343,17 @@ function emitUpToDate(payload: CachePayload): void {
     parts.push(`plugin=${payload.plugin.v ?? "?"}`);
   }
   process.stdout.write("UP_TO_DATE " + parts.join(" ") + "\n");
+}
+
+/**
+ * Emit the "quiet by snooze" sentinel. Shares the `UP_TO_DATE` prefix so the
+ * preamble's split rule treats it as a clean env-check — same shape as
+ * `UP_TO_DATE update-check=disabled`. Without this, every snoozed run would
+ * trip the preamble's "no output → WARN" rule and the user's explicit "quiet
+ * me" choice would silently turn into a perpetual warning.
+ */
+function emitSnoozedSentinel(): void {
+  process.stdout.write("UP_TO_DATE update-check=snoozed\n");
 }
 
 // ── Remote upstream overlay ─────────────────────────────────────────

@@ -982,7 +982,7 @@ describe("update-cache", () => {
         expect(readRemoteCache()).toEqual(payload);
       });
 
-      it("returns payload when one field is null", async () => {
+      it("returns payload when one field is null and entry is fresh", async () => {
         mkdirSync(stateDir(), { recursive: true });
         const payload = { mthds_agent_latest: "0.8.1", plugin_latest: null };
         writeFileSync(remotePath(), JSON.stringify(payload), "utf-8");
@@ -999,6 +999,43 @@ describe("update-cache", () => {
         utimesSync(remotePath(), old, old);
         const { readRemoteCache } = await importModule();
         expect(readRemoteCache()).toBeNull();
+      });
+
+      it("treats partial entry older than 1h as expired (re-probe needed)", async () => {
+        mkdirSync(stateDir(), { recursive: true });
+        // One field null → partial → short TTL applies.
+        const payload = { mthds_agent_latest: "0.8.1", plugin_latest: null };
+        writeFileSync(remotePath(), JSON.stringify(payload), "utf-8");
+        // Backdate mtime by 90 min — past the 1h partial TTL but well within
+        // the 24h complete TTL. Without the partial-aware TTL this would
+        // return the stale null and lock the upstream-missing signal for 23h.
+        const old = Math.floor((Date.now() - 90 * 60 * 1000) / 1000);
+        utimesSync(remotePath(), old, old);
+        const { readRemoteCache } = await importModule();
+        expect(readRemoteCache()).toBeNull();
+      });
+
+      it("returns complete entry up to 24h old (full TTL applies when no nulls)", async () => {
+        mkdirSync(stateDir(), { recursive: true });
+        const payload = { mthds_agent_latest: "0.8.1", plugin_latest: "0.11.3" };
+        writeFileSync(remotePath(), JSON.stringify(payload), "utf-8");
+        // Backdate 90 min — past the partial TTL but no field is null, so the
+        // full 24h TTL must still apply.
+        const old = Math.floor((Date.now() - 90 * 60 * 1000) / 1000);
+        utimesSync(remotePath(), old, old);
+        const { readRemoteCache } = await importModule();
+        expect(readRemoteCache()).toEqual(payload);
+      });
+
+      it("readRemoteCacheRaw ignores both TTLs (returns even old partial entries)", async () => {
+        mkdirSync(stateDir(), { recursive: true });
+        const payload = { mthds_agent_latest: "0.8.1", plugin_latest: null };
+        writeFileSync(remotePath(), JSON.stringify(payload), "utf-8");
+        // 25h old — past every TTL.
+        const old = Math.floor((Date.now() - 25 * 60 * 60 * 1000) / 1000);
+        utimesSync(remotePath(), old, old);
+        const { readRemoteCacheRaw } = await importModule();
+        expect(readRemoteCacheRaw()).toEqual(payload);
       });
 
       it("prefers newer of primary vs fallback when both present", async () => {

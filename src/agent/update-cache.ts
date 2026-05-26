@@ -132,6 +132,12 @@ const TTL_UPGRADE_AVAILABLE_MS = 720 * MS_PER_MINUTE; // 720 min (12 hours)
  *  semantics differ — local binaries change on install; remote upstreams move
  *  on someone else's release schedule, so a TTL is the only signal. */
 export const TTL_REMOTE_FETCH_MS = 24 * 60 * MS_PER_MINUTE; // 24h
+/** Shorter TTL applied when the cached entry has any null field (a previous
+ *  probe failed and we wrote the merged-with-prior partial). Without this, a
+ *  single transient probe failure would lock the null for 24h — exactly the
+ *  signal the remote overlay was built to surface. 1h gives us a reasonable
+ *  retry cadence without hot-looping on every preamble invocation. */
+export const TTL_REMOTE_FETCH_PARTIAL_MS = 60 * MS_PER_MINUTE; // 1h
 // Real markers are consumed within seconds (skill flow re-runs preamble
 // immediately after upgrade). Anything markedly older is almost certainly
 // stuck because the sandbox blocked cleanup last time — ignore it instead of
@@ -738,7 +744,16 @@ function readRemoteAt(
   if (enforceTtl) {
     const age = Date.now() - mtimeMs;
     // Negative age beyond 1 minute means clock skew — treat as expired.
-    if (age < -MS_PER_MINUTE || age > TTL_REMOTE_FETCH_MS) return null;
+    if (age < -MS_PER_MINUTE) return null;
+    // A partial entry (any null field) uses the shorter TTL so a previously
+    // failed probe gets retried within 1h instead of being locked for 24h.
+    // The complete path keeps the full 24h TTL — successful upstream data is
+    // long-lived. The raw reader (enforceTtl=false) ignores both TTLs because
+    // its caller only wants the prior payload to preserve working halves.
+    const isPartial =
+      parsed.mthds_agent_latest === null || parsed.plugin_latest === null;
+    const ttl = isPartial ? TTL_REMOTE_FETCH_PARTIAL_MS : TTL_REMOTE_FETCH_MS;
+    if (age > ttl) return null;
   }
 
   return { payload: parsed, mtimeMs };

@@ -146,36 +146,36 @@ async function agentUpdateCheckInner(
   const cached = readCache();
   if (cached) {
     if (cached.aggregate === "UP_TO_DATE") {
-      // The cached aggregate reflects the remote overlay at write-time. Re-run
-      // the overlay against the cached payload so a remote-cache refresh that
-      // happened between the local cache write and now (sibling --force,
-      // independent worker, etc.) still flips us to UPGRADE_AVAILABLE. Cheap
-      // when the 24h remote cache is fresh; the same applyRemoteOverlay
-      // try/catch isolation applies — a remote failure must never crash this
-      // path, we just degrade to "trust the cached UP_TO_DATE".
-      const overlaid: CachePayload = JSON.parse(JSON.stringify(cached.payload));
-      try {
-        await applyRemoteOverlay(overlaid);
-      } catch (err) {
-        process.stderr.write(
-          `Warning: remote upstream check failed (${err instanceof Error ? err.message : String(err)}). Skipping upstream overlay.\n`
-        );
-      }
-      const overlaidAggregate = computeAggregate(overlaid);
-      if (overlaidAggregate === "UP_TO_DATE") {
-        emitUpToDate(cached.payload);
+      // Re-run fresh checks on cache-UP_TO_DATE rather than trusting the
+      // cached versions. Why: when the user manually upgrades a binary outside
+      // the upgrade-flow (npm install -g mthds@latest, uv tool upgrade plxt),
+      // no JUST_UPGRADED marker is written, so within the 60-min cache TTL
+      // the cached versions are stale — and the explicit UP_TO_DATE line we
+      // emit would report versions that no longer exist on the host.
+      // runFreshChecks internally re-applies the remote overlay, so a sibling
+      // --force or independent worker that refreshed the upstream cache still
+      // flips us to UPGRADE_AVAILABLE on this path. Cost: ~150ms of binary
+      // spawns per invocation; symmetric with the cache-UPGRADE_AVAILABLE
+      // branch which already pays this. The cache's remaining role on this
+      // branch is just the "we were UP_TO_DATE recently" signal — no payload
+      // values are actually trusted.
+      const freshPayload = await runFreshChecks(cfg.runner);
+      const freshAggregate = computeAggregate(freshPayload);
+      writeCache({ aggregate: freshAggregate, payload: freshPayload });
+
+      if (freshAggregate === "UP_TO_DATE") {
+        emitUpToDate(freshPayload);
         return;
       }
-      // Remote overlay disagrees with the cached aggregate — re-cache and
-      // emit UPGRADE_AVAILABLE through the same snooze gate as below.
-      writeCache({ aggregate: overlaidAggregate, payload: overlaid });
-      const overlaidKey = computeVersionKey(overlaid);
-      if (isSnoozed(overlaidKey)) {
+      // Local state or remote overlay flipped us to UPGRADE_AVAILABLE — emit
+      // through the same snooze gate as the cache-UPGRADE_AVAILABLE branch.
+      const freshKey = computeVersionKey(freshPayload);
+      if (isSnoozed(freshKey)) {
         emitSnoozedSentinel();
         return;
       }
       process.stdout.write(
-        "UPGRADE_AVAILABLE " + JSON.stringify(overlaid) + "\n"
+        "UPGRADE_AVAILABLE " + JSON.stringify(freshPayload) + "\n"
       );
       return;
     }

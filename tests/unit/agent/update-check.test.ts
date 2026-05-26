@@ -154,19 +154,35 @@ describe("update-check", () => {
   // ---------------------------------------------------------------------------
   // Cache hit — UP_TO_DATE
   // ---------------------------------------------------------------------------
-  it("emits explicit UP_TO_DATE line on cache hit UP_TO_DATE", async () => {
-    const payload: CachePayload = {
+  it("re-runs fresh checks on cache hit UP_TO_DATE (catches manual upgrades)", async () => {
+    // The cached payload has the old plxt version (0.3.2) — simulating a
+    // user who just ran `uv tool upgrade plxt` outside the upgrade-flow.
+    // No JUST_UPGRADED marker was written, but the binary is now 0.4.0.
+    const cachedPayload: CachePayload = {
       mthds_agent: { s: "ok", v: "0.2.1" },
-      pipelex_agent: { s: "ok", v: "0.22.0" },
       plxt: { s: "ok", v: "0.3.2" },
     };
-    vi.mocked(readCache).mockReturnValue({ aggregate: "UP_TO_DATE", payload });
+    vi.mocked(readCache).mockReturnValue({ aggregate: "UP_TO_DATE", payload: cachedPayload });
+    // Fresh binary check reflects the manual upgrade.
+    vi.mocked(checkBinaryVersion).mockReturnValue({
+      status: "ok",
+      installed_version: "0.4.0",
+      version_constraint: PLXT_CONSTRAINT,
+    });
 
     await agentUpdateCheck({});
-    expect(stdoutOutput).toBe(
-      "UP_TO_DATE mthds-agent=0.2.1 plxt=0.3.2 pipelex-agent=0.22.0\n",
+    // The emitted UP_TO_DATE line MUST reflect the fresh version (0.4.0),
+    // not the stale cached version (0.3.2). This is the whole point of
+    // re-running fresh checks on this branch — without it the preamble
+    // would be told versions that don't exist on the host.
+    expect(stdoutOutput).toContain("plxt=0.4.0");
+    expect(stdoutOutput).not.toContain("plxt=0.3.2");
+    // Fresh checks called (runner=api → only plxt is checked, not pipelex-agent).
+    expect(checkBinaryVersion).toHaveBeenCalledTimes(1);
+    // Re-cached with fresh data so the next snooze-key comparison sees current state.
+    expect(writeCache).toHaveBeenCalledWith(
+      expect.objectContaining({ aggregate: "UP_TO_DATE" })
     );
-    expect(checkBinaryVersion).not.toHaveBeenCalled();
   });
 
   // ---------------------------------------------------------------------------
@@ -179,13 +195,12 @@ describe("update-check", () => {
     };
     vi.mocked(readCache).mockReturnValue({ aggregate: "UP_TO_DATE", payload: cachedPayload });
     // Remote cache has been refreshed (sibling --force, independent worker)
-    // and now shows mthds-agent newer than what's cached locally.
+    // and now shows mthds-agent newer than what's cached locally. The fresh
+    // check inside runFreshChecks applies this overlay internally.
     vi.mocked(readRemoteCache).mockReturnValue({
       mthds_agent_latest: "999.0.0",
       plugin_latest: null,
     });
-    // The new cached UP_TO_DATE branch calls computeAggregate once on the
-    // overlaid payload; in the divergence scenario it reports UPGRADE_AVAILABLE.
     vi.mocked(computeAggregate).mockReturnValue("UPGRADE_AVAILABLE");
 
     await agentUpdateCheck({});
@@ -194,8 +209,10 @@ describe("update-check", () => {
     expect(writeCache).toHaveBeenCalledWith(
       expect.objectContaining({ aggregate: "UPGRADE_AVAILABLE" })
     );
-    // No binary subprocess re-check — the overlay only consults remote data.
-    expect(checkBinaryVersion).not.toHaveBeenCalled();
+    // Fresh check runs (binary spawn) — the cache-UP_TO_DATE branch always
+    // re-verifies installed versions now, so manual upgrades aren't reported
+    // with stale cached values.
+    expect(checkBinaryVersion).toHaveBeenCalledTimes(1);
   });
 
   it("emits snoozed sentinel on cached UP_TO_DATE remote-flip when snoozed", async () => {

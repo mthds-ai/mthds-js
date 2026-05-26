@@ -2,13 +2,16 @@
  * mthds-agent update-check — check if binary dependencies need updating.
  *
  * Stdout protocol (consumed by skill preamble bash block):
- *   - UP_TO_DATE k=v ...        → explicit "all current" line; preamble proceeds
+ *   - UP_TO_DATE k=v ...        → explicit "all current" line; preamble proceeds.
+ *                                  Also emitted as `UP_TO_DATE update-check=disabled`
+ *                                  when the user has turned update-check off via
+ *                                  config — same shape so the preamble's split
+ *                                  rule treats it as a clean env-check.
  *   - UPGRADE_AVAILABLE <json>  → trigger upgrade flow (read shared/upgrade-flow.md)
  *   - JUST_UPGRADED <json>      → announce what was upgraded, then continue
- *   - No output                 → either snoozed (caller respects silence) or
- *                                  update-check disabled via config. Anything
- *                                  else is a script bug; preamble treats it
- *                                  as a degraded env-check.
+ *   - No output                 → snoozed (caller respects silence). Anything
+ *                                  else is a script bug; preamble treats empty
+ *                                  stdout as a degraded env-check.
  *
  * The preamble captures stdout via: mthds-agent update-check 2>/dev/null || true
  * and checks for the presence of these keywords. Plain text, not agentSuccess JSON.
@@ -88,6 +91,13 @@ async function agentUpdateCheckInner(
   const upgradeMarker = readAndClearUpgradeMarker();
   if (upgradeMarker) {
     clearCache();
+    // When --force is also set the user has explicitly asked for a
+    // clean-slate check; drop snooze + remote cache too so this path
+    // honors --force the same way the standalone branch below does.
+    if (options.force) {
+      clearSnooze();
+      clearRemoteCache();
+    }
     const payload = await runFreshChecks(cfg.runner);
     const aggregate = computeAggregate(payload);
     writeCache({ aggregate, payload });
@@ -130,7 +140,34 @@ async function agentUpdateCheckInner(
   const cached = readCache();
   if (cached) {
     if (cached.aggregate === "UP_TO_DATE") {
-      emitUpToDate(cached.payload);
+      // The cached aggregate reflects the remote overlay at write-time. Re-run
+      // the overlay against the cached payload so a remote-cache refresh that
+      // happened between the local cache write and now (sibling --force,
+      // independent worker, etc.) still flips us to UPGRADE_AVAILABLE. Cheap
+      // when the 24h remote cache is fresh; the same applyRemoteOverlay
+      // try/catch isolation applies — a remote failure must never crash this
+      // path, we just degrade to "trust the cached UP_TO_DATE".
+      const overlaid: CachePayload = JSON.parse(JSON.stringify(cached.payload));
+      try {
+        await applyRemoteOverlay(overlaid);
+      } catch (err) {
+        process.stderr.write(
+          `Warning: remote upstream check failed (${err instanceof Error ? err.message : String(err)}). Skipping upstream overlay.\n`
+        );
+      }
+      const overlaidAggregate = computeAggregate(overlaid);
+      if (overlaidAggregate === "UP_TO_DATE") {
+        emitUpToDate(cached.payload);
+        return;
+      }
+      // Remote overlay disagrees with the cached aggregate — re-cache and
+      // emit UPGRADE_AVAILABLE through the same snooze gate as below.
+      writeCache({ aggregate: overlaidAggregate, payload: overlaid });
+      const overlaidKey = computeVersionKey(overlaid);
+      if (isSnoozed(overlaidKey)) return;
+      process.stdout.write(
+        "UPGRADE_AVAILABLE " + JSON.stringify(overlaid) + "\n"
+      );
       return;
     }
 

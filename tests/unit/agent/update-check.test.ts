@@ -170,6 +170,57 @@ describe("update-check", () => {
   });
 
   // ---------------------------------------------------------------------------
+  // Cache hit UP_TO_DATE — remote overlay still runs to catch divergence
+  // ---------------------------------------------------------------------------
+  it("flips cached UP_TO_DATE to UPGRADE_AVAILABLE when remote overlay disagrees", async () => {
+    const cachedPayload: CachePayload = {
+      mthds_agent: { s: "ok", v: "0.2.1" },
+      plxt: { s: "ok", v: "0.3.2" },
+    };
+    vi.mocked(readCache).mockReturnValue({ aggregate: "UP_TO_DATE", payload: cachedPayload });
+    // Remote cache has been refreshed (sibling --force, independent worker)
+    // and now shows mthds-agent newer than what's cached locally.
+    vi.mocked(readRemoteCache).mockReturnValue({
+      mthds_agent_latest: "999.0.0",
+      plugin_latest: null,
+    });
+    // The new cached UP_TO_DATE branch calls computeAggregate once on the
+    // overlaid payload; in the divergence scenario it reports UPGRADE_AVAILABLE.
+    vi.mocked(computeAggregate).mockReturnValue("UPGRADE_AVAILABLE");
+
+    await agentUpdateCheck({});
+    expect(stdoutOutput).toContain("UPGRADE_AVAILABLE");
+    expect(stdoutOutput).not.toMatch(/^UP_TO_DATE /m);
+    expect(writeCache).toHaveBeenCalledWith(
+      expect.objectContaining({ aggregate: "UPGRADE_AVAILABLE" })
+    );
+    // No binary subprocess re-check — the overlay only consults remote data.
+    expect(checkBinaryVersion).not.toHaveBeenCalled();
+  });
+
+  it("stays silent on cached UP_TO_DATE remote-flip when snoozed", async () => {
+    const cachedPayload: CachePayload = {
+      mthds_agent: { s: "ok", v: "0.2.1" },
+      plxt: { s: "ok", v: "0.3.2" },
+    };
+    vi.mocked(readCache).mockReturnValue({ aggregate: "UP_TO_DATE", payload: cachedPayload });
+    vi.mocked(readRemoteCache).mockReturnValue({
+      mthds_agent_latest: "999.0.0",
+      plugin_latest: null,
+    });
+    vi.mocked(computeAggregate).mockReturnValue("UPGRADE_AVAILABLE");
+    vi.mocked(isSnoozed).mockReturnValue(true);
+
+    await agentUpdateCheck({});
+    // Snoozed means "user asked for quiet" — no UPGRADE_AVAILABLE, but the
+    // re-cache still happens so the next non-snoozed run notices.
+    expect(stdoutOutput).toBe("");
+    expect(writeCache).toHaveBeenCalledWith(
+      expect.objectContaining({ aggregate: "UPGRADE_AVAILABLE" })
+    );
+  });
+
+  // ---------------------------------------------------------------------------
   // Cache hit — UPGRADE_AVAILABLE + snoozed
   // ---------------------------------------------------------------------------
   it("returns no output when re-verify still UPGRADE_AVAILABLE but snoozed", async () => {
@@ -303,6 +354,20 @@ describe("update-check", () => {
     await agentUpdateCheck({});
     expect(stdoutOutput).toContain("JUST_UPGRADED");
     expect(clearCache).toHaveBeenCalled();
+  });
+
+  // ---------------------------------------------------------------------------
+  // just-upgraded-from marker + --force still clears snooze and remote cache
+  // ---------------------------------------------------------------------------
+  it("clears snooze and remote cache when --force is set even with marker present", async () => {
+    vi.mocked(readAndClearUpgradeMarker).mockReturnValue({ pipelex_agent: "0.21.0" });
+    vi.mocked(computeAggregate).mockReturnValue("UP_TO_DATE");
+
+    await agentUpdateCheck({ force: true });
+    expect(clearCache).toHaveBeenCalled();
+    expect(clearSnooze).toHaveBeenCalled();
+    expect(clearRemoteCache).toHaveBeenCalled();
+    expect(stdoutOutput).toContain("JUST_UPGRADED");
   });
 
   // ---------------------------------------------------------------------------

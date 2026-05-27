@@ -1,3 +1,5 @@
+# Runs `make check` (build + tests) on every PR. Its status check is required
+# by the branch-protection ruleset before anything can merge into main.
 name: Quality Checks
 
 on:

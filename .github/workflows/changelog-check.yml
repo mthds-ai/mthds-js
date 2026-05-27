@@ -1,3 +1,5 @@
+# For PRs from a release/vX.Y.Z branch into main, requires that CHANGELOG.md
+# contains a matching `## [vX.Y.Z]` entry. Non-release PRs are skipped.
 name: Changelog Version Check
 
 on:

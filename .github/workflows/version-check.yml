@@ -1,3 +1,9 @@
+# Validates package.json version against the branch flow:
+#   - PR → main:           PR version must be strictly greater than main's.
+#   - PR → release/vX.Y.Z: package.json version must equal X.Y.Z.
+#   - PR from release/vX.Y.Z: package.json version must equal X.Y.Z.
+# All PR refs go through env: (never interpolated into shell) to prevent
+# command injection via attacker-controlled fork branch names.
 name: Version check
 
 on:

@@ -1,3 +1,10 @@
+# Publishes the npm package after a merge into main. The only workflow that
+# handles release credentials. Authenticates to npm via OIDC trusted publishing
+# (id-token: write + --provenance), not a long-lived NPM_TOKEN.
+#
+# - permissions: {}            deny by default; each job grants the minimum it needs.
+# - concurrency (no cancel):   two merges to main never race into a double-publish.
+# - skip-if-already-published: re-running on a no-op merge is safe.
 name: Publish to npm
 
 on:

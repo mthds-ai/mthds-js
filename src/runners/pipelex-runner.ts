@@ -37,6 +37,14 @@ import type {
   PipelineExecuteResponse,
   PipelineStartResponse,
 } from "../client/pipeline.js";
+import type {
+  StartRunOptions,
+  RunPublic,
+  RunRead,
+  RunResult,
+  RunResultState,
+  WaitForResultOptions,
+} from "../client/runs.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -448,4 +456,30 @@ export class PipelexRunner implements Runner {
       "startPipeline is not supported by the pipelex CLI runner. Use the API runner instead."
     );
   }
+
+  // ── Run lifecycle ──────────────────────────────────────────────────
+  // The local pipelex CLI runs pipelines in-process; there is no durable run
+  // to poll by id. These belong to the hosted platform — use --runner api.
+
+  async startRun(_options: StartRunOptions): Promise<RunPublic> {
+    throw new Error(RUN_LIFECYCLE_UNSUPPORTED);
+  }
+
+  async getRun(_runId: string): Promise<RunRead> {
+    throw new Error(RUN_LIFECYCLE_UNSUPPORTED);
+  }
+
+  async getResult(_runId: string): Promise<RunResultState> {
+    throw new Error(RUN_LIFECYCLE_UNSUPPORTED);
+  }
+
+  async waitForResult(
+    _runId: string,
+    _options?: WaitForResultOptions
+  ): Promise<RunResult> {
+    throw new Error(RUN_LIFECYCLE_UNSUPPORTED);
+  }
 }
+
+const RUN_LIFECYCLE_UNSUPPORTED =
+  "Run lifecycle (start/status/result/poll) is not supported by the pipelex CLI runner. Use the API runner instead (--runner api).";

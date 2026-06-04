@@ -125,7 +125,7 @@ export async function runPipe(
   }
 
   const s = p.spinner();
-  s.start("Executing pipeline...");
+  s.start("Running pipeline (this can take a while)...");
 
   try {
     const result = await runner.executePipeline(pipelineOptions);
@@ -140,8 +140,11 @@ export async function runPipe(
       p.log.success(`Output written to ${options.output}`);
     }
 
-    if (options.prettyPrint !== false && result.pipe_output) {
-      p.log.info(JSON.stringify(result.pipe_output, null, 2));
+    // The API runner's durable path returns `main_stuff`; the runner's blocking
+    // path returns `pipe_output`. Print whichever the result carries.
+    const output = result.main_stuff ?? result.pipe_output;
+    if (options.prettyPrint !== false && output) {
+      p.log.info(JSON.stringify(output, null, 2));
     }
 
     p.outro("Done");

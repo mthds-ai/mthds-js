@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### Added
+
+- **Durable run lifecycle on `MthdsApiClient` — `startRun` / `getRun` / `getResult` / `waitForResult`.** Long pipeline runs outlive the API Gateway's 30s ceiling, so the SDK now submits a run on the platform surface (`POST /platform/v1/runs`) and polls a self-healing endpoint by bare `run_id` (`GET /platform/v1/runs/by-id/{run_id}` and `…/result`) until the run reaches a terminal state. `getResult` maps the platform's poll semantics (HTTP 202 / 200 / 409) to a discriminated `RunResultState`; `waitForResult` honors the server's `Retry-After`, an `AbortSignal`, and a timeout (throwing `RunTimeoutError` without cancelling the run). New `RunFailedError` / `RunTimeoutError` exceptions.
+- **Agent run commands — `mthds-agent run start` / `run status` / `run result` / `run poll`.** Because all run state lives behind `run_id` (DynamoDB + Temporal), an agent can `start` a run, disconnect, and later resume with `status` / `result` / `poll`. `run poll` is Ctrl-C-safe — SIGINT stops waiting without cancelling the run and reports it as resumable by id.
+
+### Changed
+
+- **The API runner's `execute()` / `executePipeline()` now use the durable start+poll path** instead of the runner's blocking `/runner/v1/pipeline/execute`, so real long-running pipelines no longer die at the 30s gateway timeout. They return `main_stuff` + `graph_spec` (from the platform result) rather than the runner's full `pipe_output`. The blocking call is still reachable directly via `MthdsApiClient.executePipeline` for short, sub-30s runs.
+
 ### Fixed
 
 - **Fixed five broken `JSON.parse` paths in `PipelexRunner` (local CLI runner).** `checkModel()` and `models()` now pass `--format json` explicitly to `pipelex-agent` — these commands have defaulted to markdown output since before v0.29.0, so parsing their stdout as JSON was silently broken. `concept()` and `pipeSpec()` no longer attempt `JSON.parse` on raw TOML output — they synthesize the expected response wrapper from the command's TOML stdout. `buildOutput()` now writes to a temp file via `-o` and reads it back, matching the pattern already used by `buildRunner()`, instead of parsing stdout which contains status messages rather than JSON.

@@ -1,4 +1,12 @@
 import type { RunnerProtocol } from "../client/protocol.js";
+import type {
+  StartRunOptions,
+  RunPublic,
+  RunRead,
+  RunResultState,
+  RunResult,
+  WaitForResultOptions,
+} from "../client/runs.js";
 
 // ── Runner type ─────────────────────────────────────────────────────
 
@@ -104,6 +112,10 @@ export interface PipelineResponse {
   finished_at?: string | null;
   pipe_output?: DictPipeOutput | null;
   main_stuff_name?: string | null;
+  /** Main output stuff (`main_stuff.json`) — set on the API runner's platform polling path. */
+  main_stuff?: Record<string, unknown> | null;
+  /** Pipeline graph spec (`graphspec.json`) — set on the API runner's platform polling path. */
+  graph_spec?: Record<string, unknown> | null;
 }
 
 export interface PipelexBundleBlueprint {
@@ -171,8 +183,14 @@ export interface Runner extends RunnerProtocol {
   buildOutput(request: BuildOutputRequest): Promise<unknown>;
   buildRunner(request: BuildRunnerRequest): Promise<BuildRunnerResponse>;
 
-  // Pipeline execution
+  // Pipeline execution (blocking: starts a run and waits for the result)
   execute(request: ExecuteRequest): Promise<PipelineResponse>;
+
+  // Run lifecycle (durable, poll-by-id — see src/client/runs.ts)
+  startRun(options: StartRunOptions): Promise<RunPublic>;
+  getRun(runId: string): Promise<RunRead>;
+  getResult(runId: string): Promise<RunResultState>;
+  waitForResult(runId: string, options?: WaitForResultOptions): Promise<RunResult>;
 
   // Validation
   validate(request: ValidateRequest): Promise<ValidateResponse>;

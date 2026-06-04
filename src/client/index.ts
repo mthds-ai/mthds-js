@@ -5,6 +5,8 @@ export {
   ApiUnreachableError,
   ClientAuthenticationError,
   PipelineRequestError,
+  RunFailedError,
+  RunTimeoutError,
 } from "./exceptions.js";
 export type {
   PipelineState,
@@ -13,6 +15,19 @@ export type {
   PipelineStartResponse,
   ExecutePipelineOptions,
 } from "./pipeline.js";
+export {
+  isTerminalRunStatus,
+  isSuccessRunStatus,
+} from "./runs.js";
+export type {
+  RunStatus,
+  StartRunOptions,
+  RunPublic,
+  RunRead,
+  RunResult,
+  RunResultState,
+  WaitForResultOptions,
+} from "./runs.js";
 export type {
   DictStuff,
   DictWorkingMemory,

@@ -23,7 +23,16 @@ export interface PipelineExecuteResponse {
   pipeline_state: string;
   finished_at?: string | null;
   main_stuff_name?: string | null;
-  pipe_output: DictPipeOutput;
+  /**
+   * Full pipe output (working memory). Present on the runner's blocking
+   * `/pipeline/execute` path; `null` on the durable platform polling path,
+   * which returns `main_stuff` + `graph_spec` instead.
+   */
+  pipe_output?: DictPipeOutput | null;
+  /** Main output stuff (`main_stuff.json`) — set on the platform polling path. */
+  main_stuff?: Record<string, unknown> | null;
+  /** Pipeline graph spec (`graphspec.json`) — set on the platform polling path. */
+  graph_spec?: Record<string, unknown> | null;
 }
 
 export interface PipelineStartResponse {

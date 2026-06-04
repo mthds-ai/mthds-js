@@ -411,6 +411,9 @@ export function registerApiRunnerCommands(
     .option("--content <mthds>", "Bundle content as a string")
     .option("--inputs-json <json>", "Inputs as a JSON string")
     .option("--method-id <id>", "Run a stored method by id (instead of an inline bundle)")
+    .option("--output-name <name>", "Name of the output slot to write to")
+    .option("--output-multiplicity <value>", "Output multiplicity: 'false', 'true', or an exact count")
+    .option("--dynamic-output <concept_ref>", "Override for the dynamic output concept ref")
     .description("Start a run and return its id without waiting")
     .allowUnknownOption()
     .allowExcessArguments(true)
@@ -424,6 +427,9 @@ export function registerApiRunnerCommands(
           content?: string;
           inputsJson?: string;
           methodId?: string;
+          outputName?: string;
+          outputMultiplicity?: string;
+          dynamicOutput?: string;
         }
       ): Promise<void> => {
         const runner = safeCreateRunner(makeRunner);
@@ -733,8 +739,22 @@ function resolveRunInputs(options: {
 
 function resolveStartRunOptions(
   target: string | undefined,
-  options: { pipe?: string; inputs?: string; content?: string; inputsJson?: string; methodId?: string }
+  options: {
+    pipe?: string;
+    inputs?: string;
+    content?: string;
+    inputsJson?: string;
+    methodId?: string;
+    outputName?: string;
+    outputMultiplicity?: string;
+    dynamicOutput?: string;
+  }
 ): StartRunOptions {
+  const outputs = {
+    output_name: options.outputName,
+    output_multiplicity: parseMultiplicity(options.outputMultiplicity),
+    dynamic_output_concept_ref: options.dynamicOutput,
+  };
   if (options.methodId) {
     if (!options.pipe) {
       agentError(
@@ -744,13 +764,28 @@ function resolveStartRunOptions(
       );
       throw new Error("unreachable");
     }
-    return { method_id: options.methodId, pipe_code: options.pipe, inputs: resolveRunInputs(options) };
+    return { method_id: options.methodId, pipe_code: options.pipe, inputs: resolveRunInputs(options), ...outputs };
   }
   // resolveContentForRun may set options.inputs (directory auto-discovery), so
   // resolve the bundle before reading inputs.
   const mthdsContent = resolveContentForRun(target, options);
   const pipeCode = resolvePipeCode(mthdsContent, options.pipe);
-  return { pipe_code: pipeCode, mthds_contents: [mthdsContent], inputs: resolveRunInputs(options) };
+  return { pipe_code: pipeCode, mthds_contents: [mthdsContent], inputs: resolveRunInputs(options), ...outputs };
+}
+
+/** Parse `--output-multiplicity`: "false"/"true" → boolean, a positive integer → count. */
+function parseMultiplicity(raw: string | undefined): boolean | number | undefined {
+  if (raw === undefined) return undefined;
+  if (raw === "true") return true;
+  if (raw === "false") return false;
+  const count = Number(raw);
+  if (Number.isInteger(count) && count > 0) return count;
+  agentError(
+    "--output-multiplicity must be 'true', 'false', or a positive integer.",
+    "ArgumentError",
+    { error_domain: AGENT_ERROR_DOMAINS.ARGUMENT }
+  );
+  throw new Error("unreachable");
 }
 
 function parsePositiveSeconds(raw: string | undefined, label: string): number | undefined {

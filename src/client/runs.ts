@@ -1,3 +1,5 @@
+import type { VariableMultiplicity } from "./models/pipe_output.js";
+
 /**
  * Run-lifecycle types for the platform run surface (`/platform/v1/runs`).
  *
@@ -53,12 +55,27 @@ export function isSuccessRunStatus(status: RunStatus): boolean {
  * Body of `POST /platform/v1/runs`. `pipe_code` is required by the platform.
  * Two run styles: stored method (`method_id`) or ad-hoc inline bundle
  * (`mthds_contents` + `pipe_code`, `method_id` omitted).
+ *
+ * Mirrors the runner's full ad-hoc input surface — the output controls
+ * (`output_name`, `output_multiplicity`, `dynamic_output_concept_ref`) are
+ * forwarded through the platform to the runner.
  */
 export interface StartRunOptions {
   method_id?: string | null;
-  pipe_code: string;
+  /**
+   * Pipe to run. Optional: when `mthds_contents` is provided without a
+   * `pipe_code`, the runner resolves the pipe from the bundle's `main_pipe`.
+   * At least one of `pipe_code` / `mthds_contents` must be set.
+   */
+  pipe_code?: string | null;
   mthds_contents?: string[] | null;
   inputs?: Record<string, unknown> | null;
+  /** Name of the output slot to write to. */
+  output_name?: string | null;
+  /** Output multiplicity: `false`/`true` or an exact count. */
+  output_multiplicity?: VariableMultiplicity | null;
+  /** Override for the dynamic output concept ref. */
+  dynamic_output_concept_ref?: string | null;
 }
 
 // ── Responses ───────────────────────────────────────────────────────

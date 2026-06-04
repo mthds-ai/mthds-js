@@ -230,14 +230,19 @@ export class MthdsApiClient implements RunnerProtocol {
    * `getRun` for status) using the returned `pipeline_run_id`.
    */
   async startRun(options: StartRunOptions): Promise<RunPublic> {
-    if (!options.pipe_code) {
-      throw new PipelineRequestError("pipe_code is required to start a run.");
+    if (!options.pipe_code && (!options.mthds_contents || options.mthds_contents.length === 0)) {
+      throw new PipelineRequestError(
+        "Either pipe_code or mthds_contents must be provided to start a run."
+      );
     }
     const request = {
       method_id: options.method_id ?? undefined,
-      pipe_code: options.pipe_code,
+      pipe_code: options.pipe_code ?? undefined,
       mthds_contents: options.mthds_contents ?? undefined,
       inputs: options.inputs ?? undefined,
+      output_name: options.output_name ?? undefined,
+      output_multiplicity: options.output_multiplicity ?? undefined,
+      dynamic_output_concept_ref: options.dynamic_output_concept_ref ?? undefined,
     };
     const res = await this.requestRaw("POST", PLATFORM_RUNS, {
       body: request,

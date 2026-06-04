@@ -128,7 +128,7 @@ export class ApiRunner implements Runner {
     // of the runner's blocking `/pipeline/execute` (which dies at the gateway's
     // 30s ceiling on real, long-running pipelines).
     const run = await this.client.startRun({
-      pipe_code: request.pipe_code ?? "",
+      pipe_code: request.pipe_code ?? undefined,
       mthds_contents: request.mthds_contents,
       inputs: request.inputs,
     });
@@ -203,7 +203,7 @@ export class ApiRunner implements Runner {
     // short, sub-30s runs, but the runner abstraction defaults to the path that
     // survives long runs.
     const run = await this.client.startRun({
-      pipe_code: options.pipe_code ?? "",
+      pipe_code: options.pipe_code ?? undefined,
       mthds_contents: options.mthds_contents,
       inputs: (options.inputs as Record<string, unknown> | null | undefined) ?? undefined,
     });
@@ -223,7 +223,7 @@ export class ApiRunner implements Runner {
     options: ExecutePipelineOptions
   ): Promise<PipelineStartResponse> {
     const run = await this.client.startRun({
-      pipe_code: options.pipe_code ?? "",
+      pipe_code: options.pipe_code ?? undefined,
       mthds_contents: options.mthds_contents,
       inputs: (options.inputs as Record<string, unknown> | null | undefined) ?? undefined,
     });

@@ -73,11 +73,20 @@ describe("MthdsApiClient.startRun", () => {
     });
   });
 
-  it("throws PipelineRequestError when pipe_code is missing", async () => {
+  it("starts an ad-hoc run with mthds_contents and no pipe_code", async () => {
     const client = makeClient();
-    await expect(
-      client.startRun({ pipe_code: "", mthds_contents: ["x"] })
-    ).rejects.toBeInstanceOf(PipelineRequestError);
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(jsonResponse(200, { pipeline_run_id: "run-2", status: "PENDING" }));
+    await client.startRun({ mthds_contents: ["domain = 'x'\nmain_pipe = 'p'"] });
+    const body = JSON.parse((fetchSpy.mock.calls[0]![1] as RequestInit).body as string);
+    expect(body.pipe_code).toBeUndefined();
+    expect(body.mthds_contents).toEqual(["domain = 'x'\nmain_pipe = 'p'"]);
+  });
+
+  it("throws PipelineRequestError when neither pipe_code nor mthds_contents is given", async () => {
+    const client = makeClient();
+    await expect(client.startRun({})).rejects.toBeInstanceOf(PipelineRequestError);
   });
 
   it("surfaces a non-2xx start as ApiResponseError", async () => {

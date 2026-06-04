@@ -34,9 +34,11 @@ const client = new MthdsApiClient({ apiBaseUrl, apiToken });
 
 // Submit (returns immediately with a run id)
 const run = await client.startRun({
-  pipe_code: "my_pipe",
-  mthds_contents: [bundleContents], // or method_id for a stored method
+  pipe_code: "my_pipe",              // optional — omit to use the bundle's main_pipe
+  mthds_contents: [bundleContents],  // or method_id for a stored method
   inputs: { question: "…" },
+  // optional output controls (forwarded to the runner):
+  // output_name, output_multiplicity, dynamic_output_concept_ref
 });
 
 // Poll to completion

@@ -8,7 +8,7 @@ Because every bit of run state lives behind the `run_id` (DynamoDB for the immut
 
 The SDK talks to two distinct API surfaces. They are not interchangeable:
 
-- **Runner** (`/runner/v1/pipeline/*`) — the stateless execution engine. `MthdsApiClient.executePipeline` calls the blocking `/pipeline/execute`; it returns the full result in one call but is subject to the 30s gateway ceiling, so it only suits short runs.
+- **Runner** (`/runner/v1/pipeline/*`) — the stateless execution engine. `MthdsApiClient.executePipeline` calls the blocking `/pipeline/execute`; it returns the full result in one call but is subject to the 30s gateway ceiling, so it only suits short runs. When a run exceeds ~30s it raises `PipelineExecuteTimeoutError` (explaining the limit and pointing here), rather than a bare `503`.
 - **Platform** (`/platform/v1/runs*`) — the durable run lifecycle. Starting a run here (`POST /platform/v1/runs`) is what creates the RUN row that the self-healing `by-id` endpoints read. Starting via the runner alone would leave nothing to poll.
 
 The run lifecycle methods (`startRun` / `getRun` / `getResult` / `waitForResult`) all use the platform surface.

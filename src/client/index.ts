@@ -5,6 +5,7 @@ export {
   ApiUnreachableError,
   ClientAuthenticationError,
   PipelineRequestError,
+  PipelineExecuteTimeoutError,
   RunFailedError,
   RunTimeoutError,
 } from "./exceptions.js";

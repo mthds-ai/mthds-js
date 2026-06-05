@@ -50,6 +50,30 @@ export class ApiUnreachableError extends PipelineRequestError {
  * Both shapes are extracted here.
  */
 /**
+ * Thrown when the blocking `executePipeline` (runner `/pipeline/execute`) is
+ * killed by the Pipelex public API's ~30s synchronous-request limit. The
+ * blocking path cannot run pipelines longer than 30s — use the durable run API
+ * (start + poll) instead.
+ */
+export class PipelineExecuteTimeoutError extends PipelineRequestError {
+  public readonly elapsedMs: number;
+
+  constructor(elapsedMs: number, options?: { cause?: unknown }) {
+    const seconds = Math.round(elapsedMs / 1000);
+    super(
+      `The Pipelex public API times out synchronous requests after ~30s — this run took ${seconds}s. ` +
+        "The blocking execute path can't run pipelines longer than 30s. " +
+        "Start the run and poll for its result instead: " +
+        "`startRun()` then `waitForResult(runId)` (SDK), " +
+        "or `mthds-agent run start …` then `mthds-agent run poll <run_id>` (CLI).",
+      options
+    );
+    this.name = "PipelineExecuteTimeoutError";
+    this.elapsedMs = elapsedMs;
+  }
+}
+
+/**
  * Thrown when a run reaches a terminal state that is not `COMPLETED`
  * (`FAILED`, `CANCELLED`, `TERMINATED`, `TIMED_OUT`) — surfaced from
  * `waitForResult`/`getResult` when the platform answers a result lookup with

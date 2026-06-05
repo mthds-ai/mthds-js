@@ -4,6 +4,7 @@ import {
   ApiResponseError,
   ApiUnreachableError,
   ClientAuthenticationError,
+  PipelineExecuteTimeoutError,
   PipelineRequestError,
 } from "../../../src/client/exceptions.js";
 
@@ -209,6 +210,39 @@ describe("MthdsApiClient HTTP error responses", () => {
       const e = err as ApiResponseError;
       expect(e.message).toContain("Service Unavailable");
     }
+  });
+});
+
+describe("MthdsApiClient.executePipeline gateway 30s timeout", () => {
+  it("translates a ~30s gateway 503 into a clear PipelineExecuteTimeoutError pointing at start", async () => {
+    const client = makeClient();
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(textResponse(503, "", "Service Unavailable"));
+    // start = 0ms, failure observed at 31s → over the 30s gateway ceiling.
+    vi.spyOn(Date, "now").mockReturnValueOnce(0).mockReturnValueOnce(31_000);
+    const err = await client.executePipeline({ pipe_code: "p" }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(PipelineExecuteTimeoutError);
+    const e = err as PipelineExecuteTimeoutError;
+    expect(e.message).toContain("30s");
+    expect(e.message).toContain("run start");
+    expect(e.elapsedMs).toBe(31_000);
+  });
+
+  it("also fires on a client-side abort timeout past the ceiling", async () => {
+    const client = makeClient();
+    vi.spyOn(globalThis, "fetch").mockRejectedValue(new DOMException("timed out", "TimeoutError"));
+    vi.spyOn(Date, "now").mockReturnValueOnce(0).mockReturnValueOnce(30_500);
+    await expect(client.executePipeline({ pipe_code: "p" })).rejects.toBeInstanceOf(
+      PipelineExecuteTimeoutError
+    );
+  });
+
+  it("leaves a fast 503 as an ordinary ApiResponseError (runner down, not a timeout)", async () => {
+    const client = makeClient();
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(textResponse(503, "", "Service Unavailable"));
+    vi.spyOn(Date, "now").mockReturnValueOnce(0).mockReturnValueOnce(2_000);
+    const err = await client.executePipeline({ pipe_code: "p" }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ApiResponseError);
+    expect(err).not.toBeInstanceOf(PipelineExecuteTimeoutError);
   });
 });
 

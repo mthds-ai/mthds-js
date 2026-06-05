@@ -18,6 +18,7 @@ import {
   ApiResponseError,
   ApiUnreachableError,
   ClientAuthenticationError,
+  PipelineExecuteTimeoutError,
   PipelineRequestError,
   RunFailedError,
   RunTimeoutError,
@@ -196,8 +197,21 @@ export class MthdsApiClient implements RunnerProtocol {
       dynamic_output_concept_code: options.dynamic_output_concept_code,
     };
 
-    const data = await this.makeApiCall("runner/v1/pipeline/execute", request);
-    return data as PipelineExecuteResponse;
+    // The blocking execute runs behind the Pipelex public API gateway, which
+    // terminates a synchronous request at ~30s. A run that exceeds that comes
+    // back as a gateway 503/504 (or a client abort) — translate it into a
+    // clear, actionable error that points at the durable start+poll path.
+    const startedAt = Date.now();
+    try {
+      const data = await this.makeApiCall("runner/v1/pipeline/execute", request);
+      return data as PipelineExecuteResponse;
+    } catch (err) {
+      const elapsedMs = Date.now() - startedAt;
+      if (isGatewayTimeout(err, elapsedMs)) {
+        throw new PipelineExecuteTimeoutError(elapsedMs, { cause: err });
+      }
+      throw err;
+    }
   }
 
   async startPipeline(
@@ -360,6 +374,19 @@ export class MthdsApiClient implements RunnerProtocol {
 }
 
 // ── Module helpers ────────────────────────────────────────────────────
+
+// The Pipelex public API gateway caps synchronous requests at 30s. A failure
+// at/after this threshold on the blocking execute is the timeout, not a
+// transient outage — the threshold guards against mislabelling a fast 503
+// (runner genuinely down) as a timeout.
+const GATEWAY_TIMEOUT_THRESHOLD_MS = 28_000;
+
+function isGatewayTimeout(err: unknown, elapsedMs: number): boolean {
+  if (elapsedMs < GATEWAY_TIMEOUT_THRESHOLD_MS) return false;
+  if (err instanceof ApiResponseError) return err.status === 503 || err.status === 504;
+  if (err instanceof ApiUnreachableError) return err.code === "ABORT_TIMEOUT";
+  return false;
+}
 
 function extractNetworkErrorCode(err: unknown): string | undefined {
   if (err instanceof DOMException && err.name === "TimeoutError") {

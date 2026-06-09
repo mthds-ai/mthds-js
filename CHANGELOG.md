@@ -1,5 +1,11 @@
 # Changelog
 
+## [Unreleased]
+
+### Changed
+
+- **Codex hook Stage 3 now validates leniently (`--allow-signatures`).** The PostToolUse(apply_patch) hook's `pipelex-agent validate bundle` call (`runPipelexValidate` in `src/agent/commands/codex-hook.ts`) now passes `--allow-signatures`, bringing it to parity with the Claude bash hook in `mthds-plugins`. A bundle that forward-declares pipes as `PipeSignature` placeholders — as happens on every intermediate save during recursive (stepwise-refinement) method building — validates structurally instead of erroring on the unimplemented signatures. On a signature-free bundle lenient ≡ strict, so the flag is a no-op for every non-recursive edit; the strict gate (no leftover signatures) lives in the orchestrator skill's finalize step and in `run`, not in the per-save hook. The leftover-signature success-path nudge (`pending_signatures`) is deferred — the Codex hook still only inspects validate output on failure, so the orchestrator skill tracks the backlog itself.
+
 ## [v0.9.0] - 2026-05-26
 
 ### Added

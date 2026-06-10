@@ -173,7 +173,7 @@ const config = program.command("config").description("Manage configuration").exi
 
 config
   .command("set")
-  .argument("<key>", "Config key (runner, runner-url, platform-url, api-key, telemetry, auto-upgrade, update-check)")
+  .argument("<key>", "Config key (runner, base-url, api-key, telemetry, auto-upgrade, update-check)")
   .argument("<value>", "Value to set")
   .description("Set a config value")
   .exitOverride()
@@ -183,7 +183,7 @@ config
 
 config
   .command("get")
-  .argument("<key>", "Config key (runner, runner-url, platform-url, api-key, telemetry, auto-upgrade, update-check)")
+  .argument("<key>", "Config key (runner, base-url, api-key, telemetry, auto-upgrade, update-check)")
   .description("Get a config value")
   .exitOverride()
   .action(async (key: string) => {
@@ -314,28 +314,17 @@ runnerSetup
   .description("Set up the API runner")
   .requiredOption("--api-key <key>", "API key for the MTHDS API")
   .option(
-    "--runner-url <url>",
-    "Runner base URL incl. version prefix (optional, uses hosted default if omitted)"
-  )
-  .option(
-    "--platform-url <url>",
-    "Platform base URL incl. version prefix (optional; omit for a self-hosted runner with no run store)"
+    "--base-url <url>",
+    "API base URL — host only, no version prefix (optional, uses the hosted default if omitted)"
   )
   .exitOverride()
   .action(
     async (options: {
       apiKey: string;
-      runnerUrl?: string;
-      platformUrl?: string;
+      baseUrl?: string;
     }) => {
-      if (options.runnerUrl) {
-        await agentConfigSet("runner-url", options.runnerUrl);
-      }
-      if (options.platformUrl !== undefined) {
-        // Honor an explicit empty value (`--platform-url ""`) — the supported way
-        // to disable the durable platform surface. Omitting the flag leaves the
-        // platform to auto-derive from the runner URL.
-        await agentConfigSet("platform-url", options.platformUrl);
+      if (options.baseUrl) {
+        await agentConfigSet("base-url", options.baseUrl);
       }
       await agentConfigSet("api-key", options.apiKey);
     }

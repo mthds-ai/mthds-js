@@ -14,19 +14,11 @@ import type { RunnerType } from "../runners/types.js";
 export interface MthdsConfig {
   runner: RunnerType;
   /**
-   * Base URL of the runner surface, INCLUDING its version prefix
-   * (hosted: `.../runner/v1`; self-hosted: `http://<host>/api/v1`).
-   * Runner endpoints (`/pipeline/execute`, `/validate`, `/build/*`, `/models`,
-   * `/pipelex_version`) are appended to this; `/health` resolves to its origin.
+   * API base URL — host only, NO version prefix (e.g. `https://api.pipelex.com`
+   * or `http://localhost:8081`). Every endpoint composes as
+   * `{baseUrl}/v1/{endpoint}`; `/health` resolves to the origin root.
    */
-  runnerUrl: string;
-  /**
-   * Base URL of the platform surface, INCLUDING its version prefix
-   * (hosted: `.../platform/v1`). Optional: when empty/undefined the SDK is in
-   * self-hosted mode — durable run commands are disabled and `run pipe` falls
-   * back to the runner's blocking `/pipeline/execute`.
-   */
-  platformUrl: string;
+  baseUrl: string;
   apiKey: string;
   telemetry: boolean;
   autoUpgrade: boolean;
@@ -44,9 +36,8 @@ const CONFIG_PATH = join(CONFIG_DIR, "config");
 
 /** Map from config key to env var name */
 const ENV_NAMES: Record<keyof MthdsConfig, string> = {
-  runnerUrl: "PIPELEX_RUNNER_URL",
-  platformUrl: "PIPELEX_PLATFORM_URL",
-  apiKey: "PIPELEX_API_KEY",
+  baseUrl: "MTHDS_API_URL",
+  apiKey: "MTHDS_API_KEY",
   runner: "MTHDS_RUNNER",
   telemetry: "DISABLE_TELEMETRY",
   autoUpgrade: "MTHDS_AUTO_UPGRADE",
@@ -55,24 +46,21 @@ const ENV_NAMES: Record<keyof MthdsConfig, string> = {
 
 /** Map from config key to file key (used in ~/.mthds/config) */
 const FILE_KEYS: Record<keyof MthdsConfig, string> = {
-  runnerUrl: "PIPELEX_RUNNER_URL",
-  platformUrl: "PIPELEX_PLATFORM_URL",
-  apiKey: "PIPELEX_API_KEY",
+  baseUrl: "MTHDS_API_URL",
+  apiKey: "MTHDS_API_KEY",
   runner: "MTHDS_RUNNER",
   telemetry: "DISABLE_TELEMETRY",
   autoUpgrade: "MTHDS_AUTO_UPGRADE",
   updateCheck: "MTHDS_UPDATE_CHECK",
 };
 
-/** Hosted defaults. Each base includes its own version prefix. */
-const DEFAULT_RUNNER_URL = "https://api.pipelex.com/runner/v1";
-const DEFAULT_PLATFORM_URL = "https://api.pipelex.com/platform/v1";
+/** Hosted default — host only; endpoints compose as `{base}/v1/{endpoint}`. */
+const DEFAULT_BASE_URL = "https://api.pipelex.com";
 
 /** Defaults */
 const DEFAULTS: MthdsConfig = {
   runner: Runners.PIPELEX,
-  runnerUrl: DEFAULT_RUNNER_URL,
-  platformUrl: DEFAULT_PLATFORM_URL,
+  baseUrl: DEFAULT_BASE_URL,
   apiKey: "",
   telemetry: true,
   autoUpgrade: false,
@@ -82,33 +70,77 @@ const DEFAULTS: MthdsConfig = {
 /** Map from CLI flag names (kebab-case) to config keys */
 const KEY_ALIASES: Record<string, keyof MthdsConfig> = {
   runner: "runner",
-  "runner-url": "runnerUrl",
-  "platform-url": "platformUrl",
+  "base-url": "baseUrl",
   "api-key": "apiKey",
   telemetry: "telemetry",
   "auto-upgrade": "autoUpgrade",
   "update-check": "updateCheck",
 };
 
-/** Legacy file/env key that this version replaces. Used only for fail-fast hints. */
-const LEGACY_API_URL_KEY = "PIPELEX_API_URL";
-
-/** One-line migration message used wherever a legacy `apiUrl` is detected. */
-export const LEGACY_API_URL_MIGRATION_MESSAGE =
-  "`apiUrl` is replaced by `runnerUrl` (required) + `platformUrl` (optional). " +
-  "Hosted: runnerUrl=https://api.pipelex.com/runner/v1 ; " +
-  "Self-host: runnerUrl=http://<host>/api/v1";
+// ── Legacy key migration (fail-fast) ──────────────────────────────
 
 /**
- * Detect a leftover legacy `apiUrl`/`PIPELEX_API_URL` value (file or env).
- * Used by the api-runner request path to fail fast with a migration hint;
- * deliberately NOT consulted by `loadConfig()` so pure `pipelex`-runner flows
- * and unrelated commands are never blocked.
+ * Legacy file/env keys that this version replaces, each with a one-line
+ * migration message. Used only for the api-runner fail-fast — there is no
+ * backward compatibility, just a clear pointer to the new key.
  */
-export function hasLegacyApiUrl(): boolean {
-  if (process.env[LEGACY_API_URL_KEY] !== undefined) return true;
+export const LEGACY_KEY_MIGRATIONS: Record<string, string> = {
+  PIPELEX_RUNNER_URL:
+    "`PIPELEX_RUNNER_URL` is replaced by `MTHDS_API_URL` (host only, no version prefix). " +
+    "Migrate with: mthds config set base-url https://api.pipelex.com (or your self-hosted host, e.g. http://localhost:8081)",
+  PIPELEX_PLATFORM_URL:
+    "`PIPELEX_PLATFORM_URL` is removed — one base URL (`MTHDS_API_URL`, host only) now serves the whole API. " +
+    "Migrate with: mthds config set base-url <host>",
+  PIPELEX_API_URL:
+    "`PIPELEX_API_URL` is replaced by `MTHDS_API_URL` (host only, no version prefix). " +
+    "Migrate with: mthds config set base-url <host>",
+  PIPELEX_API_KEY:
+    "`PIPELEX_API_KEY` is replaced by `MTHDS_API_KEY`. " +
+    "Migrate with: mthds config set api-key <key>",
+};
+
+const LEGACY_URL_KEYS = [
+  "PIPELEX_RUNNER_URL",
+  "PIPELEX_PLATFORM_URL",
+  "PIPELEX_API_URL",
+] as const;
+
+const LEGACY_API_KEY_KEY = "PIPELEX_API_KEY";
+
+export interface LegacyConfigHit {
+  key: string;
+  message: string;
+}
+
+function findLegacyKey(keys: readonly string[]): LegacyConfigHit | undefined {
   const file = readConfigFile();
-  return LEGACY_API_URL_KEY in file;
+  for (const key of keys) {
+    if (process.env[key] !== undefined || key in file) {
+      return { key, message: LEGACY_KEY_MIGRATIONS[key]! };
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Detect a leftover legacy URL key (`PIPELEX_RUNNER_URL` /
+ * `PIPELEX_PLATFORM_URL` / `PIPELEX_API_URL`), file or env. Used by the
+ * api-runner construction path to fail fast with a migration hint when
+ * `baseUrl` was never explicitly set; deliberately NOT consulted by
+ * `loadConfig()` so pure `pipelex`-runner flows and unrelated commands are
+ * never blocked.
+ */
+export function findLegacyUrlKey(): LegacyConfigHit | undefined {
+  return findLegacyKey(LEGACY_URL_KEYS);
+}
+
+/**
+ * Detect a leftover legacy `PIPELEX_API_KEY` (file or env). Same scoping as
+ * `findLegacyUrlKey` — fires only on the api-runner path, when `apiKey` was
+ * never explicitly set under its new name.
+ */
+export function findLegacyApiKeyKey(): LegacyConfigHit | undefined {
+  return findLegacyKey([LEGACY_API_KEY_KEY]);
 }
 
 // ── Boolean key sets ──────────────────────────────────────────────
@@ -215,26 +247,6 @@ export function loadConfig(): MthdsConfig {
     if (envVal !== undefined) {
       merged[key] = coerceValue(key as keyof MthdsConfig, envVal);
     }
-  }
-
-  // The platform follows the runner. The durable run lifecycle (start/poll/
-  // result by id) is a hosted Pipelex Platform feature; the open-source runner
-  // has no run store. So unless the platform URL is explicitly chosen, it is
-  // present ONLY when the runner is the hosted Pipelex runner. Pointing the
-  // runner at a self-hosted URL therefore disables the platform automatically —
-  // `config set runner-url <self-hosted>` is sufficient; you don't also have to
-  // clear the platform URL (and you can't accidentally poll the hosted platform
-  // for a run that executed on your local runner).
-  const platformUrlExplicit =
-    process.env[ENV_NAMES.platformUrl] !== undefined ||
-    FILE_KEYS.platformUrl in file;
-  if (!platformUrlExplicit) {
-    // Compare against the hosted default with the trailing slash normalized away,
-    // so a valid `…/runner/v1/` still counts as the hosted runner (and keeps the
-    // durable platform) instead of being treated as self-hosted.
-    const normalizedRunnerUrl = String(merged.runnerUrl).replace(/\/+$/, "");
-    merged.platformUrl =
-      normalizedRunnerUrl === DEFAULT_RUNNER_URL ? DEFAULT_PLATFORM_URL : "";
   }
 
   return merged as unknown as MthdsConfig;

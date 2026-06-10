@@ -1,26 +1,32 @@
-import type { VariableMultiplicity } from "./models/pipe_output.js";
+import type { StartRequest } from "./pipeline.js";
 import { RunFailedError, RunTimeoutError } from "./exceptions.js";
 
 /**
- * Run-lifecycle types for the platform run surface (`/platform/v1/runs`).
+ * Run-lifecycle types for the hosted polling surface (`/v1/runs/*`).
  *
- * Long pipeline runs outlive the API Gateway's 30s timeout, so the SDK submits
- * a run, then polls a self-healing endpoint by bare `run_id` until the run
- * reaches a terminal state. All state lives behind `run_id` (DynamoDB +
- * Temporal), so an agent can drop the poll loop and resume later with just the
- * id.
+ * Long method runs outlive the hosted gateway's ~30s synchronous cap, so the
+ * SDK submits a run (`POST /v1/start`), then polls a self-healing endpoint by
+ * bare `run_id` until the run reaches a terminal state. All state lives behind
+ * the id (DynamoDB + Temporal on the platform), so an agent can drop the poll
+ * loop and resume later with just the id.
  *
- * Wire contract mirrors `pipelex-platform`:
- *   POST /platform/v1/runs                       → RunPublic        (start)
- *   GET  /platform/v1/runs/by-id/{run_id}        → RunRead          (status, self-healing)
- *   GET  /platform/v1/runs/by-id/{run_id}/result → 202 / 200 / 409  (result)
+ * Polling is NOT part of the MTHDS Protocol — it is a hosted-API extension. A
+ * bare runner 404s these routes, which the client translates into
+ * `RunLifecycleUnavailableError`.
+ *
+ * Wire contract mirrors the hosted MTHDS API:
+ *   POST /v1/start                  → StartAck         (start, 202)
+ *   GET  /v1/runs/{run_id}/status   → RunRead          (status, self-healing)
+ *   GET  /v1/runs/{run_id}/results  → 202 / 200 / 409  (results)
  */
 
 // ── Status ──────────────────────────────────────────────────────────
 
 /**
- * Run lifecycle status. Mirrors `pipelex_shared.schemas.run.RunStatus`.
- * `STARTED` is deprecated server-side but kept here for historical rows.
+ * Hosted run lifecycle status. Mirrors `pipelex_shared.schemas.run.RunStatus`
+ * — a superset of the protocol's `RunState` (the hosted store tracks extra
+ * states like `PENDING`). `STARTED` is deprecated server-side but kept here
+ * for historical rows.
  */
 export type RunStatus =
   | "PENDING"
@@ -53,42 +59,23 @@ export function isSuccessRunStatus(status: RunStatus): boolean {
 // ── Requests ────────────────────────────────────────────────────────
 
 /**
- * Body of `POST /platform/v1/runs`. `pipe_code` is required by the platform.
- * Two run styles: stored method (`method_id`) or ad-hoc inline bundle
- * (`mthds_contents` + `pipe_code`, `method_id` omitted).
- *
- * Mirrors the runner's full ad-hoc input surface — the output controls
- * (`output_name`, `output_multiplicity`, `dynamic_output_concept_ref`) are
- * forwarded through the platform to the runner.
+ * Options for `MTHDSProtocol.start` — the `StartRequest` wire fields:
+ * the `RunRequest` execution fields plus `run_id` (bare-runner-only; the
+ * hosted API rejects a client-supplied run id with 422), `callback_urls`
+ * (HMAC-signed completion webhooks), and `method_id` (hosted extension —
+ * a stored method in the active org's catalog).
  */
-export interface StartRunOptions {
-  method_id?: string | null;
-  /**
-   * Pipe to run. Optional: when `mthds_contents` is provided without a
-   * `pipe_code`, the runner resolves the pipe from the bundle's `main_pipe`.
-   * At least one of `pipe_code` / `mthds_contents` must be set.
-   */
-  pipe_code?: string | null;
-  mthds_contents?: string[] | null;
-  inputs?: Record<string, unknown> | null;
-  /** Name of the output slot to write to. */
-  output_name?: string | null;
-  /** Output multiplicity: `false`/`true` or an exact count. */
-  output_multiplicity?: VariableMultiplicity | null;
-  /** Override for the dynamic output concept ref. */
-  dynamic_output_concept_ref?: string | null;
-}
+export type StartOptions = StartRequest;
 
 // ── Responses ───────────────────────────────────────────────────────
 
 /**
  * A run record. Mirrors `pipelex_shared.schemas.run.RunPublic` on the hosted
  * platform. The identity fields (`org_id`, `created_by_user_id`, `method_id`)
- * are optional because the open-source runner serves the same lifecycle without
- * them — the runner is identity-free; only the platform layers them on.
+ * are optional because only the hosted platform layers identity on.
  */
 export interface RunPublic {
-  pipeline_run_id: string;
+  run_id: string;
   org_id?: string | null;
   created_by_user_id?: string | null;
   /** Owning method, or the `_adhoc` sentinel for inline runs (platform only). */
@@ -113,21 +100,22 @@ export interface RunRead extends RunPublic {
 }
 
 /**
- * Result artifacts for a completed run.
+ * Result artifacts for a completed run — `GET /v1/runs/{run_id}/results`.
  *
- * Hosted (platform): `main_stuff` + `graph_spec`, mirroring `RunResultsResponse`.
- * Self-hosted (runner): the runner returns its native execute response, so
- * `pipe_output` carries the output and `main_stuff`/`graph_spec` may be absent.
+ * Hosted: `main_stuff` + `graph_spec` (S3 artifacts relayed verbatim;
+ * `main_stuff` is polymorphic — a list output renders to a top-level array —
+ * so both are typed as opaque JSON). Bare-runner blocking fallback: the
+ * runner's native execute response, so `pipe_output` carries the output.
  * Consumers read `main_stuff ?? pipe_output` (the documented output-shape
  * difference between the two tiers).
  */
-export interface RunResult {
-  pipeline_run_id: string;
-  /** Pipeline graph spec (`graphspec.json`); null if missing mid-write. */
-  graph_spec?: Record<string, unknown> | null;
+export interface RunResults {
+  run_id: string;
+  /** Method graph spec (`graphspec.json`); null if missing mid-write. */
+  graph_spec?: unknown;
   /** Main output stuff (`main_stuff.json`); null if missing mid-write. */
-  main_stuff?: Record<string, unknown> | null;
-  /** Self-hosted runner's native pipe output (when there is no platform). */
+  main_stuff?: unknown;
+  /** Bare runner's native pipe output (blocking-execute fallback only). */
   pipe_output?: Record<string, unknown> | null;
 }
 
@@ -138,9 +126,9 @@ export interface RunResult {
  * - `failed`   — HTTP 409; run reached a terminal non-`COMPLETED` status.
  */
 export type RunResultState =
-  | { state: "running"; pipeline_run_id: string; retry_after_seconds: number | null }
-  | { state: "completed"; pipeline_run_id: string; result: RunResult }
-  | { state: "failed"; pipeline_run_id: string; status: RunStatus; message: string };
+  | { state: "running"; run_id: string; retry_after_seconds: number | null }
+  | { state: "completed"; run_id: string; result: RunResults }
+  | { state: "failed"; run_id: string; status: RunStatus; message: string };
 
 // ── Polling options ─────────────────────────────────────────────────
 
@@ -183,7 +171,7 @@ export async function pollUntilResult(
   fetchOnce: FetchResultOnce,
   runId: string,
   options: WaitForResultOptions = {}
-): Promise<RunResult> {
+): Promise<RunResults> {
   const intervalMs = options.intervalMs ?? DEFAULT_POLL_INTERVAL_MS;
   const timeoutMs = options.timeoutMs ?? DEFAULT_WAIT_TIMEOUT_MS;
   const startedAt = Date.now();

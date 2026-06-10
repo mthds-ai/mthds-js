@@ -43,8 +43,7 @@ describe("config", () => {
       const { loadConfig } = await importConfig();
       const config = loadConfig();
       expect(config.runner).toBe("pipelex");
-      expect(config.runnerUrl).toBe("https://api.pipelex.com/runner/v1");
-      expect(config.platformUrl).toBe("https://api.pipelex.com/platform/v1");
+      expect(config.baseUrl).toBe("https://api.pipelex.com");
       expect(config.apiKey).toBe("");
       expect(config.telemetry).toBe(true);
       expect(config.autoUpgrade).toBe(false);
@@ -56,7 +55,7 @@ describe("config", () => {
       mkdirSync(configDir, { recursive: true });
       writeFileSync(
         join(configDir, "config"),
-        "MTHDS_RUNNER=api\nPIPELEX_API_KEY=my-secret-key\n",
+        "MTHDS_RUNNER=api\nMTHDS_API_KEY=my-secret-key\n",
         "utf-8"
       );
 
@@ -64,8 +63,8 @@ describe("config", () => {
       const config = loadConfig();
       expect(config.runner).toBe("api");
       expect(config.apiKey).toBe("my-secret-key");
-      // runnerUrl should still be the default
-      expect(config.runnerUrl).toBe("https://api.pipelex.com/runner/v1");
+      // baseUrl should still be the default
+      expect(config.baseUrl).toBe("https://api.pipelex.com");
     });
 
     it("env vars override file values", async () => {
@@ -73,11 +72,11 @@ describe("config", () => {
       mkdirSync(configDir, { recursive: true });
       writeFileSync(
         join(configDir, "config"),
-        "PIPELEX_API_KEY=file-key\nMTHDS_RUNNER=pipelex\n",
+        "MTHDS_API_KEY=file-key\nMTHDS_RUNNER=pipelex\n",
         "utf-8"
       );
 
-      vi.stubEnv("PIPELEX_API_KEY", "env-key");
+      vi.stubEnv("MTHDS_API_KEY", "env-key");
       vi.stubEnv("MTHDS_RUNNER", "api");
 
       const { loadConfig } = await importConfig();
@@ -106,126 +105,108 @@ describe("config", () => {
       mkdirSync(configDir, { recursive: true });
       writeFileSync(
         join(configDir, "config"),
-        "# This is a comment\n\nPIPELEX_API_KEY=test-key\n\n# Another comment\nPIPELEX_RUNNER_URL=https://custom.api.com/api/v1\n",
+        "# This is a comment\n\nMTHDS_API_KEY=test-key\n\n# Another comment\nMTHDS_API_URL=http://localhost:8081\n",
         "utf-8"
       );
 
       const { loadConfig } = await importConfig();
       const config = loadConfig();
       expect(config.apiKey).toBe("test-key");
-      expect(config.runnerUrl).toBe("https://custom.api.com/api/v1");
+      expect(config.baseUrl).toBe("http://localhost:8081");
     });
 
-    it("reads runnerUrl and platformUrl from the config file", async () => {
+    it("reads baseUrl from the config file", async () => {
       const configDir = join(tempHome, ".mthds");
       mkdirSync(configDir, { recursive: true });
       writeFileSync(
         join(configDir, "config"),
-        "PIPELEX_RUNNER_URL=http://localhost:8081/api/v1\nPIPELEX_PLATFORM_URL=http://localhost:9000/platform/v1\n",
+        "MTHDS_API_URL=http://localhost:8081\n",
         "utf-8"
       );
 
       const { loadConfig } = await importConfig();
       const config = loadConfig();
-      expect(config.runnerUrl).toBe("http://localhost:8081/api/v1");
-      expect(config.platformUrl).toBe("http://localhost:9000/platform/v1");
+      expect(config.baseUrl).toBe("http://localhost:8081");
     });
 
-    it("env overrides PIPELEX_RUNNER_URL and PIPELEX_PLATFORM_URL", async () => {
-      vi.stubEnv("PIPELEX_RUNNER_URL", "http://env-runner/api/v1");
-      vi.stubEnv("PIPELEX_PLATFORM_URL", "http://env-platform/platform/v1");
-
-      const { loadConfig } = await importConfig();
-      const config = loadConfig();
-      expect(config.runnerUrl).toBe("http://env-runner/api/v1");
-      expect(config.platformUrl).toBe("http://env-platform/platform/v1");
-    });
-
-    it("platform follows runner: self-hosted runnerUrl (no explicit platform) disables the platform", async () => {
-      // Pointing the runner at a self-hosted URL without setting a platform URL
-      // must NOT leave the hosted platform default in place — otherwise `run pipe`
-      // would poll api.pipelex.com for a run that executed on the local runner.
-      vi.stubEnv("PIPELEX_RUNNER_URL", "http://localhost:8081/api/v1");
-
-      const { loadConfig } = await importConfig();
-      const config = loadConfig();
-      expect(config.runnerUrl).toBe("http://localhost:8081/api/v1");
-      expect(config.platformUrl).toBe("");
-    });
-
-    it("platform follows runner: default runnerUrl keeps the hosted platform default", async () => {
-      const { loadConfig } = await importConfig();
-      const config = loadConfig();
-      expect(config.runnerUrl).toBe("https://api.pipelex.com/runner/v1");
-      expect(config.platformUrl).toBe("https://api.pipelex.com/platform/v1");
-    });
-
-    it("platform follows runner: a hosted runnerUrl with a trailing slash still keeps the hosted platform", async () => {
-      // The hosted-default check must normalize the trailing slash — otherwise a
-      // valid `…/runner/v1/` is treated as self-hosted and silently disables the
-      // durable platform path for a hosted user.
-      vi.stubEnv("PIPELEX_RUNNER_URL", "https://api.pipelex.com/runner/v1/");
-
-      const { loadConfig } = await importConfig();
-      const config = loadConfig();
-      expect(config.platformUrl).toBe("https://api.pipelex.com/platform/v1");
-    });
-
-    it("platform follows runner: an explicit platformUrl is respected even with a self-hosted runner", async () => {
-      vi.stubEnv("PIPELEX_RUNNER_URL", "http://localhost:8081/api/v1");
-      vi.stubEnv("PIPELEX_PLATFORM_URL", "http://localhost:9000/platform/v1");
-
-      const { loadConfig } = await importConfig();
-      const config = loadConfig();
-      expect(config.platformUrl).toBe("http://localhost:9000/platform/v1");
-    });
-
-    it("an explicit EMPTY platformUrl in the file disables the platform even with the hosted-default runner", async () => {
-      // This is what `setup` / `config set platform-url ""` write to clear a stale
-      // platform. The explicit empty must win over the hosted auto-default —
-      // otherwise clearing the platform would silently snap back to hosted.
-      const configDir = join(tempHome, ".mthds");
-      mkdirSync(configDir, { recursive: true });
-      writeFileSync(join(configDir, "config"), "PIPELEX_PLATFORM_URL=\n", "utf-8");
-
-      const { loadConfig } = await importConfig();
-      const config = loadConfig();
-      expect(config.runnerUrl).toBe("https://api.pipelex.com/runner/v1");
-      expect(config.platformUrl).toBe("");
-    });
-
-    it("does NOT throw on a legacy PIPELEX_API_URL — loadConfig is migration-agnostic", async () => {
+    it("env MTHDS_API_URL overrides the file value", async () => {
       const configDir = join(tempHome, ".mthds");
       mkdirSync(configDir, { recursive: true });
       writeFileSync(
         join(configDir, "config"),
-        "MTHDS_RUNNER=pipelex\nPIPELEX_API_URL=https://legacy.example.com\n",
+        "MTHDS_API_URL=http://file-host:8081\n",
+        "utf-8"
+      );
+      vi.stubEnv("MTHDS_API_URL", "http://env-host:8081");
+
+      const { loadConfig } = await importConfig();
+      const config = loadConfig();
+      expect(config.baseUrl).toBe("http://env-host:8081");
+    });
+
+    it("does NOT throw on leftover legacy PIPELEX_* keys — loadConfig is migration-agnostic", async () => {
+      const configDir = join(tempHome, ".mthds");
+      mkdirSync(configDir, { recursive: true });
+      writeFileSync(
+        join(configDir, "config"),
+        "MTHDS_RUNNER=pipelex\nPIPELEX_RUNNER_URL=https://legacy.example.com/runner/v1\nPIPELEX_API_KEY=legacy-key\n",
         "utf-8"
       );
 
       const { loadConfig } = await importConfig();
-      // Pure pipelex-runner flow must be unaffected by a leftover legacy apiUrl.
+      // Pure pipelex-runner flow must be unaffected by leftover legacy keys.
       expect(() => loadConfig().runner).not.toThrow();
       expect(loadConfig().runner).toBe("pipelex");
+      // The legacy values are NOT silently honored — baseUrl stays at default.
+      expect(loadConfig().baseUrl).toBe("https://api.pipelex.com");
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Legacy key detection (fail-fast support for the api-runner path)
+  // ---------------------------------------------------------------------------
+  describe("legacy key detection", () => {
+    it("returns undefined on a clean install", async () => {
+      const { findLegacyUrlKey, findLegacyApiKeyKey } = await importConfig();
+      expect(findLegacyUrlKey()).toBeUndefined();
+      expect(findLegacyApiKeyKey()).toBeUndefined();
     });
 
-    it("detects a legacy apiUrl from file and env via hasLegacyApiUrl", async () => {
-      const { hasLegacyApiUrl } = await importConfig();
-      expect(hasLegacyApiUrl()).toBe(false);
+    it.each([
+      ["PIPELEX_RUNNER_URL", "http://localhost:8081/runner/v1"],
+      ["PIPELEX_PLATFORM_URL", "http://localhost:8081/platform/v1"],
+      ["PIPELEX_API_URL", "https://legacy.example.com"],
+    ])("detects legacy %s from env with a base-url migration message", async (key, value) => {
+      vi.stubEnv(key, value);
+      const { findLegacyUrlKey } = await importConfig();
+      const hit = findLegacyUrlKey();
+      expect(hit).toBeDefined();
+      expect(hit!.key).toBe(key);
+      expect(hit!.message).toContain("MTHDS_API_URL");
+      expect(hit!.message).toContain("mthds config set base-url");
+    });
 
+    it("detects legacy PIPELEX_API_KEY from env with an api-key migration message", async () => {
+      vi.stubEnv("PIPELEX_API_KEY", "legacy-key");
+      const { findLegacyApiKeyKey } = await importConfig();
+      const hit = findLegacyApiKeyKey();
+      expect(hit).toBeDefined();
+      expect(hit!.key).toBe("PIPELEX_API_KEY");
+      expect(hit!.message).toContain("MTHDS_API_KEY");
+      expect(hit!.message).toContain("mthds config set api-key");
+    });
+
+    it("detects legacy keys from the config file too", async () => {
       const configDir = join(tempHome, ".mthds");
       mkdirSync(configDir, { recursive: true });
       writeFileSync(
         join(configDir, "config"),
-        "PIPELEX_API_URL=https://legacy.example.com\n",
+        "PIPELEX_PLATFORM_URL=https://api.pipelex.com/platform/v1\nPIPELEX_API_KEY=old\n",
         "utf-8"
       );
-      const mod2 = await importConfig();
-      expect(mod2.hasLegacyApiUrl()).toBe(true);
-
-      vi.stubEnv("PIPELEX_API_URL", "https://legacy-env.example.com");
-      const mod3 = await importConfig();
-      expect(mod3.hasLegacyApiUrl()).toBe(true);
+      const { findLegacyUrlKey, findLegacyApiKeyKey } = await importConfig();
+      expect(findLegacyUrlKey()!.key).toBe("PIPELEX_PLATFORM_URL");
+      expect(findLegacyApiKeyKey()!.key).toBe("PIPELEX_API_KEY");
     });
   });
 
@@ -235,8 +216,8 @@ describe("config", () => {
   describe("getConfigValue", () => {
     it("returns default source when no file or env", async () => {
       const { getConfigValue } = await importConfig();
-      const result = getConfigValue("runnerUrl");
-      expect(result.value).toBe("https://api.pipelex.com/runner/v1");
+      const result = getConfigValue("baseUrl");
+      expect(result.value).toBe("https://api.pipelex.com");
       expect(result.source).toBe("default");
     });
 
@@ -245,7 +226,7 @@ describe("config", () => {
       mkdirSync(configDir, { recursive: true });
       writeFileSync(
         join(configDir, "config"),
-        "PIPELEX_API_KEY=file-key\n",
+        "MTHDS_API_KEY=file-key\n",
         "utf-8"
       );
 
@@ -256,11 +237,11 @@ describe("config", () => {
     });
 
     it("returns env source when env var is set", async () => {
-      vi.stubEnv("PIPELEX_RUNNER_URL", "https://env.api.com/api/v1");
+      vi.stubEnv("MTHDS_API_URL", "http://env-host:8081");
 
       const { getConfigValue } = await importConfig();
-      const result = getConfigValue("runnerUrl");
-      expect(result.value).toBe("https://env.api.com/api/v1");
+      const result = getConfigValue("baseUrl");
+      expect(result.value).toBe("http://env-host:8081");
       expect(result.source).toBe("env");
     });
 
@@ -269,10 +250,10 @@ describe("config", () => {
       mkdirSync(configDir, { recursive: true });
       writeFileSync(
         join(configDir, "config"),
-        "PIPELEX_API_KEY=file-key\n",
+        "MTHDS_API_KEY=file-key\n",
         "utf-8"
       );
-      vi.stubEnv("PIPELEX_API_KEY", "env-key");
+      vi.stubEnv("MTHDS_API_KEY", "env-key");
 
       const { getConfigValue } = await importConfig();
       const result = getConfigValue("apiKey");
@@ -293,7 +274,18 @@ describe("config", () => {
         join(tempHome, ".mthds", "config"),
         "utf-8"
       );
-      expect(content).toContain("PIPELEX_API_KEY=new-key");
+      expect(content).toContain("MTHDS_API_KEY=new-key");
+    });
+
+    it("writes baseUrl under the MTHDS_API_URL file key", async () => {
+      const { setConfigValue } = await importConfig();
+      setConfigValue("baseUrl", "http://localhost:8081");
+
+      const content = readFileSync(
+        join(tempHome, ".mthds", "config"),
+        "utf-8"
+      );
+      expect(content).toContain("MTHDS_API_URL=http://localhost:8081");
     });
 
     it("creates config directory if it does not exist", async () => {
@@ -308,7 +300,7 @@ describe("config", () => {
     });
 
     it("coerces telemetry values correctly when using config set", async () => {
-      const { setConfigValue, loadConfig } = await importConfig();
+      const { setConfigValue } = await importConfig();
 
       // "false" should disable telemetry (write DISABLE_TELEMETRY=1)
       setConfigValue("telemetry", "false");
@@ -339,7 +331,7 @@ describe("config", () => {
       mkdirSync(configDir, { recursive: true });
       writeFileSync(
         join(configDir, "config"),
-        "PIPELEX_API_KEY=existing-key\n",
+        "MTHDS_API_KEY=existing-key\n",
         "utf-8"
       );
 
@@ -350,7 +342,7 @@ describe("config", () => {
         join(configDir, "config"),
         "utf-8"
       );
-      expect(content).toContain("PIPELEX_API_KEY=existing-key");
+      expect(content).toContain("MTHDS_API_KEY=existing-key");
       expect(content).toContain("MTHDS_RUNNER=pipelex");
     });
   });

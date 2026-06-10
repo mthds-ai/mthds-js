@@ -84,17 +84,100 @@ describe("PipelexRunner", () => {
   });
 
   describe("models", () => {
-    it("always passes --format json", async () => {
+    it("always passes --format json and forwards the single --type filter", async () => {
       execFileAsync.mockResolvedValue({
         stdout: '{"success":true,"presets":{}}',
         stderr: "",
       });
 
-      await runner.models({ type: ["llm"] });
+      await runner.models("llm");
 
       const args = execFileAsync.mock.calls[0]![1] as string[];
       expect(args).toContain("--format");
       expect(args[args.indexOf("--format") + 1]).toBe("json");
+      expect(args[args.indexOf("--type") + 1]).toBe("llm");
+    });
+
+    it("maps the legacy pipelex-agent shape (presets / nested aliases) to a ModelDeck", async () => {
+      execFileAsync.mockResolvedValue({
+        stdout: JSON.stringify({
+          success: true,
+          presets: { llm: [{ name: "gpt-4o" }], img_gen: [{ name: "flux" }] },
+          aliases: { llm: { best: "gpt-4o" } },
+          waterfalls: { llm: { default: ["gpt-4o"] } },
+        }),
+        stderr: "",
+      });
+
+      const deck = await runner.models();
+
+      expect(deck.models).toEqual([
+        { name: "gpt-4o", type: "llm" },
+        { name: "flux", type: "img_gen" },
+      ]);
+      expect(deck.aliases).toEqual({ best: "gpt-4o" });
+      expect(deck.waterfalls).toEqual({ default: ["gpt-4o"] });
+    });
+
+    it("passes a protocol-shaped ModelDeck through verbatim", async () => {
+      execFileAsync.mockResolvedValue({
+        stdout: JSON.stringify({
+          models: [{ name: "gpt-4o", type: "llm" }],
+          aliases: { best: "gpt-4o" },
+          waterfalls: {},
+        }),
+        stderr: "",
+      });
+
+      const deck = await runner.models();
+      expect(deck.models).toEqual([{ name: "gpt-4o", type: "llm" }]);
+      expect(deck.aliases).toEqual({ best: "gpt-4o" });
+    });
+  });
+
+  describe("validate", () => {
+    it("runs `pipelex validate bundle` on the written contents and returns an empty report", async () => {
+      execFileAsync.mockResolvedValue({ stdout: "", stderr: "" });
+
+      const report = await runner.validate(["domain = 'x'"]);
+
+      expect(report).toEqual({});
+      const args = execFileAsync.mock.calls[0]![1] as string[];
+      expect(args[0]).toBe("validate");
+      expect(args[1]).toBe("bundle");
+      expect(args).not.toContain("--allow-signatures");
+    });
+
+    it("passes --allow-signatures when requested", async () => {
+      execFileAsync.mockResolvedValue({ stdout: "", stderr: "" });
+
+      await runner.validate(["domain = 'x'"], true);
+
+      const args = execFileAsync.mock.calls[0]![1] as string[];
+      expect(args).toContain("--allow-signatures");
+    });
+
+    it("throws with the pipelex stderr when validation fails", async () => {
+      const failure = Object.assign(new Error("Command failed"), {
+        stderr: "Pipe 'broken' references unknown concept",
+        stdout: "",
+      });
+      execFileAsync.mockRejectedValue(failure);
+
+      await expect(runner.validate(["broken"])).rejects.toThrow(/unknown concept/);
+    });
+  });
+
+  describe("version", () => {
+    it("wraps the local pipelex version in a VersionInfo handshake", async () => {
+      execFileAsync.mockResolvedValue({ stdout: "0.32.0\n", stderr: "" });
+
+      const info = await runner.version();
+
+      expect(info.implementation).toBe("pipelex");
+      expect(info.implementation_version).toBe("0.32.0");
+      expect(info.runtime_version).toBe("0.32.0");
+      expect(info.protocol_version).toBeTruthy();
     });
   });
 

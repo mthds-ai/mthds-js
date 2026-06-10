@@ -2,19 +2,17 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MthdsApiClient } from "../../../src/client/client.js";
 import {
   ApiResponseError,
-  PipelineRequestError,
   RunFailedError,
+  RunLifecycleUnavailableError,
   RunTimeoutError,
 } from "../../../src/client/exceptions.js";
 import { isTerminalRunStatus, isSuccessRunStatus } from "../../../src/client/runs.js";
 
-const RUNNER_URL = "http://localhost:8081/runner/v1";
-const PLATFORM_URL = "http://localhost:8081/platform/v1";
+const BASE_URL = "http://localhost:8081";
 
 function makeClient(): MthdsApiClient {
   return new MthdsApiClient({
-    runnerBaseUrl: RUNNER_URL,
-    platformBaseUrl: PLATFORM_URL,
+    baseUrl: BASE_URL,
     apiToken: "test-token",
   });
 }
@@ -54,77 +52,28 @@ describe("run status helpers", () => {
   });
 });
 
-describe("MthdsApiClient.startRun", () => {
-  it("POSTs to the platform runs endpoint with the run body", async () => {
+describe("MthdsApiClient.getRunStatus", () => {
+  it("GETs /v1/runs/{id}/status and returns the run", async () => {
     const client = makeClient();
     const fetchSpy = vi
       .spyOn(globalThis, "fetch")
-      .mockResolvedValue(jsonResponse(200, { pipeline_run_id: "run-1", status: "PENDING" }));
+      .mockResolvedValue(jsonResponse(200, { run_id: "run-1", status: "RUNNING", degraded: false }));
 
-    const run = await client.startRun({
-      pipe_code: "my_pipe",
-      mthds_contents: ["domain = 'x'"],
-      inputs: { a: 1 },
-    });
-
-    expect(run.pipeline_run_id).toBe("run-1");
-    const [url, init] = fetchSpy.mock.calls[0]!;
-    expect(url).toBe("http://localhost:8081/platform/v1/runs");
-    expect(init).toMatchObject({ method: "POST" });
-    expect(JSON.parse((init as RequestInit).body as string)).toEqual({
-      pipe_code: "my_pipe",
-      mthds_contents: ["domain = 'x'"],
-      inputs: { a: 1 },
-    });
-  });
-
-  it("starts an ad-hoc run with mthds_contents and no pipe_code", async () => {
-    const client = makeClient();
-    const fetchSpy = vi
-      .spyOn(globalThis, "fetch")
-      .mockResolvedValue(jsonResponse(200, { pipeline_run_id: "run-2", status: "PENDING" }));
-    await client.startRun({ mthds_contents: ["domain = 'x'\nmain_pipe = 'p'"] });
-    const body = JSON.parse((fetchSpy.mock.calls[0]![1] as RequestInit).body as string);
-    expect(body.pipe_code).toBeUndefined();
-    expect(body.mthds_contents).toEqual(["domain = 'x'\nmain_pipe = 'p'"]);
-  });
-
-  it("throws PipelineRequestError when neither pipe_code nor mthds_contents is given", async () => {
-    const client = makeClient();
-    await expect(client.startRun({})).rejects.toBeInstanceOf(PipelineRequestError);
-  });
-
-  it("surfaces a non-2xx start as ApiResponseError", async () => {
-    const client = makeClient();
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      jsonResponse(403, { detail: { error_type: "Forbidden", message: "no scope" } })
-    );
-    await expect(client.startRun({ pipe_code: "p" })).rejects.toBeInstanceOf(ApiResponseError);
-  });
-});
-
-describe("MthdsApiClient.getRun", () => {
-  it("GETs the by-id endpoint and returns the run", async () => {
-    const client = makeClient();
-    const fetchSpy = vi
-      .spyOn(globalThis, "fetch")
-      .mockResolvedValue(jsonResponse(200, { pipeline_run_id: "run-1", status: "RUNNING", degraded: false }));
-
-    const run = await client.getRun("run-1");
+    const run = await client.getRunStatus("run-1");
 
     expect(run.status).toBe("RUNNING");
     expect(run.degraded).toBe(false);
     const [url, init] = fetchSpy.mock.calls[0]!;
-    expect(url).toBe("http://localhost:8081/platform/v1/runs/by-id/run-1");
+    expect(url).toBe("http://localhost:8081/v1/runs/run-1/status");
     expect(init).toMatchObject({ method: "GET" });
   });
 
   it("attaches retry_after_seconds from the Retry-After header on a degraded read", async () => {
     const client = makeClient();
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      jsonResponse(200, { pipeline_run_id: "run-1", status: "RUNNING", degraded: true }, { "Retry-After": "7" })
+      jsonResponse(200, { run_id: "run-1", status: "RUNNING", degraded: true }, { "Retry-After": "7" })
     );
-    const run = await client.getRun("run-1");
+    const run = await client.getRunStatus("run-1");
     expect(run.degraded).toBe(true);
     expect(run.retry_after_seconds).toBe(7);
   });
@@ -133,26 +82,50 @@ describe("MthdsApiClient.getRun", () => {
     const client = makeClient();
     const fetchSpy = vi
       .spyOn(globalThis, "fetch")
-      .mockResolvedValue(jsonResponse(200, { pipeline_run_id: "a/b", status: "RUNNING", degraded: false }));
-    await client.getRun("a/b");
-    expect(fetchSpy.mock.calls[0]![0]).toBe("http://localhost:8081/platform/v1/runs/by-id/a%2Fb");
+      .mockResolvedValue(jsonResponse(200, { run_id: "a/b", status: "RUNNING", degraded: false }));
+    await client.getRunStatus("a/b");
+    expect(fetchSpy.mock.calls[0]![0]).toBe("http://localhost:8081/v1/runs/a%2Fb/status");
+  });
+
+  it("maps a route-absent 404 (no `code` field) to RunLifecycleUnavailableError", async () => {
+    // A bare runner serves Starlette's default `{"detail": "Not Found"}` — no
+    // structured `code` — meaning the lifecycle routes are simply not there.
+    const client = makeClient();
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      jsonResponse(404, { detail: "Not Found" })
+    );
+    const err = await client.getRunStatus("run-1").catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(RunLifecycleUnavailableError);
+    expect((err as RunLifecycleUnavailableError).apiUrl).toBe(BASE_URL);
+    expect((err as RunLifecycleUnavailableError).message).toContain("bare runner");
+  });
+
+  it("leaves a structured run-not-found 404 (with `code`) as ApiResponseError", async () => {
+    const client = makeClient();
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      jsonResponse(404, { detail: "Run not found", code: "run_not_found" })
+    );
+    const err = await client.getRunStatus("run-1").catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ApiResponseError);
+    expect(err).not.toBeInstanceOf(RunLifecycleUnavailableError);
   });
 });
 
-describe("MthdsApiClient.getResult", () => {
+describe("MthdsApiClient.getRunResult", () => {
   it("maps 202 to a running state with the retry hint", async () => {
     const client = makeClient();
     vi.spyOn(globalThis, "fetch").mockResolvedValue(emptyResponse(202, { "Retry-After": "5" }));
-    const state = await client.getResult("run-1");
-    expect(state).toEqual({ state: "running", pipeline_run_id: "run-1", retry_after_seconds: 5 });
+    const state = await client.getRunResult("run-1");
+    expect(state).toEqual({ state: "running", run_id: "run-1", retry_after_seconds: 5 });
   });
 
-  it("maps 200 to a completed state carrying the artifacts", async () => {
+  it("hits /v1/runs/{id}/results and maps 200 to a completed state carrying the artifacts", async () => {
     const client = makeClient();
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      jsonResponse(200, { pipeline_run_id: "run-1", main_stuff: { answer: 42 }, graph_spec: { nodes: [] } })
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      jsonResponse(200, { run_id: "run-1", main_stuff: { answer: 42 }, graph_spec: { nodes: [] } })
     );
-    const state = await client.getResult("run-1");
+    const state = await client.getRunResult("run-1");
+    expect(fetchSpy.mock.calls[0]![0]).toBe("http://localhost:8081/v1/runs/run-1/results");
     expect(state.state).toBe("completed");
     if (state.state === "completed") {
       expect(state.result.main_stuff).toEqual({ answer: 42 });
@@ -167,7 +140,7 @@ describe("MthdsApiClient.getResult", () => {
         detail: { error_type: "ConflictError", message: "Run finished with status TIMED_OUT; no result available" },
       })
     );
-    const state = await client.getResult("run-1");
+    const state = await client.getRunResult("run-1");
     expect(state.state).toBe("failed");
     if (state.state === "failed") {
       expect(state.status).toBe("TIMED_OUT");
@@ -178,23 +151,35 @@ describe("MthdsApiClient.getResult", () => {
   it("treats 503 (Temporal degraded) as a running/retry state, never an error", async () => {
     const client = makeClient();
     vi.spyOn(globalThis, "fetch").mockResolvedValue(emptyResponse(503, { "Retry-After": "5" }));
-    const state = await client.getResult("run-1");
+    const state = await client.getRunResult("run-1");
     expect(state.state).toBe("running");
   });
 
   it("defaults the degraded retry when no Retry-After header is present", async () => {
     const client = makeClient();
     vi.spyOn(globalThis, "fetch").mockResolvedValue(emptyResponse(202));
-    const state = await client.getResult("run-1");
+    const state = await client.getRunResult("run-1");
     if (state.state === "running") {
       expect(state.retry_after_seconds).toBe(5);
     }
   });
 
-  it("surfaces unexpected non-2xx as ApiResponseError", async () => {
+  it("maps a route-absent 404 (bare runner) to RunLifecycleUnavailableError", async () => {
     const client = makeClient();
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(jsonResponse(404, { detail: "not found" }));
-    await expect(client.getResult("run-1")).rejects.toBeInstanceOf(ApiResponseError);
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      jsonResponse(404, { detail: "Not Found" })
+    );
+    const err = await client.getRunResult("run-1").catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(RunLifecycleUnavailableError);
+    expect((err as RunLifecycleUnavailableError).message).toContain("/v1/runs");
+  });
+
+  it("surfaces a structured 404 (run not found) as ApiResponseError", async () => {
+    const client = makeClient();
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      jsonResponse(404, { detail: "Run not found", code: "run_not_found" })
+    );
+    await expect(client.getRunResult("run-1")).rejects.toBeInstanceOf(ApiResponseError);
   });
 });
 
@@ -204,7 +189,7 @@ describe("MthdsApiClient.waitForResult", () => {
     vi.spyOn(globalThis, "fetch")
       .mockResolvedValueOnce(emptyResponse(202, { "Retry-After": "0" }))
       .mockResolvedValueOnce(emptyResponse(202, { "Retry-After": "0" }))
-      .mockResolvedValueOnce(jsonResponse(200, { pipeline_run_id: "run-1", main_stuff: { ok: true } }));
+      .mockResolvedValueOnce(jsonResponse(200, { run_id: "run-1", main_stuff: { ok: true } }));
 
     const result = await client.waitForResult("run-1", { intervalMs: 0 });
     expect(result.main_stuff).toEqual({ ok: true });
@@ -264,12 +249,20 @@ describe("MthdsApiClient.waitForResult", () => {
     const client = makeClient();
     vi.spyOn(globalThis, "fetch")
       .mockResolvedValueOnce(emptyResponse(202, { "Retry-After": "0" }))
-      .mockResolvedValueOnce(jsonResponse(200, { pipeline_run_id: "run-1", main_stuff: {} }));
+      .mockResolvedValueOnce(jsonResponse(200, { run_id: "run-1", main_stuff: {} }));
     const polls: number[] = [];
     await client.waitForResult("run-1", {
       intervalMs: 0,
       onPoll: (info) => polls.push(info.attempt),
     });
     expect(polls).toEqual([1]);
+  });
+
+  it("propagates RunLifecycleUnavailableError out of the poll loop (bare runner)", async () => {
+    const client = makeClient();
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(jsonResponse(404, { detail: "Not Found" }));
+    await expect(client.waitForResult("run-1", { intervalMs: 0 })).rejects.toBeInstanceOf(
+      RunLifecycleUnavailableError
+    );
   });
 });

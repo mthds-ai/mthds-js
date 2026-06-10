@@ -13,7 +13,7 @@ export class PipelineRequestError extends Error {
 }
 
 /**
- * Thrown when the Pipelex API host cannot be reached at all (DNS failure,
+ * Thrown when the MTHDS API host cannot be reached at all (DNS failure,
  * connection refused, TLS handshake failure, request timeout). The HTTP
  * exchange never produced a response — distinguish from `ApiResponseError`,
  * which represents a non-2xx response that did come back.
@@ -39,21 +39,10 @@ export class ApiUnreachableError extends PipelineRequestError {
 }
 
 /**
- * Thrown when the API returned a non-2xx HTTP response. Carries structured
- * fields so callers can render meaningful UI without parsing the message:
- * - `status` / `statusText` — HTTP status from the response
- * - `responseBody` — raw response body (always retained)
- * - `errorType` / `serverMessage` — parsed from the JSON body when present
- *
- * Pipelex API serializes errors as `{"detail": {"error_type", "message"}}`
- * (HTTPException with dict detail) or `{"detail": "..."}` (auth 401s).
- * Both shapes are extracted here.
- */
-/**
- * Thrown when the blocking `executePipeline` (runner `/pipeline/execute`) is
- * killed by the Pipelex public API's ~30s synchronous-request limit. The
- * blocking path cannot run pipelines longer than 30s — use the durable run API
- * (start + poll) instead.
+ * Thrown when the blocking `execute` (`POST /v1/execute`) is killed by the
+ * hosted gateway's ~30s synchronous-request limit. The blocking path cannot
+ * run methods longer than 30s behind the hosted gateway — use the durable run
+ * lifecycle (start + poll) instead.
  */
 export class PipelineExecuteTimeoutError extends PipelineRequestError {
   public readonly elapsedMs: number;
@@ -61,10 +50,10 @@ export class PipelineExecuteTimeoutError extends PipelineRequestError {
   constructor(elapsedMs: number, options?: { cause?: unknown }) {
     const seconds = Math.round(elapsedMs / 1000);
     super(
-      `The Pipelex public API times out synchronous requests after ~30s — this run took ${seconds}s. ` +
-        "The blocking execute path can't run pipelines longer than 30s. " +
+      `The hosted MTHDS API times out synchronous requests after ~30s — this run took ${seconds}s. ` +
+        "The blocking execute path can't run methods longer than 30s behind the gateway. " +
         "Start the run and poll for its result instead: " +
-        "`startRun()` then `waitForResult(runId)` (SDK), " +
+        "`start()` then `waitForResult(runId)` (SDK), " +
         "or `mthds-agent run start …` then `mthds-agent run poll <run_id>` (CLI).",
       options
     );
@@ -76,7 +65,7 @@ export class PipelineExecuteTimeoutError extends PipelineRequestError {
 /**
  * Thrown when a run reaches a terminal state that is not `COMPLETED`
  * (`FAILED`, `CANCELLED`, `TERMINATED`, `TIMED_OUT`) — surfaced from
- * `waitForResult`/`getResult` when the platform answers a result lookup with
+ * `waitForResult`/`getRunResult` when the server answers a result lookup with
  * HTTP 409. `runId` and `status` let callers report the outcome precisely.
  */
 export class RunFailedError extends PipelineRequestError {
@@ -105,6 +94,55 @@ export class RunTimeoutError extends PipelineRequestError {
     this.name = "RunTimeoutError";
     this.runId = runId;
     this.timeoutMs = timeoutMs;
+  }
+}
+
+/**
+ * Thrown when `execute()` receives `202 + StartAck` instead of a final result.
+ *
+ * The MTHDS Protocol permits an implementation to degrade a synchronous
+ * `/execute` into an accepted-async response (202 with a `Location` header)
+ * when it cannot hold the connection open. The run keeps executing
+ * server-side — resume by `runId` (`getRunResult` / `waitForResult` on a
+ * hosted deployment, or the `location` status resource when provided).
+ */
+export class RunStillRunningError extends PipelineRequestError {
+  public readonly runId: string;
+  public readonly retryAfterSeconds: number | null;
+  public readonly location: string | null;
+
+  constructor(
+    message: string,
+    runId: string,
+    retryAfterSeconds: number | null = null,
+    location: string | null = null,
+    options?: { cause?: unknown },
+  ) {
+    super(message, options);
+    this.name = "RunStillRunningError";
+    this.runId = runId;
+    this.retryAfterSeconds = retryAfterSeconds;
+    this.location = location;
+  }
+}
+
+/**
+ * Thrown when the durable run lifecycle (`/v1/runs/*`) is not served by the
+ * configured `MTHDS_API_URL`.
+ *
+ * Run polling is a hosted-API extension, not part of the MTHDS Protocol: the
+ * open-source `pipelex-api` runner executes methods but has no run store, so
+ * it 404s those routes; only a deployment that includes the platform block
+ * (the hosted MTHDS API) serves status/results. Distinguished from a genuine
+ * run-not-found 404, which carries the server's structured error envelope.
+ */
+export class RunLifecycleUnavailableError extends PipelineRequestError {
+  public readonly apiUrl: string;
+
+  constructor(message: string, apiUrl: string, options?: { cause?: unknown }) {
+    super(message, options);
+    this.name = "RunLifecycleUnavailableError";
+    this.apiUrl = apiUrl;
   }
 }
 

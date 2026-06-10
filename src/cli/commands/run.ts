@@ -5,7 +5,7 @@ import { printLogo } from "./index.js";
 import { isPipelexRunner, extractPassthroughArgs } from "./utils.js";
 import { createRunner } from "../../runners/registry.js";
 import type { RunnerType } from "../../runners/types.js";
-import type { StartRunOptions } from "../../client/runs.js";
+import type { StartOptions } from "../../client/runs.js";
 
 interface RunOptions {
   pipe?: string;
@@ -88,10 +88,17 @@ export async function runPipe(
     : undefined;
   const runner = createRunner(options.runner, libraryDirs);
 
+  // Target is a pipe code or a .mthds bundle file — both runners need to know which.
+  const isBundlePath = target.endsWith(".mthds") || existsSync(target);
+
   if (isPipelexRunner(runner)) {
     p.log.step("Running via pipelex...");
     try {
-      await runner.runPassthrough(extractPassthroughArgs("run", 1));
+      // The pipelex CLI dispatches `run pipe <code>` vs `run bundle <path>` —
+      // map a file target onto the bundle subcommand (the user-facing
+      // `mthds run pipe` accepts both).
+      const passthrough = extractPassthroughArgs("run", 2);
+      await runner.runPassthrough([isBundlePath ? "bundle" : "pipe", ...passthrough]);
       p.outro("Done");
     } catch (err) {
       p.log.error((err as Error).message);
@@ -100,10 +107,7 @@ export async function runPipe(
     }
     return;
   }
-
-  // API runner: target is a pipe code or a .mthds bundle file
-  const isBundlePath = target.endsWith(".mthds") || existsSync(target);
-  const startOptions: StartRunOptions = {};
+  const startOptions: StartOptions = {};
 
   try {
     if (isBundlePath) {

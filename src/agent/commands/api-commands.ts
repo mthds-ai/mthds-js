@@ -10,12 +10,10 @@ import { existsSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { agentError, agentSuccess, AGENT_ERROR_DOMAINS } from "../output.js";
 import type { Runner } from "../../runners/types.js";
-import type { StartRunOptions } from "../../client/runs.js";
-import { RunFailedError, RunTimeoutError } from "../../client/exceptions.js";
-
-function collect(val: string, prev: string[]): string[] {
-  return [...prev, val];
-}
+import type { StartOptions } from "../../client/runs.js";
+import type { ModelCategory } from "../../client/protocol-models.js";
+import { MODEL_CATEGORIES } from "../../client/protocol-models.js";
+import { ApiResponseError, RunFailedError, RunTimeoutError } from "../../client/exceptions.js";
 
 /**
  * Register all API-runner commands on the program.
@@ -139,67 +137,38 @@ export function registerApiRunnerCommands(
   validateGroup
     .command("bundle")
     .argument("[target]", "Bundle file (.mthds) or directory")
-    .option("--pipe <code>", "Pipe code to validate within the bundle")
+    .option("--allow-signatures", "Tolerate unimplemented pipe signatures")
     .option("--content <mthds>", "Bundle content as a string")
     .description("Validate a bundle file or content")
     .allowUnknownOption()
     .allowExcessArguments(true)
     .exitOverride()
-    .action(async (target: string | undefined, options: { pipe?: string; content?: string }) => {
+    .action(async (target: string | undefined, options: { allowSignatures?: boolean; content?: string }) => {
       const runner = safeCreateRunner(makeRunner);
       const mthdsContent = resolveContent(target, options.content);
-      try {
-        const result = await runner.validate({
-          mthds_contents: [mthdsContent],
-          pipe_code: options.pipe,
-        });
-        if (result.success) {
-          agentSuccess({ ...result });
-        } else {
-          agentError(result.message, "ValidationError", {
-            error_domain: AGENT_ERROR_DOMAINS.VALIDATION,
-          });
-        }
-      } catch (err) {
-        agentError((err as Error).message, "RunnerError", {
-          error_domain: AGENT_ERROR_DOMAINS.RUNNER,
-        });
-      }
+      await runProtocolValidate(runner, [mthdsContent], options.allowSignatures ?? false);
     });
 
   validateGroup
     .command("pipe")
-    .argument("<target>", "Pipe code or .mthds bundle file")
-    .option("--pipe <code>", "Pipe code to validate")
-    .description("Validate a pipe by code or bundle file")
+    .argument("<target>", ".mthds bundle file")
+    .option("--allow-signatures", "Tolerate unimplemented pipe signatures")
+    .description("Validate a bundle file (protocol validate covers every pipe in it)")
     .allowUnknownOption()
     .allowExcessArguments(true)
     .exitOverride()
-    .action(async (target: string, options: { pipe?: string }) => {
+    .action(async (target: string, options: { allowSignatures?: boolean }) => {
       const runner = safeCreateRunner(makeRunner);
-      if (target.endsWith(".mthds")) {
-        const mthdsContent = readFileOrError(target);
-        try {
-          const result = await runner.validate({
-            mthds_contents: [mthdsContent],
-            pipe_code: options.pipe,
-          });
-          handleValidateResult(result);
-        } catch (err) {
-          agentError((err as Error).message, "RunnerError", {
-            error_domain: AGENT_ERROR_DOMAINS.RUNNER,
-          });
-        }
-      } else {
-        try {
-          const result = await runner.validate({ pipe_code: target });
-          handleValidateResult(result);
-        } catch (err) {
-          agentError((err as Error).message, "RunnerError", {
-            error_domain: AGENT_ERROR_DOMAINS.RUNNER,
-          });
-        }
+      if (!target.endsWith(".mthds")) {
+        agentError(
+          "Validating a bare pipe code is not supported via the API runner — the protocol validate takes bundle contents. Pass a .mthds file.",
+          "ArgumentError",
+          { error_domain: AGENT_ERROR_DOMAINS.ARGUMENT }
+        );
+        return;
       }
+      const mthdsContent = readFileOrError(target);
+      await runProtocolValidate(runner, [mthdsContent], options.allowSignatures ?? false);
     });
 
   validateGroup
@@ -210,19 +179,12 @@ export function registerApiRunnerCommands(
     .allowUnknownOption()
     .allowExcessArguments(true)
     .exitOverride()
-    .action(async (target: string, options: { pipe?: string }) => {
-      const runner = safeCreateRunner(makeRunner);
-      try {
-        const result = await runner.validate({
-          method_url: target,
-          pipe_code: options.pipe,
-        });
-        handleValidateResult(result);
-      } catch (err) {
-        agentError((err as Error).message, "RunnerError", {
-          error_domain: AGENT_ERROR_DOMAINS.RUNNER,
-        });
-      }
+    .action(async () => {
+      agentError(
+        "'validate method' is not supported via the API runner — the protocol validate takes bundle contents, not a method URL. Pass a .mthds file to 'validate bundle', or use --runner pipelex.",
+        "UnsupportedError",
+        { error_domain: AGENT_ERROR_DOMAINS.RUNNER }
+      );
     });
 
   // ── inputs ──
@@ -364,7 +326,7 @@ export function registerApiRunnerCommands(
       });
       agentSuccess({
         state: "completed",
-        pipeline_run_id: result.pipeline_run_id,
+        run_id: result.run_id,
         main_stuff: result.main_stuff ?? result.pipe_output ?? null,
         graph_spec: result.graph_spec ?? null,
       });
@@ -405,7 +367,7 @@ export function registerApiRunnerCommands(
 
   // ── run start ──
   // Submit a run and return its id immediately. All run state lives behind the
-  // returned `pipeline_run_id` (DB + Temporal), so an agent can submit here,
+  // returned `run_id` (DB + Temporal), so an agent can submit here,
   // disconnect, and later resume with `run status` / `run result` / `run poll`.
 
   runGroup
@@ -438,10 +400,10 @@ export function registerApiRunnerCommands(
         }
       ): Promise<void> => {
         const runner = safeCreateRunner(makeRunner);
-        const startOptions = resolveStartRunOptions(target, options);
+        const startOptions = resolveStartOptions(target, options);
         try {
-          const run = await runner.start(startOptions);
-          agentSuccess({ ...run });
+          const ack = await runner.start(startOptions);
+          agentSuccess({ ...ack });
         } catch (err) {
           agentError((err as Error).message, "RunnerError", {
             error_domain: AGENT_ERROR_DOMAINS.RUNNER,
@@ -454,7 +416,7 @@ export function registerApiRunnerCommands(
 
   runGroup
     .command("status")
-    .argument("<run_id>", "Pipeline run id")
+    .argument("<run_id>", "Run id")
     .description("Fetch a run's current status by id (self-healing)")
     .allowUnknownOption()
     .allowExcessArguments(true)
@@ -462,7 +424,7 @@ export function registerApiRunnerCommands(
     .action(async (runId: string): Promise<void> => {
       const runner = safeCreateRunner(makeRunner);
       try {
-        const run = await runner.getRun(runId);
+        const run = await runner.getRunStatus(runId);
         agentSuccess({ ...run });
       } catch (err) {
         agentError((err as Error).message, "RunnerError", {
@@ -476,7 +438,7 @@ export function registerApiRunnerCommands(
 
   runGroup
     .command("result")
-    .argument("<run_id>", "Pipeline run id")
+    .argument("<run_id>", "Run id")
     .description("Fetch a run's result by id, once (does not wait)")
     .allowUnknownOption()
     .allowExcessArguments(true)
@@ -485,7 +447,7 @@ export function registerApiRunnerCommands(
       const runner = safeCreateRunner(makeRunner);
       let state;
       try {
-        state = await runner.getResult(runId);
+        state = await runner.getRunResult(runId);
       } catch (err) {
         agentError((err as Error).message, "RunnerError", {
           error_domain: AGENT_ERROR_DOMAINS.RUNNER,
@@ -496,7 +458,7 @@ export function registerApiRunnerCommands(
         case "running":
           agentSuccess({
             state: "running",
-            pipeline_run_id: state.pipeline_run_id,
+            run_id: state.run_id,
             retry_after_seconds: state.retry_after_seconds,
             hint: `Run is still in progress. Poll with: mthds-agent run poll ${runId}`,
           });
@@ -504,7 +466,7 @@ export function registerApiRunnerCommands(
         case "completed":
           agentSuccess({
             state: "completed",
-            pipeline_run_id: state.pipeline_run_id,
+            run_id: state.run_id,
             main_stuff: state.result.main_stuff ?? null,
             graph_spec: state.result.graph_spec ?? null,
           });
@@ -525,7 +487,7 @@ export function registerApiRunnerCommands(
 
   runGroup
     .command("poll")
-    .argument("<run_id>", "Pipeline run id")
+    .argument("<run_id>", "Run id")
     .option("--interval <seconds>", "Base poll interval in seconds (default 2)")
     .option("--timeout <seconds>", "Max seconds to wait before giving up (default 1200)")
     .description("Poll a run to completion, then return its result")
@@ -553,7 +515,7 @@ export function registerApiRunnerCommands(
           });
           agentSuccess({
             state: "completed",
-            pipeline_run_id: runId,
+            run_id: runId,
             main_stuff: result.main_stuff ?? null,
             graph_spec: result.graph_spec ?? null,
           });
@@ -562,7 +524,7 @@ export function registerApiRunnerCommands(
             // Walk-away: not an error. Report the run as still resumable by id.
             agentSuccess({
               state: "running",
-              pipeline_run_id: runId,
+              run_id: runId,
               resumable: true,
               hint: `Stopped waiting; the run continues. Resume with: mthds-agent run poll ${runId}`,
             });
@@ -592,16 +554,16 @@ export function registerApiRunnerCommands(
 
   program
     .command("models")
-    .description("List available model presets, aliases, and waterfalls")
-    .option("--type <type>", "Filter by model category (repeatable)", collect, [] as string[])
+    .description("List the model deck (models, aliases, waterfalls)")
+    .option("--type <type>", "Filter by model category (llm, extract, img_gen, search)")
     .allowUnknownOption()
     .allowExcessArguments(true)
     .exitOverride()
-    .action(async (options: { type?: string[] }) => {
+    .action(async (options: { type?: string }) => {
       const runner = safeCreateRunner(makeRunner);
+      const category = parseModelCategory(options.type);
       try {
-        const request = options.type?.length ? { type: options.type } : undefined;
-        const result = await runner.models(request);
+        const result = await runner.models(category);
         agentSuccess({ ...result });
       } catch (err) {
         agentError((err as Error).message, "RunnerError", {
@@ -611,34 +573,24 @@ export function registerApiRunnerCommands(
     });
 
   // ── check-model ──
+  // check-model is a LOCAL CLI capability (pipelex runner) only — the MTHDS
+  // API has no check-model route. Registered here so the API runner errors
+  // cleanly instead of failing with an opaque 404.
 
   program
     .command("check-model")
-    .description("Validate a model reference with fuzzy suggestions")
+    .description("Validate a model reference with fuzzy suggestions (pipelex runner only)")
     .argument("<reference>", "Model reference to check")
-    .requiredOption("--type <type>", "Model category (llm, extract, img_gen, search)")
-    .option("--format <format>", "DEPRECATED: agent CLI emits JSON only via agentSuccess envelope")
+    .option("--type <type>", "Model category (llm, extract, img_gen, search)")
     .allowUnknownOption()
     .allowExcessArguments(true)
     .exitOverride()
-    .action(async (reference: string, options: { type: string; format?: string }) => {
-      if (options.format) {
-        agentError(
-          "`--format` is no longer supported on `mthds-agent check-model`. The agent CLI always emits JSON via the agentSuccess envelope.",
-          "ArgumentError",
-          { error_domain: AGENT_ERROR_DOMAINS.ARGUMENT }
-        );
-        return;
-      }
-      const runner = safeCreateRunner(makeRunner);
-      try {
-        const result = await runner.checkModel({ reference, type: options.type });
-        agentSuccess({ ...result });
-      } catch (err) {
-        agentError((err as Error).message, "RunnerError", {
-          error_domain: AGENT_ERROR_DOMAINS.RUNNER,
-        });
-      }
+    .action(async () => {
+      agentError(
+        "check-model is not available on the API runner — the MTHDS API has no check-model route. It is a local capability of the pipelex runner: re-run with --runner pipelex. To list what the API can route to, use: mthds-agent models",
+        "UnsupportedError",
+        { error_domain: AGENT_ERROR_DOMAINS.RUNNER }
+      );
     });
 }
 
@@ -743,7 +695,7 @@ function resolveRunInputs(options: {
   return undefined;
 }
 
-function resolveStartRunOptions(
+function resolveStartOptions(
   target: string | undefined,
   options: {
     pipe?: string;
@@ -755,7 +707,7 @@ function resolveStartRunOptions(
     outputMultiplicity?: string;
     dynamicOutput?: string;
   }
-): StartRunOptions {
+): StartOptions {
   const outputs = {
     output_name: options.outputName,
     output_multiplicity: parseMultiplicity(options.outputMultiplicity),
@@ -800,12 +752,42 @@ function parsePositiveSeconds(raw: string | undefined, label: string): number | 
   return seconds * 1000;
 }
 
-function handleValidateResult(result: { success: boolean; message: string }): void {
-  if (result.success) {
-    agentSuccess({ ...result });
-  } else {
-    agentError(result.message, "ValidationError", {
-      error_domain: AGENT_ERROR_DOMAINS.VALIDATION,
+/** Parse the `--type` model-category filter, erroring on unknown values. */
+function parseModelCategory(raw: string | undefined): ModelCategory | undefined {
+  if (raw === undefined) return undefined;
+  if ((MODEL_CATEGORIES as readonly string[]).includes(raw)) {
+    return raw as ModelCategory;
+  }
+  agentError(
+    `--type must be one of: ${MODEL_CATEGORIES.join(", ")}.`,
+    "ArgumentError",
+    { error_domain: AGENT_ERROR_DOMAINS.ARGUMENT }
+  );
+  throw new Error("unreachable");
+}
+
+/**
+ * Run the protocol validate (`POST /v1/validate`) and emit the agent envelope.
+ * A valid bundle returns the structural artifacts; an invalid bundle is an
+ * HTTP 422 problem, surfaced as a ValidationError.
+ */
+async function runProtocolValidate(
+  runner: Runner,
+  mthdsContents: string[],
+  allowSignatures: boolean
+): Promise<void> {
+  try {
+    const report = await runner.validate(mthdsContents, allowSignatures);
+    agentSuccess({ success: true, ...report });
+  } catch (err) {
+    if (err instanceof ApiResponseError && err.status === 422) {
+      agentError(err.serverMessage ?? err.message, "ValidationError", {
+        error_domain: AGENT_ERROR_DOMAINS.VALIDATION,
+      });
+      return;
+    }
+    agentError((err as Error).message, "RunnerError", {
+      error_domain: AGENT_ERROR_DOMAINS.RUNNER,
     });
   }
 }

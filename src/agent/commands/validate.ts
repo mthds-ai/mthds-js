@@ -153,19 +153,11 @@ export async function agentValidatePipe(
   }
 
   try {
-    const result = await runner.validate({ mthds_contents: [mthdsContent] });
-
-    if (result.success) {
-      agentSuccess({
-        success: true,
-        message: result.message,
-        pipelex_bundle_blueprint: result.pipelex_bundle_blueprint,
-      });
-    } else {
-      agentError(result.message, "ValidationError", {
-        error_domain: AGENT_ERROR_DOMAINS.VALIDATION,
-      });
-    }
+    const report = await runner.validate([mthdsContent]);
+    agentSuccess({
+      success: true,
+      ...report,
+    });
   } catch (err) {
     agentError((err as Error).message, "ValidationError", {
       error_domain: AGENT_ERROR_DOMAINS.VALIDATION,

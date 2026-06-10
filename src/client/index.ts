@@ -1,5 +1,5 @@
-export { MthdsApiClient } from "./client.js";
-export type { RunnerProtocol } from "./protocol.js";
+export { MthdsApiClient, DEFAULT_API_BASE_URL } from "./client.js";
+export type { MTHDSProtocol } from "./protocol.js";
 export {
   ApiResponseError,
   ApiUnreachableError,
@@ -8,24 +8,35 @@ export {
   PipelineExecuteTimeoutError,
   RunFailedError,
   RunTimeoutError,
+  RunStillRunningError,
+  RunLifecycleUnavailableError,
 } from "./exceptions.js";
 export type {
-  PipelineState,
-  PipelineRequest,
-  PipelineExecuteResponse,
-  PipelineStartResponse,
-  ExecutePipelineOptions,
+  RunState,
+  RunRequest,
+  StartRequest,
+  RunResult,
+  StartAck,
+  RunOptions,
 } from "./pipeline.js";
+export { MTHDS_PROTOCOL_VERSION, MODEL_CATEGORIES } from "./protocol-models.js";
+export type {
+  ModelCategory,
+  ModelInfo,
+  ModelDeck,
+  ValidationReport,
+  VersionInfo,
+} from "./protocol-models.js";
 export {
   isTerminalRunStatus,
   isSuccessRunStatus,
 } from "./runs.js";
 export type {
   RunStatus,
-  StartRunOptions,
+  StartOptions,
   RunPublic,
   RunRead,
-  RunResult,
+  RunResults,
   RunResultState,
   WaitForResultOptions,
 } from "./runs.js";

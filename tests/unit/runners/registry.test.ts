@@ -6,14 +6,13 @@ import { PipelexRunner } from "../../../src/runners/pipelex-runner.js";
 vi.mock("../../../src/config/config.js", () => ({
   loadConfig: vi.fn(() => ({
     runner: "api",
-    runnerUrl: "https://api.pipelex.com/runner/v1",
-    platformUrl: "https://api.pipelex.com/platform/v1",
+    baseUrl: "https://api.pipelex.com",
     apiKey: "",
     telemetry: true,
   })),
-  getConfigValue: vi.fn(() => ({ value: "https://api.pipelex.com/runner/v1", source: "default" })),
-  hasLegacyApiUrl: vi.fn(() => false),
-  LEGACY_API_URL_MIGRATION_MESSAGE: "legacy apiUrl migration",
+  getConfigValue: vi.fn(() => ({ value: "https://api.pipelex.com", source: "default" })),
+  findLegacyUrlKey: vi.fn(() => undefined),
+  findLegacyApiKeyKey: vi.fn(() => undefined),
 }));
 
 // Import after mock setup
@@ -42,10 +41,11 @@ describe("createRunner", () => {
   it("reads default runner type from config when no type is passed", () => {
     mockedLoadConfig.mockReturnValue({
       runner: "pipelex",
-      runnerUrl: "https://api.pipelex.com/runner/v1",
-      platformUrl: "https://api.pipelex.com/platform/v1",
+      baseUrl: "https://api.pipelex.com",
       apiKey: "",
       telemetry: true,
+      autoUpgrade: false,
+      updateCheck: true,
     });
 
     const runner = createRunner();
@@ -56,10 +56,11 @@ describe("createRunner", () => {
   it("uses config default 'api' runner", () => {
     mockedLoadConfig.mockReturnValue({
       runner: "api",
-      runnerUrl: "https://api.pipelex.com/runner/v1",
-      platformUrl: "https://api.pipelex.com/platform/v1",
+      baseUrl: "https://api.pipelex.com",
       apiKey: "test-key",
       telemetry: true,
+      autoUpgrade: false,
+      updateCheck: true,
     });
 
     const runner = createRunner();

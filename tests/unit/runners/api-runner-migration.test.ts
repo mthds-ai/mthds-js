@@ -1,19 +1,16 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-// This suite exercises the legacy-`apiUrl` migration fail-fast, which is
+// This suite exercises the legacy `PIPELEX_*` migration fail-fast, which is
 // SCOPED to the api-runner construction path — it must fire when the api
-// runner needs a URL while a leftover legacy `apiUrl` is present and
-// `runnerUrl` was never explicitly set, and must NOT block pure
-// `pipelex`-runner flows or `loadConfig()` itself.
+// runner needs a value while a leftover legacy key is present and the new key
+// (`MTHDS_API_URL` / `MTHDS_API_KEY`) was never explicitly set, and must NOT
+// block pure `pipelex`-runner flows or `loadConfig()` itself.
 
 vi.mock("../../../src/config/config.js", () => ({
   loadConfig: vi.fn(),
   getConfigValue: vi.fn(),
-  hasLegacyApiUrl: vi.fn(),
-  LEGACY_API_URL_MIGRATION_MESSAGE:
-    "`apiUrl` is replaced by `runnerUrl` (required) + `platformUrl` (optional). " +
-    "Hosted: runnerUrl=https://api.pipelex.com/runner/v1 ; " +
-    "Self-host: runnerUrl=http://<host>/api/v1",
+  findLegacyUrlKey: vi.fn(),
+  findLegacyApiKeyKey: vi.fn(),
 }));
 
 import { ApiRunner } from "../../../src/runners/api-runner.js";
@@ -23,57 +20,99 @@ import * as configModule from "../../../src/config/config.js";
 
 const loadConfig = vi.mocked(configModule.loadConfig);
 const getConfigValue = vi.mocked(configModule.getConfigValue);
-const hasLegacyApiUrl = vi.mocked(configModule.hasLegacyApiUrl);
+const findLegacyUrlKey = vi.mocked(configModule.findLegacyUrlKey);
+const findLegacyApiKeyKey = vi.mocked(configModule.findLegacyApiKeyKey);
 
 const HOSTED = {
-  runnerUrl: "https://api.pipelex.com/runner/v1",
-  platformUrl: "https://api.pipelex.com/platform/v1",
+  baseUrl: "https://api.pipelex.com",
   apiKey: "",
   telemetry: true,
+  autoUpgrade: false,
+  updateCheck: true,
+} as const;
+
+const URL_MIGRATION = {
+  key: "PIPELEX_RUNNER_URL",
+  message:
+    "`PIPELEX_RUNNER_URL` is replaced by `MTHDS_API_URL` (host only, no version prefix). Migrate with: mthds config set base-url <host>",
+};
+
+const KEY_MIGRATION = {
+  key: "PIPELEX_API_KEY",
+  message: "`PIPELEX_API_KEY` is replaced by `MTHDS_API_KEY`. Migrate with: mthds config set api-key <key>",
 };
 
 beforeEach(() => {
   vi.clearAllMocks();
+  findLegacyUrlKey.mockReturnValue(undefined);
+  findLegacyApiKeyKey.mockReturnValue(undefined);
 });
 
-describe("ApiRunner legacy apiUrl migration fail-fast", () => {
-  it("throws a migration hint when runnerUrl is at default AND a legacy apiUrl is present", () => {
+describe("ApiRunner legacy key migration fail-fast", () => {
+  it("throws the URL migration hint when baseUrl is at default AND a legacy URL key is present", () => {
     loadConfig.mockReturnValue({ runner: "api", ...HOSTED });
-    getConfigValue.mockReturnValue({ value: HOSTED.runnerUrl, source: "default" });
-    hasLegacyApiUrl.mockReturnValue(true);
+    getConfigValue.mockReturnValue({ value: HOSTED.baseUrl, source: "default" });
+    findLegacyUrlKey.mockReturnValue(URL_MIGRATION);
 
-    expect(() => new ApiRunner()).toThrow(/`apiUrl` is replaced by `runnerUrl`/);
+    expect(() => new ApiRunner()).toThrow(/`PIPELEX_RUNNER_URL` is replaced by `MTHDS_API_URL`/);
   });
 
-  it("does NOT throw when runnerUrl was explicitly configured, even with a legacy apiUrl present", () => {
+  it("throws the api-key migration hint when apiKey is at default AND PIPELEX_API_KEY is present", () => {
+    loadConfig.mockReturnValue({ runner: "api", ...HOSTED });
+    getConfigValue.mockReturnValue({ value: "", source: "default" });
+    findLegacyApiKeyKey.mockReturnValue(KEY_MIGRATION);
+
+    expect(() => new ApiRunner()).toThrow(/`PIPELEX_API_KEY` is replaced by `MTHDS_API_KEY`/);
+  });
+
+  it("does NOT throw when baseUrl was explicitly configured, even with a legacy URL key present", () => {
     loadConfig.mockReturnValue({
       runner: "api",
       ...HOSTED,
-      runnerUrl: "http://localhost:8081/api/v1",
+      baseUrl: "http://localhost:8081",
     });
-    getConfigValue.mockReturnValue({ value: "http://localhost:8081/api/v1", source: "file" });
-    hasLegacyApiUrl.mockReturnValue(true);
+    getConfigValue.mockImplementation((key) =>
+      key === "baseUrl"
+        ? { value: "http://localhost:8081", source: "file" }
+        : { value: "explicit-key", source: "file" }
+    );
+    findLegacyUrlKey.mockReturnValue(URL_MIGRATION);
 
     expect(() => new ApiRunner()).not.toThrow();
   });
 
-  it("does NOT throw when no legacy apiUrl is present (clean install)", () => {
+  it("does NOT throw when no legacy key is present (clean install)", () => {
     loadConfig.mockReturnValue({ runner: "api", ...HOSTED });
-    getConfigValue.mockReturnValue({ value: HOSTED.runnerUrl, source: "default" });
-    hasLegacyApiUrl.mockReturnValue(false);
+    getConfigValue.mockReturnValue({ value: HOSTED.baseUrl, source: "default" });
 
     expect(() => new ApiRunner()).not.toThrow();
   });
 
-  it("leaves the pure pipelex-runner flow unaffected by a leftover legacy apiUrl", () => {
+  it("leaves the pure pipelex-runner flow unaffected by leftover legacy keys", () => {
     // createRunner('pipelex') must never construct an ApiRunner, so the
-    // migration check never runs — even with a legacy apiUrl present.
+    // migration checks never run — even with legacy keys present.
     loadConfig.mockReturnValue({ runner: "pipelex", ...HOSTED });
-    getConfigValue.mockReturnValue({ value: HOSTED.runnerUrl, source: "default" });
-    hasLegacyApiUrl.mockReturnValue(true);
+    getConfigValue.mockReturnValue({ value: HOSTED.baseUrl, source: "default" });
+    findLegacyUrlKey.mockReturnValue(URL_MIGRATION);
+    findLegacyApiKeyKey.mockReturnValue(KEY_MIGRATION);
 
     const runner = createRunner("pipelex");
     expect(runner).toBeInstanceOf(PipelexRunner);
-    expect(hasLegacyApiUrl).not.toHaveBeenCalled();
+    expect(findLegacyUrlKey).not.toHaveBeenCalled();
+    expect(findLegacyApiKeyKey).not.toHaveBeenCalled();
+  });
+});
+
+describe("ApiRunner legacy env fail-fast (real config module behavior)", () => {
+  // The mocked module above pins the gating logic; the detection of each of
+  // the four PIPELEX_* env vars themselves is covered with the REAL config
+  // module in tests/unit/config/config.test.ts ("legacy key detection").
+  it("covers the gating contract: legacy hit + default new key → throw", () => {
+    loadConfig.mockReturnValue({ runner: "api", ...HOSTED });
+    getConfigValue.mockReturnValue({ value: HOSTED.baseUrl, source: "default" });
+    for (const key of ["PIPELEX_RUNNER_URL", "PIPELEX_PLATFORM_URL", "PIPELEX_API_URL"]) {
+      findLegacyUrlKey.mockReturnValue({ key, message: `\`${key}\` is replaced by \`MTHDS_API_URL\`` });
+      expect(() => new ApiRunner()).toThrow(new RegExp(key));
+    }
   });
 });

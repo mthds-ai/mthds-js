@@ -3,18 +3,16 @@ import { MthdsApiClient } from "../../../src/client/client.js";
 import {
   ApiResponseError,
   ApiUnreachableError,
-  ClientAuthenticationError,
   PipelineExecuteTimeoutError,
   PipelineRequestError,
+  RunStillRunningError,
 } from "../../../src/client/exceptions.js";
 
-const RUNNER_URL = "http://localhost:8081/runner/v1";
-const PLATFORM_URL = "http://localhost:8081/platform/v1";
+const BASE_URL = "http://localhost:8081";
 
 function makeClient(): MthdsApiClient {
   return new MthdsApiClient({
-    runnerBaseUrl: RUNNER_URL,
-    platformBaseUrl: PLATFORM_URL,
+    baseUrl: BASE_URL,
     apiToken: "test-token",
   });
 }
@@ -25,10 +23,10 @@ function networkError(code: string): TypeError {
   return err;
 }
 
-function jsonResponse(status: number, body: unknown): Response {
+function jsonResponse(status: number, body: unknown, headers: Record<string, string> = {}): Response {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...headers },
   });
 }
 
@@ -45,65 +43,62 @@ afterEach(() => {
 });
 
 describe("MthdsApiClient constructor", () => {
-  it("throws ClientAuthenticationError when no runner base URL resolves", () => {
-    const original = process.env.PIPELEX_RUNNER_URL;
-    delete process.env.PIPELEX_RUNNER_URL;
+  it("defaults to the hosted base URL when nothing is configured", async () => {
+    const originalUrl = process.env.MTHDS_API_URL;
+    delete process.env.MTHDS_API_URL;
     try {
-      expect(() => new MthdsApiClient({})).toThrow(ClientAuthenticationError);
+      const client = new MthdsApiClient({ apiToken: "t" });
+      const fetchSpy = vi
+        .spyOn(globalThis, "fetch")
+        .mockResolvedValue(jsonResponse(200, { run_id: "x" }));
+      await client.execute({ pipe_code: "p" });
+      expect(fetchSpy).toHaveBeenCalledWith(
+        "https://api.pipelex.com/v1/execute",
+        expect.objectContaining({ method: "POST" }),
+      );
     } finally {
-      if (original !== undefined) process.env.PIPELEX_RUNNER_URL = original;
+      if (originalUrl !== undefined) process.env.MTHDS_API_URL = originalUrl;
     }
   });
 
-  it("strips trailing slashes from runnerBaseUrl and appends the endpoint", async () => {
+  it("strips trailing slashes from baseUrl and composes {base}/v1/{endpoint}", async () => {
     const client = new MthdsApiClient({
-      runnerBaseUrl: "http://localhost:8081/runner/v1///",
+      baseUrl: "http://localhost:8081///",
     });
     const fetchSpy = vi
       .spyOn(globalThis, "fetch")
-      .mockResolvedValue(jsonResponse(200, { pipeline_run_id: "x" }));
-    await client.executePipeline({ pipe_code: "p" });
+      .mockResolvedValue(jsonResponse(200, { run_id: "x" }));
+    await client.execute({ pipe_code: "p" });
     expect(fetchSpy).toHaveBeenCalledWith(
-      "http://localhost:8081/runner/v1/pipeline/execute",
+      "http://localhost:8081/v1/execute",
       expect.objectContaining({ method: "POST" }),
     );
   });
 
-  it("appends the endpoint to a self-hosted runner base (no runner/v1 re-prefix)", async () => {
-    const client = new MthdsApiClient({
-      runnerBaseUrl: "http://localhost:8081/api/v1",
-    });
-    const fetchSpy = vi
-      .spyOn(globalThis, "fetch")
-      .mockResolvedValue(jsonResponse(200, { pipeline_run_id: "x" }));
-    await client.executePipeline({ pipe_code: "p" });
-    expect(fetchSpy).toHaveBeenCalledWith(
-      "http://localhost:8081/api/v1/pipeline/execute",
-      expect.objectContaining({ method: "POST" }),
-    );
-  });
-
-  it("self-hosted: the durable run lifecycle requires a platform (no runner fallback)", async () => {
-    // The durable lifecycle is platform-only — the runner has no run store. With
-    // no platformBaseUrl, the lifecycle methods fail fast instead of hitting a
-    // runner `/runs` endpoint that doesn't exist.
-    const client = new MthdsApiClient({
-      runnerBaseUrl: "http://localhost:8081/api/v1",
-    });
-    const fetchSpy = vi.spyOn(globalThis, "fetch");
-
-    expect(client.hasPlatform()).toBe(false);
-    await expect(client.startRun({ pipe_code: "p" })).rejects.toThrow(/platform base URL/i);
-    await expect(client.getRun("r")).rejects.toThrow(/platform base URL/i);
-    await expect(client.getResult("r")).rejects.toThrow(/platform base URL/i);
-    expect(fetchSpy).not.toHaveBeenCalled();
+  it("reads MTHDS_API_URL from the environment", async () => {
+    const originalUrl = process.env.MTHDS_API_URL;
+    process.env.MTHDS_API_URL = "http://env-host:9999";
+    try {
+      const client = new MthdsApiClient({ apiToken: "t" });
+      const fetchSpy = vi
+        .spyOn(globalThis, "fetch")
+        .mockResolvedValue(jsonResponse(200, { run_id: "x" }));
+      await client.execute({ pipe_code: "p" });
+      expect(fetchSpy).toHaveBeenCalledWith(
+        "http://env-host:9999/v1/execute",
+        expect.objectContaining({ method: "POST" }),
+      );
+    } finally {
+      if (originalUrl !== undefined) process.env.MTHDS_API_URL = originalUrl;
+      else delete process.env.MTHDS_API_URL;
+    }
   });
 });
 
-describe("MthdsApiClient.executePipeline argument validation", () => {
+describe("MthdsApiClient.execute argument validation", () => {
   it("throws PipelineRequestError when neither pipe_code nor mthds_contents provided", async () => {
     const client = makeClient();
-    await expect(client.executePipeline({})).rejects.toBeInstanceOf(PipelineRequestError);
+    await expect(client.execute({})).rejects.toBeInstanceOf(PipelineRequestError);
   });
 });
 
@@ -112,15 +107,15 @@ describe("MthdsApiClient network errors", () => {
     const client = makeClient();
     vi.spyOn(globalThis, "fetch").mockRejectedValue(networkError("ECONNREFUSED"));
     try {
-      await client.executePipeline({ pipe_code: "p" });
+      await client.execute({ pipe_code: "p" });
       expect.fail("expected throw");
     } catch (err) {
       expect(err).toBeInstanceOf(ApiUnreachableError);
       expect(err).toBeInstanceOf(PipelineRequestError);
       const e = err as ApiUnreachableError;
       expect(e.code).toBe("ECONNREFUSED");
-      expect(e.apiUrl).toBe(RUNNER_URL);
-      expect(e.message).toContain(RUNNER_URL);
+      expect(e.apiUrl).toBe(BASE_URL);
+      expect(e.message).toContain(BASE_URL);
       expect(e.message).toContain("ECONNREFUSED");
       expect(e.cause).toBeInstanceOf(TypeError);
     }
@@ -130,7 +125,7 @@ describe("MthdsApiClient network errors", () => {
     const client = makeClient();
     vi.spyOn(globalThis, "fetch").mockRejectedValue(networkError("ENOTFOUND"));
     try {
-      await client.executePipeline({ pipe_code: "p" });
+      await client.execute({ pipe_code: "p" });
       expect.fail("expected throw");
     } catch (err) {
       expect(err).toBeInstanceOf(ApiUnreachableError);
@@ -143,7 +138,7 @@ describe("MthdsApiClient network errors", () => {
     const timeoutErr = new DOMException("timed out", "TimeoutError");
     vi.spyOn(globalThis, "fetch").mockRejectedValue(timeoutErr);
     try {
-      await client.executePipeline({ pipe_code: "p" });
+      await client.execute({ pipe_code: "p" });
       expect.fail("expected throw");
     } catch (err) {
       expect(err).toBeInstanceOf(ApiUnreachableError);
@@ -155,7 +150,7 @@ describe("MthdsApiClient network errors", () => {
     const client = makeClient();
     vi.spyOn(globalThis, "fetch").mockRejectedValue(new TypeError("fetch failed"));
     try {
-      await client.executePipeline({ pipe_code: "p" });
+      await client.execute({ pipe_code: "p" });
       expect.fail("expected throw");
     } catch (err) {
       expect(err).toBeInstanceOf(ApiUnreachableError);
@@ -172,7 +167,7 @@ describe("MthdsApiClient HTTP error responses", () => {
       jsonResponse(401, { detail: "Invalid authentication token" }),
     );
     try {
-      await client.executePipeline({ pipe_code: "p" });
+      await client.execute({ pipe_code: "p" });
       expect.fail("expected throw");
     } catch (err) {
       expect(err).toBeInstanceOf(ApiResponseError);
@@ -193,7 +188,7 @@ describe("MthdsApiClient HTTP error responses", () => {
       }),
     );
     try {
-      await client.executePipeline({ pipe_code: "p" });
+      await client.execute({ pipe_code: "p" });
       expect.fail("expected throw");
     } catch (err) {
       expect(err).toBeInstanceOf(ApiResponseError);
@@ -210,7 +205,7 @@ describe("MthdsApiClient HTTP error responses", () => {
       jsonResponse(500, { error_type: "FooError", message: "bar" }),
     );
     try {
-      await client.executePipeline({ pipe_code: "p" });
+      await client.execute({ pipe_code: "p" });
       expect.fail("expected throw");
     } catch (err) {
       const e = err as ApiResponseError;
@@ -225,7 +220,7 @@ describe("MthdsApiClient HTTP error responses", () => {
       textResponse(502, "Bad Gateway", "Bad Gateway"),
     );
     try {
-      await client.executePipeline({ pipe_code: "p" });
+      await client.execute({ pipe_code: "p" });
       expect.fail("expected throw");
     } catch (err) {
       expect(err).toBeInstanceOf(ApiResponseError);
@@ -241,7 +236,7 @@ describe("MthdsApiClient HTTP error responses", () => {
     const client = makeClient();
     vi.spyOn(globalThis, "fetch").mockResolvedValue(textResponse(503, "", "Service Unavailable"));
     try {
-      await client.executePipeline({ pipe_code: "p" });
+      await client.execute({ pipe_code: "p" });
       expect.fail("expected throw");
     } catch (err) {
       const e = err as ApiResponseError;
@@ -250,13 +245,13 @@ describe("MthdsApiClient HTTP error responses", () => {
   });
 });
 
-describe("MthdsApiClient.executePipeline gateway 30s timeout", () => {
+describe("MthdsApiClient.execute gateway 30s timeout", () => {
   it("translates a ~30s gateway 503 into a clear PipelineExecuteTimeoutError pointing at start", async () => {
     const client = makeClient();
     vi.spyOn(globalThis, "fetch").mockResolvedValue(textResponse(503, "", "Service Unavailable"));
     // start = 0ms, failure observed at 31s → over the 30s gateway ceiling.
     vi.spyOn(Date, "now").mockReturnValueOnce(0).mockReturnValueOnce(31_000);
-    const err = await client.executePipeline({ pipe_code: "p" }).catch((e: unknown) => e);
+    const err = await client.execute({ pipe_code: "p" }).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(PipelineExecuteTimeoutError);
     const e = err as PipelineExecuteTimeoutError;
     expect(e.message).toContain("30s");
@@ -268,7 +263,7 @@ describe("MthdsApiClient.executePipeline gateway 30s timeout", () => {
     const client = makeClient();
     vi.spyOn(globalThis, "fetch").mockRejectedValue(new DOMException("timed out", "TimeoutError"));
     vi.spyOn(Date, "now").mockReturnValueOnce(0).mockReturnValueOnce(30_500);
-    await expect(client.executePipeline({ pipe_code: "p" })).rejects.toBeInstanceOf(
+    await expect(client.execute({ pipe_code: "p" })).rejects.toBeInstanceOf(
       PipelineExecuteTimeoutError
     );
   });
@@ -277,19 +272,195 @@ describe("MthdsApiClient.executePipeline gateway 30s timeout", () => {
     const client = makeClient();
     vi.spyOn(globalThis, "fetch").mockResolvedValue(textResponse(503, "", "Service Unavailable"));
     vi.spyOn(Date, "now").mockReturnValueOnce(0).mockReturnValueOnce(2_000);
-    const err = await client.executePipeline({ pipe_code: "p" }).catch((e: unknown) => e);
+    const err = await client.execute({ pipe_code: "p" }).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(ApiResponseError);
     expect(err).not.toBeInstanceOf(PipelineExecuteTimeoutError);
   });
 });
 
-describe("MthdsApiClient happy path", () => {
-  it("returns parsed JSON on 200", async () => {
+describe("MthdsApiClient.execute 202 degrade (eng-review 3B)", () => {
+  it("throws RunStillRunningError carrying run_id, Retry-After, and Location", async () => {
     const client = makeClient();
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      jsonResponse(200, { pipeline_run_id: "ok" }),
+      jsonResponse(
+        202,
+        { run_id: "run-202", state: "RUNNING", created_at: "t0" },
+        { "Retry-After": "5", Location: "/v1/runs/run-202/status" }
+      )
     );
-    const result = await client.executePipeline({ pipe_code: "p" });
-    expect(result.pipeline_run_id).toBe("ok");
+    const err = await client.execute({ pipe_code: "p" }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(RunStillRunningError);
+    const e = err as RunStillRunningError;
+    expect(e.runId).toBe("run-202");
+    expect(e.retryAfterSeconds).toBe(5);
+    expect(e.location).toBe("/v1/runs/run-202/status");
+    expect(e.message).toContain("run-202");
+  });
+
+  it("survives a 202 with a malformed body (unknown run id)", async () => {
+    const client = makeClient();
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(textResponse(202, "accepted"));
+    const err = await client.execute({ pipe_code: "p" }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(RunStillRunningError);
+    expect((err as RunStillRunningError).runId).toBe("");
+    expect((err as RunStillRunningError).message).toContain("<unknown>");
+  });
+});
+
+describe("MthdsApiClient happy path", () => {
+  it("returns the parsed RunResult on 200", async () => {
+    const client = makeClient();
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      jsonResponse(200, { run_id: "ok", created_at: "t0", state: "COMPLETED" }),
+    );
+    const result = await client.execute({ pipe_code: "p" });
+    expect(result.run_id).toBe("ok");
+    expect(result.state).toBe("COMPLETED");
+  });
+});
+
+describe("MthdsApiClient.start", () => {
+  it("POSTs /v1/start and returns the StartAck", async () => {
+    const client = makeClient();
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(jsonResponse(202, { run_id: "run-1", state: "STARTED", created_at: "t0" }));
+
+    const ack = await client.start({
+      pipe_code: "my_pipe",
+      mthds_contents: ["domain = 'x'"],
+      inputs: { a: 1 },
+    });
+
+    expect(ack.run_id).toBe("run-1");
+    const [url, init] = fetchSpy.mock.calls[0]!;
+    expect(url).toBe("http://localhost:8081/v1/start");
+    expect(init).toMatchObject({ method: "POST" });
+    expect(JSON.parse((init as RequestInit).body as string)).toEqual({
+      pipe_code: "my_pipe",
+      mthds_contents: ["domain = 'x'"],
+      inputs: { a: 1 },
+    });
+  });
+
+  it("shapes the body for a stored-method start (method_id, no contents)", async () => {
+    const client = makeClient();
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(jsonResponse(202, { run_id: "run-2", state: "STARTED", created_at: "t0" }));
+    await client.start({ method_id: "mthd_123", inputs: { q: "hi" } });
+    const body = JSON.parse((fetchSpy.mock.calls[0]![1] as RequestInit).body as string);
+    expect(body).toEqual({ method_id: "mthd_123", inputs: { q: "hi" } });
+    expect(body.pipe_code).toBeUndefined();
+    expect(body.mthds_contents).toBeUndefined();
+  });
+
+  it("forwards run_id and callback_urls when provided (bare-runner extras)", async () => {
+    const client = makeClient();
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(jsonResponse(202, { run_id: "client-id", state: "STARTED", created_at: "t0" }));
+    await client.start({
+      pipe_code: "p",
+      run_id: "client-id",
+      callback_urls: ["https://example.com/done"],
+    });
+    const body = JSON.parse((fetchSpy.mock.calls[0]![1] as RequestInit).body as string);
+    expect(body.run_id).toBe("client-id");
+    expect(body.callback_urls).toEqual(["https://example.com/done"]);
+  });
+
+  it("throws PipelineRequestError when pipe_code, mthds_contents, and method_id are all missing", async () => {
+    const client = makeClient();
+    await expect(client.start({})).rejects.toBeInstanceOf(PipelineRequestError);
+  });
+
+  it("surfaces a non-2xx start as ApiResponseError (hosted 422 on client run_id)", async () => {
+    const client = makeClient();
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      jsonResponse(422, { detail: "Client-supplied run_id is not accepted" })
+    );
+    const err = await client.start({ pipe_code: "p", run_id: "nope" }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ApiResponseError);
+    expect((err as ApiResponseError).status).toBe(422);
+  });
+});
+
+describe("MthdsApiClient.validate", () => {
+  it("POSTs /v1/validate with mthds_contents + allow_signatures and returns the report", async () => {
+    const client = makeClient();
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(jsonResponse(200, { blueprint: { domain: "x" }, graph_spec: {}, pipe_structures: {} }));
+
+    const report = await client.validate(["domain = 'x'"], true);
+
+    expect(report.blueprint).toEqual({ domain: "x" });
+    const [url, init] = fetchSpy.mock.calls[0]!;
+    expect(url).toBe("http://localhost:8081/v1/validate");
+    expect(JSON.parse((init as RequestInit).body as string)).toEqual({
+      mthds_contents: ["domain = 'x'"],
+      allow_signatures: true,
+    });
+  });
+
+  it("defaults allow_signatures to false", async () => {
+    const client = makeClient();
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(jsonResponse(200, {}));
+    await client.validate(["domain = 'x'"]);
+    const body = JSON.parse((fetchSpy.mock.calls[0]![1] as RequestInit).body as string);
+    expect(body.allow_signatures).toBe(false);
+  });
+
+  it("surfaces an invalid bundle (422 problem) as ApiResponseError", async () => {
+    const client = makeClient();
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      jsonResponse(422, { detail: "Bundle failed validation" })
+    );
+    await expect(client.validate(["broken"])).rejects.toBeInstanceOf(ApiResponseError);
+  });
+});
+
+describe("MthdsApiClient.models", () => {
+  it("GETs /v1/models and returns the deck", async () => {
+    const client = makeClient();
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(jsonResponse(200, { models: [{ name: "gpt-4o", type: "llm" }], aliases: {}, waterfalls: {} }));
+    const deck = await client.models();
+    expect(deck.models[0]!.name).toBe("gpt-4o");
+    expect(fetchSpy.mock.calls[0]![0]).toBe("http://localhost:8081/v1/models");
+  });
+
+  it("passes the category filter as ?type=", async () => {
+    const client = makeClient();
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(jsonResponse(200, { models: [], aliases: {}, waterfalls: {} }));
+    await client.models("img_gen");
+    expect(fetchSpy.mock.calls[0]![0]).toBe("http://localhost:8081/v1/models?type=img_gen");
+  });
+});
+
+describe("MthdsApiClient.version", () => {
+  it("GETs /v1/version and returns the VersionInfo handshake", async () => {
+    const client = makeClient();
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(
+        jsonResponse(200, {
+          protocol_version: "0.1.0",
+          implementation: "pipelex-api",
+          implementation_version: "1.2.3",
+          runtime_version: "0.32.0",
+        })
+      );
+    const info = await client.version();
+    expect(info.implementation).toBe("pipelex-api");
+    expect(info.protocol_version).toBe("0.1.0");
+    expect(info.runtime_version).toBe("0.32.0");
+    expect(fetchSpy.mock.calls[0]![0]).toBe("http://localhost:8081/v1/version");
   });
 });

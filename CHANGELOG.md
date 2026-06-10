@@ -1,6 +1,32 @@
 # Changelog
 
-## [Unreleased]
+## [v0.9.0] - 2026-05-26
+
+### Added
+
+- **Remote upstream version probes in `mthds-agent update-check`.** Closes the "silent when both stale" gap in the env-check: previously, when a user was behind on both `mthds-agent` (npm) and the `mthds` plugin (Claude/Codex cache), the existing local floor checks all agreed with each other and nothing surfaced. `runFreshChecks` now calls `fetchLatestMthdsAgentNpm()` and `fetchLatestPluginMarketplace()` in parallel (2s timeout each, native `fetch` with `AbortController`) and overlays any upstream-newer version onto the existing `mthds_agent` / `plugin` entries of the payload, which then flows through the unchanged `UPGRADE_AVAILABLE` signal — no new stdout shape, no skill-side wiring change. When the local plugin floor (`MIN_PLUGIN_VERSION`) and upstream both flag the plugin outdated, the higher of the two thresholds wins so the user-facing `r` is always the more demanding requirement. New module `src/agent/remote-version.ts`; both probes return `null` on any failure (timeout, network, non-2xx, malformed JSON, missing field) so the rest of update-check degrades silently. Results are cached for 24h in a new `~/.mthds/state/last-remote-fetch` file with the same primary→`$TMPDIR` fallback policy as the binary cache; partial probe failures preserve the prior value for the failing field via a TTL-bypassing `readRemoteCacheRaw()`, so a brief network blip doesn't blank out a previously-known upstream version. No new config flag — the existing `cfg.updateCheck` master switch gates the whole remote layer too. The npm endpoint is `https://registry.npmjs.org/mthds/latest`; the plugin endpoint is `https://raw.githubusercontent.com/mthds-ai/mthds-plugins/main/.claude-plugin/marketplace.json` (reads global `metadata.version`).
+- **Explicit `UP_TO_DATE` line on success.** `update-check` previously stayed silent when everything was current, which the skill preamble rule conflated with "no output" (a broken env-check). It now emits a terse `UP_TO_DATE mthds-agent=X.Y.Z plxt=X.Y.Z [pipelex-agent=X.Y.Z] [plugin=X.Y.Z]\n` so the preamble can distinguish a clean env-check from a script bug. Optional fields are omitted entirely rather than written as `=null`. Emitted from every silent-return UP_TO_DATE site except snooze (snooze means "user asked for quiet; respect it") and the `JUST_UPGRADED` path (which already carries the informational versions). When the user has explicitly disabled update-check via `mthds-agent config set update-check false`, the disabled-state signal is its own variant: `UP_TO_DATE update-check=disabled\n` — without this, the new preamble's "no output → WARN" rule would fire perpetually on every skill run for users who deliberately opted out. The skill-side rule split lives in mthds-plugins 0.12.0.
+
+### Changed
+
+- **Minimum required mthds plugin version bumped to `0.12.0`** (was `0.11.3`). `mthds-agent` running inside Claude Code or Codex with an older plugin will report `outdated` from `update-check` and emit `PLUGIN_UPDATE_AVAILABLE` from bootstrap. The new plugin floor ratchets with the preamble-rule split shipped in mthds-plugins 0.12.0.
+
+## [v0.8.1] - 2026-05-26
+
+### Added
+
+- **Codex hook now runs Stage 3 (`pipelex-agent validate bundle`).** The PostToolUse(apply_patch) hook in `mthds-agent codex hook` previously stopped after `plxt lint` + `plxt fmt`; semantic validation was disabled because earlier pipelex builds eagerly fetched remote config on startup, which the Codex sandbox blocks. Pipelex's `validate bundle` path is offline-safe (no gateway or remote-config fetch), so Stage 3 is now enabled and brings Codex to parity with the Claude Code hook in `mthds-plugins` v0.11.3. Markdown stderr from pipelex is the canonical agent-facing artifact: input-domain (and unknown / missing-domain — default to block for safety) errors emit `{"decision":"block","reason":<markdown>}` so the agent revises the bundle; `config` / `runtime` domain errors emit `{"hookSpecificOutput":{"hookEventName":"PostToolUse","additionalContext":<markdown>}}` so the agent is informed but does not edit the file (environment issue). The `## Error source` stack-trace section is stripped before the markdown reaches the agent (stopgap for users on pipelex < 0.30.2 — 0.30.2 already drops the section, so this becomes a no-op once the floor is bumped). `additionalContext` is truncated to ~9500 chars with a `[truncated, N chars omitted]` marker. When several `.mthds` files in one apply_patch produce mixed outcomes, block wins: a single block payload is emitted and any warnings are deferred to the next iteration.
+
+### Changed
+
+- **Minimum required pipelex/pipelex-agent version bumped to `>=0.30.2`** (was `>=0.30.0`). Pipelex 0.30.1 silences every Python logger on `pipelex-agent`'s stderr regardless of user TOML — a user setting `package_log_levels.pipelex = "DEBUG"` (or a transitive dep configuring `anthropic` / `httpx` / `botocore` / `openai` loggers) can no longer corrupt the structured stderr envelope that `PipelexRunner` parses on the validate hook.
+- **Minimum required mthds plugin version bumped to `0.11.3`** (was `0.11.0`). `mthds-agent` running inside Claude Code or Codex with an older plugin will report `outdated` from `update-check` and emit `PLUGIN_UPDATE_AVAILABLE` from bootstrap.
+
+### Fixed
+
+- **`mthds-agent` no longer forwards `--log-level` to `pipelex-agent`.** Pipelex 0.30.1 removed the flag from `pipelex-agent` (log suppression is unconditional by design), so the catch-all passthrough — which previously kept `--log-level` so it could reach `pipelex-agent` — would have surfaced an "unknown option" error on invocations like `mthds-agent --log-level DEBUG models`. The flag is now stripped in `extractArgsForPipelexAgent` (both `--log-level <value>` and `--log-level=<value>` forms) alongside `--runner` and `--auto-install`. The run/validate paths already stripped it; this closes the gap on every other pipelex-runner command. `--log-level` remains accepted at the mthds-agent surface as a silent no-op so existing scripts keep working — for verbose debugging, use the human `pipelex` CLI, which honors the user's TOML log config.
+
+## [v0.8.0] - 2026-05-25
 
 ### Added
 

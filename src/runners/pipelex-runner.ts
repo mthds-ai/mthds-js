@@ -30,6 +30,7 @@ import type {
   CheckModelResponse,
   ModelsRequest,
   ModelsResponse,
+  ConceptRepresentationFormat,
 } from "./types.js";
 import type {
   StartRunOptions,
@@ -169,13 +170,16 @@ export class PipelexRunner extends BaseRunner implements Runner {
     }
   }
 
-  // pipelex build output bundle <bundle.mthds> --pipe <pipe_code> -o <file> [--format <fmt>]
+  // pipelex build output bundle <bundle.mthds> --pipe <pipe_code> -o <file> --format <fmt>
   // Output format determines the file content: 'json'/'schema' produce JSON, 'python' produces Python code.
+  // We always pass --format explicitly so the parsing branch below does not rely on
+  // pipelex's CLI default, which is outside our contract.
   async buildOutput(request: BuildOutputRequest): Promise<unknown> {
     const tmp = makeTmpDir();
     try {
       const bundlePath = writeMthdsContents(tmp, request.mthds_contents);
       const outPath = join(tmp, "output.json");
+      const format: ConceptRepresentationFormat = request.format ?? "json";
 
       const args = [
         "build",
@@ -188,11 +192,10 @@ export class PipelexRunner extends BaseRunner implements Runner {
         outPath,
         "-L",
         tmp,
+        "--format",
+        format,
+        ...this.libraryArgs(),
       ];
-      if (request.format) {
-        args.push("--format", request.format);
-      }
-      args.push(...this.libraryArgs());
 
       const { stderr } = await execFileAsync("pipelex", args, {
         encoding: "utf-8",
@@ -209,7 +212,7 @@ export class PipelexRunner extends BaseRunner implements Runner {
       }
       const raw = readFileSync(outPath, "utf-8");
       // 'python' format produces Python source code, not JSON. Return it as-is.
-      if (request.format === "python") {
+      if (format === "python") {
         return raw;
       }
       return JSON.parse(raw) as unknown;

@@ -120,11 +120,24 @@ const WRITE_FLAGS =
 
 const PRIMARY_CACHE_PATH = join(STATE_DIR, "last-update-check");
 const PRIMARY_MARKER_PATH = join(STATE_DIR, "just-upgraded-from");
+const PRIMARY_REMOTE_PATH = join(STATE_DIR, "last-remote-fetch");
 const FALLBACK_CACHE_PATH = join(FALLBACK_DIR, "last-update-check");
 const FALLBACK_MARKER_PATH = join(FALLBACK_DIR, "just-upgraded-from");
+const FALLBACK_REMOTE_PATH = join(FALLBACK_DIR, "last-remote-fetch");
 
 const TTL_UP_TO_DATE_MS = 60 * MS_PER_MINUTE; // 60 min
 const TTL_UPGRADE_AVAILABLE_MS = 720 * MS_PER_MINUTE; // 720 min (12 hours)
+/** Remote upstream probes (npm + GitHub marketplace.json) are cached for 24h.
+ *  Distinct from the local-binary cache above because the invalidation
+ *  semantics differ — local binaries change on install; remote upstreams move
+ *  on someone else's release schedule, so a TTL is the only signal. */
+export const TTL_REMOTE_FETCH_MS = 24 * 60 * MS_PER_MINUTE; // 24h
+/** Shorter TTL applied when the cached entry has any null field (a previous
+ *  probe failed and we wrote the merged-with-prior partial). Without this, a
+ *  single transient probe failure would lock the null for 24h — exactly the
+ *  signal the remote overlay was built to surface. 1h gives us a reasonable
+ *  retry cadence without hot-looping on every preamble invocation. */
+export const TTL_REMOTE_FETCH_PARTIAL_MS = 60 * MS_PER_MINUTE; // 1h
 // Real markers are consumed within seconds (skill flow re-runs preamble
 // immediately after upgrade). Anything markedly older is almost certainly
 // stuck because the sandbox blocked cleanup last time — ignore it instead of
@@ -184,6 +197,7 @@ let warnedAboutCacheWrite = false;
 let warnedAboutMarkerWrite = false;
 let warnedAboutMarkerClear = false;
 let warnedAboutFallbackUnsafe = false;
+let warnedAboutRemoteWrite = false;
 
 // ── Functions ──────────────────────────────────────────────────────
 
@@ -670,4 +684,152 @@ export function readAndClearUpgradeMarker(): Record<string, unknown> | null {
 
   if (isStale) return null;
   return chosen.data;
+}
+
+// ── Remote upstream-version cache ───────────────────────────────────
+//
+// Holds the latest mthds-agent (npm) and plugin (marketplace.json) versions
+// observed from upstream. Read by update-check's `runFreshChecks` to overlay
+// the local binary payload — see `remote-version.ts` for the probe itself.
+// Decoupled from the local-binary cache above because its invalidation
+// trigger is a wall-clock TTL, not "user just ran an install".
+
+export interface RemoteCachePayload {
+  /** Latest mthds-agent version observed on npm, or null if the last probe
+   *  failed (network/timeout/parse). Null is kept distinct from absent so a
+   *  partial success (e.g. plugin probe worked, npm probe didn't) can
+   *  preserve the working half across cache writes. */
+  mthds_agent_latest: string | null;
+  /** Latest mthds plugin version observed in marketplace.json (the global
+   *  `metadata.version`), or null on probe failure. */
+  plugin_latest: string | null;
+}
+
+function isValidRemotePayload(p: unknown): p is RemoteCachePayload {
+  if (!p || typeof p !== "object") return false;
+  const obj = p as Record<string, unknown>;
+  for (const key of ["mthds_agent_latest", "plugin_latest"]) {
+    const v = obj[key];
+    if (v !== null && typeof v !== "string") return false;
+  }
+  return true;
+}
+
+interface RemoteReadAttempt {
+  payload: RemoteCachePayload;
+  mtimeMs: number;
+}
+
+function readRemoteAt(
+  path: string,
+  enforceTtl: boolean,
+): RemoteReadAttempt | null {
+  let mtimeMs: number;
+  let content: string;
+  try {
+    mtimeMs = statSync(path).mtimeMs;
+    content = readFileSync(path, "utf-8");
+  } catch {
+    return null;
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(content);
+  } catch {
+    return null;
+  }
+  if (!isValidRemotePayload(parsed)) return null;
+
+  if (enforceTtl) {
+    const age = Date.now() - mtimeMs;
+    // Negative age beyond 1 minute means clock skew — treat as expired.
+    if (age < -MS_PER_MINUTE) return null;
+    // A partial entry (any null field) uses the shorter TTL so a previously
+    // failed probe gets retried within 1h instead of being locked for 24h.
+    // The complete path keeps the full 24h TTL — successful upstream data is
+    // long-lived. The raw reader (enforceTtl=false) ignores both TTLs because
+    // its caller only wants the prior payload to preserve working halves.
+    const isPartial =
+      parsed.mthds_agent_latest === null || parsed.plugin_latest === null;
+    const ttl = isPartial ? TTL_REMOTE_FETCH_PARTIAL_MS : TTL_REMOTE_FETCH_MS;
+    if (age > ttl) return null;
+  }
+
+  return { payload: parsed, mtimeMs };
+}
+
+/** Pick the newer of the two paths' payloads when both have valid contents,
+ *  honoring the dual-path discipline. `enforceTtl` toggles between the
+ *  user-facing 24h-gated reader and the preservation-only raw reader. */
+function readRemoteEither(enforceTtl: boolean): RemoteCachePayload | null {
+  const primary = readRemoteAt(PRIMARY_REMOTE_PATH, enforceTtl);
+  const fallback = ensureFallbackDir(false).usable
+    ? readRemoteAt(FALLBACK_REMOTE_PATH, enforceTtl)
+    : null;
+  if (!primary) return fallback?.payload ?? null;
+  if (!fallback) return primary.payload;
+  return fallback.mtimeMs > primary.mtimeMs
+    ? fallback.payload
+    : primary.payload;
+}
+
+/**
+ * Read the remote-version cache. Returns null when neither path holds an
+ * unexpired entry — the caller then knows to re-probe upstream. When both
+ * paths hold valid entries, the newer one wins (same policy as readCache).
+ */
+export function readRemoteCache(): RemoteCachePayload | null {
+  return readRemoteEither(true);
+}
+
+/**
+ * Read the remote-version cache, ignoring the TTL. Used by the refresh path
+ * to preserve a previously-fetched value when the current probe for one of
+ * the fields fails — better an old upstream value than no overlay at all.
+ */
+export function readRemoteCacheRaw(): RemoteCachePayload | null {
+  return readRemoteEither(false);
+}
+
+/**
+ * Write the remote-version cache. Same primary→fallback policy as writeCache.
+ * Best-effort: a write failure emits one warning per process and is otherwise
+ * absorbed — the next run will simply re-probe.
+ */
+export function writeRemoteCache(payload: RemoteCachePayload): void {
+  const content = JSON.stringify(payload) + "\n";
+  const res = writeWithFallback(
+    STATE_DIR,
+    PRIMARY_REMOTE_PATH,
+    FALLBACK_REMOTE_PATH,
+    content,
+  );
+  if (res.ok) return;
+  emitRemoteWriteWarning(res.code, res.fallbackCode);
+}
+
+function emitRemoteWriteWarning(primaryCode?: string, fallbackCode?: string): void {
+  if (warnedAboutRemoteWrite) return;
+  warnedAboutRemoteWrite = true;
+  const detail = fallbackCode
+    ? `primary=${primaryCode ?? "?"}, fallback=${fallbackCode}`
+    : (primaryCode ?? "?");
+  process.stderr.write(
+    `Warning: could not write remote-version cache (${detail}). Upstream check will run again next time.\n`
+  );
+}
+
+/** Delete the remote cache files. Used by `--force`. */
+export function clearRemoteCache(): void {
+  const paths = [PRIMARY_REMOTE_PATH];
+  if (ensureFallbackDir(false).usable) paths.push(FALLBACK_REMOTE_PATH);
+  for (const p of paths) {
+    try {
+      unlinkSync(p);
+    } catch {
+      // Same rationale as clearCache: missing or sandbox-blocked unlink is
+      // not a problem — writeRemoteCache also can't have written there.
+    }
+  }
 }

@@ -1,4 +1,3 @@
-import type { RunnerProtocol } from "../client/protocol.js";
 import type {
   StartRunOptions,
   RunPublic,
@@ -169,9 +168,12 @@ export interface ModelsResponse {
 }
 
 // ── Runner interface ────────────────────────────────────────────────
-// Every runtime (API, local pipelex CLI, …) must implement this.
+// Every runtime (API, local pipelex CLI, …) must implement this. The two
+// composites (`waitForResult`, `startAndWaitForResult`) are provided once by
+// `BaseRunner` over the primitives, so concrete runners only implement
+// `start` / `getRun` / `getResult` (plus build/validate/models).
 
-export interface Runner extends RunnerProtocol {
+export interface Runner {
   readonly type: RunnerType;
 
   // Health & version
@@ -183,14 +185,17 @@ export interface Runner extends RunnerProtocol {
   buildOutput(request: BuildOutputRequest): Promise<unknown>;
   buildRunner(request: BuildRunnerRequest): Promise<BuildRunnerResponse>;
 
-  // Pipeline execution (blocking: starts a run and waits for the result)
-  execute(request: ExecuteRequest): Promise<PipelineResponse>;
-
   // Run lifecycle (durable, poll-by-id — see src/client/runs.ts)
-  startRun(options: StartRunOptions): Promise<RunPublic>;
+  // Primitives:
+  start(options: StartRunOptions): Promise<RunPublic>;
   getRun(runId: string): Promise<RunRead>;
-  getResult(runId: string): Promise<RunResultState>;
+  getResult(runId: string, options?: { signal?: AbortSignal }): Promise<RunResultState>;
+  // Composites (provided by BaseRunner):
   waitForResult(runId: string, options?: WaitForResultOptions): Promise<RunResult>;
+  startAndWaitForResult(
+    options: StartRunOptions,
+    pollOptions?: WaitForResultOptions
+  ): Promise<RunResult>;
 
   // Validation
   validate(request: ValidateRequest): Promise<ValidateResponse>;

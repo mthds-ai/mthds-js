@@ -8,10 +8,15 @@ import {
   PipelineRequestError,
 } from "../../../src/client/exceptions.js";
 
-const API_URL = "http://localhost:8081";
+const RUNNER_URL = "http://localhost:8081/runner/v1";
+const PLATFORM_URL = "http://localhost:8081/platform/v1";
 
 function makeClient(): MthdsApiClient {
-  return new MthdsApiClient({ apiBaseUrl: API_URL, apiToken: "test-token" });
+  return new MthdsApiClient({
+    runnerBaseUrl: RUNNER_URL,
+    platformBaseUrl: PLATFORM_URL,
+    apiToken: "test-token",
+  });
 }
 
 function networkError(code: string): TypeError {
@@ -40,18 +45,20 @@ afterEach(() => {
 });
 
 describe("MthdsApiClient constructor", () => {
-  it("throws ClientAuthenticationError when no apiBaseUrl resolves", () => {
-    const original = process.env.PIPELEX_API_URL;
-    delete process.env.PIPELEX_API_URL;
+  it("throws ClientAuthenticationError when no runner base URL resolves", () => {
+    const original = process.env.PIPELEX_RUNNER_URL;
+    delete process.env.PIPELEX_RUNNER_URL;
     try {
       expect(() => new MthdsApiClient({})).toThrow(ClientAuthenticationError);
     } finally {
-      if (original !== undefined) process.env.PIPELEX_API_URL = original;
+      if (original !== undefined) process.env.PIPELEX_RUNNER_URL = original;
     }
   });
 
-  it("strips trailing slashes from apiBaseUrl", async () => {
-    const client = new MthdsApiClient({ apiBaseUrl: "http://localhost:8081///" });
+  it("strips trailing slashes from runnerBaseUrl and appends the endpoint", async () => {
+    const client = new MthdsApiClient({
+      runnerBaseUrl: "http://localhost:8081/runner/v1///",
+    });
     const fetchSpy = vi
       .spyOn(globalThis, "fetch")
       .mockResolvedValue(jsonResponse(200, { pipeline_run_id: "x" }));
@@ -60,6 +67,37 @@ describe("MthdsApiClient constructor", () => {
       "http://localhost:8081/runner/v1/pipeline/execute",
       expect.objectContaining({ method: "POST" }),
     );
+  });
+
+  it("appends the endpoint to a self-hosted runner base (no runner/v1 re-prefix)", async () => {
+    const client = new MthdsApiClient({
+      runnerBaseUrl: "http://localhost:8081/api/v1",
+    });
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(jsonResponse(200, { pipeline_run_id: "x" }));
+    await client.executePipeline({ pipe_code: "p" });
+    expect(fetchSpy).toHaveBeenCalledWith(
+      "http://localhost:8081/api/v1/pipeline/execute",
+      expect.objectContaining({ method: "POST" }),
+    );
+  });
+
+  it("self-hosted: the run lifecycle targets the runner base when platformBaseUrl is unset", async () => {
+    const client = new MthdsApiClient({
+      runnerBaseUrl: "http://localhost:8081/api/v1",
+    });
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({ pipeline_run_id: "r1", status: "PENDING", created_at: "2026-06-07T00:00:00Z" }),
+        { status: 200 },
+      ),
+    );
+    const run = await client.startRun({ pipe_code: "p" });
+    expect(run.pipeline_run_id).toBe("r1");
+    expect(client.hasPlatform()).toBe(false);
+    // No platform configured -> the lifecycle resolves to the runner base, not an error.
+    expect(String(fetchSpy.mock.calls[0]![0])).toBe("http://localhost:8081/api/v1/runs");
   });
 });
 
@@ -82,8 +120,8 @@ describe("MthdsApiClient network errors", () => {
       expect(err).toBeInstanceOf(PipelineRequestError);
       const e = err as ApiUnreachableError;
       expect(e.code).toBe("ECONNREFUSED");
-      expect(e.apiUrl).toBe(API_URL);
-      expect(e.message).toContain(API_URL);
+      expect(e.apiUrl).toBe(RUNNER_URL);
+      expect(e.message).toContain(RUNNER_URL);
       expect(e.message).toContain("ECONNREFUSED");
       expect(e.cause).toBeInstanceOf(TypeError);
     }

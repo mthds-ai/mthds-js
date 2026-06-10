@@ -11,7 +11,7 @@
 
 ### Changed
 
-- **The API runner's `execute()` / `executePipeline()` now use the durable start+poll path** instead of the runner's blocking `/runner/v1/pipeline/execute`, so real long-running pipelines no longer die at the 30s gateway timeout. They return `main_stuff` + `graph_spec` (from the platform result) rather than the runner's full `pipe_output`. The blocking call is still reachable directly via `MthdsApiClient.executePipeline` for short, sub-30s runs.
+- **`Runner` surface reshaped around primitives + composites.** The run lifecycle is now three primitives — `start(options)` (was `startRun`), `getRun(runId)`, `getResult(runId)` — plus two composites provided once by a new `BaseRunner`: `waitForResult(runId)` (poll an already-started run to completion) and `startAndWaitForResult(options)` (start, then wait — the one-call convenience). The redundant `execute()` and the `RunnerProtocol` methods (`executePipeline` / `startPipeline`) are **removed from the `Runner` interface** — the blocking wire calls live on `MthdsApiClient` only. The API runner routes `startAndWaitForResult()` through the durable start+poll path (returning `main_stuff` + `graph_spec`), falling back self-hosted to the runner's blocking `/pipeline/execute` (native `pipe_output`); the local `pipelex` runner supports `startAndWaitForResult` (blocking, in-process) but not the granular durable primitives. The poll/Retry-After/abort/timeout loop is now a single shared `pollUntilResult()` in `client/runs.ts` that both `MthdsApiClient.waitForResult` and `BaseRunner.waitForResult` delegate to, so the behavior can never drift between the wire client and the runner layer.
 
 ### Fixed
 

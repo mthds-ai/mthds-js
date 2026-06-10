@@ -8,10 +8,15 @@ import {
 } from "../../../src/client/exceptions.js";
 import { isTerminalRunStatus, isSuccessRunStatus } from "../../../src/client/runs.js";
 
-const API_URL = "http://localhost:8081";
+const RUNNER_URL = "http://localhost:8081/runner/v1";
+const PLATFORM_URL = "http://localhost:8081/platform/v1";
 
 function makeClient(): MthdsApiClient {
-  return new MthdsApiClient({ apiBaseUrl: API_URL, apiToken: "test-token" });
+  return new MthdsApiClient({
+    runnerBaseUrl: RUNNER_URL,
+    platformBaseUrl: PLATFORM_URL,
+    apiToken: "test-token",
+  });
 }
 
 function jsonResponse(status: number, body: unknown, headers: Record<string, string> = {}): Response {

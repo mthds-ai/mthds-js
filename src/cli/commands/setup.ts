@@ -14,24 +14,42 @@ const execFileAsync = promisify(execFile);
 // ── mthds runner setup <name> ───────────────────────────────────────
 
 async function initApi(): Promise<void> {
-  const { value: currentUrl, source: urlSource } = getConfigValue("apiUrl");
+  const { value: currentRunnerUrl, source: runnerUrlSource } =
+    getConfigValue("runnerUrl");
+  const { value: currentPlatformUrl, source: platformUrlSource } =
+    getConfigValue("platformUrl");
   const { value: currentKey } = getConfigValue("apiKey");
 
-  const apiUrl = await p.text({
-    message: "API URL",
-    placeholder: currentUrl,
-    initialValue: urlSource !== "default" ? currentUrl : "",
-    validate: (val) => {
-      if (!val) return undefined; // will use default
-      try {
-        new URL(val);
-      } catch {
-        return "Must be a valid URL";
-      }
-    },
+  const validateUrl = (val: string | undefined): string | undefined => {
+    if (!val) return undefined; // will use default
+    try {
+      new URL(val);
+    } catch {
+      return "Must be a valid URL";
+    }
+  };
+
+  const runnerUrl = await p.text({
+    message: "Runner URL (includes version prefix, e.g. /runner/v1 or /api/v1)",
+    placeholder: currentRunnerUrl,
+    initialValue: runnerUrlSource !== "default" ? currentRunnerUrl : "",
+    validate: validateUrl,
   });
 
-  if (p.isCancel(apiUrl)) {
+  if (p.isCancel(runnerUrl)) {
+    p.cancel("Cancelled.");
+    process.exit(0);
+  }
+
+  const platformUrl = await p.text({
+    message:
+      "Platform URL (optional — leave empty for a self-hosted runner with no run store)",
+    placeholder: currentPlatformUrl,
+    initialValue: platformUrlSource !== "default" ? currentPlatformUrl : "",
+    validate: validateUrl,
+  });
+
+  if (p.isCancel(platformUrl)) {
     p.cancel("Cancelled.");
     process.exit(0);
   }
@@ -48,8 +66,11 @@ async function initApi(): Promise<void> {
     process.exit(0);
   }
 
-  if (apiUrl) {
-    setConfigValue("apiUrl", apiUrl);
+  if (runnerUrl) {
+    setConfigValue("runnerUrl", runnerUrl);
+  }
+  if (platformUrl) {
+    setConfigValue("platformUrl", platformUrl);
   }
   if (apiKey) {
     setConfigValue("apiKey", apiKey as string);
@@ -189,11 +210,13 @@ export async function runnerStatus(): Promise<void> {
   p.log.info(`Default runner: ${defaultRunner}${sourceLabel}`);
 
   // API runner
-  const { value: apiUrl } = getConfigValue("apiUrl");
+  const { value: runnerUrl } = getConfigValue("runnerUrl");
+  const { value: platformUrl } = getConfigValue("platformUrl");
   const { value: apiKey } = getConfigValue("apiKey");
   p.log.message(`\n  API runner`);
-  p.log.message(`    URL:     ${apiUrl}`);
-  p.log.message(`    API key: ${maskApiKey(apiKey)}`);
+  p.log.message(`    Runner URL:   ${runnerUrl}`);
+  p.log.message(`    Platform URL: ${platformUrl || "(unset — self-hosted, durable runs disabled)"}`);
+  p.log.message(`    API key:      ${maskApiKey(apiKey)}`);
 
   // Pipelex runner
   const pipelexVersion = await getPipelexVersion();

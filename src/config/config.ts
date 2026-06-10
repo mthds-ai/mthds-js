@@ -55,7 +55,7 @@ const FILE_KEYS: Record<keyof MthdsConfig, string> = {
 };
 
 /** Hosted default — host only; endpoints compose as `{base}/v1/{endpoint}`. */
-const DEFAULT_BASE_URL = "https://api.pipelex.com";
+export const DEFAULT_BASE_URL = "https://api.pipelex.com";
 
 /** Defaults */
 const DEFAULTS: MthdsConfig = {
@@ -161,6 +161,23 @@ const INVERTED_BOOLEAN_KEYS: Set<keyof MthdsConfig> = new Set([
 const TRUTHY_STRINGS: ReadonlySet<string> = new Set(["true", "1", "yes", "on"]);
 
 export const VALID_KEYS = Object.keys(KEY_ALIASES);
+
+/**
+ * A base URL must be HOST ONLY — http/https, no path, query, or fragment.
+ * The client composes `{base}/v1/{endpoint}`; a path-prefixed value (e.g. a
+ * leftover `.../runner/v1`) would produce malformed `/v1/v1/...` endpoints.
+ */
+export function isValidBaseUrl(value: string): boolean {
+  let parsed: URL;
+  try {
+    parsed = new URL(value);
+  } catch {
+    return false;
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return false;
+  if (parsed.pathname !== "/" && parsed.pathname !== "") return false;
+  return !parsed.search && !parsed.hash;
+}
 
 export function resolveKey(
   cliKey: string

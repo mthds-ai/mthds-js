@@ -5,7 +5,7 @@ import { isPipelexInstalled } from "../../installer/runtime/check.js";
 import { ensureRuntime } from "../../installer/runtime/installer.js";
 import { shutdown } from "../../installer/telemetry/posthog.js";
 import { printLogo } from "./index.js";
-import { getConfigValue, setConfigValue } from "../../config/config.js";
+import { DEFAULT_BASE_URL, getConfigValue, isValidBaseUrl, setConfigValue } from "../../config/config.js";
 import { Runners, RUNNER_NAMES } from "../../runners/types.js";
 import { maskApiKey } from "./utils.js";
 
@@ -19,12 +19,11 @@ async function initApi(): Promise<void> {
   const { value: currentKey } = getConfigValue("apiKey");
 
   const validateUrl = (val: string | undefined): string | undefined => {
-    if (!val) return undefined; // will use default
-    try {
-      new URL(val);
-    } catch {
-      return "Must be a valid URL";
+    if (!val) return undefined; // empty resets to the default
+    if (!isValidBaseUrl(val)) {
+      return "Must be a host-only http(s) URL — no path (e.g. https://api.pipelex.com)";
     }
+    return undefined;
   };
 
   const baseUrl = await p.text({
@@ -52,9 +51,9 @@ async function initApi(): Promise<void> {
     process.exit(0);
   }
 
-  if (baseUrl) {
-    setConfigValue("baseUrl", baseUrl);
-  }
+  // Always persist: a non-empty value is saved; an emptied field resets a
+  // previously-saved custom URL back to the default.
+  setConfigValue("baseUrl", (baseUrl as string) || DEFAULT_BASE_URL);
   if (apiKey) {
     setConfigValue("apiKey", apiKey as string);
   }

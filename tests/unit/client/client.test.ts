@@ -23,6 +23,19 @@ function networkError(code: string): TypeError {
   return err;
 }
 
+// The constructor consults the legacy-key detector, which reads the REAL
+// ~/.mthds/config — stub it out so these tests are hermetic on dev machines
+// with leftover PIPELEX_* keys. The legacy fail-fast behavior itself is
+// covered (with controlled mocks) in api-runner-migration.test.ts.
+vi.mock("../../../src/config/config.js", async (importOriginal) => {
+  const original = await importOriginal<typeof import("../../../src/config/config.js")>();
+  return {
+    ...original,
+    findLegacyUrlKey: () => undefined,
+    findLegacyApiKeyKey: () => undefined,
+  };
+});
+
 function jsonResponse(status: number, body: unknown, headers: Record<string, string> = {}): Response {
   return new Response(JSON.stringify(body), {
     status,

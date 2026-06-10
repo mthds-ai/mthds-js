@@ -21,6 +21,7 @@ import type {
   VersionInfo,
 } from "./protocol-models.js";
 import { pollUntilResult } from "./runs.js";
+import { findLegacyApiKeyKey, findLegacyUrlKey } from "../config/config.js";
 import {
   ApiResponseError,
   ApiUnreachableError,
@@ -28,6 +29,7 @@ import {
   PipelineRequestError,
   RunLifecycleUnavailableError,
   RunStillRunningError,
+  ClientAuthenticationError,
 } from "./exceptions.js";
 
 interface MthdsApiClientOptions {
@@ -81,7 +83,23 @@ export class MthdsApiClient implements MTHDSProtocol {
   private readonly baseUrl: string;
 
   constructor(options: MthdsApiClientOptions = {}) {
+    // Fail fast on leftover legacy keys (PIPELEX_*) — but only when nothing
+    // was configured the new way, so a fully-migrated setup (or an explicitly
+    // self-hosted anonymous one) is never bothered by stale leftovers.
+    const baseConfigured = options.baseUrl !== undefined || process.env.MTHDS_API_URL !== undefined;
+    if (!baseConfigured) {
+      const legacyUrl = findLegacyUrlKey();
+      if (legacyUrl) {
+        throw new ClientAuthenticationError(legacyUrl.message);
+      }
+    }
     this.apiToken = options.apiToken ?? process.env.MTHDS_API_KEY;
+    if (!this.apiToken && !baseConfigured) {
+      const legacyKey = findLegacyApiKeyKey();
+      if (legacyKey) {
+        throw new ClientAuthenticationError(legacyKey.message);
+      }
+    }
     const resolvedBaseUrl =
       options.baseUrl ?? process.env.MTHDS_API_URL ?? DEFAULT_API_BASE_URL;
     this.baseUrl = resolvedBaseUrl.replace(/\/+$/, "");

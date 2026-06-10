@@ -136,7 +136,7 @@ npx mthds setup runner pipelex
 
 ### Configure the API runner
 
-The API runner is the default. Set it up interactively:
+The local pipelex runner is the default; to use the hosted (or self-hosted) API instead, set up the API runner interactively:
 
 ```bash
 mthds setup runner api

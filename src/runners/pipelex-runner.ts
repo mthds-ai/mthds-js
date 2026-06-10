@@ -463,6 +463,9 @@ export class PipelexRunner extends BaseRunner implements Runner {
       mthds_contents: options.mthds_contents ?? undefined,
       pipe_code: options.pipe_code ?? undefined,
       inputs: options.inputs ?? undefined,
+      output_name: options.output_name ?? undefined,
+      output_multiplicity: options.output_multiplicity ?? undefined,
+      dynamic_output_concept_ref: options.dynamic_output_concept_ref ?? undefined,
     });
     return {
       run_id: response.run_id,

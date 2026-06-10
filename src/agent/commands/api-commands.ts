@@ -357,12 +357,17 @@ export function registerApiRunnerCommands(
     }
 
     try {
-      const result = await runner.execute({
+      const result = await runner.startAndWaitForResult({
         mthds_contents: [mthdsContent],
         pipe_code: pipeCode,
         inputs,
       });
-      agentSuccess({ ...result });
+      agentSuccess({
+        state: "completed",
+        pipeline_run_id: result.pipeline_run_id,
+        main_stuff: result.main_stuff ?? result.pipe_output ?? null,
+        graph_spec: result.graph_spec ?? null,
+      });
     } catch (err) {
       agentError((err as Error).message, "RunnerError", {
         error_domain: AGENT_ERROR_DOMAINS.RUNNER,
@@ -435,7 +440,7 @@ export function registerApiRunnerCommands(
         const runner = safeCreateRunner(makeRunner);
         const startOptions = resolveStartRunOptions(target, options);
         try {
-          const run = await runner.startRun(startOptions);
+          const run = await runner.start(startOptions);
           agentSuccess({ ...run });
         } catch (err) {
           agentError((err as Error).message, "RunnerError", {
@@ -756,14 +761,8 @@ function resolveStartRunOptions(
     dynamic_output_concept_ref: options.dynamicOutput,
   };
   if (options.methodId) {
-    if (!options.pipe) {
-      agentError(
-        "--pipe is required when running a stored method with --method-id.",
-        "ArgumentError",
-        { error_domain: AGENT_ERROR_DOMAINS.ARGUMENT }
-      );
-      throw new Error("unreachable");
-    }
+    // A stored method carries its own `main_pipe`; the platform resolves the
+    // pipe server-side, so `--pipe` is optional and only needed to override it.
     return { method_id: options.methodId, pipe_code: options.pipe, inputs: resolveRunInputs(options), ...outputs };
   }
   // resolveContentForRun may set options.inputs (directory auto-discovery), so

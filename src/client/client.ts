@@ -14,19 +14,29 @@ import type {
   RunStatus,
   WaitForResultOptions,
 } from "./runs.js";
+import { pollUntilResult } from "./runs.js";
 import {
   ApiResponseError,
   ApiUnreachableError,
   ClientAuthenticationError,
   PipelineExecuteTimeoutError,
   PipelineRequestError,
-  RunFailedError,
-  RunTimeoutError,
 } from "./exceptions.js";
 
 interface MthdsApiClientOptions {
   apiToken?: string;
-  apiBaseUrl?: string;
+  /**
+   * Runner base URL, INCLUDING its version prefix (hosted: `.../runner/v1`;
+   * self-hosted: `http://<host>/api/v1`). Runner endpoints are appended to this
+   * without re-adding a version prefix; `/health` resolves to its origin root.
+   */
+  runnerBaseUrl?: string;
+  /**
+   * Platform base URL, INCLUDING its version prefix (hosted: `.../platform/v1`).
+   * Optional: when omitted/empty the platform (durable run) surface is disabled
+   * and calling any run-lifecycle method throws a clear hosted-only error.
+   */
+  platformBaseUrl?: string;
 }
 
 /** Low-level transport over a generic fetch, before status interpretation. */
@@ -40,39 +50,91 @@ interface RawResponse {
 // Run-management routes live on the platform surface; pipeline execution lives
 // on the runner surface. The platform `POST /runs` is what creates the RUN row
 // that the self-healing `by-id` endpoints read — starting via the runner alone
-// would leave nothing to poll.
-const PLATFORM_RUNS = "platform/v1/runs";
+// would leave nothing to poll. These endpoints are appended to the platform
+// base URL (which already carries the `/platform/v1` version prefix).
+const PLATFORM_RUNS = "runs";
 
 const DEFAULT_REQUEST_TIMEOUT_MS = 1_200_000; // 20 min — matches the runner's blocking execute ceiling.
 const POLL_REQUEST_TIMEOUT_MS = 30_000; // single status/result GETs; the gateway caps responses at 30s.
-const DEFAULT_POLL_INTERVAL_MS = 2_000;
 const DEFAULT_DEGRADED_RETRY_SECONDS = 5; // matches the platform's `_DEGRADE_RETRY_AFTER_SECONDS`.
 
 /**
- * Client for the Pipelex hosted API.
+ * Client for the Pipelex API, hosted or self-hosted.
  *
- * Two surfaces, deliberately kept distinct:
- * - **runner** (`/runner/v1/pipeline/*`) — `executePipeline` / `startPipeline`,
- *   the stateless execution engine. `executePipeline` blocks and is subject to
- *   the API Gateway's 30s ceiling.
- * - **platform** (`/platform/v1/runs*`) — `startRun` / `getRun` / `getResult` /
- *   `waitForResult`, the durable run lifecycle. This is the path that survives
- *   hours-long runs and lets an agent resume by `run_id`.
+ * Two surfaces, deliberately kept distinct, each addressed by its own base URL
+ * (which already carries the version prefix):
+ * - **runner** (`<runnerBaseUrl>/pipeline/*`) — `executePipeline` /
+ *   `startPipeline`, the stateless execution engine. `executePipeline` blocks
+ *   and, behind the hosted gateway, is subject to the 30s ceiling.
+ * - **platform** (`<platformBaseUrl>/runs*`) — `startRun` / `getRun` /
+ *   `getResult` / `waitForResult`, the durable run lifecycle. This is the path
+ *   that survives hours-long runs and lets an agent resume by `run_id`.
+ *   Optional: when no platform base URL is configured (self-hosted runner with
+ *   no run store) these methods throw a clear hosted-only error.
  */
 export class MthdsApiClient implements RunnerProtocol {
   private readonly apiToken: string | undefined;
-  private readonly apiBaseUrl: string;
+  private readonly runnerBaseUrl: string;
+  private readonly platformBaseUrl: string | undefined;
 
   constructor(options: MthdsApiClientOptions = {}) {
     this.apiToken = options.apiToken ?? process.env.PIPELEX_API_KEY;
 
-    const resolvedBaseUrl = options.apiBaseUrl ?? process.env.PIPELEX_API_URL;
-    if (!resolvedBaseUrl) {
+    const resolvedRunnerUrl =
+      options.runnerBaseUrl ?? process.env.PIPELEX_RUNNER_URL;
+    if (!resolvedRunnerUrl) {
       throw new ClientAuthenticationError(
-        "API base URL is required for API execution"
+        "Runner base URL (`runnerUrl`) is required for API execution"
       );
     }
-    this.apiBaseUrl = resolvedBaseUrl.replace(/\/+$/, "");
+    this.runnerBaseUrl = resolvedRunnerUrl.replace(/\/+$/, "");
+
+    const resolvedPlatformUrl =
+      options.platformBaseUrl ?? process.env.PIPELEX_PLATFORM_URL;
+    this.platformBaseUrl = resolvedPlatformUrl
+      ? resolvedPlatformUrl.replace(/\/+$/, "")
+      : undefined;
+  }
+
+  // ── URL resolution ───────────────────────────────────────────────────
+
+  /** Build a full runner URL by appending an endpoint to the runner base. */
+  private runnerUrl(endpoint: string): string {
+    return `${this.runnerBaseUrl}/${endpoint}`;
+  }
+
+  /**
+   * Resolve the base URL for the durable run lifecycle (start/poll/result).
+   *
+   * The durable lifecycle (`runs`, `runs/by-id/{id}`, `runs/by-id/{id}/result`)
+   * is a **hosted Pipelex Platform** feature, DDB+Temporal backed — the runner is
+   * runner-only and has no run store. There is no runner fallback: without a
+   * platform URL these methods fail fast with a clear error rather than silently
+   * hitting a runner endpoint that doesn't exist. A self-hosted runner uses the
+   * blocking `executePipeline` path instead.
+   */
+  private runLifecycleBase(): string {
+    if (!this.platformBaseUrl) {
+      throw new PipelineRequestError(
+        "A platform base URL (`platformUrl` / `PIPELEX_PLATFORM_URL`) is required for the durable run lifecycle (start / status / result / waitForResult). Configure the hosted platform, or use the blocking execute path for a self-hosted runner."
+      );
+    }
+    return this.platformBaseUrl;
+  }
+
+  /** Build a full run-lifecycle URL by appending an endpoint to the lifecycle base. */
+  private runLifecycleUrl(endpoint: string): string {
+    return `${this.runLifecycleBase()}/${endpoint}`;
+  }
+
+  /** Origin root derived from the runner base URL — `/health` lives here, not under the version prefix. */
+  private healthUrl(): string {
+    return new URL("/health", this.runnerBaseUrl).toString();
+  }
+
+  /** Whether the durable platform surface is configured (hosted) or not (self-hosted). */
+  hasPlatform(): boolean {
+    return this.platformBaseUrl !== undefined;
   }
 
   // ── Transport ──────────────────────────────────────────────────────
@@ -81,15 +143,20 @@ export class MthdsApiClient implements RunnerProtocol {
    * Issue one HTTP request and return the raw status/headers/body. Wraps
    * DNS/connect/TLS/timeout failures as `ApiUnreachableError`; a caller-driven
    * abort (Ctrl-C / agent walk-away) propagates as-is so the poll loop can stop
-   * cleanly. Non-2xx interpretation is left to the caller.
+   * cleanly. Non-2xx interpretation is left to the caller. `url` is a fully
+   * resolved absolute URL.
    */
   private async requestRaw(
     method: "GET" | "POST",
-    endpoint: string,
-    options: { body?: unknown; timeoutMs?: number; signal?: AbortSignal } = {}
+    url: string,
+    options: {
+      body?: unknown;
+      timeoutMs?: number;
+      signal?: AbortSignal;
+      baseUrlForErrors?: string;
+    } = {}
   ): Promise<RawResponse> {
-    const url = `${this.apiBaseUrl}/${endpoint}`;
-
+    const baseUrlForErrors = options.baseUrlForErrors ?? this.runnerBaseUrl;
     const headers: Record<string, string> = { Accept: "application/json" };
     if (this.apiToken) {
       headers["Authorization"] = `Bearer ${this.apiToken}`;
@@ -130,8 +197,8 @@ export class MthdsApiClient implements RunnerProtocol {
       // Our timeout aborts the controller with a "TimeoutError" DOMException.
       const code = extractNetworkErrorCode(err);
       throw new ApiUnreachableError(
-        `Could not reach Pipelex API at ${this.apiBaseUrl} (${code ?? "network error"})`,
-        this.apiBaseUrl,
+        `Could not reach Pipelex API at ${baseUrlForErrors} (${code ?? "network error"})`,
+        baseUrlForErrors,
         code,
         { cause: err }
       );
@@ -152,12 +219,13 @@ export class MthdsApiClient implements RunnerProtocol {
   private throwApiResponseError(
     method: "GET" | "POST",
     endpoint: string,
-    res: RawResponse
+    res: RawResponse,
+    baseUrlForErrors: string
   ): never {
     const { errorType, serverMessage } = parseErrorBody(res.body);
     throw new ApiResponseError(
       `API ${method} /${endpoint} failed (${res.status}): ${serverMessage ?? (res.body || res.statusText)}`,
-      this.apiBaseUrl,
+      baseUrlForErrors,
       res.status,
       res.statusText,
       res.body,
@@ -166,13 +234,16 @@ export class MthdsApiClient implements RunnerProtocol {
     );
   }
 
-  private async makeApiCall(
+  /** POST a pipeline request to a runner endpoint and return the parsed body. */
+  private async makeRunnerCall(
     endpoint: string,
     pipelineRequest: PipelineRequest
   ): Promise<unknown> {
-    const res = await this.requestRaw("POST", endpoint, { body: pipelineRequest });
+    const res = await this.requestRaw("POST", this.runnerUrl(endpoint), {
+      body: pipelineRequest,
+    });
     if (res.status < 200 || res.status >= 300) {
-      this.throwApiResponseError("POST", endpoint, res);
+      this.throwApiResponseError("POST", endpoint, res, this.runnerBaseUrl);
     }
     return res.body ? JSON.parse(res.body) : null;
   }
@@ -203,7 +274,7 @@ export class MthdsApiClient implements RunnerProtocol {
     // clear, actionable error that points at the durable start+poll path.
     const startedAt = Date.now();
     try {
-      const data = await this.makeApiCall("runner/v1/pipeline/execute", request);
+      const data = await this.makeRunnerCall("pipeline/execute", request);
       return data as PipelineExecuteResponse;
     } catch (err) {
       const elapsedMs = Date.now() - startedAt;
@@ -232,7 +303,7 @@ export class MthdsApiClient implements RunnerProtocol {
       dynamic_output_concept_code: options.dynamic_output_concept_code,
     };
 
-    const data = await this.makeApiCall("runner/v1/pipeline/start", request);
+    const data = await this.makeRunnerCall("pipeline/start", request);
     return data as PipelineStartResponse;
   }
 
@@ -244,9 +315,16 @@ export class MthdsApiClient implements RunnerProtocol {
    * `getRun` for status) using the returned `pipeline_run_id`.
    */
   async startRun(options: StartRunOptions): Promise<RunPublic> {
-    if (!options.pipe_code && (!options.mthds_contents || options.mthds_contents.length === 0)) {
+    // A stored method (`method_id`) carries its own `main_pipe`, so the platform
+    // resolves the pipe server-side — `pipe_code` is optional in that case. For
+    // ad-hoc runs, at least one of `pipe_code` / `mthds_contents` is required.
+    if (
+      !options.method_id &&
+      !options.pipe_code &&
+      (!options.mthds_contents || options.mthds_contents.length === 0)
+    ) {
       throw new PipelineRequestError(
-        "Either pipe_code or mthds_contents must be provided to start a run."
+        "Provide method_id (stored method), pipe_code, or mthds_contents to start a run."
       );
     }
     const request = {
@@ -258,12 +336,14 @@ export class MthdsApiClient implements RunnerProtocol {
       output_multiplicity: options.output_multiplicity ?? undefined,
       dynamic_output_concept_ref: options.dynamic_output_concept_ref ?? undefined,
     };
-    const res = await this.requestRaw("POST", PLATFORM_RUNS, {
+    const lifecycleBase = this.runLifecycleBase();
+    const res = await this.requestRaw("POST", this.runLifecycleUrl(PLATFORM_RUNS), {
       body: request,
       timeoutMs: POLL_REQUEST_TIMEOUT_MS,
+      baseUrlForErrors: lifecycleBase,
     });
     if (res.status < 200 || res.status >= 300) {
-      this.throwApiResponseError("POST", PLATFORM_RUNS, res);
+      this.throwApiResponseError("POST", PLATFORM_RUNS, res, lifecycleBase);
     }
     return JSON.parse(res.body) as RunPublic;
   }
@@ -276,13 +356,15 @@ export class MthdsApiClient implements RunnerProtocol {
    * server's backoff hint when present.
    */
   async getRun(runId: string, options: { signal?: AbortSignal } = {}): Promise<RunRead> {
+    const lifecycleBase = this.runLifecycleBase();
     const endpoint = `${PLATFORM_RUNS}/by-id/${encodeURIComponent(runId)}`;
-    const res = await this.requestRaw("GET", endpoint, {
+    const res = await this.requestRaw("GET", this.runLifecycleUrl(endpoint), {
       timeoutMs: POLL_REQUEST_TIMEOUT_MS,
       signal: options.signal,
+      baseUrlForErrors: lifecycleBase,
     });
     if (res.status < 200 || res.status >= 300) {
-      this.throwApiResponseError("GET", endpoint, res);
+      this.throwApiResponseError("GET", endpoint, res, lifecycleBase);
     }
     const run = JSON.parse(res.body) as RunRead;
     const retryAfter = parseRetryAfter(res.headers);
@@ -298,10 +380,12 @@ export class MthdsApiClient implements RunnerProtocol {
    * - HTTP 503 → `running` (Temporal degraded — retry, never fail a poller)
    */
   async getResult(runId: string, options: { signal?: AbortSignal } = {}): Promise<RunResultState> {
+    const lifecycleBase = this.runLifecycleBase();
     const endpoint = `${PLATFORM_RUNS}/by-id/${encodeURIComponent(runId)}/result`;
-    const res = await this.requestRaw("GET", endpoint, {
+    const res = await this.requestRaw("GET", this.runLifecycleUrl(endpoint), {
       timeoutMs: POLL_REQUEST_TIMEOUT_MS,
       signal: options.signal,
+      baseUrlForErrors: lifecycleBase,
     });
 
     if (res.status === 202 || res.status === 503) {
@@ -322,7 +406,7 @@ export class MthdsApiClient implements RunnerProtocol {
       };
     }
     if (res.status < 200 || res.status >= 300) {
-      this.throwApiResponseError("GET", endpoint, res);
+      this.throwApiResponseError("GET", endpoint, res, lifecycleBase);
     }
     const result = JSON.parse(res.body) as RunResult;
     return { state: "completed", pipeline_run_id: runId, result };
@@ -339,37 +423,7 @@ export class MthdsApiClient implements RunnerProtocol {
     runId: string,
     options: WaitForResultOptions = {}
   ): Promise<RunResult> {
-    const intervalMs = options.intervalMs ?? DEFAULT_POLL_INTERVAL_MS;
-    const timeoutMs = options.timeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
-    const startedAt = Date.now();
-    let attempt = 0;
-
-    for (;;) {
-      throwIfAborted(options.signal);
-      const state = await this.getResult(runId, { signal: options.signal });
-
-      if (state.state === "completed") {
-        return state.result;
-      }
-      if (state.state === "failed") {
-        throw new RunFailedError(state.message, runId, state.status);
-      }
-
-      attempt += 1;
-      const elapsedMs = Date.now() - startedAt;
-      if (elapsedMs >= timeoutMs) {
-        throw new RunTimeoutError(
-          `Run ${runId} did not reach a terminal state within ${timeoutMs}ms.`,
-          runId,
-          timeoutMs
-        );
-      }
-      options.onPoll?.({ attempt, elapsedMs });
-
-      const retryMs = state.retry_after_seconds != null ? state.retry_after_seconds * 1000 : 0;
-      const waitMs = Math.min(Math.max(intervalMs, retryMs), timeoutMs - elapsedMs);
-      await sleep(waitMs, options.signal);
-    }
+    return pollUntilResult((id, opts) => this.getResult(id, opts), runId, options);
   }
 }
 
@@ -432,42 +486,6 @@ function extractRunStatusFromMessage(message: string): RunStatus {
     return candidate as RunStatus;
   }
   return "FAILED";
-}
-
-function throwIfAborted(signal?: AbortSignal): void {
-  if (signal?.aborted) throw abortError(signal);
-}
-
-function abortError(signal?: AbortSignal): Error {
-  const reason = signal?.reason;
-  if (reason instanceof Error) return reason;
-  return new DOMException("The run poll was aborted.", "AbortError");
-}
-
-/** Sleep that resolves after `ms`, or rejects immediately if `signal` aborts. */
-function sleep(ms: number, signal?: AbortSignal): Promise<void> {
-  if (ms <= 0) {
-    throwIfAborted(signal);
-    return Promise.resolve();
-  }
-  return new Promise<void>((resolve, reject) => {
-    const onAbort = (): void => {
-      clearTimeout(timer);
-      reject(abortError(signal));
-    };
-    const timer = setTimeout(() => {
-      signal?.removeEventListener("abort", onAbort);
-      resolve();
-    }, ms);
-    if (signal) {
-      if (signal.aborted) {
-        clearTimeout(timer);
-        reject(abortError(signal));
-        return;
-      }
-      signal.addEventListener("abort", onAbort, { once: true });
-    }
-  });
 }
 
 /**

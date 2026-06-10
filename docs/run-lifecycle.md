@@ -13,6 +13,8 @@ The SDK talks to two distinct API surfaces. They are not interchangeable:
 
 The run lifecycle methods (`startRun` / `getRun` / `getResult` / `waitForResult`) all use the platform surface.
 
+Each surface is addressed by its own base URL, which **includes its version prefix** — `runnerUrl` (e.g. `https://api.pipelex.com/runner/v1`) and `platformUrl` (e.g. `https://api.pipelex.com/platform/v1`). `platformUrl` is optional: a self-hosted open-source runner has no run store, so when `platformUrl` is unset the platform methods above throw a clear hosted-only error and `run pipe` falls back to the runner's blocking `/pipeline/execute`. See [self-hosting](./self-hosting.md).
+
 ## Server endpoints
 
 | Method | Path | Returns |
@@ -64,7 +66,9 @@ Lower-level single-shot lookups:
 - `getRun(runId)` → `RunRead` (status + `degraded`).
 - `getResult(runId)` → a discriminated `RunResultState`: `{ state: "running", retry_after_seconds }`, `{ state: "completed", result }`, or `{ state: "failed", status, message }`. A degraded `503` is treated as `running` (retry) so a poller is never failed by a transient Temporal outage.
 
-The API runner (`--runner api`) routes `execute()` / `executePipeline()` through this durable path automatically.
+## Runner surface
+
+The `Runner` abstraction (what the CLI and agent use) exposes the durable lifecycle as three primitives — `start(options)`, `getRun(runId)`, `getResult(runId)` — plus two composites provided once by `BaseRunner`: `waitForResult(runId)` (poll an already-started run to completion) and `startAndWaitForResult(options)` (start, then wait — the one-call convenience). The API runner (`--runner api`) routes `startAndWaitForResult()` through this durable platform path when a platform is configured, and falls back to the runner's blocking `/pipeline/execute` when self-hosted. The granular durable primitives (`start` / `getRun` / `getResult` / `waitForResult`) are **platform-only** — there is no runner fallback, so without a platform URL they throw a clear hosted-only error (the runner has no run store). The local `pipelex` runner likewise supports only `startAndWaitForResult` (blocking, in-process).
 
 ## Agent CLI — `mthds-agent run …`
 

@@ -142,18 +142,27 @@ The API runner is the default. Set it up interactively:
 mthds setup runner api
 ```
 
-This prompts for the API URL and API key (masked input) and saves them to `~/.mthds/config`.
+This prompts for the runner URL, an optional platform URL, and an API key (masked input), and saves them to `~/.mthds/config`.
+
+The runner targets two surfaces, each addressed by its own base URL **including its version prefix**:
+
+- **`runnerUrl` (required)** — the stateless execution engine. Hosted: `https://api.pipelex.com/runner/v1`. Self-hosted: `http://<host>/api/v1`.
+- **`platformUrl` (optional)** — the durable run lifecycle (start/status/result/poll). Hosted: `https://api.pipelex.com/platform/v1`. Leave it unset for a self-hosted runner with no run store — `run pipe` then uses the runner's blocking `/pipeline/execute`, and durable run commands report a clear hosted-only error.
 
 You can also set values directly:
 
 ```bash
 mthds config set api-key YOUR_KEY
-mthds config set api-url https://your-api-instance.com
+# Hosted (default):
+mthds config set runner-url https://api.pipelex.com/runner/v1
+mthds config set platform-url https://api.pipelex.com/platform/v1
+# Self-hosted runner (no platform):
+mthds config set runner-url http://localhost:8081/api/v1
 ```
 
 Configuration is stored in `~/.mthds/config` and shared between mthds-js and mthds-python.
 
-You can also use environment variables (`PIPELEX_API_KEY`, `PIPELEX_API_URL`) which take precedence over the config file.
+You can also use environment variables (`PIPELEX_API_KEY`, `PIPELEX_RUNNER_URL`, `PIPELEX_PLATFORM_URL`) which take precedence over the config file.
 
 See the [SDK Usage](#sdk-usage) section below to connect to a Pipelex API instance programmatically.
 
@@ -171,7 +180,8 @@ npm install mthds
 import { MthdsApiClient } from "mthds";
 
 const client = new MthdsApiClient({
-  apiBaseUrl: "https://api.pipelex.com",
+  runnerBaseUrl: "https://api.pipelex.com/runner/v1",
+  platformBaseUrl: "https://api.pipelex.com/platform/v1",
   apiToken: "your-api-key",
 });
 
@@ -185,16 +195,20 @@ const result = await client.executePipeline({
 console.log(result.pipe_output);
 ```
 
+Each base URL includes its version prefix (`/runner/v1`, `/platform/v1`). Runner endpoints are appended to `runnerBaseUrl` (e.g. `<runnerBaseUrl>/pipeline/execute`); `/health` resolves to the runner's origin root.
+
 ### Self-hosted API
 
-Point the client to your own [pipelex-api](https://github.com/Pipelex/pipelex-api) instance:
+Point the client at your own [pipelex-api](https://github.com/Pipelex/pipelex-api) instance. The open-source runner is stateless and has no run store, so omit `platformBaseUrl` — durable run-lifecycle methods (`startRun`/`getRun`/`getResult`/`waitForResult`) then throw a clear hosted-only error, and `executePipeline` runs the blocking `/pipeline/execute`:
 
 ```typescript
 const client = new MthdsApiClient({
-  apiBaseUrl: "http://localhost:8081",
+  runnerBaseUrl: "http://localhost:8081/api/v1",
   apiToken: "your-api-key",
 });
 ```
+
+> Note: the self-hosted `executePipeline` returns the runner's native `pipe_output`, whereas the hosted durable path returns `main_stuff` + `graph_spec`. Cross-shape normalization is a v1 TODO.
 
 ### Environment variables
 
@@ -202,11 +216,12 @@ Instead of passing options to the constructor, you can set environment variables
 
 | Variable | Description |
 |----------|-------------|
-| `PIPELEX_API_URL` | Base URL of the API |
+| `PIPELEX_RUNNER_URL` | Runner base URL, incl. version prefix (required) |
+| `PIPELEX_PLATFORM_URL` | Platform base URL, incl. version prefix (optional) |
 | `PIPELEX_API_KEY` | API authentication token |
 
 ```typescript
-// Reads PIPELEX_API_URL and PIPELEX_API_KEY from the environment
+// Reads PIPELEX_RUNNER_URL, PIPELEX_PLATFORM_URL and PIPELEX_API_KEY from the environment
 const client = new MthdsApiClient();
 ```
 

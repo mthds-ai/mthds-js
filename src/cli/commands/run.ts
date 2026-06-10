@@ -5,7 +5,7 @@ import { printLogo } from "./index.js";
 import { isPipelexRunner, extractPassthroughArgs } from "./utils.js";
 import { createRunner } from "../../runners/registry.js";
 import type { RunnerType } from "../../runners/types.js";
-import type { ExecutePipelineOptions } from "../../client/pipeline.js";
+import type { StartRunOptions } from "../../client/runs.js";
 
 interface RunOptions {
   pipe?: string;
@@ -103,20 +103,20 @@ export async function runPipe(
 
   // API runner: target is a pipe code or a .mthds bundle file
   const isBundlePath = target.endsWith(".mthds") || existsSync(target);
-  const pipelineOptions: ExecutePipelineOptions = {};
+  const startOptions: StartRunOptions = {};
 
   try {
     if (isBundlePath) {
-      pipelineOptions.mthds_contents = [readFileSync(resolve(target), "utf-8")];
+      startOptions.mthds_contents = [readFileSync(resolve(target), "utf-8")];
       if (options.pipe) {
-        pipelineOptions.pipe_code = options.pipe;
+        startOptions.pipe_code = options.pipe;
       }
     } else {
-      pipelineOptions.pipe_code = target;
+      startOptions.pipe_code = target;
     }
 
     if (options.inputs) {
-      pipelineOptions.inputs = JSON.parse(readFileSync(options.inputs, "utf-8"));
+      startOptions.inputs = JSON.parse(readFileSync(options.inputs, "utf-8"));
     }
   } catch (err) {
     p.log.error((err as Error).message);
@@ -128,8 +128,8 @@ export async function runPipe(
   s.start("Running pipeline (this can take a while)...");
 
   try {
-    const result = await runner.executePipeline(pipelineOptions);
-    s.stop(`Pipeline ${result.pipeline_state.toLowerCase()}.`);
+    const result = await runner.startAndWaitForResult(startOptions);
+    s.stop("Pipeline completed.");
 
     if (options.output) {
       writeFileSync(

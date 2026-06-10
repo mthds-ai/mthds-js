@@ -316,7 +316,8 @@ Configuration values are resolved in this order: **environment variables > confi
 | Key | Environment Variable | Default | Description |
 |---|---|---|---|
 | `runner` | `MTHDS_RUNNER` | `api` | Default runner (`api` or `pipelex`) |
-| `api-url` | `PIPELEX_API_URL` | `https://api.pipelex.com` | MTHDS API base URL |
+| `runner-url` | `PIPELEX_RUNNER_URL` | `https://api.pipelex.com/runner/v1` | Runner base URL, incl. version prefix (required) |
+| `platform-url` | `PIPELEX_PLATFORM_URL` | `https://api.pipelex.com/platform/v1` | Platform base URL, incl. version prefix (optional; unset = self-hosted, durable runs disabled) |
 | `api-key` | `PIPELEX_API_KEY` | (empty) | API authentication key |
 | `telemetry` | `DISABLE_TELEMETRY` | `0` | Set to `1` to disable telemetry |
 
@@ -330,16 +331,18 @@ mthds config set <key> <value>
 
 | Argument | Type | Required | Description |
 |---|---|---|---|
-| `key` | string | yes | Config key (`runner`, `api-url`, `api-key`, `telemetry`) |
+| `key` | string | yes | Config key (`runner`, `runner-url`, `platform-url`, `api-key`, `telemetry`) |
 | `value` | string | yes | Value to set |
 
-Validates the value before saving: `runner` must be `api` or `pipelex`, `api-url` must be a valid URL.
+Validates the value before saving: `runner` must be `api` or `pipelex`; `runner-url`/`platform-url` must be a valid URL (each includes its version prefix).
 
 **Examples:**
 
 ```bash
 mthds config set api-key sk-my-api-key
 mthds config set runner pipelex
+# Self-hosted runner (no platform store):
+mthds config set runner-url http://localhost:8081/api/v1
 mthds config set telemetry 1
 ```
 
@@ -680,18 +683,23 @@ Installs pipelex via `curl -fsSL https://pipelex.com/install.sh | sh` (macOS/Lin
 Set up the API runner (non-interactive).
 
 ```bash
-mthds-agent runner setup api --api-key <key> [--api-url <url>]
+mthds-agent runner setup api --api-key <key> [--runner-url <url>] [--platform-url <url>]
 ```
 
 | Option | Type | Required | Description |
 |---|---|---|---|
 | `--api-key <key>` | string | yes | API key for the MTHDS API |
-| `--api-url <url>` | string | no | API URL (uses default if omitted) |
+| `--runner-url <url>` | string | no | Runner base URL incl. version prefix (uses hosted default if omitted) |
+| `--platform-url <url>` | string | no | Platform base URL incl. version prefix (omit for a self-hosted runner with no run store) |
 
-**Example:**
+**Examples:**
 
 ```bash
+# Hosted (defaults)
 mthds-agent runner setup api --api-key sk-my-api-key
+
+# Self-hosted runner (no platform store)
+mthds-agent runner setup api --api-key sk-my-api-key --runner-url http://localhost:8081/api/v1
 ```
 
 ### `mthds-agent pipelex login`

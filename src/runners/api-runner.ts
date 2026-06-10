@@ -1,4 +1,9 @@
-import { loadConfig } from "../config/config.js";
+import {
+  loadConfig,
+  getConfigValue,
+  hasLegacyApiUrl,
+  LEGACY_API_URL_MIGRATION_MESSAGE,
+} from "../config/config.js";
 import { Runners } from "./types.js";
 import type {
   Runner,
@@ -7,8 +12,6 @@ import type {
   BuildOutputRequest,
   BuildRunnerRequest,
   BuildRunnerResponse,
-  ExecuteRequest,
-  PipelineResponse,
   ValidateRequest,
   ValidateResponse,
   ConceptRequest,
@@ -23,46 +26,76 @@ import type {
 import type {
   ExecutePipelineOptions,
   PipelineExecuteResponse,
-  PipelineStartResponse,
 } from "../client/pipeline.js";
+import type { PipelineInputs } from "../client/models/pipeline_inputs.js";
 import type {
   StartRunOptions,
   RunPublic,
   RunRead,
   RunResult,
   RunResultState,
-  RunStatus,
   WaitForResultOptions,
 } from "../client/runs.js";
 import { MthdsApiClient } from "../client/client.js";
+import { ClientAuthenticationError } from "../client/exceptions.js";
+import { BaseRunner } from "./base-runner.js";
 
-export class ApiRunner implements Runner {
+export class ApiRunner extends BaseRunner implements Runner {
   readonly type: RunnerType = Runners.API;
 
-  private readonly baseUrl: string;
+  /** Runner base URL, INCLUDING its version prefix; trailing slash stripped. */
+  private readonly runnerBaseUrl: string;
+  /** Origin root derived from the runner base — `/health` lives here. */
+  private readonly originUrl: string;
+  /** Platform base URL (durable runs); undefined in self-hosted mode. */
+  private readonly platformBaseUrl: string | undefined;
   private readonly apiKey: string;
-  /** Durable run-lifecycle transport (platform surface). */
+  /** Runner + durable run-lifecycle transport. */
   private readonly client: MthdsApiClient;
 
-  constructor(baseUrl?: string, apiKey?: string) {
+  constructor(runnerUrl?: string, apiKey?: string, platformUrl?: string) {
+    super();
     const config = loadConfig();
-    this.baseUrl = (baseUrl ?? config.apiUrl).replace(/\/+$/, "");
+
+    // Fail fast (scoped to the api-runner path) when the runner URL is still
+    // the hosted default AND a leftover legacy `apiUrl`/`PIPELEX_API_URL` is
+    // present — that user upgraded across the rename and must migrate. This
+    // check lives here, not in `loadConfig()`, so pure `pipelex`-runner flows
+    // and unrelated commands are never blocked.
+    const runnerUrlIsExplicit =
+      runnerUrl !== undefined || isRunnerUrlExplicitlySet();
+    if (!runnerUrlIsExplicit && hasLegacyApiUrl()) {
+      throw new ClientAuthenticationError(LEGACY_API_URL_MIGRATION_MESSAGE);
+    }
+
+    this.runnerBaseUrl = (runnerUrl ?? config.runnerUrl).replace(/\/+$/, "");
+    this.originUrl = new URL("/", this.runnerBaseUrl).origin;
+
+    const resolvedPlatform = platformUrl ?? config.platformUrl;
+    this.platformBaseUrl = resolvedPlatform
+      ? resolvedPlatform.replace(/\/+$/, "")
+      : undefined;
+
     this.apiKey = apiKey ?? config.apiKey;
     this.client = new MthdsApiClient({
-      apiBaseUrl: this.baseUrl,
+      runnerBaseUrl: this.runnerBaseUrl,
+      platformBaseUrl: this.platformBaseUrl,
       apiToken: this.apiKey || undefined,
     });
+  }
+
+  /** Whether the durable platform surface is configured (hosted) or not (self-hosted). */
+  private hasPlatform(): boolean {
+    return this.platformBaseUrl !== undefined;
   }
 
   // ── HTTP helpers ────────────────────────────────────────────────
 
   private async request<T>(
     method: "GET" | "POST",
-    path: string,
+    url: string,
     body?: unknown
   ): Promise<T> {
-    const url = `${this.baseUrl}${path}`;
-
     const headers: Record<string, string> = {
       Accept: "application/json",
     };
@@ -84,80 +117,69 @@ export class ApiRunner implements Runner {
     if (!res.ok) {
       const text = await res.text().catch(() => "");
       throw new Error(
-        `API ${method} ${path} failed (${res.status}): ${text || res.statusText}`
+        `API ${method} ${url} failed (${res.status}): ${text || res.statusText}`
       );
     }
 
     return res.json() as Promise<T>;
   }
 
-  private get<T>(path: string): Promise<T> {
-    return this.request("GET", path);
+  /**
+   * Build a runner URL. `path` is appended to the runner base URL (which
+   * already carries its version prefix `/runner/v1` or `/api/v1`) — do NOT
+   * re-prefix it here.
+   */
+  private runnerUrl(path: string): string {
+    return `${this.runnerBaseUrl}/${path.replace(/^\/+/, "")}`;
   }
 
-  private post<T>(path: string, body: unknown): Promise<T> {
-    return this.request("POST", path, body);
+  private getRunner<T>(path: string): Promise<T> {
+    return this.request("GET", this.runnerUrl(path));
+  }
+
+  private postRunner<T>(path: string, body: unknown): Promise<T> {
+    return this.request("POST", this.runnerUrl(path), body);
   }
 
   // ── Runner implementation ───────────────────────────────────────
 
   async health(): Promise<Record<string, unknown>> {
-    return this.get("/health");
+    // `/health` is origin-level, NOT under the version prefix.
+    return this.request("GET", `${this.originUrl}/health`);
   }
 
   async version(): Promise<Record<string, string>> {
-    return this.get("/runner/v1/pipelex_version");
+    return this.getRunner("pipelex_version");
   }
 
   async buildInputs(request: BuildInputsRequest): Promise<unknown> {
-    return this.post("/runner/v1/build/inputs", request);
+    return this.postRunner("build/inputs", request);
   }
 
   async buildOutput(request: BuildOutputRequest): Promise<unknown> {
-    return this.post("/runner/v1/build/output", request);
+    return this.postRunner("build/output", request);
   }
 
   async buildRunner(
     request: BuildRunnerRequest
   ): Promise<BuildRunnerResponse> {
-    return this.post("/runner/v1/build/runner", request);
-  }
-
-  async execute(request: ExecuteRequest): Promise<PipelineResponse> {
-    // Durable path: start a run on the platform and poll to terminal, instead
-    // of the runner's blocking `/pipeline/execute` (which dies at the gateway's
-    // 30s ceiling on real, long-running pipelines).
-    const run = await this.client.startRun({
-      pipe_code: request.pipe_code ?? undefined,
-      mthds_contents: request.mthds_contents,
-      inputs: request.inputs,
-    });
-    const result = await this.client.waitForResult(run.pipeline_run_id);
-    return {
-      pipeline_run_id: run.pipeline_run_id,
-      created_at: run.created_at,
-      pipeline_state: "COMPLETED",
-      finished_at: run.finished_at ?? null,
-      pipe_output: null,
-      main_stuff: result.main_stuff ?? null,
-      graph_spec: result.graph_spec ?? null,
-    };
+    return this.postRunner("build/runner", request);
   }
 
   async validate(request: ValidateRequest): Promise<ValidateResponse> {
-    return this.post("/runner/v1/validate", request);
+    return this.postRunner("validate", request);
   }
 
   async concept(request: ConceptRequest): Promise<ConceptResponse> {
-    return this.post("/runner/v1/build/concept", request);
+    return this.postRunner("build/concept", request);
   }
 
   async pipeSpec(request: PipeSpecRequest): Promise<PipeSpecResponse> {
-    return this.post("/runner/v1/build/pipe-spec", request);
+    return this.postRunner("build/pipe-spec", request);
   }
 
   async checkModel(request: CheckModelRequest): Promise<CheckModelResponse> {
-    return this.post("/runner/v1/check-model", request);
+    return this.postRunner("check-model", request);
   }
 
   async models(request?: ModelsRequest): Promise<ModelsResponse> {
@@ -168,13 +190,15 @@ export class ApiRunner implements Runner {
       }
     }
     const qs = params.toString();
-    const path = qs ? `/runner/v1/models?${qs}` : "/runner/v1/models";
-    return this.get(path);
+    return this.getRunner(qs ? `models?${qs}` : "models");
   }
 
-  // ── Run lifecycle (durable, platform surface) ─────────────────────
+  // ── Run lifecycle ───────────────────────────────────────────────
+  // Primitives. The durable surface resolves to the platform when configured,
+  // else the runner's own `/runs` endpoints (see MthdsApiClient). The
+  // `waitForResult` composite is inherited from BaseRunner (polls getResult).
 
-  async startRun(options: StartRunOptions): Promise<RunPublic> {
+  async start(options: StartRunOptions): Promise<RunPublic> {
     return this.client.startRun(options);
   }
 
@@ -182,79 +206,66 @@ export class ApiRunner implements Runner {
     return this.client.getRun(runId);
   }
 
-  async getResult(runId: string): Promise<RunResultState> {
-    return this.client.getResult(runId);
-  }
-
-  async waitForResult(
+  async getResult(
     runId: string,
-    options?: WaitForResultOptions
+    options?: { signal?: AbortSignal }
+  ): Promise<RunResultState> {
+    return this.client.getResult(runId, options);
+  }
+
+  /**
+   * Start a run and wait for its result.
+   *
+   * - **Hosted** (platform configured): durable start + poll (BaseRunner
+   *   composite), the path that survives the gateway's ~30s synchronous ceiling.
+   * - **Self-hosted** (no platform / no run store): the runner's blocking
+   *   `/pipeline/execute`, which has no gateway cap off-platform and returns the
+   *   native `pipe_output`.
+   */
+  async startAndWaitForResult(
+    options: StartRunOptions,
+    pollOptions?: WaitForResultOptions
   ): Promise<RunResult> {
-    return this.client.waitForResult(runId, options);
-  }
+    if (this.hasPlatform()) {
+      return super.startAndWaitForResult(options, pollOptions);
+    }
 
-  // ── RunnerProtocol implementation ─────────────────────────────────
-
-  async executePipeline(
-    options: ExecutePipelineOptions
-  ): Promise<PipelineExecuteResponse> {
-    // Durable path (start + poll), same as `execute()`. The runner's blocking
-    // `/pipeline/execute` is reachable via `MthdsApiClient.executePipeline` for
-    // short, sub-30s runs, but the runner abstraction defaults to the path that
-    // survives long runs.
-    const run = await this.client.startRun({
+    const response = await this.client.executePipeline({
       pipe_code: options.pipe_code ?? undefined,
-      mthds_contents: options.mthds_contents,
-      inputs: (options.inputs as Record<string, unknown> | null | undefined) ?? undefined,
+      mthds_contents: options.mthds_contents ?? undefined,
+      inputs: (options.inputs as PipelineInputs | null | undefined) ?? undefined,
+      output_name: options.output_name ?? undefined,
+      output_multiplicity: options.output_multiplicity ?? undefined,
+      dynamic_output_concept_code: options.dynamic_output_concept_ref ?? undefined,
     });
-    const result = await this.client.waitForResult(run.pipeline_run_id);
-    return {
-      pipeline_run_id: run.pipeline_run_id,
-      created_at: run.created_at,
-      pipeline_state: "COMPLETED",
-      finished_at: run.finished_at ?? null,
-      pipe_output: null,
-      main_stuff: result.main_stuff ?? null,
-      graph_spec: result.graph_spec ?? null,
-    };
-  }
-
-  async startPipeline(
-    options: ExecutePipelineOptions
-  ): Promise<PipelineStartResponse> {
-    const run = await this.client.startRun({
-      pipe_code: options.pipe_code ?? undefined,
-      mthds_contents: options.mthds_contents,
-      inputs: (options.inputs as Record<string, unknown> | null | undefined) ?? undefined,
-    });
-    return {
-      pipeline_run_id: run.pipeline_run_id,
-      created_at: run.created_at,
-      pipeline_state: mapRunStatusToPipelineState(run.status),
-      finished_at: run.finished_at ?? null,
-      main_stuff_name: null,
-      pipe_output: null,
-    };
+    return mapExecuteResponseToRunResult(response);
   }
 }
 
-/** Map the platform's richer `RunStatus` onto the runner's `PipelineState`. */
-function mapRunStatusToPipelineState(
-  status: RunStatus
-): PipelineStartResponse["pipeline_state"] {
-  switch (status) {
-    case "PENDING":
-    case "STARTED":
-      return "STARTED";
-    case "RUNNING":
-      return "RUNNING";
-    case "COMPLETED":
-      return "COMPLETED";
-    case "CANCELLED":
-      return "CANCELLED";
-    case "FAILED":
-    case "TERMINATED":
-    case "TIMED_OUT":
-      return "FAILED";
-  }
+/**
+ * Whether `runnerUrl` was explicitly configured (env or file) rather than left
+ * at the hosted default. Used by the constructor to decide whether a leftover
+ * legacy `apiUrl` should trigger the migration fail-fast.
+ */
+function isRunnerUrlExplicitlySet(): boolean {
+  return getConfigValue("runnerUrl").source !== "default";
+}
+
+/**
+ * Map the runner's native blocking `/pipeline/execute` response onto a
+ * `RunResult`. The self-hosted path returns `pipe_output` (native runner shape);
+ * `main_stuff`/`graph_spec` are platform-durable artifacts and stay null here.
+ * Consumers read `main_stuff ?? pipe_output` (the documented hosted/self-hosted
+ * output-shape difference).
+ */
+function mapExecuteResponseToRunResult(
+  response: PipelineExecuteResponse
+): RunResult {
+  return {
+    pipeline_run_id: response.pipeline_run_id,
+    main_stuff: response.main_stuff ?? null,
+    graph_spec: response.graph_spec ?? null,
+    pipe_output:
+      (response.pipe_output as Record<string, unknown> | null | undefined) ?? null,
+  };
 }

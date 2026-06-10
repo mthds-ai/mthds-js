@@ -18,7 +18,6 @@ import type {
   BuildOutputRequest,
   BuildRunnerRequest,
   BuildRunnerResponse,
-  DictPipeOutput,
   ExecuteRequest,
   PipelineResponse,
   ValidateRequest,
@@ -33,11 +32,6 @@ import type {
   ModelsResponse,
 } from "./types.js";
 import type {
-  ExecutePipelineOptions,
-  PipelineExecuteResponse,
-  PipelineStartResponse,
-} from "../client/pipeline.js";
-import type {
   StartRunOptions,
   RunPublic,
   RunRead,
@@ -45,6 +39,7 @@ import type {
   RunResultState,
   WaitForResultOptions,
 } from "../client/runs.js";
+import { BaseRunner } from "./base-runner.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -77,11 +72,12 @@ function writeMthdsContents(tmp: string, contents: string[]): string {
   return bundlePath;
 }
 
-export class PipelexRunner implements Runner {
+export class PipelexRunner extends BaseRunner implements Runner {
   readonly type: RunnerType = Runners.PIPELEX;
   private readonly libraryDirs: string[];
 
   constructor(libraryDirs?: string[]) {
+    super();
     this.libraryDirs = libraryDirs ?? [];
   }
 
@@ -332,8 +328,11 @@ export class PipelexRunner implements Runner {
 
   // ── Pipeline execution ──────────────────────────────────────────
   // pipelex run <target> [--pipe code] [--inputs file] [--output-dir dir]
+  // Local, blocking, in-process — there is no durable run to poll by id, so
+  // `startAndWaitForResult` runs through here and the granular durable
+  // primitives (start/getRun/getResult/waitForResult) are unsupported.
 
-  async execute(request: ExecuteRequest): Promise<PipelineResponse> {
+  private async executeLocal(request: ExecuteRequest): Promise<PipelineResponse> {
     const tmp = makeTmpDir();
     try {
       const args: string[] = ["run"];
@@ -424,44 +423,31 @@ export class PipelexRunner implements Runner {
     }
   }
 
-  // ── RunnerProtocol implementation ─────────────────────────────────
-
-  async executePipeline(
-    options: ExecutePipelineOptions
-  ): Promise<PipelineExecuteResponse> {
-    const request: ExecuteRequest = {
-      mthds_contents: options.mthds_contents ?? undefined,
-      pipe_code: options.pipe_code ?? undefined,
-      inputs: options.inputs
-        ? Object.fromEntries(
-            Object.entries(options.inputs).map(([k, v]) => [k, v])
-          )
-        : undefined,
-    };
-    const response = await this.execute(request);
-    return {
-      pipeline_run_id: response.pipeline_run_id,
-      created_at: response.created_at,
-      pipeline_state: response.pipeline_state,
-      finished_at: response.finished_at,
-      main_stuff_name: response.main_stuff_name,
-      pipe_output: response.pipe_output as unknown as DictPipeOutput,
-    };
-  }
-
-  async startPipeline(
-    _options: ExecutePipelineOptions
-  ): Promise<PipelineStartResponse> {
-    throw new Error(
-      "startPipeline is not supported by the pipelex CLI runner. Use the API runner instead."
-    );
-  }
-
   // ── Run lifecycle ──────────────────────────────────────────────────
   // The local pipelex CLI runs pipelines in-process; there is no durable run
-  // to poll by id. These belong to the hosted platform — use --runner api.
+  // to poll by id, so the granular primitives belong to the hosted platform
+  // (use --runner api). `startAndWaitForResult` is supported — it runs the CLI
+  // blocking and returns the result directly.
 
-  async startRun(_options: StartRunOptions): Promise<RunPublic> {
+  async startAndWaitForResult(
+    options: StartRunOptions,
+    _pollOptions?: WaitForResultOptions
+  ): Promise<RunResult> {
+    const response = await this.executeLocal({
+      mthds_contents: options.mthds_contents ?? undefined,
+      pipe_code: options.pipe_code ?? undefined,
+      inputs: options.inputs ?? undefined,
+    });
+    return {
+      pipeline_run_id: response.pipeline_run_id,
+      main_stuff: response.main_stuff ?? null,
+      graph_spec: response.graph_spec ?? null,
+      pipe_output:
+        (response.pipe_output as Record<string, unknown> | null | undefined) ?? null,
+    };
+  }
+
+  async start(_options: StartRunOptions): Promise<RunPublic> {
     throw new Error(RUN_LIFECYCLE_UNSUPPORTED);
   }
 
@@ -469,14 +455,10 @@ export class PipelexRunner implements Runner {
     throw new Error(RUN_LIFECYCLE_UNSUPPORTED);
   }
 
-  async getResult(_runId: string): Promise<RunResultState> {
-    throw new Error(RUN_LIFECYCLE_UNSUPPORTED);
-  }
-
-  async waitForResult(
+  async getResult(
     _runId: string,
-    _options?: WaitForResultOptions
-  ): Promise<RunResult> {
+    _options?: { signal?: AbortSignal }
+  ): Promise<RunResultState> {
     throw new Error(RUN_LIFECYCLE_UNSUPPORTED);
   }
 }

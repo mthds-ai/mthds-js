@@ -43,7 +43,11 @@ export async function agentConfigSet(
     );
   }
 
-  if (configKey === "apiUrl" && !isValidUrl(value)) {
+  // Only platformUrl may be set empty (to disable the durable platform surface);
+  // an empty runnerUrl is invalid — the runner base URL is required.
+  const isUrlKey = configKey === "runnerUrl" || configKey === "platformUrl";
+  const allowEmpty = configKey === "platformUrl" && value === "";
+  if (isUrlKey && !allowEmpty && !isValidUrl(value)) {
     agentError(`Invalid URL: ${value}`, "ConfigError", {
       error_domain: AGENT_ERROR_DOMAINS.CONFIG,
     });

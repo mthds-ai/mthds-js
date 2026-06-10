@@ -54,7 +54,7 @@ export class PipelineExecuteTimeoutError extends PipelineRequestError {
         "The blocking execute path can't run methods longer than 30s behind the gateway. " +
         "Start the run and poll for its result instead: " +
         "`start()` then `waitForResult(runId)` (SDK), " +
-        "or `mthds-agent run start …` then `mthds-agent run poll <run_id>` (CLI).",
+        "or `mthds-agent run start …` then `mthds-agent run poll <pipeline_run_id>` (CLI).",
       options
     );
     this.name = "PipelineExecuteTimeoutError";

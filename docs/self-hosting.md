@@ -37,7 +37,7 @@ mthds config set base-url http://localhost:8081
 In this mode:
 
 - **`run pipe` / `run bundle`** → blocking `POST <base>/v1/execute` (the `/v1/version` handshake reports `implementation: "pipelex-api"`, so the SDK takes the blocking path). There is no hosted-gateway 30s cap off-platform — but your own reverse proxy (nginx, ALB, Cloud Run, …) typically imposes its own idle timeout (~60s). Raise it for long runs, or use `start` with `callback_urls` (the protocol's fire-and-callback channel).
-- **`run start`** → `POST <base>/v1/start` works (fire-and-callback; you may pass your own `run_id` — a bare runner accepts it, the hosted API rejects it with 422), but **`run status` / `run result` / `run poll` do not**: the bare runner 404s `/v1/runs/*`, which the SDK surfaces as a clear `RunLifecycleUnavailableError`. The durable poll-by-id lifecycle is a hosted-API extension.
+- **`run start`** → `POST <base>/v1/start` works (fire-and-callback; you may pass your own `pipeline_run_id` — a bare runner accepts it, the hosted API rejects it with 422), but **`run status` / `run result` / `run poll` do not**: the bare runner 404s `/v1/runs/*`, which the SDK surfaces as a clear `RunLifecycleUnavailableError`. The durable poll-by-id lifecycle is a hosted-API extension.
 
 ### Minimum server version
 

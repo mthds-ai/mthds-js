@@ -63,7 +63,7 @@ describe("MthdsApiClient constructor", () => {
       const client = new MthdsApiClient({ apiToken: "t" });
       const fetchSpy = vi
         .spyOn(globalThis, "fetch")
-        .mockResolvedValue(jsonResponse(200, { run_id: "x" }));
+        .mockResolvedValue(jsonResponse(200, { pipeline_run_id: "x" }));
       await client.execute({ pipe_code: "p" });
       expect(fetchSpy).toHaveBeenCalledWith(
         "https://api.pipelex.com/v1/execute",
@@ -80,7 +80,7 @@ describe("MthdsApiClient constructor", () => {
     });
     const fetchSpy = vi
       .spyOn(globalThis, "fetch")
-      .mockResolvedValue(jsonResponse(200, { run_id: "x" }));
+      .mockResolvedValue(jsonResponse(200, { pipeline_run_id: "x" }));
     await client.execute({ pipe_code: "p" });
     expect(fetchSpy).toHaveBeenCalledWith(
       "http://localhost:8081/v1/execute",
@@ -95,7 +95,7 @@ describe("MthdsApiClient constructor", () => {
       const client = new MthdsApiClient({ apiToken: "t" });
       const fetchSpy = vi
         .spyOn(globalThis, "fetch")
-        .mockResolvedValue(jsonResponse(200, { run_id: "x" }));
+        .mockResolvedValue(jsonResponse(200, { pipeline_run_id: "x" }));
       await client.execute({ pipe_code: "p" });
       expect(fetchSpy).toHaveBeenCalledWith(
         "http://env-host:9999/v1/execute",
@@ -292,12 +292,12 @@ describe("MthdsApiClient.execute gateway 30s timeout", () => {
 });
 
 describe("MthdsApiClient.execute 202 degrade (eng-review 3B)", () => {
-  it("throws RunStillRunningError carrying run_id, Retry-After, and Location", async () => {
+  it("throws RunStillRunningError carrying pipeline_run_id, Retry-After, and Location", async () => {
     const client = makeClient();
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
       jsonResponse(
         202,
-        { run_id: "run-202", state: "RUNNING", created_at: "t0" },
+        { pipeline_run_id: "run-202", state: "RUNNING", created_at: "t0" },
         { "Retry-After": "5", Location: "/v1/runs/run-202/status" }
       )
     );
@@ -324,10 +324,10 @@ describe("MthdsApiClient happy path", () => {
   it("returns the parsed RunResult on 200", async () => {
     const client = makeClient();
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      jsonResponse(200, { run_id: "ok", created_at: "t0", state: "COMPLETED" }),
+      jsonResponse(200, { pipeline_run_id: "ok", created_at: "t0", state: "COMPLETED" }),
     );
     const result = await client.execute({ pipe_code: "p" });
-    expect(result.run_id).toBe("ok");
+    expect(result.pipeline_run_id).toBe("ok");
     expect(result.state).toBe("COMPLETED");
   });
 });
@@ -337,7 +337,7 @@ describe("MthdsApiClient.start", () => {
     const client = makeClient();
     const fetchSpy = vi
       .spyOn(globalThis, "fetch")
-      .mockResolvedValue(jsonResponse(202, { run_id: "run-1", state: "STARTED", created_at: "t0" }));
+      .mockResolvedValue(jsonResponse(202, { pipeline_run_id: "run-1", state: "STARTED", created_at: "t0" }));
 
     const ack = await client.start({
       pipe_code: "my_pipe",
@@ -345,7 +345,7 @@ describe("MthdsApiClient.start", () => {
       inputs: { a: 1 },
     });
 
-    expect(ack.run_id).toBe("run-1");
+    expect(ack.pipeline_run_id).toBe("run-1");
     const [url, init] = fetchSpy.mock.calls[0]!;
     expect(url).toBe("http://localhost:8081/v1/start");
     expect(init).toMatchObject({ method: "POST" });
@@ -360,7 +360,7 @@ describe("MthdsApiClient.start", () => {
     const client = makeClient();
     const fetchSpy = vi
       .spyOn(globalThis, "fetch")
-      .mockResolvedValue(jsonResponse(202, { run_id: "run-2", state: "STARTED", created_at: "t0" }));
+      .mockResolvedValue(jsonResponse(202, { pipeline_run_id: "run-2", state: "STARTED", created_at: "t0" }));
     await client.start({ method_id: "mthd_123", inputs: { q: "hi" } });
     const body = JSON.parse((fetchSpy.mock.calls[0]![1] as RequestInit).body as string);
     expect(body).toEqual({ method_id: "mthd_123", inputs: { q: "hi" } });
@@ -368,18 +368,18 @@ describe("MthdsApiClient.start", () => {
     expect(body.mthds_contents).toBeUndefined();
   });
 
-  it("forwards run_id and callback_urls when provided (bare-runner extras)", async () => {
+  it("forwards pipeline_run_id and callback_urls when provided (bare-runner extras)", async () => {
     const client = makeClient();
     const fetchSpy = vi
       .spyOn(globalThis, "fetch")
-      .mockResolvedValue(jsonResponse(202, { run_id: "client-id", state: "STARTED", created_at: "t0" }));
+      .mockResolvedValue(jsonResponse(202, { pipeline_run_id: "client-id", state: "STARTED", created_at: "t0" }));
     await client.start({
       pipe_code: "p",
-      run_id: "client-id",
+      pipeline_run_id: "client-id",
       callback_urls: ["https://example.com/done"],
     });
     const body = JSON.parse((fetchSpy.mock.calls[0]![1] as RequestInit).body as string);
-    expect(body.run_id).toBe("client-id");
+    expect(body.pipeline_run_id).toBe("client-id");
     expect(body.callback_urls).toEqual(["https://example.com/done"]);
   });
 
@@ -388,12 +388,12 @@ describe("MthdsApiClient.start", () => {
     await expect(client.start({})).rejects.toBeInstanceOf(PipelineRequestError);
   });
 
-  it("surfaces a non-2xx start as ApiResponseError (hosted 422 on client run_id)", async () => {
+  it("surfaces a non-2xx start as ApiResponseError (hosted 422 on client pipeline_run_id)", async () => {
     const client = makeClient();
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      jsonResponse(422, { detail: "Client-supplied run_id is not accepted" })
+      jsonResponse(422, { detail: "Client-supplied pipeline_run_id is not accepted" })
     );
-    const err = await client.start({ pipe_code: "p", run_id: "nope" }).catch((e: unknown) => e);
+    const err = await client.start({ pipe_code: "p", pipeline_run_id: "nope" }).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(ApiResponseError);
     expect((err as ApiResponseError).status).toBe(422);
   });

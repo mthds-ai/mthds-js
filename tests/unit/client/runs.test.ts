@@ -57,7 +57,7 @@ describe("MthdsApiClient.getRunStatus", () => {
     const client = makeClient();
     const fetchSpy = vi
       .spyOn(globalThis, "fetch")
-      .mockResolvedValue(jsonResponse(200, { run_id: "run-1", status: "RUNNING", degraded: false }));
+      .mockResolvedValue(jsonResponse(200, { pipeline_run_id: "run-1", status: "RUNNING", degraded: false }));
 
     const run = await client.getRunStatus("run-1");
 
@@ -71,7 +71,7 @@ describe("MthdsApiClient.getRunStatus", () => {
   it("attaches retry_after_seconds from the Retry-After header on a degraded read", async () => {
     const client = makeClient();
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      jsonResponse(200, { run_id: "run-1", status: "RUNNING", degraded: true }, { "Retry-After": "7" })
+      jsonResponse(200, { pipeline_run_id: "run-1", status: "RUNNING", degraded: true }, { "Retry-After": "7" })
     );
     const run = await client.getRunStatus("run-1");
     expect(run.degraded).toBe(true);
@@ -82,7 +82,7 @@ describe("MthdsApiClient.getRunStatus", () => {
     const client = makeClient();
     const fetchSpy = vi
       .spyOn(globalThis, "fetch")
-      .mockResolvedValue(jsonResponse(200, { run_id: "a/b", status: "RUNNING", degraded: false }));
+      .mockResolvedValue(jsonResponse(200, { pipeline_run_id: "a/b", status: "RUNNING", degraded: false }));
     await client.getRunStatus("a/b");
     expect(fetchSpy.mock.calls[0]![0]).toBe("http://localhost:8081/v1/runs/a%2Fb/status");
   });
@@ -116,13 +116,13 @@ describe("MthdsApiClient.getRunResult", () => {
     const client = makeClient();
     vi.spyOn(globalThis, "fetch").mockResolvedValue(emptyResponse(202, { "Retry-After": "5" }));
     const state = await client.getRunResult("run-1");
-    expect(state).toEqual({ state: "running", run_id: "run-1", retry_after_seconds: 5 });
+    expect(state).toEqual({ state: "running", pipeline_run_id: "run-1", retry_after_seconds: 5 });
   });
 
   it("hits /v1/runs/{id}/results and maps 200 to a completed state carrying the artifacts", async () => {
     const client = makeClient();
     const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      jsonResponse(200, { run_id: "run-1", main_stuff: { answer: 42 }, graph_spec: { nodes: [] } })
+      jsonResponse(200, { pipeline_run_id: "run-1", main_stuff: { answer: 42 }, graph_spec: { nodes: [] } })
     );
     const state = await client.getRunResult("run-1");
     expect(fetchSpy.mock.calls[0]![0]).toBe("http://localhost:8081/v1/runs/run-1/results");
@@ -189,7 +189,7 @@ describe("MthdsApiClient.waitForResult", () => {
     vi.spyOn(globalThis, "fetch")
       .mockResolvedValueOnce(emptyResponse(202, { "Retry-After": "0" }))
       .mockResolvedValueOnce(emptyResponse(202, { "Retry-After": "0" }))
-      .mockResolvedValueOnce(jsonResponse(200, { run_id: "run-1", main_stuff: { ok: true } }));
+      .mockResolvedValueOnce(jsonResponse(200, { pipeline_run_id: "run-1", main_stuff: { ok: true } }));
 
     const result = await client.waitForResult("run-1", { intervalMs: 0 });
     expect(result.main_stuff).toEqual({ ok: true });
@@ -249,7 +249,7 @@ describe("MthdsApiClient.waitForResult", () => {
     const client = makeClient();
     vi.spyOn(globalThis, "fetch")
       .mockResolvedValueOnce(emptyResponse(202, { "Retry-After": "0" }))
-      .mockResolvedValueOnce(jsonResponse(200, { run_id: "run-1", main_stuff: {} }));
+      .mockResolvedValueOnce(jsonResponse(200, { pipeline_run_id: "run-1", main_stuff: {} }));
     const polls: number[] = [];
     await client.waitForResult("run-1", {
       intervalMs: 0,

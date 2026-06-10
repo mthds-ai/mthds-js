@@ -45,9 +45,9 @@ export interface StartRequest extends RunRequest {
   /**
    * Client-supplied run identifier — bare runners only. The hosted API always
    * generates the id server-side and rejects a client-supplied one with 422
-   * (never silently ignores it). `StartAck.run_id` is always authoritative.
+   * (never silently ignores it). `StartAck.pipeline_run_id` is always authoritative.
    */
-  run_id?: string | null;
+  pipeline_run_id?: string | null;
   /**
    * Completion webhooks, HMAC-signed by the runner via
    * `X-Completion-Signature`. http/https only; private/loopback/metadata
@@ -68,7 +68,7 @@ export interface StartRequest extends RunRequest {
  * payloads. Mirrors the protocol's `RunResult`.
  */
 export interface RunResult {
-  run_id: string;
+  pipeline_run_id: string;
   created_at: string;
   state: RunState;
   finished_at?: string | null;
@@ -79,10 +79,10 @@ export interface RunResult {
 
 /**
  * Ack of a started execution — `POST /start` 202 (and the protocol's
- * optional `POST /execute` 202 degrade). `run_id` is always authoritative.
+ * optional `POST /execute` 202 degrade). `pipeline_run_id` is always authoritative.
  */
 export interface StartAck {
-  run_id: string;
+  pipeline_run_id: string;
   created_at: string;
   state: RunState;
 }

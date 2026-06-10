@@ -6,7 +6,7 @@ import { RunFailedError, RunTimeoutError } from "./exceptions.js";
  *
  * Long method runs outlive the hosted gateway's ~30s synchronous cap, so the
  * SDK submits a run (`POST /v1/start`), then polls a self-healing endpoint by
- * bare `run_id` until the run reaches a terminal state. All state lives behind
+ * bare `pipeline_run_id` until the run reaches a terminal state. All state lives behind
  * the id (DynamoDB + Temporal on the platform), so an agent can drop the poll
  * loop and resume later with just the id.
  *
@@ -16,8 +16,8 @@ import { RunFailedError, RunTimeoutError } from "./exceptions.js";
  *
  * Wire contract mirrors the hosted MTHDS API:
  *   POST /v1/start                  → StartAck         (start, 202)
- *   GET  /v1/runs/{run_id}/status   → RunRead          (status, self-healing)
- *   GET  /v1/runs/{run_id}/results  → 202 / 200 / 409  (results)
+ *   GET  /v1/runs/{pipeline_run_id}/status   → RunRead          (status, self-healing)
+ *   GET  /v1/runs/{pipeline_run_id}/results  → 202 / 200 / 409  (results)
  */
 
 // ── Status ──────────────────────────────────────────────────────────
@@ -60,7 +60,7 @@ export function isSuccessRunStatus(status: RunStatus): boolean {
 
 /**
  * Options for `MTHDSProtocol.start` — the `StartRequest` wire fields:
- * the `RunRequest` execution fields plus `run_id` (bare-runner-only; the
+ * the `RunRequest` execution fields plus `pipeline_run_id` (bare-runner-only; the
  * hosted API rejects a client-supplied run id with 422), `callback_urls`
  * (HMAC-signed completion webhooks), and `method_id` (hosted extension —
  * a stored method in the active org's catalog).
@@ -75,7 +75,7 @@ export type StartOptions = StartRequest;
  * are optional because only the hosted platform layers identity on.
  */
 export interface RunPublic {
-  run_id: string;
+  pipeline_run_id: string;
   org_id?: string | null;
   created_by_user_id?: string | null;
   /** Owning method, or the `_adhoc` sentinel for inline runs (platform only). */
@@ -100,7 +100,7 @@ export interface RunRead extends RunPublic {
 }
 
 /**
- * Result artifacts for a completed run — `GET /v1/runs/{run_id}/results`.
+ * Result artifacts for a completed run — `GET /v1/runs/{pipeline_run_id}/results`.
  *
  * Hosted: `main_stuff` + `graph_spec` (S3 artifacts relayed verbatim;
  * `main_stuff` is polymorphic — a list output renders to a top-level array —
@@ -110,7 +110,7 @@ export interface RunRead extends RunPublic {
  * difference between the two tiers).
  */
 export interface RunResults {
-  run_id: string;
+  pipeline_run_id: string;
   /** Method graph spec (`graphspec.json`); null if missing mid-write. */
   graph_spec?: unknown;
   /** Main output stuff (`main_stuff.json`); null if missing mid-write. */
@@ -126,9 +126,9 @@ export interface RunResults {
  * - `failed`   — HTTP 409; run reached a terminal non-`COMPLETED` status.
  */
 export type RunResultState =
-  | { state: "running"; run_id: string; retry_after_seconds: number | null }
-  | { state: "completed"; run_id: string; result: RunResults }
-  | { state: "failed"; run_id: string; status: RunStatus; message: string };
+  | { state: "running"; pipeline_run_id: string; retry_after_seconds: number | null }
+  | { state: "completed"; pipeline_run_id: string; result: RunResults }
+  | { state: "failed"; pipeline_run_id: string; status: RunStatus; message: string };
 
 // ── Polling options ─────────────────────────────────────────────────
 

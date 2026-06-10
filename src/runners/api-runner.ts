@@ -264,7 +264,7 @@ export class ApiRunner extends BaseRunner implements Runner {
  */
 function mapRunResultToRunResults(response: RunResult): RunResults {
   return {
-    run_id: response.run_id,
+    pipeline_run_id: response.pipeline_run_id,
     main_stuff: null,
     graph_spec: response.pipe_output?.graph_spec ?? null,
     pipe_output:

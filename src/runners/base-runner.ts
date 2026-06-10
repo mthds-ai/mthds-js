@@ -20,7 +20,7 @@ import type { StartAck } from "../client/pipeline.js";
  * drift between runtimes.
  */
 export abstract class BaseRunner {
-  /** Start a run and return its ack immediately (no waiting). `StartAck.run_id` is authoritative. */
+  /** Start a run and return its ack immediately (no waiting). `StartAck.pipeline_run_id` is authoritative. */
   abstract start(options: StartOptions): Promise<StartAck>;
 
   /** Single-shot result lookup: running (202) / completed (200) / failed (409). */
@@ -43,6 +43,6 @@ export abstract class BaseRunner {
     pollOptions?: WaitForResultOptions
   ): Promise<RunResults> {
     const ack = await this.start(options);
-    return this.waitForResult(ack.run_id, pollOptions);
+    return this.waitForResult(ack.pipeline_run_id, pollOptions);
   }
 }

@@ -326,7 +326,7 @@ export function registerApiRunnerCommands(
       });
       agentSuccess({
         state: "completed",
-        run_id: result.run_id,
+        pipeline_run_id: result.pipeline_run_id,
         main_stuff: result.main_stuff ?? result.pipe_output ?? null,
         graph_spec: result.graph_spec ?? null,
       });
@@ -367,7 +367,7 @@ export function registerApiRunnerCommands(
 
   // ── run start ──
   // Submit a run and return its id immediately. All run state lives behind the
-  // returned `run_id` (DB + Temporal), so an agent can submit here,
+  // returned `pipeline_run_id` (DB + Temporal), so an agent can submit here,
   // disconnect, and later resume with `run status` / `run result` / `run poll`.
 
   runGroup
@@ -416,7 +416,7 @@ export function registerApiRunnerCommands(
 
   runGroup
     .command("status")
-    .argument("<run_id>", "Run id")
+    .argument("<pipeline_run_id>", "Run id")
     .description("Fetch a run's current status by id (self-healing)")
     .allowUnknownOption()
     .allowExcessArguments(true)
@@ -438,7 +438,7 @@ export function registerApiRunnerCommands(
 
   runGroup
     .command("result")
-    .argument("<run_id>", "Run id")
+    .argument("<pipeline_run_id>", "Run id")
     .description("Fetch a run's result by id, once (does not wait)")
     .allowUnknownOption()
     .allowExcessArguments(true)
@@ -458,7 +458,7 @@ export function registerApiRunnerCommands(
         case "running":
           agentSuccess({
             state: "running",
-            run_id: state.run_id,
+            pipeline_run_id: state.pipeline_run_id,
             retry_after_seconds: state.retry_after_seconds,
             hint: `Run is still in progress. Poll with: mthds-agent run poll ${runId}`,
           });
@@ -466,7 +466,7 @@ export function registerApiRunnerCommands(
         case "completed":
           agentSuccess({
             state: "completed",
-            run_id: state.run_id,
+            pipeline_run_id: state.pipeline_run_id,
             main_stuff: state.result.main_stuff ?? null,
             graph_spec: state.result.graph_spec ?? null,
           });
@@ -487,7 +487,7 @@ export function registerApiRunnerCommands(
 
   runGroup
     .command("poll")
-    .argument("<run_id>", "Run id")
+    .argument("<pipeline_run_id>", "Run id")
     .option("--interval <seconds>", "Base poll interval in seconds (default 2)")
     .option("--timeout <seconds>", "Max seconds to wait before giving up (default 1200)")
     .description("Poll a run to completion, then return its result")
@@ -515,7 +515,7 @@ export function registerApiRunnerCommands(
           });
           agentSuccess({
             state: "completed",
-            run_id: runId,
+            pipeline_run_id: runId,
             main_stuff: result.main_stuff ?? null,
             graph_spec: result.graph_spec ?? null,
           });
@@ -524,7 +524,7 @@ export function registerApiRunnerCommands(
             // Walk-away: not an error. Report the run as still resumable by id.
             agentSuccess({
               state: "running",
-              run_id: runId,
+              pipeline_run_id: runId,
               resumable: true,
               hint: `Stopped waiting; the run continues. Resume with: mthds-agent run poll ${runId}`,
             });

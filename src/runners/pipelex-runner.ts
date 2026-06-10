@@ -405,7 +405,7 @@ export class PipelexRunner extends BaseRunner implements Runner {
       }
 
       return {
-        run_id: "",
+        pipeline_run_id: "",
         created_at: new Date().toISOString(),
         state: "COMPLETED",
         finished_at: new Date().toISOString(),
@@ -468,7 +468,7 @@ export class PipelexRunner extends BaseRunner implements Runner {
       dynamic_output_concept_ref: options.dynamic_output_concept_ref ?? undefined,
     });
     return {
-      run_id: response.run_id,
+      pipeline_run_id: response.pipeline_run_id,
       main_stuff: null,
       graph_spec: response.pipe_output?.graph_spec ?? null,
       pipe_output:

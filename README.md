@@ -230,7 +230,7 @@ The client implements the MTHDS Protocol plus the hosted run-lifecycle extension
 | Method | Route | Description |
 |--------|-------|-------------|
 | `execute(options)` | `POST /v1/execute` | Execute a method and wait for the result (throws `RunStillRunningError` on the protocol's optional 202 degrade) |
-| `start(options)` | `POST /v1/start` | Start a method asynchronously — returns a `StartAck` with the authoritative `run_id` |
+| `start(options)` | `POST /v1/start` | Start a method asynchronously — returns a `StartAck` with the authoritative `pipeline_run_id` |
 | `validate(contents, allowSignatures?)` | `POST /v1/validate` | Parse, validate, and dry-run a bundle |
 | `models(category?)` | `GET /v1/models` | The model deck the runner routes to |
 | `version()` | `GET /v1/version` | Protocol + implementation versions (the feature-detection handshake) |
@@ -249,7 +249,7 @@ The client implements the MTHDS Protocol plus the hosted run-lifecycle extension
 | `output_multiplicity` | `boolean \| number` | Expected output multiplicity |
 | `dynamic_output_concept_ref` | `string` | Dynamic output concept reference |
 
-Either `pipe_code` or `mthds_contents` must be provided. `start()` additionally accepts `run_id` (bare-runner-only — the hosted API rejects a client-supplied run id with 422), `callback_urls` (HMAC-signed completion webhooks), and `method_id` (hosted stored-method extension).
+Either `pipe_code` or `mthds_contents` must be provided. `start()` additionally accepts `pipeline_run_id` (bare-runner-only — the hosted API rejects a client-supplied run id with 422), `callback_urls` (HMAC-signed completion webhooks), and `method_id` (hosted stored-method extension).
 
 ### Migrating from 0.9.x
 
@@ -260,7 +260,7 @@ Either `pipe_code` or `mthds_contents` must be provided. `start()` additionally 
 | `PIPELEX_API_KEY` | `MTHDS_API_KEY` |
 | `executePipeline()` / `startPipeline()` / `startRun()` | `execute()` / `start()` |
 | `getRun()` / `getResult()` | `getRunStatus()` / `getRunResult()` |
-| wire fields `pipeline_run_id` / `pipeline_state` | `run_id` / `state` |
+| wire fields `pipeline_run_id` / `pipeline_state` | `pipeline_run_id` / `state` |
 
 A leftover legacy key (env or `~/.mthds/config`) makes the API runner fail fast with a one-line migration hint — run `mthds config set base-url …` / `mthds config set api-key …` to migrate.
 

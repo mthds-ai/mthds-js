@@ -226,7 +226,7 @@ export class MthdsApiClient implements MTHDSProtocol {
   /**
    * Map the protocol's optional `202 + StartAck` execute degrade to a typed
    * error. Hosted does not emit 202 today, but the protocol permits it;
-   * raising a typed error (with the `run_id` + `Location` + `Retry-After`
+   * raising a typed error (with the `pipeline_run_id` + `Location` + `Retry-After`
    * hints) beats a generic parse failure on an unexpected body shape.
    */
   private throwIfExecuteDegraded(res: RawResponse): void {
@@ -235,7 +235,7 @@ export class MthdsApiClient implements MTHDSProtocol {
     try {
       const parsed: unknown = JSON.parse(res.body);
       if (parsed && typeof parsed === "object") {
-        const candidate = (parsed as { run_id?: unknown }).run_id;
+        const candidate = (parsed as { pipeline_run_id?: unknown }).pipeline_run_id;
         if (typeof candidate === "string") runId = candidate;
       }
     } catch {
@@ -303,8 +303,8 @@ export class MthdsApiClient implements MTHDSProtocol {
   /**
    * Start a method asynchronously — `POST /v1/start` (202 `StartAck`).
    *
-   * `options.run_id` is bare-runner-only (the hosted API rejects it with 422 —
-   * the returned `run_id` is always authoritative); `options.method_id` is the
+   * `options.pipeline_run_id` is bare-runner-only (the hosted API rejects it with 422 —
+   * the returned `pipeline_run_id` is always authoritative); `options.method_id` is the
    * hosted stored-method extension, mutually exclusive with `mthds_contents`.
    * On a hosted deployment the id is durable — poll `getRunStatus` /
    * `getRunResult`.
@@ -328,7 +328,7 @@ export class MthdsApiClient implements MTHDSProtocol {
       output_name: options.output_name ?? undefined,
       output_multiplicity: options.output_multiplicity ?? undefined,
       dynamic_output_concept_ref: options.dynamic_output_concept_ref ?? undefined,
-      run_id: options.run_id ?? undefined,
+      pipeline_run_id: options.pipeline_run_id ?? undefined,
       callback_urls: options.callback_urls ?? undefined,
       method_id: options.method_id ?? undefined,
     };
@@ -393,7 +393,7 @@ export class MthdsApiClient implements MTHDSProtocol {
   // ── Hosted extension: durable run lifecycle (NOT part of the protocol) ──
 
   /**
-   * Fetch a run's status by bare id — `GET /v1/runs/{run_id}/status`.
+   * Fetch a run's status by bare id — `GET /v1/runs/{pipeline_run_id}/status`.
    *
    * Self-healing: a finished-but-unrecorded run resolves to its true terminal
    * status on read. `degraded: true` means Temporal was unreachable and
@@ -418,7 +418,7 @@ export class MthdsApiClient implements MTHDSProtocol {
   }
 
   /**
-   * Single-shot result lookup — `GET /v1/runs/{run_id}/results`.
+   * Single-shot result lookup — `GET /v1/runs/{pipeline_run_id}/results`.
    * Maps the server's poll semantics to a discriminated union:
    * - HTTP 202 → `running` (with the `Retry-After` hint)
    * - HTTP 200 → `completed` (with the result artifacts)
@@ -439,7 +439,7 @@ export class MthdsApiClient implements MTHDSProtocol {
     if (res.status === 202 || res.status === 503) {
       return {
         state: "running",
-        run_id: runId,
+        pipeline_run_id: runId,
         retry_after_seconds: parseRetryAfter(res.headers) ?? DEFAULT_DEGRADED_RETRY_SECONDS,
       };
     }
@@ -448,7 +448,7 @@ export class MthdsApiClient implements MTHDSProtocol {
       const message = serverMessage ?? "Run finished without a result.";
       return {
         state: "failed",
-        run_id: runId,
+        pipeline_run_id: runId,
         status: extractRunStatusFromMessage(message),
         message,
       };
@@ -458,14 +458,14 @@ export class MthdsApiClient implements MTHDSProtocol {
       this.throwApiResponseError("GET", endpoint, res);
     }
     const result = JSON.parse(res.body) as RunResults;
-    return { state: "completed", run_id: runId, result };
+    return { state: "completed", pipeline_run_id: runId, result };
   }
 
   /**
    * Poll a run to terminal state and return its result. Resolves on
    * `COMPLETED`, throws `RunFailedError` on any other terminal status, and
    * throws `RunTimeoutError` if `timeoutMs` elapses first (the run keeps
-   * executing server-side — resume later by `run_id`). Honors the server's
+   * executing server-side — resume later by `pipeline_run_id`). Honors the server's
    * `Retry-After` and an optional `AbortSignal`.
    */
   async waitForResult(

@@ -59,15 +59,15 @@ describe("ApiRunner.startAndWaitForResult (hosted — durable start+poll path)",
       .spyOn(globalThis, "fetch")
       .mockResolvedValueOnce(jsonResponse(200, HOSTED_VERSION))
       .mockResolvedValueOnce(
-        jsonResponse(202, { run_id: "run-1", state: "STARTED", created_at: "t0" })
+        jsonResponse(202, { pipeline_run_id: "run-1", state: "STARTED", created_at: "t0" })
       )
       .mockResolvedValueOnce(
-        jsonResponse(200, { run_id: "run-1", main_stuff: { answer: 42 }, graph_spec: { n: 1 } })
+        jsonResponse(200, { pipeline_run_id: "run-1", main_stuff: { answer: 42 }, graph_spec: { n: 1 } })
       );
 
     const result = await runner.startAndWaitForResult({ pipe_code: "p", mthds_contents: ["x"] });
 
-    expect(result.run_id).toBe("run-1");
+    expect(result.pipeline_run_id).toBe("run-1");
     expect(result.main_stuff).toEqual({ answer: 42 });
     expect(result.graph_spec).toEqual({ n: 1 });
 
@@ -81,10 +81,10 @@ describe("ApiRunner.startAndWaitForResult (hosted — durable start+poll path)",
     const fetchSpy = vi
       .spyOn(globalThis, "fetch")
       .mockResolvedValueOnce(jsonResponse(200, HOSTED_VERSION))
-      .mockResolvedValueOnce(jsonResponse(202, { run_id: "r1", state: "STARTED", created_at: "t0" }))
-      .mockResolvedValueOnce(jsonResponse(200, { run_id: "r1", main_stuff: {} }))
-      .mockResolvedValueOnce(jsonResponse(202, { run_id: "r2", state: "STARTED", created_at: "t1" }))
-      .mockResolvedValueOnce(jsonResponse(200, { run_id: "r2", main_stuff: {} }));
+      .mockResolvedValueOnce(jsonResponse(202, { pipeline_run_id: "r1", state: "STARTED", created_at: "t0" }))
+      .mockResolvedValueOnce(jsonResponse(200, { pipeline_run_id: "r1", main_stuff: {} }))
+      .mockResolvedValueOnce(jsonResponse(202, { pipeline_run_id: "r2", state: "STARTED", created_at: "t1" }))
+      .mockResolvedValueOnce(jsonResponse(200, { pipeline_run_id: "r2", main_stuff: {} }));
 
     await runner.startAndWaitForResult({ pipe_code: "p" });
     await runner.startAndWaitForResult({ pipe_code: "p" });
@@ -103,12 +103,12 @@ describe("ApiRunner against a bare runner (no run store)", () => {
       .spyOn(globalThis, "fetch")
       .mockResolvedValueOnce(jsonResponse(200, BARE_VERSION))
       .mockResolvedValueOnce(
-        jsonResponse(200, { run_id: "run-x", created_at: "t0", state: "COMPLETED" })
+        jsonResponse(200, { pipeline_run_id: "run-x", created_at: "t0", state: "COMPLETED" })
       );
 
     const result = await runner.startAndWaitForResult({ pipe_code: "p", mthds_contents: ["x"] });
 
-    expect(result.run_id).toBe("run-x");
+    expect(result.pipeline_run_id).toBe("run-x");
     expect(fetchSpy.mock.calls[0]![0]).toBe("http://localhost:8081/v1/version");
     expect(fetchSpy.mock.calls[1]![0]).toBe("http://localhost:8081/v1/execute");
   });
@@ -141,10 +141,10 @@ describe("ApiRunner run-lifecycle delegation", () => {
   it("start returns the StartAck", async () => {
     const runner = new ApiRunner("http://localhost:8081", "test-token");
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      jsonResponse(202, { run_id: "run-9", state: "STARTED", created_at: "t0" })
+      jsonResponse(202, { pipeline_run_id: "run-9", state: "STARTED", created_at: "t0" })
     );
     const ack = await runner.start({ pipe_code: "p", mthds_contents: ["x"] });
-    expect(ack.run_id).toBe("run-9");
+    expect(ack.pipeline_run_id).toBe("run-9");
     expect(ack.state).toBe("STARTED");
   });
 

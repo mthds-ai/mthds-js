@@ -176,6 +176,9 @@ export function isValidBaseUrl(value: string): boolean {
   }
   if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return false;
   if (parsed.pathname !== "/" && parsed.pathname !== "") return false;
+  // Host only also means no embedded credentials — auth travels in the
+  // Authorization header (MTHDS_API_KEY), never in the URL.
+  if (parsed.username || parsed.password) return false;
   return !parsed.search && !parsed.hash;
 }
 

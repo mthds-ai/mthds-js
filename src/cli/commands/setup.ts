@@ -71,6 +71,12 @@ async function initApi(): Promise<void> {
   }
   if (platformUrl) {
     setConfigValue("platformUrl", platformUrl);
+  } else if (platformUrlSource !== "default") {
+    // The user cleared a previously-explicit platform URL → disable the durable
+    // platform surface (write empty) instead of silently keeping the stale one.
+    // If it was never explicit, leave it alone so it keeps auto-following the
+    // runner URL (a blank prompt on a hosted-default config stays hosted).
+    setConfigValue("platformUrl", "");
   }
   if (apiKey) {
     setConfigValue("apiKey", apiKey as string);

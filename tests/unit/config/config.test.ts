@@ -160,6 +160,17 @@ describe("config", () => {
       expect(config.platformUrl).toBe("https://api.pipelex.com/platform/v1");
     });
 
+    it("platform follows runner: a hosted runnerUrl with a trailing slash still keeps the hosted platform", async () => {
+      // The hosted-default check must normalize the trailing slash — otherwise a
+      // valid `…/runner/v1/` is treated as self-hosted and silently disables the
+      // durable platform path for a hosted user.
+      vi.stubEnv("PIPELEX_RUNNER_URL", "https://api.pipelex.com/runner/v1/");
+
+      const { loadConfig } = await importConfig();
+      const config = loadConfig();
+      expect(config.platformUrl).toBe("https://api.pipelex.com/platform/v1");
+    });
+
     it("platform follows runner: an explicit platformUrl is respected even with a self-hosted runner", async () => {
       vi.stubEnv("PIPELEX_RUNNER_URL", "http://localhost:8081/api/v1");
       vi.stubEnv("PIPELEX_PLATFORM_URL", "http://localhost:9000/platform/v1");
@@ -167,6 +178,20 @@ describe("config", () => {
       const { loadConfig } = await importConfig();
       const config = loadConfig();
       expect(config.platformUrl).toBe("http://localhost:9000/platform/v1");
+    });
+
+    it("an explicit EMPTY platformUrl in the file disables the platform even with the hosted-default runner", async () => {
+      // This is what `setup` / `config set platform-url ""` write to clear a stale
+      // platform. The explicit empty must win over the hosted auto-default —
+      // otherwise clearing the platform would silently snap back to hosted.
+      const configDir = join(tempHome, ".mthds");
+      mkdirSync(configDir, { recursive: true });
+      writeFileSync(join(configDir, "config"), "PIPELEX_PLATFORM_URL=\n", "utf-8");
+
+      const { loadConfig } = await importConfig();
+      const config = loadConfig();
+      expect(config.runnerUrl).toBe("https://api.pipelex.com/runner/v1");
+      expect(config.platformUrl).toBe("");
     });
 
     it("does NOT throw on a legacy PIPELEX_API_URL — loadConfig is migration-agnostic", async () => {

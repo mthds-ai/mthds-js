@@ -331,7 +331,10 @@ runnerSetup
       if (options.runnerUrl) {
         await agentConfigSet("runner-url", options.runnerUrl);
       }
-      if (options.platformUrl) {
+      if (options.platformUrl !== undefined) {
+        // Honor an explicit empty value (`--platform-url ""`) — the supported way
+        // to disable the durable platform surface. Omitting the flag leaves the
+        // platform to auto-derive from the runner URL.
         await agentConfigSet("platform-url", options.platformUrl);
       }
       await agentConfigSet("api-key", options.apiKey);

@@ -229,8 +229,12 @@ export function loadConfig(): MthdsConfig {
     process.env[ENV_NAMES.platformUrl] !== undefined ||
     FILE_KEYS.platformUrl in file;
   if (!platformUrlExplicit) {
+    // Compare against the hosted default with the trailing slash normalized away,
+    // so a valid `…/runner/v1/` still counts as the hosted runner (and keeps the
+    // durable platform) instead of being treated as self-hosted.
+    const normalizedRunnerUrl = String(merged.runnerUrl).replace(/\/+$/, "");
     merged.platformUrl =
-      merged.runnerUrl === DEFAULT_RUNNER_URL ? DEFAULT_PLATFORM_URL : "";
+      normalizedRunnerUrl === DEFAULT_RUNNER_URL ? DEFAULT_PLATFORM_URL : "";
   }
 
   return merged as unknown as MthdsConfig;

@@ -71,11 +71,13 @@ async function initApi(): Promise<void> {
   }
   if (platformUrl) {
     setConfigValue("platformUrl", platformUrl);
-  } else if (platformUrlSource !== "default") {
-    // The user cleared a previously-explicit platform URL → disable the durable
-    // platform surface (write empty) instead of silently keeping the stale one.
-    // If it was never explicit, leave it alone so it keeps auto-following the
-    // runner URL (a blank prompt on a hosted-default config stays hosted).
+  } else if (platformUrlSource === "file") {
+    // The user cleared a platform URL that lives in the config FILE → disable the
+    // durable platform surface (write empty) instead of keeping the stale value.
+    // Only when it's file-sourced: an env-sourced value can't be overridden from
+    // the file (env wins, so writing empty would be hidden state that bites once
+    // the env var is removed), and a never-set default should keep auto-following
+    // the runner URL.
     setConfigValue("platformUrl", "");
   }
   if (apiKey) {

@@ -236,6 +236,17 @@ describe("MthdsApiClient.waitForResult", () => {
     expect((error as RunTimeoutError).runId).toBe("run-1");
   });
 
+  it("does not issue a poll once the deadline has passed (timeout checked before fetch)", async () => {
+    // With the deadline already elapsed, the loop must throw before calling the
+    // result endpoint — no late, wasted poll.
+    const client = makeClient();
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(emptyResponse(202, { "Retry-After": "0" }));
+    await client.waitForResult("run-1", { intervalMs: 0, timeoutMs: 0 }).catch(() => {});
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
   it("stops polling when the abort signal fires", async () => {
     const client = makeClient();
     const controller = new AbortController();

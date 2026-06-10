@@ -68,7 +68,7 @@ Lower-level single-shot lookups:
 
 ## Runner surface
 
-The `Runner` abstraction (what the CLI and agent use) exposes the durable lifecycle as three primitives — `start(options)`, `getRun(runId)`, `getResult(runId)` — plus two composites provided once by `BaseRunner`: `waitForResult(runId)` (poll an already-started run to completion) and `startAndWaitForResult(options)` (start, then wait — the one-call convenience). The API runner (`--runner api`) routes `startAndWaitForResult()` through this durable platform path automatically; self-hosted (no platform), it falls back to the runner's blocking `/pipeline/execute`. The local `pipelex` runner supports `startAndWaitForResult` (blocking, in-process) but not the granular durable primitives, which require the platform.
+The `Runner` abstraction (what the CLI and agent use) exposes the durable lifecycle as three primitives — `start(options)`, `getRun(runId)`, `getResult(runId)` — plus two composites provided once by `BaseRunner`: `waitForResult(runId)` (poll an already-started run to completion) and `startAndWaitForResult(options)` (start, then wait — the one-call convenience). The API runner (`--runner api`) routes `startAndWaitForResult()` through this durable platform path when a platform is configured, and falls back to the runner's blocking `/pipeline/execute` when self-hosted. The granular durable primitives (`start` / `getRun` / `getResult` / `waitForResult`) are **platform-only** — there is no runner fallback, so without a platform URL they throw a clear hosted-only error (the runner has no run store). The local `pipelex` runner likewise supports only `startAndWaitForResult` (blocking, in-process).
 
 ## Agent CLI — `mthds-agent run …`
 

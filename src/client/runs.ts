@@ -191,6 +191,19 @@ export async function pollUntilResult(
 
   for (;;) {
     throwIfAborted(options.signal);
+
+    // Enforce the deadline BEFORE each lookup, so a poll is never issued past the
+    // timeout (the previous wait is clamped to the deadline, so the next loop
+    // would otherwise fire one extra fetch right at it).
+    const elapsedMs = Date.now() - startedAt;
+    if (elapsedMs >= timeoutMs) {
+      throw new RunTimeoutError(
+        `Run ${runId} did not reach a terminal state within ${timeoutMs}ms.`,
+        runId,
+        timeoutMs
+      );
+    }
+
     const state = await fetchOnce(runId, { signal: options.signal });
 
     if (state.state === "completed") {
@@ -201,14 +214,6 @@ export async function pollUntilResult(
     }
 
     attempt += 1;
-    const elapsedMs = Date.now() - startedAt;
-    if (elapsedMs >= timeoutMs) {
-      throw new RunTimeoutError(
-        `Run ${runId} did not reach a terminal state within ${timeoutMs}ms.`,
-        runId,
-        timeoutMs
-      );
-    }
     options.onPoll?.({ attempt, elapsedMs });
 
     const retryMs = state.retry_after_seconds != null ? state.retry_after_seconds * 1000 : 0;

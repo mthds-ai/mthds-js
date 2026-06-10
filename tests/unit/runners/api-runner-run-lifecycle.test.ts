@@ -84,27 +84,20 @@ describe("ApiRunner self-hosted (no platformUrl)", () => {
     expect(fetchSpy.mock.calls[0]![0]).toBe("http://localhost:8081/api/v1/pipeline/execute");
   });
 
-  it("self-hosted: the run lifecycle targets the runner's own /runs endpoints (no platform)", async () => {
+  it("self-hosted: the durable run lifecycle requires the platform (no runner fallback)", async () => {
+    // The durable lifecycle is platform-only — the runner has no run store. With
+    // no platform configured, the primitives fail fast instead of hitting a
+    // runner `/runs` endpoint that does not exist.
     const runner = new ApiRunner("http://localhost:8081/api/v1", "test-token", "");
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
 
-    const startSpy = vi
-      .spyOn(globalThis, "fetch")
-      .mockResolvedValue(jsonResponse(200, { pipeline_run_id: "r", status: "PENDING", created_at: "t0" }));
-    await runner.start({ pipe_code: "p" });
-    expect(String(startSpy.mock.calls[0]![0])).toBe("http://localhost:8081/api/v1/runs");
-    startSpy.mockRestore();
+    await expect(runner.start({ pipe_code: "p" })).rejects.toThrow(/platform base URL/i);
+    await expect(runner.getRun("r")).rejects.toThrow(/platform base URL/i);
+    await expect(runner.getResult("r")).rejects.toThrow(/platform base URL/i);
+    await expect(runner.waitForResult("r")).rejects.toThrow(/platform base URL/i);
 
-    const getSpy = vi
-      .spyOn(globalThis, "fetch")
-      .mockResolvedValue(jsonResponse(200, { pipeline_run_id: "r", status: "RUNNING", created_at: "t0" }));
-    await runner.getRun("r");
-    expect(String(getSpy.mock.calls[0]![0])).toBe("http://localhost:8081/api/v1/runs/by-id/r");
-    getSpy.mockRestore();
-
-    const resultSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(emptyResponse(202, { "Retry-After": "2" }));
-    const state = await runner.getResult("r");
-    expect(state.state).toBe("running");
-    expect(String(resultSpy.mock.calls[0]![0])).toBe("http://localhost:8081/api/v1/runs/by-id/r/result");
+    // None of them should have hit the network.
+    expect(fetchSpy).not.toHaveBeenCalled();
   });
 
   it("health resolves to the runner origin root, not under the version prefix", async () => {

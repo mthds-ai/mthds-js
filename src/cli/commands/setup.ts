@@ -5,7 +5,7 @@ import { isPipelexInstalled } from "../../installer/runtime/check.js";
 import { ensureRuntime } from "../../installer/runtime/installer.js";
 import { shutdown } from "../../installer/telemetry/posthog.js";
 import { printLogo } from "./index.js";
-import { getConfigValue, setConfigValue } from "../../config/config.js";
+import { getConfigValue, setConfigValue, loadConfig } from "../../config/config.js";
 import { Runners, RUNNER_NAMES } from "../../runners/types.js";
 import { maskApiKey } from "./utils.js";
 
@@ -217,7 +217,10 @@ export async function runnerStatus(): Promise<void> {
 
   // API runner
   const { value: runnerUrl } = getConfigValue("runnerUrl");
-  const { value: platformUrl } = getConfigValue("platformUrl");
+  // Effective platform URL — `loadConfig` applies the "platform follows runner"
+  // auto-derive, so a self-hosted runner correctly shows the platform as unset
+  // (a raw key lookup would print the hosted default even when it's disabled).
+  const { platformUrl } = loadConfig();
   const { value: apiKey } = getConfigValue("apiKey");
   p.log.message(`\n  API runner`);
   p.log.message(`    Runner URL:   ${runnerUrl}`);

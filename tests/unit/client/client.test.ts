@@ -83,21 +83,20 @@ describe("MthdsApiClient constructor", () => {
     );
   });
 
-  it("self-hosted: the run lifecycle targets the runner base when platformBaseUrl is unset", async () => {
+  it("self-hosted: the durable run lifecycle requires a platform (no runner fallback)", async () => {
+    // The durable lifecycle is platform-only — the runner has no run store. With
+    // no platformBaseUrl, the lifecycle methods fail fast instead of hitting a
+    // runner `/runs` endpoint that doesn't exist.
     const client = new MthdsApiClient({
       runnerBaseUrl: "http://localhost:8081/api/v1",
     });
-    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      new Response(
-        JSON.stringify({ pipeline_run_id: "r1", status: "PENDING", created_at: "2026-06-07T00:00:00Z" }),
-        { status: 200 },
-      ),
-    );
-    const run = await client.startRun({ pipe_code: "p" });
-    expect(run.pipeline_run_id).toBe("r1");
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+
     expect(client.hasPlatform()).toBe(false);
-    // No platform configured -> the lifecycle resolves to the runner base, not an error.
-    expect(String(fetchSpy.mock.calls[0]![0])).toBe("http://localhost:8081/api/v1/runs");
+    await expect(client.startRun({ pipe_code: "p" })).rejects.toThrow(/platform base URL/i);
+    await expect(client.getRun("r")).rejects.toThrow(/platform base URL/i);
+    await expect(client.getResult("r")).rejects.toThrow(/platform base URL/i);
+    expect(fetchSpy).not.toHaveBeenCalled();
   });
 });
 

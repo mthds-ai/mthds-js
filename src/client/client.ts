@@ -106,15 +106,20 @@ export class MthdsApiClient implements RunnerProtocol {
   /**
    * Resolve the base URL for the durable run lifecycle (start/poll/result).
    *
-   * The lifecycle sub-paths (`runs`, `runs/by-id/{id}`, `runs/by-id/{id}/result`)
-   * are served identically by two tiers, so the only difference is the base:
-   * - **hosted** — the Pipelex Platform (`platformBaseUrl`), DDB+Temporal backed.
-   * - **self-hosted** — the open-source runner itself (`runnerBaseUrl`), which
-   *   serves the same lifecycle from its in-process store.
-   * Prefer the platform when configured; otherwise fall back to the runner.
+   * The durable lifecycle (`runs`, `runs/by-id/{id}`, `runs/by-id/{id}/result`)
+   * is a **hosted Pipelex Platform** feature, DDB+Temporal backed — the runner is
+   * runner-only and has no run store. There is no runner fallback: without a
+   * platform URL these methods fail fast with a clear error rather than silently
+   * hitting a runner endpoint that doesn't exist. A self-hosted runner uses the
+   * blocking `executePipeline` path instead.
    */
   private runLifecycleBase(): string {
-    return this.platformBaseUrl ?? this.runnerBaseUrl;
+    if (!this.platformBaseUrl) {
+      throw new PipelineRequestError(
+        "A platform base URL (`platformUrl` / `PIPELEX_PLATFORM_URL`) is required for the durable run lifecycle (start / status / result / waitForResult). Configure the hosted platform, or use the blocking execute path for a self-hosted runner."
+      );
+    }
+    return this.platformBaseUrl;
   }
 
   /** Build a full run-lifecycle URL by appending an endpoint to the lifecycle base. */

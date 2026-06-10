@@ -1,4 +1,11 @@
-import type { RunnerProtocol } from "../client/protocol.js";
+import type {
+  StartRunOptions,
+  RunPublic,
+  RunRead,
+  RunResultState,
+  RunResult,
+  WaitForResultOptions,
+} from "../client/runs.js";
 
 // ── Runner type ─────────────────────────────────────────────────────
 
@@ -104,6 +111,10 @@ export interface PipelineResponse {
   finished_at?: string | null;
   pipe_output?: DictPipeOutput | null;
   main_stuff_name?: string | null;
+  /** Main output stuff (`main_stuff.json`) — set on the API runner's platform polling path. */
+  main_stuff?: Record<string, unknown> | null;
+  /** Pipeline graph spec (`graphspec.json`) — set on the API runner's platform polling path. */
+  graph_spec?: Record<string, unknown> | null;
 }
 
 export interface PipelexBundleBlueprint {
@@ -157,9 +168,12 @@ export interface ModelsResponse {
 }
 
 // ── Runner interface ────────────────────────────────────────────────
-// Every runtime (API, local pipelex CLI, …) must implement this.
+// Every runtime (API, local pipelex CLI, …) must implement this. The two
+// composites (`waitForResult`, `startAndWaitForResult`) are provided once by
+// `BaseRunner` over the primitives, so concrete runners only implement
+// `start` / `getRun` / `getResult` (plus build/validate/models).
 
-export interface Runner extends RunnerProtocol {
+export interface Runner {
   readonly type: RunnerType;
 
   // Health & version
@@ -171,8 +185,17 @@ export interface Runner extends RunnerProtocol {
   buildOutput(request: BuildOutputRequest): Promise<unknown>;
   buildRunner(request: BuildRunnerRequest): Promise<BuildRunnerResponse>;
 
-  // Pipeline execution
-  execute(request: ExecuteRequest): Promise<PipelineResponse>;
+  // Run lifecycle (durable, poll-by-id — see src/client/runs.ts)
+  // Primitives:
+  start(options: StartRunOptions): Promise<RunPublic>;
+  getRun(runId: string): Promise<RunRead>;
+  getResult(runId: string, options?: { signal?: AbortSignal }): Promise<RunResultState>;
+  // Composites (provided by BaseRunner):
+  waitForResult(runId: string, options?: WaitForResultOptions): Promise<RunResult>;
+  startAndWaitForResult(
+    options: StartRunOptions,
+    pollOptions?: WaitForResultOptions
+  ): Promise<RunResult>;
 
   // Validation
   validate(request: ValidateRequest): Promise<ValidateResponse>;

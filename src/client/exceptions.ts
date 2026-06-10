@@ -49,6 +49,65 @@ export class ApiUnreachableError extends PipelineRequestError {
  * (HTTPException with dict detail) or `{"detail": "..."}` (auth 401s).
  * Both shapes are extracted here.
  */
+/**
+ * Thrown when the blocking `executePipeline` (runner `/pipeline/execute`) is
+ * killed by the Pipelex public API's ~30s synchronous-request limit. The
+ * blocking path cannot run pipelines longer than 30s — use the durable run API
+ * (start + poll) instead.
+ */
+export class PipelineExecuteTimeoutError extends PipelineRequestError {
+  public readonly elapsedMs: number;
+
+  constructor(elapsedMs: number, options?: { cause?: unknown }) {
+    const seconds = Math.round(elapsedMs / 1000);
+    super(
+      `The Pipelex public API times out synchronous requests after ~30s — this run took ${seconds}s. ` +
+        "The blocking execute path can't run pipelines longer than 30s. " +
+        "Start the run and poll for its result instead: " +
+        "`startRun()` then `waitForResult(runId)` (SDK), " +
+        "or `mthds-agent run start …` then `mthds-agent run poll <run_id>` (CLI).",
+      options
+    );
+    this.name = "PipelineExecuteTimeoutError";
+    this.elapsedMs = elapsedMs;
+  }
+}
+
+/**
+ * Thrown when a run reaches a terminal state that is not `COMPLETED`
+ * (`FAILED`, `CANCELLED`, `TERMINATED`, `TIMED_OUT`) — surfaced from
+ * `waitForResult`/`getResult` when the platform answers a result lookup with
+ * HTTP 409. `runId` and `status` let callers report the outcome precisely.
+ */
+export class RunFailedError extends PipelineRequestError {
+  public readonly runId: string;
+  public readonly status: string;
+
+  constructor(message: string, runId: string, status: string, options?: { cause?: unknown }) {
+    super(message, options);
+    this.name = "RunFailedError";
+    this.runId = runId;
+    this.status = status;
+  }
+}
+
+/**
+ * Thrown when `waitForResult` exceeds its `timeoutMs` before the run reaches a
+ * terminal state. The run is NOT cancelled — it keeps executing server-side and
+ * can be resumed later by `runId` (the poll loop just stopped waiting).
+ */
+export class RunTimeoutError extends PipelineRequestError {
+  public readonly runId: string;
+  public readonly timeoutMs: number;
+
+  constructor(message: string, runId: string, timeoutMs: number) {
+    super(message);
+    this.name = "RunTimeoutError";
+    this.runId = runId;
+    this.timeoutMs = timeoutMs;
+  }
+}
+
 export class ApiResponseError extends PipelineRequestError {
   public readonly apiUrl: string;
   public readonly status: number;

@@ -40,7 +40,9 @@ export async function configSet(cliKey: string, value: string): Promise<void> {
     process.exit(1);
   }
 
-  if (configKey === "apiUrl" && !isValidUrl(value)) {
+  // platformUrl may be set empty to disable the durable platform surface.
+  const isUrlKey = configKey === "runnerUrl" || configKey === "platformUrl";
+  if (isUrlKey && value !== "" && !isValidUrl(value)) {
     p.log.error(`Invalid URL: ${value}`);
     p.outro("");
     process.exit(1);

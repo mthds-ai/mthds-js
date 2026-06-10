@@ -10,6 +10,8 @@ import { existsSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { agentError, agentSuccess, AGENT_ERROR_DOMAINS } from "../output.js";
 import type { Runner } from "../../runners/types.js";
+import type { StartRunOptions } from "../../client/runs.js";
+import { RunFailedError, RunTimeoutError } from "../../client/exceptions.js";
 
 function collect(val: string, prev: string[]): string[] {
   return [...prev, val];
@@ -355,12 +357,17 @@ export function registerApiRunnerCommands(
     }
 
     try {
-      const result = await runner.execute({
+      const result = await runner.startAndWaitForResult({
         mthds_contents: [mthdsContent],
         pipe_code: pipeCode,
         inputs,
       });
-      agentSuccess({ ...result });
+      agentSuccess({
+        state: "completed",
+        pipeline_run_id: result.pipeline_run_id,
+        main_stuff: result.main_stuff ?? result.pipe_output ?? null,
+        graph_spec: result.graph_spec ?? null,
+      });
     } catch (err) {
       agentError((err as Error).message, "RunnerError", {
         error_domain: AGENT_ERROR_DOMAINS.RUNNER,
@@ -395,6 +402,191 @@ export function registerApiRunnerCommands(
     .allowExcessArguments(true)
     .exitOverride()
     .action(runAction);
+
+  // ── run start ──
+  // Submit a run and return its id immediately. All run state lives behind the
+  // returned `pipeline_run_id` (DB + Temporal), so an agent can submit here,
+  // disconnect, and later resume with `run status` / `run result` / `run poll`.
+
+  runGroup
+    .command("start")
+    .argument("[target]", "Bundle file (.mthds) or directory")
+    .option("--pipe <code>", "Pipe code to run")
+    .option("-i, --inputs <file>", "Path to JSON inputs file")
+    .option("--content <mthds>", "Bundle content as a string")
+    .option("--inputs-json <json>", "Inputs as a JSON string")
+    .option("--method-id <id>", "Run a stored method by id (instead of an inline bundle)")
+    .option("--output-name <name>", "Name of the output slot to write to")
+    .option("--output-multiplicity <value>", "Output multiplicity: 'false', 'true', or an exact count")
+    .option("--dynamic-output <concept_ref>", "Override for the dynamic output concept ref")
+    .description("Start a run and return its id without waiting")
+    .allowUnknownOption()
+    .allowExcessArguments(true)
+    .exitOverride()
+    .action(
+      async (
+        target: string | undefined,
+        options: {
+          pipe?: string;
+          inputs?: string;
+          content?: string;
+          inputsJson?: string;
+          methodId?: string;
+          outputName?: string;
+          outputMultiplicity?: string;
+          dynamicOutput?: string;
+        }
+      ): Promise<void> => {
+        const runner = safeCreateRunner(makeRunner);
+        const startOptions = resolveStartRunOptions(target, options);
+        try {
+          const run = await runner.start(startOptions);
+          agentSuccess({ ...run });
+        } catch (err) {
+          agentError((err as Error).message, "RunnerError", {
+            error_domain: AGENT_ERROR_DOMAINS.RUNNER,
+          });
+        }
+      }
+    );
+
+  // ── run status ──
+
+  runGroup
+    .command("status")
+    .argument("<run_id>", "Pipeline run id")
+    .description("Fetch a run's current status by id (self-healing)")
+    .allowUnknownOption()
+    .allowExcessArguments(true)
+    .exitOverride()
+    .action(async (runId: string): Promise<void> => {
+      const runner = safeCreateRunner(makeRunner);
+      try {
+        const run = await runner.getRun(runId);
+        agentSuccess({ ...run });
+      } catch (err) {
+        agentError((err as Error).message, "RunnerError", {
+          error_domain: AGENT_ERROR_DOMAINS.RUNNER,
+        });
+      }
+    });
+
+  // ── run result ──
+  // Single-shot result lookup: 202 → still running, 200 → result, 409 → failed.
+
+  runGroup
+    .command("result")
+    .argument("<run_id>", "Pipeline run id")
+    .description("Fetch a run's result by id, once (does not wait)")
+    .allowUnknownOption()
+    .allowExcessArguments(true)
+    .exitOverride()
+    .action(async (runId: string): Promise<void> => {
+      const runner = safeCreateRunner(makeRunner);
+      let state;
+      try {
+        state = await runner.getResult(runId);
+      } catch (err) {
+        agentError((err as Error).message, "RunnerError", {
+          error_domain: AGENT_ERROR_DOMAINS.RUNNER,
+        });
+        return;
+      }
+      switch (state.state) {
+        case "running":
+          agentSuccess({
+            state: "running",
+            pipeline_run_id: state.pipeline_run_id,
+            retry_after_seconds: state.retry_after_seconds,
+            hint: `Run is still in progress. Poll with: mthds-agent run poll ${runId}`,
+          });
+          break;
+        case "completed":
+          agentSuccess({
+            state: "completed",
+            pipeline_run_id: state.pipeline_run_id,
+            main_stuff: state.result.main_stuff ?? null,
+            graph_spec: state.result.graph_spec ?? null,
+          });
+          break;
+        case "failed":
+          agentError(state.message, "RunFailedError", {
+            error_domain: AGENT_ERROR_DOMAINS.PIPELINE,
+            retryable: false,
+          });
+          break;
+      }
+    });
+
+  // ── run poll ──
+  // Block until the run reaches a terminal state. Ctrl-C (or any SIGINT) stops
+  // waiting WITHOUT cancelling the run — the run keeps executing server-side
+  // and can be resumed by id.
+
+  runGroup
+    .command("poll")
+    .argument("<run_id>", "Pipeline run id")
+    .option("--interval <seconds>", "Base poll interval in seconds (default 2)")
+    .option("--timeout <seconds>", "Max seconds to wait before giving up (default 1200)")
+    .description("Poll a run to completion, then return its result")
+    .allowUnknownOption()
+    .allowExcessArguments(true)
+    .exitOverride()
+    .action(
+      async (
+        runId: string,
+        options: { interval?: string; timeout?: string }
+      ): Promise<void> => {
+        const runner = safeCreateRunner(makeRunner);
+        const intervalMs = parsePositiveSeconds(options.interval, "--interval");
+        const timeoutMs = parsePositiveSeconds(options.timeout, "--timeout");
+
+        const controller = new AbortController();
+        const onSigint = (): void => controller.abort();
+        process.once("SIGINT", onSigint);
+
+        try {
+          const result = await runner.waitForResult(runId, {
+            intervalMs,
+            timeoutMs,
+            signal: controller.signal,
+          });
+          agentSuccess({
+            state: "completed",
+            pipeline_run_id: runId,
+            main_stuff: result.main_stuff ?? null,
+            graph_spec: result.graph_spec ?? null,
+          });
+        } catch (err) {
+          if (controller.signal.aborted) {
+            // Walk-away: not an error. Report the run as still resumable by id.
+            agentSuccess({
+              state: "running",
+              pipeline_run_id: runId,
+              resumable: true,
+              hint: `Stopped waiting; the run continues. Resume with: mthds-agent run poll ${runId}`,
+            });
+          } else if (err instanceof RunFailedError) {
+            agentError(err.message, "RunFailedError", {
+              error_domain: AGENT_ERROR_DOMAINS.PIPELINE,
+              retryable: false,
+            });
+          } else if (err instanceof RunTimeoutError) {
+            agentError(err.message, "RunTimeoutError", {
+              error_domain: AGENT_ERROR_DOMAINS.RUNNER,
+              retryable: true,
+              hint: `The run is still executing. Resume with: mthds-agent run poll ${runId}`,
+            });
+          } else {
+            agentError((err as Error).message, "RunnerError", {
+              error_domain: AGENT_ERROR_DOMAINS.RUNNER,
+            });
+          }
+        } finally {
+          process.removeListener("SIGINT", onSigint);
+        }
+      }
+    );
 
   // ── models ──
 
@@ -536,6 +728,75 @@ function resolvePipeCode(mthdsContent: string, pipeCodeOption: string | undefine
     error_domain: AGENT_ERROR_DOMAINS.ARGUMENT,
   });
   throw new Error("unreachable");
+}
+
+function resolveRunInputs(options: {
+  inputs?: string;
+  inputsJson?: string;
+}): Record<string, unknown> | undefined {
+  if (options.inputsJson) return parseJsonOrError(options.inputsJson, "--inputs-json");
+  if (options.inputs) {
+    const raw = readFileOrError(options.inputs);
+    return parseJsonOrError(raw, "inputs file");
+  }
+  return undefined;
+}
+
+function resolveStartRunOptions(
+  target: string | undefined,
+  options: {
+    pipe?: string;
+    inputs?: string;
+    content?: string;
+    inputsJson?: string;
+    methodId?: string;
+    outputName?: string;
+    outputMultiplicity?: string;
+    dynamicOutput?: string;
+  }
+): StartRunOptions {
+  const outputs = {
+    output_name: options.outputName,
+    output_multiplicity: parseMultiplicity(options.outputMultiplicity),
+    dynamic_output_concept_ref: options.dynamicOutput,
+  };
+  if (options.methodId) {
+    // A stored method carries its own `main_pipe`; the platform resolves the
+    // pipe server-side, so `--pipe` is optional and only needed to override it.
+    return { method_id: options.methodId, pipe_code: options.pipe, inputs: resolveRunInputs(options), ...outputs };
+  }
+  // resolveContentForRun may set options.inputs (directory auto-discovery), so
+  // resolve the bundle before reading inputs.
+  const mthdsContent = resolveContentForRun(target, options);
+  const pipeCode = resolvePipeCode(mthdsContent, options.pipe);
+  return { pipe_code: pipeCode, mthds_contents: [mthdsContent], inputs: resolveRunInputs(options), ...outputs };
+}
+
+/** Parse `--output-multiplicity`: "false"/"true" → boolean, a positive integer → count. */
+function parseMultiplicity(raw: string | undefined): boolean | number | undefined {
+  if (raw === undefined) return undefined;
+  if (raw === "true") return true;
+  if (raw === "false") return false;
+  const count = Number(raw);
+  if (Number.isInteger(count) && count > 0) return count;
+  agentError(
+    "--output-multiplicity must be 'true', 'false', or a positive integer.",
+    "ArgumentError",
+    { error_domain: AGENT_ERROR_DOMAINS.ARGUMENT }
+  );
+  throw new Error("unreachable");
+}
+
+function parsePositiveSeconds(raw: string | undefined, label: string): number | undefined {
+  if (raw === undefined) return undefined;
+  const seconds = Number(raw);
+  if (!Number.isFinite(seconds) || seconds <= 0) {
+    agentError(`${label} must be a positive number of seconds.`, "ArgumentError", {
+      error_domain: AGENT_ERROR_DOMAINS.ARGUMENT,
+    });
+    throw new Error("unreachable");
+  }
+  return seconds * 1000;
 }
 
 function handleValidateResult(result: { success: boolean; message: string }): void {

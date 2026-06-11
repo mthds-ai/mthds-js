@@ -13,18 +13,23 @@ vi.mock("../../../src/config/config.js", () => ({
   findLegacyApiKeyKey: vi.fn(() => undefined),
 }));
 
-import { ApiRunner } from "../../../src/runners/api-runner.js";
-import { PipelexRunner } from "../../../src/runners/pipelex-runner.js";
-import { RunLifecycleUnavailableError } from "../../../src/client/exceptions.js";
+import { MthdsApiClient } from "../../../src/runners/api/client.js";
+import { PipelexRunner } from "../../../src/runners/pipelex/runner.js";
+import { RunLifecycleUnavailableError } from "../../../src/runners/api/exceptions.js";
+
+/** The API client IS the API runner (parity D8) — construct it as a runner. */
+function makeApiRunner(): MthdsApiClient {
+  return new MthdsApiClient({ baseUrl: "http://localhost:8081", apiToken: "test-token" });
+}
 
 const HOSTED_VERSION = {
-  protocol_version: "0.1.0",
+  protocol_version: "0.6.0",
   implementation: "pipelex-hosted",
   implementation_version: "0.9.0",
 };
 
 const BARE_VERSION = {
-  protocol_version: "0.1.0",
+  protocol_version: "0.6.0",
   implementation: "pipelex-api",
   implementation_version: "1.2.3",
   runtime_version: "0.32.0",
@@ -51,7 +56,7 @@ afterEach(() => {
 
 describe("ApiRunner.startAndWaitForResult (hosted — durable start+poll path)", () => {
   it("handshakes /v1/version, starts on /v1/start, then polls to the result", async () => {
-    const runner = new ApiRunner("http://localhost:8081", "test-token");
+    const runner = makeApiRunner();
     // version (hosted) → start (202 ack) → results (200). The 202→200
     // polling transition is covered at the client level; here we just prove
     // the runner takes the durable path and maps the result.
@@ -77,7 +82,7 @@ describe("ApiRunner.startAndWaitForResult (hosted — durable start+poll path)",
   });
 
   it("caches the version handshake across calls", async () => {
-    const runner = new ApiRunner("http://localhost:8081", "test-token");
+    const runner = makeApiRunner();
     const fetchSpy = vi
       .spyOn(globalThis, "fetch")
       .mockResolvedValueOnce(jsonResponse(200, HOSTED_VERSION))
@@ -98,7 +103,7 @@ describe("ApiRunner.startAndWaitForResult (hosted — durable start+poll path)",
 
 describe("ApiRunner against a bare runner (no run store)", () => {
   it("startAndWaitForResult falls back to the blocking POST /v1/execute", async () => {
-    const runner = new ApiRunner("http://localhost:8081", "test-token");
+    const runner = makeApiRunner();
     const fetchSpy = vi
       .spyOn(globalThis, "fetch")
       .mockResolvedValueOnce(jsonResponse(200, BARE_VERSION))
@@ -114,7 +119,7 @@ describe("ApiRunner against a bare runner (no run store)", () => {
   });
 
   it("the run-lifecycle primitives surface RunLifecycleUnavailableError on the bare 404", async () => {
-    const runner = new ApiRunner("http://localhost:8081", "test-token");
+    const runner = makeApiRunner();
     // Bare runner: Starlette's default 404 body — no structured `code` field.
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
       jsonResponse(404, { detail: "Not Found" })
@@ -126,7 +131,7 @@ describe("ApiRunner against a bare runner (no run store)", () => {
   });
 
   it("health resolves to the origin root, not under the /v1 prefix", async () => {
-    const runner = new ApiRunner("http://localhost:8081", "test-token");
+    const runner = makeApiRunner();
     const fetchSpy = vi
       .spyOn(globalThis, "fetch")
       .mockResolvedValue(jsonResponse(200, { status: "ok" }));
@@ -139,7 +144,7 @@ describe("ApiRunner against a bare runner (no run store)", () => {
 
 describe("ApiRunner run-lifecycle delegation", () => {
   it("start returns the RunResult ack", async () => {
-    const runner = new ApiRunner("http://localhost:8081", "test-token");
+    const runner = makeApiRunner();
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
       jsonResponse(202, { pipeline_run_id: "run-9", state: "STARTED", created_at: "t0" })
     );
@@ -149,14 +154,14 @@ describe("ApiRunner run-lifecycle delegation", () => {
   });
 
   it("getRunResult reports a still-running run as running", async () => {
-    const runner = new ApiRunner("http://localhost:8081", "test-token");
+    const runner = makeApiRunner();
     vi.spyOn(globalThis, "fetch").mockResolvedValue(emptyResponse(202, { "Retry-After": "3" }));
     const state = await runner.getRunResult("run-9");
     expect(state.state).toBe("running");
   });
 
   it("version delegates to GET /v1/version", async () => {
-    const runner = new ApiRunner("http://localhost:8081", "test-token");
+    const runner = makeApiRunner();
     const fetchSpy = vi
       .spyOn(globalThis, "fetch")
       .mockResolvedValue(jsonResponse(200, BARE_VERSION));
@@ -166,7 +171,7 @@ describe("ApiRunner run-lifecycle delegation", () => {
   });
 
   it("validate delegates to POST /v1/validate", async () => {
-    const runner = new ApiRunner("http://localhost:8081", "test-token");
+    const runner = makeApiRunner();
     const fetchSpy = vi
       .spyOn(globalThis, "fetch")
       .mockResolvedValue(jsonResponse(200, { blueprint: {} }));
@@ -175,7 +180,7 @@ describe("ApiRunner run-lifecycle delegation", () => {
   });
 
   it("build helpers hit /v1/build/*", async () => {
-    const runner = new ApiRunner("http://localhost:8081", "test-token");
+    const runner = makeApiRunner();
     const fetchSpy = vi
       .spyOn(globalThis, "fetch")
       .mockImplementation(async () => jsonResponse(200, {}));
@@ -188,7 +193,7 @@ describe("ApiRunner run-lifecycle delegation", () => {
   });
 
   it("has no checkModel — check-model never existed on the API", () => {
-    const runner = new ApiRunner("http://localhost:8081", "test-token");
+    const runner = makeApiRunner();
     expect((runner as unknown as Record<string, unknown>).checkModel).toBeUndefined();
   });
 });

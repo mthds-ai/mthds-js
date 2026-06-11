@@ -5,7 +5,7 @@ import { printLogo } from "./index.js";
 import { isPipelexRunner, extractPassthroughArgs } from "./utils.js";
 import { createRunner } from "../../runners/registry.js";
 import type { RunnerType } from "../../runners/types.js";
-import type { StartOptions } from "../../client/runs.js";
+import type { StartOptions } from "../../protocol/options.js";
 
 interface RunOptions {
   pipe?: string;

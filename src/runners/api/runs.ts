@@ -1,8 +1,8 @@
-import type { ExtensionOptions, StartRequest } from "./pipeline.js";
 import { RunFailedError, RunTimeoutError } from "./exceptions.js";
 
 /**
- * Run-lifecycle types for the hosted polling surface (`/v1/runs/*`).
+ * Run-lifecycle types + polling for the hosted polling surface (`/v1/runs/*`).
+ * Mirrors `mthds/runners/api/runs.py`.
  *
  * Long method runs outlive the hosted gateway's ~30s synchronous cap, so the
  * SDK submits a run (`POST /v1/start`), then polls a self-healing endpoint by
@@ -15,7 +15,7 @@ import { RunFailedError, RunTimeoutError } from "./exceptions.js";
  * `RunLifecycleUnavailableError`.
  *
  * Wire contract mirrors the hosted MTHDS API:
- *   POST /v1/start                  → RunResult ack    (start, 202)
+ *   POST /v1/start                  → RunResultStart   (start, 202)
  *   GET  /v1/runs/{pipeline_run_id}/status   → RunRead          (status, self-healing)
  *   GET  /v1/runs/{pipeline_run_id}/results  → 202 / 200 / 409  (results)
  */
@@ -55,15 +55,6 @@ export function isTerminalRunStatus(status: RunStatus): boolean {
 export function isSuccessRunStatus(status: RunStatus): boolean {
   return status === "COMPLETED";
 }
-
-// ── Requests ────────────────────────────────────────────────────────
-
-/**
- * Options for `MTHDSProtocol.start` — the `StartRequest` wire fields (the
- * protocol's basic execution arguments) plus the generic `extra` extension
- * passthrough (server-specific args, merged into the body).
- */
-export type StartOptions = StartRequest & ExtensionOptions;
 
 // ── Responses ───────────────────────────────────────────────────────
 

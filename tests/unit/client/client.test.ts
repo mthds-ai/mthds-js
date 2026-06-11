@@ -1,12 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { MthdsApiClient } from "../../../src/client/client.js";
+import { MthdsApiClient } from "../../../src/runners/api/client.js";
 import {
   ApiResponseError,
   ApiUnreachableError,
   PipelineExecuteTimeoutError,
   PipelineRequestError,
   RunStillRunningError,
-} from "../../../src/client/exceptions.js";
+} from "../../../src/runners/api/exceptions.js";
 
 const BASE_URL = "http://localhost:8081";
 
@@ -470,7 +470,7 @@ describe("MthdsApiClient.version", () => {
       .spyOn(globalThis, "fetch")
       .mockResolvedValue(
         jsonResponse(200, {
-          protocol_version: "0.1.0",
+          protocol_version: "0.6.0",
           implementation: "pipelex-api",
           implementation_version: "1.2.3",
           runtime_version: "0.32.0",
@@ -478,7 +478,7 @@ describe("MthdsApiClient.version", () => {
       );
     const info = await client.version();
     expect(info.implementation).toBe("pipelex-api");
-    expect(info.protocol_version).toBe("0.1.0");
+    expect(info.protocol_version).toBe("0.6.0");
     expect(info.runtime_version).toBe("0.32.0");
     expect(fetchSpy.mock.calls[0]![0]).toBe("http://localhost:8081/v1/version");
   });

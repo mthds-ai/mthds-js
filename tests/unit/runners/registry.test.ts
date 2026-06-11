@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { ApiRunner } from "../../../src/runners/api-runner.js";
-import { PipelexRunner } from "../../../src/runners/pipelex-runner.js";
+import { MthdsApiClient } from "../../../src/runners/api/client.js";
+import { PipelexRunner } from "../../../src/runners/pipelex/runner.js";
 
 // Mock the config module so createRunner() does not read the real filesystem
 vi.mock("../../../src/config/config.js", () => ({
@@ -26,9 +26,9 @@ describe("createRunner", () => {
     vi.clearAllMocks();
   });
 
-  it("returns ApiRunner when type is 'api'", () => {
+  it("returns the API client (the API runner) when type is 'api'", () => {
     const runner = createRunner("api");
-    expect(runner).toBeInstanceOf(ApiRunner);
+    expect(runner).toBeInstanceOf(MthdsApiClient);
     expect(runner.type).toBe("api");
   });
 
@@ -64,7 +64,7 @@ describe("createRunner", () => {
     });
 
     const runner = createRunner();
-    expect(runner).toBeInstanceOf(ApiRunner);
+    expect(runner).toBeInstanceOf(MthdsApiClient);
     expect(loadConfig).toHaveBeenCalled();
   });
 

@@ -24,7 +24,7 @@ vi.mock("node:os", () => ({
 }));
 
 import { readFileSync, existsSync } from "node:fs";
-import { PipelexRunner } from "../../../src/runners/pipelex-runner.js";
+import { PipelexRunner } from "../../../src/runners/pipelex/runner.js";
 
 const mockedReadFileSync = vi.mocked(readFileSync);
 const mockedExistsSync = vi.mocked(existsSync);

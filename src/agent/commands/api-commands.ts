@@ -10,10 +10,10 @@ import { existsSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { agentError, agentSuccess, AGENT_ERROR_DOMAINS } from "../output.js";
 import type { Runner } from "../../runners/types.js";
-import type { StartOptions } from "../../client/runs.js";
-import type { ModelCategory } from "../../client/protocol-models.js";
-import { MODEL_CATEGORIES } from "../../client/protocol-models.js";
-import { ApiResponseError, RunFailedError, RunTimeoutError } from "../../client/exceptions.js";
+import type { StartOptions } from "../../protocol/options.js";
+import type { ModelCategory } from "../../protocol/models.js";
+import { MODEL_CATEGORIES } from "../../protocol/models.js";
+import { ApiResponseError, RunFailedError, RunTimeoutError } from "../../runners/api/exceptions.js";
 
 /**
  * Register all API-runner commands on the program.
@@ -377,7 +377,7 @@ export function registerApiRunnerCommands(
     .option("-i, --inputs <file>", "Path to JSON inputs file")
     .option("--content <mthds>", "Bundle content as a string")
     .option("--inputs-json <json>", "Inputs as a JSON string")
-    .option("--method-id <id>", "Run a stored method by id (instead of an inline bundle)")
+    .option("--extra <json>", "Server-specific extension args as a JSON object (e.g. a stored-method run) — forwarded to the runner verbatim")
     .option("--output-name <name>", "Name of the output slot to write to")
     .option("--output-multiplicity <value>", "Output multiplicity: 'false', 'true', or an exact count")
     .option("--dynamic-output <concept_ref>", "Override for the dynamic output concept ref")
@@ -393,7 +393,7 @@ export function registerApiRunnerCommands(
           inputs?: string;
           content?: string;
           inputsJson?: string;
-          methodId?: string;
+          extra?: string;
           outputName?: string;
           outputMultiplicity?: string;
           dynamicOutput?: string;
@@ -702,10 +702,10 @@ function resolveStartOptions(
     inputs?: string;
     content?: string;
     inputsJson?: string;
-    methodId?: string;
     outputName?: string;
     outputMultiplicity?: string;
     dynamicOutput?: string;
+    extra?: string;
   }
 ): StartOptions {
   const outputs = {
@@ -713,17 +713,32 @@ function resolveStartOptions(
     output_multiplicity: parseMultiplicity(options.outputMultiplicity),
     dynamic_output_concept_ref: options.dynamicOutput,
   };
-  if (options.methodId) {
-    // A stored method carries its own `main_pipe`; the platform resolves the
-    // pipe server-side, so `--pipe` is optional and only needed to override it.
-    // `method_id` is a hosted-API extension arg — it rides the generic `extra` passthrough.
-    return { pipe_code: options.pipe, inputs: resolveRunInputs(options), ...outputs, extra: { method_id: options.methodId } };
+  const extra = parseExtraOption(options.extra);
+  // No inline bundle → an extension-only start: the run is identified entirely by
+  // server-specific args passed through `--extra` (e.g. a stored-method run). The
+  // runner is the source of truth for what `extra` it accepts — the SDK and CLI
+  // never name those args.
+  if (!target && !options.content) {
+    return { pipe_code: options.pipe, inputs: resolveRunInputs(options), ...outputs, extra };
   }
   // resolveContentForRun may set options.inputs (directory auto-discovery), so
   // resolve the bundle before reading inputs.
   const mthdsContent = resolveContentForRun(target, options);
   const pipeCode = resolvePipeCode(mthdsContent, options.pipe);
-  return { pipe_code: pipeCode, mthds_contents: [mthdsContent], inputs: resolveRunInputs(options), ...outputs };
+  return { pipe_code: pipeCode, mthds_contents: [mthdsContent], inputs: resolveRunInputs(options), ...outputs, extra };
+}
+
+/** Parse `--extra <json>` into the generic extension passthrough — a JSON object of server-defined args. */
+function parseExtraOption(raw: string | undefined): Record<string, unknown> | undefined {
+  if (!raw) return undefined;
+  const parsed = parseJsonOrError(raw, "--extra");
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    agentError("--extra must be a JSON object of server-specific args.", "ArgumentError", {
+      error_domain: AGENT_ERROR_DOMAINS.ARGUMENT,
+    });
+    throw new Error("unreachable");
+  }
+  return parsed;
 }
 
 /** Parse `--output-multiplicity`: "false"/"true" → boolean, a positive integer → count. */

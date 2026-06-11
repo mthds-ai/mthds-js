@@ -1,11 +1,12 @@
-import type { MTHDSProtocol } from "../client/protocol.js";
+import type { MTHDSProtocol } from "../protocol/protocol.js";
+import type { StartOptions } from "../protocol/options.js";
 import type {
-  StartOptions,
   RunRead,
   RunResultState,
   RunResults,
   WaitForResultOptions,
-} from "../client/runs.js";
+} from "./api/runs.js";
+import type { DictPipeOutput } from "./api/models.js";
 
 // ── Runner type ─────────────────────────────────────────────────────
 
@@ -66,28 +67,6 @@ export interface BuildRunnerResponse {
   message: string;
 }
 
-export interface DictStuff {
-  concept: string;
-  content: unknown;
-}
-
-export interface DictWorkingMemory {
-  root: Record<string, DictStuff>;
-  aliases: Record<string, string>;
-}
-
-/**
- * Serialized pipe output (working memory). NOTE: the inner `pipeline_run_id`
- * is a runtime-internal field produced by the pipelex runtime inside the
- * `pipe_output` payload — it deliberately keeps its name (master plan D1:
- * runtime internals are out of the wire-rename scope, matching mthds-python).
- */
-export interface DictPipeOutput {
-  working_memory: DictWorkingMemory;
-  graph_spec?: unknown;
-  pipeline_run_id: string;
-}
-
 export interface ConceptResponse {
   success: boolean;
   concept_code: string;
@@ -118,7 +97,7 @@ export interface CheckModelResponse {
 // (`waitForResult`, `startAndWaitForResult`) are provided once by `BaseRunner`
 // over the primitives, so concrete runners only implement the primitives.
 
-export interface Runner extends MTHDSProtocol {
+export interface Runner extends MTHDSProtocol<DictPipeOutput> {
   readonly type: RunnerType;
 
   // Health — origin-level `/health` on the API runner, local doctor on pipelex.

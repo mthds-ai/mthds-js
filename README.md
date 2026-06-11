@@ -229,8 +229,8 @@ The client implements the MTHDS Protocol plus the hosted run-lifecycle extension
 
 | Method | Route | Description |
 |--------|-------|-------------|
-| `execute(options)` | `POST /v1/execute` | Execute a method and wait for the result (throws `RunStillRunningError` on the protocol's optional 202 degrade) |
-| `start(options)` | `POST /v1/start` | Start a method asynchronously — returns a `StartAck` with the authoritative `pipeline_run_id` |
+| `execute(options)` | `POST /v1/execute` | Execute a method and wait for the result — returns a `RunResultExecute` (throws `RunStillRunningError` on the protocol's optional 202 degrade) |
+| `start(options)` | `POST /v1/start` | Start a method asynchronously — returns a `RunResultStart` with the authoritative `pipeline_run_id` |
 | `validate(contents, allowSignatures?)` | `POST /v1/validate` | Parse, validate, and dry-run a bundle |
 | `models(category?)` | `GET /v1/models` | The model deck the runner routes to |
 | `version()` | `GET /v1/version` | Protocol + implementation versions (the feature-detection handshake) |
@@ -248,8 +248,9 @@ The client implements the MTHDS Protocol plus the hosted run-lifecycle extension
 | `output_name` | `string` | Name of the output to return |
 | `output_multiplicity` | `boolean \| number` | Expected output multiplicity |
 | `dynamic_output_concept_ref` | `string` | Dynamic output concept reference |
+| `extra` | `Record<string, unknown>` | Server-specific extension args, forwarded verbatim into the request body (e.g. a stored-method id) |
 
-Either `pipe_code` or `mthds_contents` must be provided (or a server-specific extension arg via `extra`). `start()` additionally accepts `pipeline_run_id` (bare-runner-only — the hosted API rejects a client-supplied run id with 422). Anything beyond the protocol's basic args is server-specific and rides the generic `extra` option, merged into the request body — the server you call defines and handles its own extension args. `startAndWait()` runs the whole start + poll lifecycle in one call.
+Either `pipe_code` or `mthds_contents` must be provided (or a server-specific extension arg via `extra`). Anything beyond the protocol's basic args is server-specific and rides the generic `extra` option, merged into the request body — the server you call defines and handles its own extension args (a client-supplied run id, where a server supports one, is such an extension; the request side never names it). `startAndWaitForResult()` runs the whole start + poll lifecycle in one call.
 
 ## Telemetry
 

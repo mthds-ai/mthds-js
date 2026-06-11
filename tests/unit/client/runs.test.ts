@@ -1,12 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { MthdsApiClient } from "../../../src/client/client.js";
+import { MthdsApiClient } from "../../../src/runners/api/client.js";
 import {
   ApiResponseError,
   RunFailedError,
   RunLifecycleUnavailableError,
   RunTimeoutError,
-} from "../../../src/client/exceptions.js";
-import { isTerminalRunStatus, isSuccessRunStatus } from "../../../src/client/runs.js";
+} from "../../../src/runners/api/exceptions.js";
+import { isTerminalRunStatus, isSuccessRunStatus } from "../../../src/runners/api/runs.js";
 
 const BASE_URL = "http://localhost:8081";
 

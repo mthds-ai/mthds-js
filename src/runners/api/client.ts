@@ -1,25 +1,33 @@
-import type { MTHDSProtocol } from "./protocol.js";
+import { BaseRunner } from "../base-runner.js";
+import { Runners } from "../types.js";
 import type {
-  RunOptions,
-  RunRequest,
-  RunResult,
-  StartRequest,
-} from "./pipeline.js";
+  Runner,
+  RunnerType,
+  BuildInputsRequest,
+  BuildOutputRequest,
+  BuildRunnerRequest,
+  BuildRunnerResponse,
+  ConceptRequest,
+  ConceptResponse,
+  PipeSpecRequest,
+  PipeSpecResponse,
+} from "../types.js";
+import type { RunOptions, RunRequest, StartOptions, StartRequest } from "../../protocol/options.js";
 import type {
-  StartOptions,
+  ModelCategory,
+  ModelDeck,
+  RunResultStart,
+  ValidationReport,
+  VersionInfo,
+} from "../../protocol/models.js";
+import type { DictPipeOutput, DictRunResultExecute } from "./models.js";
+import type {
   RunRead,
   RunResults,
   RunResultState,
   RunStatus,
   WaitForResultOptions,
 } from "./runs.js";
-import type {
-  ModelCategory,
-  ModelDeck,
-  ValidationReport,
-  VersionInfo,
-} from "./protocol-models.js";
-import { pollUntilResult } from "./runs.js";
 import {
   ApiResponseError,
   ApiUnreachableError,
@@ -64,7 +72,20 @@ const POLL_REQUEST_TIMEOUT_MS = 30_000; // single status/result GETs; the hosted
 const DEFAULT_DEGRADED_RETRY_SECONDS = 5; // matches the platform's `_DEGRADE_RETRY_AFTER_SECONDS`.
 
 /**
- * Client for any MTHDS runner — protocol surface + hosted run-lifecycle extension.
+ * `VersionInfo.implementation` of the bare open-source runner (no run store).
+ * Anything else — the hosted `pipelex-hosted` first — is assumed to serve the
+ * durable run-lifecycle extension; a wrong guess still fails with the clear
+ * `RunLifecycleUnavailableError` on the first poll.
+ */
+const BARE_RUNNER_IMPLEMENTATION = "pipelex-api";
+
+/**
+ * Client for any MTHDS runner — and THE API runner (parity D8). One class,
+ * two consumers: `pipelex-app` instantiates it directly as a protocol client,
+ * the CLI gets it via `createRunner()` as a full `Runner`. `extends BaseRunner
+ * implements Runner` so it carries the protocol surface, the Pipelex build
+ * extensions, and the lifecycle composites (`waitForResult` /
+ * `startAndWaitForResult`, inherited from `BaseRunner`).
  *
  * One base URL (`MTHDS_API_URL`); every endpoint is `<base>/v1/<endpoint>`:
  * - **protocol** (`execute` / `start` / `validate` / `models` / `version`) — works
@@ -75,22 +96,30 @@ const DEFAULT_DEGRADED_RETRY_SECONDS = 5; // matches the platform's `_DEGRADE_RE
  *   MTHDS API); a bare `pipelex-api` runner 404s those routes, which the lifecycle
  *   methods translate into a clear `RunLifecycleUnavailableError`.
  */
-export class MthdsApiClient implements MTHDSProtocol {
+export class MthdsApiClient extends BaseRunner implements Runner {
+  readonly type: RunnerType = Runners.API;
+
   private readonly apiToken: string | undefined;
   private readonly baseUrl: string;
+  /** Origin root derived from the base URL — `/health` lives here, not under `/v1`. */
+  private readonly originUrl: string;
+  /** Cached `/v1/version` handshake outcome — whether the durable lifecycle is served. */
+  private lifecycleAvailable: boolean | undefined;
 
   constructor(options: MthdsApiClientOptions = {}) {
+    super();
     this.apiToken = options.apiToken ?? process.env.MTHDS_API_KEY;
     const resolvedBaseUrl =
       options.baseUrl ?? process.env.MTHDS_API_URL ?? DEFAULT_API_BASE_URL;
     this.baseUrl = resolvedBaseUrl.replace(/\/+$/, "");
+    this.originUrl = new URL("/", this.baseUrl).origin;
   }
 
   // ── URL resolution ───────────────────────────────────────────────────
 
   /** Build an API URL: `<base>/v1/<endpoint>`. */
   private url(endpoint: string): string {
-    return `${this.baseUrl}/${API_PREFIX}/${endpoint}`;
+    return `${this.baseUrl}/${API_PREFIX}/${endpoint.replace(/^\/+/, "")}`;
   }
 
   // ── Transport ──────────────────────────────────────────────────────
@@ -170,6 +199,41 @@ export class MthdsApiClient implements MTHDSProtocol {
     };
   }
 
+  /**
+   * Issue a request and parse the JSON body, throwing a plain `Error` on a
+   * non-2xx response. Used by the build extensions and `health` — surfaces
+   * that don't need the protocol's structured error taxonomy.
+   */
+  private async requestJson<T>(
+    method: "GET" | "POST",
+    url: string,
+    body?: unknown
+  ): Promise<T> {
+    const headers: Record<string, string> = { Accept: "application/json" };
+    if (this.apiToken) {
+      headers["Authorization"] = `Bearer ${this.apiToken}`;
+    }
+    if (body !== undefined) {
+      headers["Content-Type"] = "application/json";
+    }
+    const res = await fetch(url, {
+      method,
+      headers,
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+    });
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      throw new Error(
+        `API ${method} ${url} failed (${res.status}): ${text || res.statusText}`
+      );
+    }
+    return res.json() as Promise<T>;
+  }
+
+  private postApi<T>(path: string, body: unknown): Promise<T> {
+    return this.requestJson("POST", this.url(path), body);
+  }
+
   private throwApiResponseError(
     method: "GET" | "POST",
     endpoint: string,
@@ -231,6 +295,13 @@ export class MthdsApiClient implements MTHDSProtocol {
     );
   }
 
+  // ── Health ────────────────────────────────────────────────────────
+
+  async health(): Promise<Record<string, unknown>> {
+    // `/health` is origin-level, NOT under the `/v1` prefix.
+    return this.requestJson("GET", `${this.originUrl}/health`);
+  }
+
   // ── Protocol surface ─────────────────────────────────────────────────
 
   /**
@@ -242,7 +313,7 @@ export class MthdsApiClient implements MTHDSProtocol {
    * durable start+poll path. Throws `RunStillRunningError` on the protocol's
    * optional 202 degrade.
    */
-  async execute(options: RunOptions): Promise<RunResult> {
+  async execute(options: RunOptions): Promise<DictRunResultExecute> {
     const extensions = buildExtensions(options.extra);
     if (
       !options.pipe_code &&
@@ -273,7 +344,7 @@ export class MthdsApiClient implements MTHDSProtocol {
       if (res.status < 200 || res.status >= 300) {
         this.throwApiResponseError("POST", "execute", res);
       }
-      return JSON.parse(res.body) as RunResult;
+      return JSON.parse(res.body) as DictRunResultExecute;
     } catch (err) {
       if (err instanceof RunStillRunningError) throw err;
       // The hosted gateway terminates synchronous requests at ~30s. A run that
@@ -288,7 +359,7 @@ export class MthdsApiClient implements MTHDSProtocol {
   }
 
   /**
-   * Start a method asynchronously — `POST /v1/start` (202, `pipe_output` absent).
+   * Start a method asynchronously — `POST /v1/start` (202, no output yet).
    *
    * Server-specific extension args ride `options.extra` and merge into the
    * request body — the server you call defines and handles them (including a
@@ -296,7 +367,7 @@ export class MthdsApiClient implements MTHDSProtocol {
    * `pipeline_run_id` is always authoritative; on a hosted deployment it is
    * durable — poll `getRunStatus` / `getRunResult`.
    */
-  async start(options: StartOptions): Promise<RunResult> {
+  async start(options: StartOptions): Promise<RunResultStart> {
     const extensions = buildExtensions(options.extra);
     if (
       !options.pipe_code &&
@@ -326,7 +397,7 @@ export class MthdsApiClient implements MTHDSProtocol {
     if (res.status < 200 || res.status >= 300) {
       this.throwApiResponseError("POST", "start", res);
     }
-    return JSON.parse(res.body) as RunResult;
+    return JSON.parse(res.body) as RunResultStart;
   }
 
   /**
@@ -374,6 +445,28 @@ export class MthdsApiClient implements MTHDSProtocol {
       this.throwApiResponseError("GET", "version", res);
     }
     return JSON.parse(res.body) as VersionInfo;
+  }
+
+  // ── Build extensions (Pipelex API layer 2 — `/v1/build/*`) ────────
+
+  async buildInputs(request: BuildInputsRequest): Promise<unknown> {
+    return this.postApi("build/inputs", request);
+  }
+
+  async buildOutput(request: BuildOutputRequest): Promise<unknown> {
+    return this.postApi("build/output", request);
+  }
+
+  async buildRunner(request: BuildRunnerRequest): Promise<BuildRunnerResponse> {
+    return this.postApi("build/runner", request);
+  }
+
+  async concept(request: ConceptRequest): Promise<ConceptResponse> {
+    return this.postApi("build/concept", request);
+  }
+
+  async pipeSpec(request: PipeSpecRequest): Promise<PipeSpecResponse> {
+    return this.postApi("build/pipe-spec", request);
   }
 
   // ── Hosted extension: durable run lifecycle (NOT part of the protocol) ──
@@ -448,35 +541,74 @@ export class MthdsApiClient implements MTHDSProtocol {
   }
 
   /**
-   * Poll a run to terminal state and return its result. Resolves on
-   * `COMPLETED`, throws `RunFailedError` on any other terminal status, and
-   * throws `RunTimeoutError` if `timeoutMs` elapses first (the run keeps
-   * executing server-side — resume later by `pipeline_run_id`). Honors the server's
-   * `Retry-After` and an optional `AbortSignal`.
+   * Whether the configured server serves the durable run lifecycle, decided
+   * via the `GET /v1/version` handshake (master D2) and cached for the
+   * client's lifetime. A bare `pipelex-api` runner has no run store; anything
+   * else is assumed hosted. When the handshake itself fails, assume hosted
+   * (the SDK default) and let the start call surface the real error.
    */
-  async waitForResult(
-    runId: string,
-    options: WaitForResultOptions = {}
-  ): Promise<RunResults> {
-    return pollUntilResult((id, opts) => this.getRunResult(id, opts), runId, options);
+  private async supportsRunLifecycle(): Promise<boolean> {
+    if (this.lifecycleAvailable === undefined) {
+      try {
+        const info = await this.version();
+        const impl = info.implementation;
+        this.lifecycleAvailable = !(typeof impl === "string" && impl === BARE_RUNNER_IMPLEMENTATION);
+      } catch {
+        this.lifecycleAvailable = true;
+      }
+    }
+    return this.lifecycleAvailable;
   }
 
   /**
-   * Start a run and poll it to completion — the whole async lifecycle in one
-   * call: `start` (202 ack) followed by `waitForResult` on the returned
-   * `pipeline_run_id`. All `start` options apply, including the generic `extra`
-   * extension passthrough; `waitOptions` tunes the poll loop.
+   * Start a run and wait for its result.
+   *
+   * - **Hosted** (per the `/v1/version` handshake): durable start + poll (the
+   *   `BaseRunner` composite), the path that survives the gateway's ~30s
+   *   synchronous ceiling.
+   * - **Bare runner** (no run store): the blocking `POST /v1/execute`, which
+   *   has no gateway cap off-platform and returns the native `pipe_output`.
    */
-  async startAndWait(
+  override async startAndWaitForResult(
     options: StartOptions,
-    waitOptions: WaitForResultOptions = {}
+    pollOptions?: WaitForResultOptions
   ): Promise<RunResults> {
-    const ack = await this.start(options);
-    return this.waitForResult(ack.pipeline_run_id, waitOptions);
+    if (await this.supportsRunLifecycle()) {
+      return super.startAndWaitForResult(options, pollOptions);
+    }
+
+    const response = await this.execute({
+      pipe_code: options.pipe_code ?? undefined,
+      mthds_contents: options.mthds_contents ?? undefined,
+      inputs: options.inputs ?? undefined,
+      output_name: options.output_name ?? undefined,
+      output_multiplicity: options.output_multiplicity ?? undefined,
+      dynamic_output_concept_ref: options.dynamic_output_concept_ref ?? undefined,
+    });
+    return mapRunResultToRunResults(response);
   }
 }
 
 // ── Module helpers ────────────────────────────────────────────────────
+
+/**
+ * Map the protocol's blocking `POST /v1/execute` response onto the lifecycle's
+ * `RunResults`. The bare-runner path returns `pipe_output` (native runner
+ * shape); `main_stuff` is a hosted-durable artifact and stays null here.
+ * Consumers read `main_stuff ?? pipe_output` (the documented hosted/bare
+ * output-shape difference).
+ */
+function mapRunResultToRunResults(response: DictRunResultExecute): RunResults {
+  const pipeOutput = response.pipe_output as DictPipeOutput | null | undefined;
+  return {
+    pipeline_run_id: response.pipeline_run_id,
+    main_stuff: null,
+    // The bare-runner blocking `pipe_output` carries no graph artifact; the
+    // hosted graph_spec rides the durable `/v1/runs/{id}/results` payload.
+    graph_spec: null,
+    pipe_output: (pipeOutput as Record<string, unknown> | null | undefined) ?? null,
+  };
+}
 
 // The protocol's own request fields — `extra` is for extension args only.
 const PROTOCOL_REQUEST_KEYS: ReadonlySet<string> = new Set([

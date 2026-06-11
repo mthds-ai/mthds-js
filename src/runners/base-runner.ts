@@ -1,11 +1,11 @@
 import {
   pollUntilResult,
-  type StartOptions,
   type RunResults,
   type RunResultState,
   type WaitForResultOptions,
-} from "../client/runs.js";
-import type { RunResult } from "../client/pipeline.js";
+} from "./api/runs.js";
+import type { StartOptions } from "../protocol/options.js";
+import type { RunResultStart } from "../protocol/models.js";
 
 /**
  * Shared base for every runner. Provides the two run-lifecycle COMPOSITES —
@@ -20,8 +20,8 @@ import type { RunResult } from "../client/pipeline.js";
  * drift between runtimes.
  */
 export abstract class BaseRunner {
-  /** Start a run and return its 202 ack immediately (no waiting; `pipe_output` absent). The returned `pipeline_run_id` is authoritative. */
-  abstract start(options: StartOptions): Promise<RunResult>;
+  /** Start a run and return its 202 ack immediately (no waiting; no output yet). The returned `pipeline_run_id` is authoritative. */
+  abstract start(options: StartOptions): Promise<RunResultStart>;
 
   /** Single-shot result lookup: running (202) / completed (200) / failed (409). */
   abstract getRunResult(

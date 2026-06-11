@@ -1,7 +1,7 @@
 {
   "name": "mthds",
   "version": "0.10.0",
-  "description": "CLI and SDK for MTHDS \u2014 the open standard for executable AI methods. Install, execute, and manage methods.",
+  "description": "CLI and SDK for MTHDS — the open standard for executable AI methods. Install, execute, and manage methods.",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -23,6 +23,7 @@
   "scripts": {
     "build": "tsc",
     "test": "vitest run",
+    "depcruise": "depcruise --config .dependency-cruiser.cjs src",
     "example": "npx tsx examples/call_api.ts",
     "prepare": "tsc"
   },
@@ -45,6 +46,7 @@
   "devDependencies": {
     "@types/node": "^22.12.0",
     "@types/semver": "^7.7.1",
+    "dependency-cruiser": "^17.4.3",
     "tsx": "^4.19.0",
     "typescript": "^5.7.3",
     "vitest": "^4.0.18"

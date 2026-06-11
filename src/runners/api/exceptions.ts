@@ -1,14 +1,18 @@
+/**
+ * API-runner exceptions — transport and run-lifecycle errors raised by
+ * `MthdsApiClient`. All derive from the protocol-level `PipelineRequestError`
+ * (`protocol/exceptions.ts`), except `ClientAuthenticationError`. Mirrors
+ * `mthds/runners/api/exceptions.py`.
+ */
+
+import { PipelineRequestError } from "../../protocol/exceptions.js";
+
+export { PipelineRequestError };
+
 export class ClientAuthenticationError extends Error {
   constructor(message: string) {
     super(message);
     this.name = "ClientAuthenticationError";
-  }
-}
-
-export class PipelineRequestError extends Error {
-  constructor(message: string, options?: { cause?: unknown }) {
-    super(message, options as ErrorOptions | undefined);
-    this.name = "PipelineRequestError";
   }
 }
 

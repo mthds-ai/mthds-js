@@ -9,7 +9,7 @@ import {
 } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { Runners } from "./types.js";
+import { Runners } from "../types.js";
 import type {
   Runner,
   RunnerType,
@@ -24,24 +24,25 @@ import type {
   CheckModelRequest,
   CheckModelResponse,
   ConceptRepresentationFormat,
-} from "./types.js";
-import type { RunOptions, RunResult } from "../client/pipeline.js";
-import type {
-  StartOptions,
-  RunRead,
-  RunResults,
-  RunResultState,
-  WaitForResultOptions,
-} from "../client/runs.js";
+} from "../types.js";
+import type { RunOptions, StartOptions } from "../../protocol/options.js";
 import type {
   ModelCategory,
   ModelDeck,
   ModelInfo,
   ValidationReport,
   VersionInfo,
-} from "../client/protocol-models.js";
-import { MTHDS_PROTOCOL_VERSION } from "../client/protocol-models.js";
-import { BaseRunner } from "./base-runner.js";
+} from "../../protocol/models.js";
+import { MTHDS_PROTOCOL_VERSION } from "../../protocol/models.js";
+import { conceptRef } from "../../protocol/concept.js";
+import type { DictPipeOutput, DictRunResultExecute } from "../api/models.js";
+import type {
+  RunRead,
+  RunResults,
+  RunResultState,
+  WaitForResultOptions,
+} from "../api/runs.js";
+import { BaseRunner } from "../base-runner.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -150,6 +151,8 @@ export class PipelexRunner extends BaseRunner implements Runner {
     const pipelexVersion = stdout.trim();
     return {
       protocol_version: MTHDS_PROTOCOL_VERSION,
+      runner_version: pipelexVersion,
+      // Implementation identity rides the protocol's extension-open VersionInfo.
       implementation: "pipelex",
       implementation_version: pipelexVersion,
       runtime_version: pipelexVersion,
@@ -342,7 +345,7 @@ export class PipelexRunner extends BaseRunner implements Runner {
   // primitives (start / getRunStatus / getRunResult / waitForResult) are
   // unsupported.
 
-  async execute(options: RunOptions): Promise<RunResult> {
+  async execute(options: RunOptions): Promise<DictRunResultExecute> {
     const tmp = makeTmpDir();
     try {
       // The pipelex CLI dispatches through `run bundle <path>` / `run pipe <code>`.
@@ -392,16 +395,17 @@ export class PipelexRunner extends BaseRunner implements Runner {
       const reducedRoot: Record<string, { concept: string; content: unknown }> = {};
       for (const [stuffName, stuff] of Object.entries(rawRoot)) {
         const conceptRaw = stuff["concept"];
-        let conceptRef: string;
+        let conceptRefStr: string;
         if (conceptRaw && typeof conceptRaw === "object") {
           const conceptObj = conceptRaw as Record<string, unknown>;
           const code = typeof conceptObj["code"] === "string" ? conceptObj["code"] : "";
           const domainCode = typeof conceptObj["domain_code"] === "string" ? conceptObj["domain_code"] : "";
-          conceptRef = domainCode ? `${domainCode}.${code}` : code;
+          // A missing domain_code falls back to the bare code (no leading dot).
+          conceptRefStr = domainCode ? conceptRef({ domain_code: domainCode, code }) : code;
         } else {
-          conceptRef = String(conceptRaw ?? "");
+          conceptRefStr = String(conceptRaw ?? "");
         }
-        reducedRoot[stuffName] = { concept: conceptRef, content: stuff["content"] };
+        reducedRoot[stuffName] = { concept: conceptRefStr, content: stuff["content"] };
       }
 
       // `main_stuff_name` is a pipelex extension field riding the protocol's
@@ -411,7 +415,7 @@ export class PipelexRunner extends BaseRunner implements Runner {
         pipe_output: {
           working_memory: { root: reducedRoot, aliases },
           pipeline_run_id: "",
-        } as RunResult["pipe_output"],
+        } as DictPipeOutput,
         main_stuff_name: aliases["main_stuff"] ?? "main_stuff",
       };
     } finally {
@@ -454,7 +458,7 @@ export class PipelexRunner extends BaseRunner implements Runner {
   // --runner api). `startAndWaitForResult` is supported — it runs the CLI
   // blocking and returns the result directly.
 
-  async startAndWaitForResult(
+  override async startAndWaitForResult(
     options: StartOptions,
     _pollOptions?: WaitForResultOptions
   ): Promise<RunResults> {
@@ -466,16 +470,17 @@ export class PipelexRunner extends BaseRunner implements Runner {
       output_multiplicity: options.output_multiplicity ?? undefined,
       dynamic_output_concept_ref: options.dynamic_output_concept_ref ?? undefined,
     });
+    const pipeOutput = response.pipe_output as DictPipeOutput | null | undefined;
     return {
       pipeline_run_id: response.pipeline_run_id,
       main_stuff: null,
-      graph_spec: response.pipe_output?.graph_spec ?? null,
-      pipe_output:
-        (response.pipe_output as Record<string, unknown> | null | undefined) ?? null,
+      // The local CLI blocking `pipe_output` carries no graph artifact.
+      graph_spec: null,
+      pipe_output: (pipeOutput as Record<string, unknown> | null | undefined) ?? null,
     };
   }
 
-  async start(_options: StartOptions): Promise<RunResult> {
+  async start(_options: StartOptions): Promise<never> {
     throw new Error(RUN_LIFECYCLE_UNSUPPORTED);
   }
 

@@ -17,7 +17,7 @@ The `GET /v1/version` handshake (`VersionInfo.implementation`) tells the SDK whi
 
 | Method | Path | Returns |
 |---|---|---|
-| `POST` | `/v1/start` | `202 RunResult` (`pipe_output` absent) — the authoritative `pipeline_run_id` (executes asynchronously) |
+| `POST` | `/v1/start` | `202 RunResultStart` — the authoritative `pipeline_run_id`, nothing else (executes asynchronously) |
 | `GET` | `/v1/runs/{pipeline_run_id}/status` | `RunRead` — status, self-healing (`degraded` flag + `Retry-After` when Temporal is unreachable) |
 | `GET` | `/v1/runs/{pipeline_run_id}/results` | `202` still running · `200` result · `409` terminal failure |
 
@@ -46,7 +46,7 @@ const ack = await client.start({
 });
 
 // Or do the whole lifecycle in one call:
-// const result = await client.startAndWait({ mthds_contents: [bundleContents], inputs: { … } });
+// const result = await client.startAndWaitForResult({ mthds_contents: [bundleContents], inputs: { … } });
 
 // Poll to completion
 try {
@@ -96,7 +96,7 @@ mthds-agent --runner api run result <pipeline_run_id>   # state: running | compl
 mthds-agent --runner api run poll <pipeline_run_id> --interval 2 --timeout 1200
 ```
 
-`run start` also accepts `--method-id <id>` to run a stored method instead of an inline bundle, and `--content <mthds>` / `--inputs-json <json>` for inline content.
+`run start` also accepts `--extra <json>` — a JSON object of server-specific extension args forwarded to the runner verbatim (e.g. `--extra '{"method_id":"mt_…"}'` to run a stored method instead of an inline bundle) — and `--content <mthds>` / `--inputs-json <json>` for inline content. The SDK and CLI never name a server-specific arg; they pass it through `extra` (parity with mthds-python).
 
 **Ctrl-C on `run poll` is safe.** SIGINT stops waiting but does **not** cancel the run — it keeps executing server-side. The command reports the run as resumable:
 

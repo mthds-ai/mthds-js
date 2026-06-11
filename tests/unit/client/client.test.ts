@@ -356,19 +356,20 @@ describe("MthdsApiClient.start", () => {
     });
   });
 
-  it("shapes the body for a stored-method start (method_id, no contents)", async () => {
+  it("merges extension args from extra into the body (extension-only start is accepted)", async () => {
     const client = makeClient();
     const fetchSpy = vi
       .spyOn(globalThis, "fetch")
       .mockResolvedValue(jsonResponse(202, { pipeline_run_id: "run-2", state: "STARTED", created_at: "t0" }));
-    await client.start({ method_id: "mthd_123", inputs: { q: "hi" } });
+    await client.start({ inputs: { q: "hi" }, extra: { some_vendor_selector: "sel_123" } });
     const body = JSON.parse((fetchSpy.mock.calls[0]![1] as RequestInit).body as string);
-    expect(body).toEqual({ method_id: "mthd_123", inputs: { q: "hi" } });
+    expect(body).toEqual({ some_vendor_selector: "sel_123", inputs: { q: "hi" } });
     expect(body.pipe_code).toBeUndefined();
     expect(body.mthds_contents).toBeUndefined();
+    expect(body.extra).toBeUndefined();
   });
 
-  it("forwards pipeline_run_id and callback_urls when provided (bare-runner extras)", async () => {
+  it("forwards pipeline_run_id when provided (bare-runner protocol arg)", async () => {
     const client = makeClient();
     const fetchSpy = vi
       .spyOn(globalThis, "fetch")
@@ -376,14 +377,19 @@ describe("MthdsApiClient.start", () => {
     await client.start({
       pipe_code: "p",
       pipeline_run_id: "client-id",
-      callback_urls: ["https://example.com/done"],
     });
     const body = JSON.parse((fetchSpy.mock.calls[0]![1] as RequestInit).body as string);
     expect(body.pipeline_run_id).toBe("client-id");
-    expect(body.callback_urls).toEqual(["https://example.com/done"]);
   });
 
-  it("throws PipelineRequestError when pipe_code, mthds_contents, and method_id are all missing", async () => {
+  it("rejects protocol args smuggled through extra", async () => {
+    const client = makeClient();
+    await expect(
+      client.start({ pipe_code: "p", extra: { pipeline_run_id: "smuggled" } })
+    ).rejects.toBeInstanceOf(PipelineRequestError);
+  });
+
+  it("throws PipelineRequestError when pipe_code, mthds_contents, and extra are all missing", async () => {
     const client = makeClient();
     await expect(client.start({})).rejects.toBeInstanceOf(PipelineRequestError);
   });

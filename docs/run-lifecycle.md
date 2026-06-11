@@ -8,7 +8,7 @@ Because every bit of run state lives behind the `pipeline_run_id` (DynamoDB for 
 
 Everything is served from ONE base URL (`MTHDS_API_URL`, host only); the SDK composes `{base}/v1/{endpoint}`. Two distinct layers share that URL:
 
-- **MTHDS Protocol** (`POST /v1/execute`, `POST /v1/start`, `POST /v1/validate`, `GET /v1/models`, `GET /v1/version`) — works against any MTHDS-compliant runner, hosted or bare. The protocol's async completion channel is HMAC-signed `callback_urls` on `start`, not polling.
+- **MTHDS Protocol** (`POST /v1/execute`, `POST /v1/start`, `POST /v1/validate`, `GET /v1/models`, `GET /v1/version`) — works against any MTHDS-compliant runner, hosted or bare. The protocol defines no completion channel for `start` — how completion is delivered (webhooks, polling) is implementation-defined.
 - **Run-lifecycle extension** (`GET /v1/runs/{pipeline_run_id}/status`, `GET /v1/runs/{pipeline_run_id}/results`) — the durable polling surface. It is a **hosted-API feature, NOT part of the protocol**. A bare [pipelex-api](https://github.com/Pipelex/pipelex-api) runner has no run store and 404s these routes, which the SDK translates into a clear `RunLifecycleUnavailableError`.
 
 The `GET /v1/version` handshake (`VersionInfo.implementation`) tells the SDK which deployment it is talking to.
@@ -25,7 +25,7 @@ The status read is self-healing: a run that timed out, was terminated, or whose 
 
 `status` is one of `PENDING`, `STARTED` (deprecated), `RUNNING`, `COMPLETED`, `FAILED`, `CANCELLED`, `TERMINATED`, `TIMED_OUT`. Only `COMPLETED` has a result; every other terminal status is a failure (`getRunResult` returns `409`, surfaced as `RunFailedError`).
 
-Hosted-only `start` extras: `method_id` runs a stored method from the active org's catalog. A client-supplied `pipeline_run_id` is bare-runner-only — the hosted API rejects it with 422 (the `StartAck.pipeline_run_id` is always authoritative).
+Server-specific extension args ride the generic `extra` option and merge into the request body — the server you call defines and handles them (see its API documentation). A client-supplied `pipeline_run_id` is bare-runner-only — the hosted API rejects it with 422 (the `StartAck.pipeline_run_id` is always authoritative).
 
 ## SDK — `MthdsApiClient`
 
@@ -37,12 +37,16 @@ const client = new MthdsApiClient({ baseUrl: "https://api.pipelex.com", apiToken
 // Submit (returns immediately with the authoritative run id)
 const ack = await client.start({
   pipe_code: "my_pipe",              // optional — omit to use the bundle's main_pipe
-  mthds_contents: [bundleContents],  // or method_id for a stored method (hosted)
+  mthds_contents: [bundleContents],
   inputs: { question: "…" },
   // optional output controls (forwarded to the runner):
   // output_name, output_multiplicity, dynamic_output_concept_ref
-  // protocol async extras: pipeline_run_id (bare runners only), callback_urls
+  // protocol async extra: pipeline_run_id (bare runners only)
+  // server-specific extension args ride `extra`, e.g. extra: { … }
 });
+
+// Or do the whole lifecycle in one call:
+// const result = await client.startAndWait({ mthds_contents: [bundleContents], inputs: { … } });
 
 // Poll to completion
 try {

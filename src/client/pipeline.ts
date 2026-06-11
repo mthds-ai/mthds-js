@@ -36,10 +36,11 @@ export interface RunRequest {
 }
 
 /**
- * Body of the protocol's `POST /start` — `RunRequest` plus the async extras.
+ * Body of the protocol's `POST /start` — `RunRequest` plus `pipeline_run_id`.
  *
- * Mirrors `StartRequest` in `mthds-protocol.openapi.yaml`, with the hosted
- * `method_id` extension.
+ * Mirrors `StartRequest` in `mthds-protocol.openapi.yaml`. Extension args are
+ * NOT protocol fields — the server that defines an extension arg is the one
+ * that handles it; callers pass them through the generic `extra` option.
  */
 export interface StartRequest extends RunRequest {
   /**
@@ -48,19 +49,16 @@ export interface StartRequest extends RunRequest {
    * (never silently ignores it). `StartAck.pipeline_run_id` is always authoritative.
    */
   pipeline_run_id?: string | null;
-  /**
-   * Completion webhooks, HMAC-signed by the runner via
-   * `X-Completion-Signature`. http/https only; private/loopback/metadata
-   * hosts are rejected server-side.
-   */
-  callback_urls?: string[] | null;
-  /**
-   * HOSTED EXTENSION — id of a stored method in the active org's catalog,
-   * combinable with `mthds_contents` — the hosted API runs the inline
-   * contents (precedence) and records `method_id` as the run-history
-   * linkage. Bare runners do not implement it.
-   */
-  method_id?: string | null;
+}
+
+/**
+ * The generic extension passthrough: server-specific args merged into the
+ * request body as top-level properties — the server you call defines and
+ * handles them; this SDK only passes them through. Protocol args inside
+ * `extra` are rejected client-side.
+ */
+export interface ExtensionOptions {
+  extra?: Record<string, unknown> | null;
 }
 
 // ── Responses ──────────────────────────────────────────────────────
@@ -95,4 +93,4 @@ export interface StartAck {
  * Options for `MTHDSProtocol.execute` — the `RunRequest` fields. (The options
  * surface and the wire body are intentionally the same shape.)
  */
-export type RunOptions = RunRequest;
+export type RunOptions = RunRequest & ExtensionOptions;

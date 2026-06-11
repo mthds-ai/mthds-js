@@ -58,7 +58,7 @@ export interface ValidationReport {
  * The handshake clients use for feature detection: `implementation`
  * identifies the runner (`pipelex-api` = bare open-source runner,
  * `pipelex-hosted` = the hosted MTHDS API), and hosted extensions (durable
- * runs, `method_id`) light up based on what the server advertises.
+ * runs) light up based on what the server advertises.
  */
 export interface VersionInfo {
   protocol_version: string;

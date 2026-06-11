@@ -56,7 +56,7 @@ export const DEFAULT_API_BASE_URL = "https://api.pipelex.com";
 // The SDK composes every endpoint from one origin (MTHDS_API_URL): `{base}/v1/{endpoint}`.
 // The same paths are served by the hosted MTHDS API (api.pipelex.com) and by a bare
 // pipelex-api runner (localhost:8081) — the protocol surface is identical; only the
-// hosted extensions (run polling, method_id) differ, detectable via GET /v1/version.
+// hosted extensions (e.g. run polling) differ, detectable via GET /v1/version.
 const API_PREFIX = "v1";
 const RUNS = "runs";
 
@@ -225,7 +225,7 @@ export class MthdsApiClient implements MTHDSProtocol {
     }
     throw new RunStillRunningError(
       `execute() was accepted asynchronously (202): run ${runId || "<unknown>"} is still ` +
-        "running server-side. Poll its results (hosted) or use start() with callback_urls.",
+        "running server-side. Poll its results (hosted) or use start().",
       runId,
       parseRetryAfter(res.headers),
       res.headers.get("location")
@@ -244,19 +244,25 @@ export class MthdsApiClient implements MTHDSProtocol {
    * optional `202 + StartAck` degrade.
    */
   async execute(options: RunOptions): Promise<RunResult> {
-    if (!options.pipe_code && (!options.mthds_contents || options.mthds_contents.length === 0)) {
+    const extensions = buildExtensions(options.extra);
+    if (
+      !options.pipe_code &&
+      (!options.mthds_contents || options.mthds_contents.length === 0) &&
+      Object.keys(extensions).length === 0
+    ) {
       throw new PipelineRequestError(
-        "Either pipe_code or mthds_contents must be provided to execute()."
+        "Either pipe_code, mthds_contents or a server-specific extension arg (extra) must be provided to execute()."
       );
     }
 
-    const request: RunRequest = {
+    const request: RunRequest & Record<string, unknown> = {
       pipe_code: options.pipe_code,
       mthds_contents: options.mthds_contents,
       inputs: options.inputs,
       output_name: options.output_name,
       output_multiplicity: options.output_multiplicity,
       dynamic_output_concept_ref: options.dynamic_output_concept_ref,
+      ...extensions,
     };
 
     const startedAt = Date.now();
@@ -286,25 +292,25 @@ export class MthdsApiClient implements MTHDSProtocol {
    * Start a method asynchronously — `POST /v1/start` (202 `StartAck`).
    *
    * `options.pipeline_run_id` is bare-runner-only (the hosted API rejects it with 422 —
-   * the returned `pipeline_run_id` is always authoritative); `options.method_id` is the
-   * hosted stored-method extension, combinable with `mthds_contents` (the
-   * hosted API runs the inline contents; `method_id` links run history).
-   * On a hosted deployment the id is durable — poll `getRunStatus` /
-   * `getRunResult`.
+   * the returned `pipeline_run_id` is always authoritative). Server-specific
+   * extension args ride `options.extra` and merge into the request body —
+   * the server you call defines and handles them. On a hosted deployment the
+   * id is durable — poll `getRunStatus` / `getRunResult`.
    */
   async start(options: StartOptions): Promise<StartAck> {
+    const extensions = buildExtensions(options.extra);
     if (
       !options.pipe_code &&
       (!options.mthds_contents || options.mthds_contents.length === 0) &&
-      !options.method_id
+      Object.keys(extensions).length === 0
     ) {
       throw new PipelineRequestError(
-        "Provide pipe_code, mthds_contents, or method_id (stored method) to start()."
+        "Either pipe_code, mthds_contents or a server-specific extension arg (extra) must be provided to start()."
       );
     }
 
     // `?? undefined` so JSON.stringify drops absent fields from the wire body.
-    const request: StartRequest = {
+    const request: StartRequest & Record<string, unknown> = {
       pipe_code: options.pipe_code ?? undefined,
       mthds_contents: options.mthds_contents ?? undefined,
       inputs: options.inputs ?? undefined,
@@ -312,8 +318,7 @@ export class MthdsApiClient implements MTHDSProtocol {
       output_multiplicity: options.output_multiplicity ?? undefined,
       dynamic_output_concept_ref: options.dynamic_output_concept_ref ?? undefined,
       pipeline_run_id: options.pipeline_run_id ?? undefined,
-      callback_urls: options.callback_urls ?? undefined,
-      method_id: options.method_id ?? undefined,
+      ...extensions,
     };
 
     const res = await this.requestRaw("POST", this.url("start"), {
@@ -457,9 +462,50 @@ export class MthdsApiClient implements MTHDSProtocol {
   ): Promise<RunResults> {
     return pollUntilResult((id, opts) => this.getRunResult(id, opts), runId, options);
   }
+
+  /**
+   * Start a run and poll it to completion — the whole async lifecycle in one
+   * call: `start` (202 `StartAck`) followed by `waitForResult` on the returned
+   * `pipeline_run_id`. All `start` options apply, including the generic `extra`
+   * extension passthrough; `waitOptions` tunes the poll loop.
+   */
+  async startAndWait(
+    options: StartOptions,
+    waitOptions: WaitForResultOptions = {}
+  ): Promise<RunResults> {
+    const ack = await this.start(options);
+    return this.waitForResult(ack.pipeline_run_id, waitOptions);
+  }
 }
 
 // ── Module helpers ────────────────────────────────────────────────────
+
+// The protocol's own request fields — `extra` is for extension args only.
+const PROTOCOL_REQUEST_KEYS: ReadonlySet<string> = new Set([
+  "pipe_code",
+  "mthds_contents",
+  "inputs",
+  "output_name",
+  "output_multiplicity",
+  "dynamic_output_concept_ref",
+  "pipeline_run_id",
+]);
+
+/**
+ * Validate and copy the generic `extra` passthrough. Extension args ride the
+ * request body as top-level properties; protocol args must be passed as named
+ * options, never smuggled through `extra`.
+ */
+function buildExtensions(extra: Record<string, unknown> | null | undefined): Record<string, unknown> {
+  if (!extra) return {};
+  const overlap = Object.keys(extra).filter((key) => PROTOCOL_REQUEST_KEYS.has(key));
+  if (overlap.length > 0) {
+    throw new PipelineRequestError(
+      `extra carries protocol args [${overlap.sort().join(", ")}] — pass them as named options instead.`
+    );
+  }
+  return { ...extra };
+}
 
 // The hosted gateway caps synchronous requests at 30s. A failure at/after this
 // threshold on the blocking execute is the timeout, not a transient outage —

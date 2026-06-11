@@ -205,7 +205,7 @@ const client = new MthdsApiClient({
 });
 ```
 
-The bare open-source runner has no run store, so the durable run-lifecycle methods (`getRunStatus`/`getRunResult`/`waitForResult`) throw a clear `RunLifecycleUnavailableError` against it — use `execute` (blocking) or `start` with `callback_urls` instead. The `GET /v1/version` handshake tells the SDK which deployment it is talking to.
+The bare open-source runner has no run store, so the durable run-lifecycle methods (`getRunStatus`/`getRunResult`/`waitForResult`) throw a clear `RunLifecycleUnavailableError` against it — use `execute` (blocking) or `start` instead (completion delivery is implementation-defined — see your runner's API documentation). The `GET /v1/version` handshake tells the SDK which deployment it is talking to.
 
 > Note: the bare-runner blocking path returns the runner's native `pipe_output`, whereas the hosted durable path returns `main_stuff` + `graph_spec`. Cross-shape normalization is a v1 TODO.
 
@@ -249,7 +249,7 @@ The client implements the MTHDS Protocol plus the hosted run-lifecycle extension
 | `output_multiplicity` | `boolean \| number` | Expected output multiplicity |
 | `dynamic_output_concept_ref` | `string` | Dynamic output concept reference |
 
-Either `pipe_code` or `mthds_contents` must be provided. `start()` additionally accepts `pipeline_run_id` (bare-runner-only — the hosted API rejects a client-supplied run id with 422), `callback_urls` (HMAC-signed completion webhooks), and `method_id` (hosted stored-method extension).
+Either `pipe_code` or `mthds_contents` must be provided (or a server-specific extension arg via `extra`). `start()` additionally accepts `pipeline_run_id` (bare-runner-only — the hosted API rejects a client-supplied run id with 422). Anything beyond the protocol's basic args is server-specific and rides the generic `extra` option, merged into the request body — the server you call defines and handles its own extension args. `startAndWait()` runs the whole start + poll lifecycle in one call.
 
 ## Telemetry
 

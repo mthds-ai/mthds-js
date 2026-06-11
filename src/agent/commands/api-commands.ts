@@ -716,7 +716,8 @@ function resolveStartOptions(
   if (options.methodId) {
     // A stored method carries its own `main_pipe`; the platform resolves the
     // pipe server-side, so `--pipe` is optional and only needed to override it.
-    return { method_id: options.methodId, pipe_code: options.pipe, inputs: resolveRunInputs(options), ...outputs };
+    // `method_id` is a hosted-API extension arg — it rides the generic `extra` passthrough.
+    return { pipe_code: options.pipe, inputs: resolveRunInputs(options), ...outputs, extra: { method_id: options.methodId } };
   }
   // resolveContentForRun may set options.inputs (directory auto-discovery), so
   // resolve the bundle before reading inputs.

@@ -1,4 +1,4 @@
-import type { StartRequest } from "./pipeline.js";
+import type { ExtensionOptions, StartRequest } from "./pipeline.js";
 import { RunFailedError, RunTimeoutError } from "./exceptions.js";
 
 /**
@@ -59,33 +59,32 @@ export function isSuccessRunStatus(status: RunStatus): boolean {
 // ── Requests ────────────────────────────────────────────────────────
 
 /**
- * Options for `MTHDSProtocol.start` — the `StartRequest` wire fields:
- * the `RunRequest` execution fields plus `pipeline_run_id` (bare-runner-only; the
- * hosted API rejects a client-supplied run id with 422), `callback_urls`
- * (HMAC-signed completion webhooks), and `method_id` (hosted extension —
- * a stored method in the active org's catalog).
+ * Options for `MTHDSProtocol.start` — the `StartRequest` wire fields (the
+ * `RunRequest` execution fields plus `pipeline_run_id`, bare-runner-only; the
+ * hosted API rejects a client-supplied run id with 422) plus the generic
+ * `extra` extension passthrough (server-specific args, merged into the body).
  */
-export type StartOptions = StartRequest;
+export type StartOptions = StartRequest & ExtensionOptions;
 
 // ── Responses ───────────────────────────────────────────────────────
 
 /**
- * A run record. Mirrors `pipelex_shared.schemas.run.RunPublic` on the hosted
- * platform. The identity fields (`org_id`, `created_by_user_id`, `method_id`)
- * are optional because only the hosted platform layers identity on.
+ * A run record — the BASE shape of the run-lifecycle read surface.
+ *
+ * Only the base fields are declared. An implementation may return more
+ * (identity, workflow ids, storage URLs, anything else) — those are
+ * server-specific response fields, never named in this SDK; the index
+ * signature keeps them accessible, mirroring the request-side `extra`
+ * passthrough.
  */
 export interface RunPublic {
   pipeline_run_id: string;
-  org_id?: string | null;
-  created_by_user_id?: string | null;
-  /** Owning method, or the `_adhoc` sentinel for inline runs (platform only). */
-  method_id?: string | null;
   pipe_code?: string | null;
-  workflow_id?: string | null;
   status: RunStatus;
-  result_url?: string | null;
   created_at: string;
   finished_at?: string | null;
+  /** Server-specific response fields (defined by the server you call). */
+  [extension: string]: unknown;
 }
 
 /**

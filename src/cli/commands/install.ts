@@ -1,4 +1,4 @@
-import { join, resolve, delimiter } from "node:path";
+import { join, delimiter } from "node:path";
 import { homedir } from "node:os";
 import { existsSync } from "node:fs";
 import * as p from "@clack/prompts";
@@ -14,7 +14,6 @@ import { runInstallFlow } from "../../installer/methods/install-flow.js";
 import type { InstallFlowResult } from "../../installer/methods/install-flow.js";
 import { InstallLocation } from "../../installer/methods/types.js";
 import { createRunner } from "../../runners/registry.js";
-import { collectAllExportedPipes } from "../../package/manifest/validate.js";
 import type { ParsedAddress, ResolvedRepo } from "../../package/manifest/types.js";
 import type { Runner, RunnerType } from "../../runners/types.js";
 
@@ -151,8 +150,10 @@ export async function installMethod(options: {
     healthSpinner.start("Checking runner health...");
     runner = createRunner(options.runner);
     await runner.health();
-    const ver = await runner.version().catch(() => ({}));
-    const versionStr = Object.values(ver).join(" ") || "unknown";
+    const ver = await runner.version().catch(() => null);
+    const versionStr = ver
+      ? `${ver.implementation} ${ver.implementation_version}`
+      : "unknown";
     healthSpinner.stop(`Runner ${chalk.bold(runner.type)} is healthy (${versionStr})`);
   } catch {
     healthSpinner.stop("Runner not available.");
@@ -163,47 +164,26 @@ export async function installMethod(options: {
     runner = null;
   }
 
-  // Step 1c: Validate each method with the runner
+  // Step 1c: Validate each method with the runner. The protocol validate
+  // (`validate(mthds_contents)`) parses + dry-runs the whole bundle, so every
+  // pipe in the method is covered in one call.
   if (runner) {
     const valSpinner = p.spinner();
     let allValid = true;
     for (const method of resolved.methods) {
-      // Construct method URL: GitHub URL or local path
-      let methodUrl: string;
-      if (dir) {
-        methodUrl = resolve(dir, "methods", method.name);
-      } else {
-        methodUrl = `https://github.com/${orgRepo}/methods/${method.name}/`;
+      const contents = method.files.map((file) => file.content);
+      if (contents.length === 0) {
+        continue; // Nothing to validate
       }
 
-      // Determine which pipes to validate
-      const mainPipe = method.manifest.package.main_pipe;
-      const pipesToValidate: string[] = mainPipe
-        ? [mainPipe]
-        : method.manifest.exports
-          ? collectAllExportedPipes(method.manifest.exports)
-          : [];
-
-      if (pipesToValidate.length === 0) {
-        continue; // No pipes to validate
-      }
-
-      for (const pipeCode of pipesToValidate) {
-        valSpinner.start(`Validating ${method.name}:${pipeCode}...`);
-        try {
-          const result = await runner.validate({ method_url: methodUrl, pipe_code: pipeCode });
-          if (!result.success) {
-            valSpinner.stop(`Validation failed: ${method.name}:${pipeCode}`);
-            p.log.error(`${method.name}:${pipeCode}: ${result.message}`);
-            allValid = false;
-          } else {
-            valSpinner.stop(`Validated ${method.name}:${pipeCode}`);
-          }
-        } catch (err) {
-          valSpinner.stop(`Validation failed: ${method.name}:${pipeCode}`);
-          p.log.error(`${method.name}:${pipeCode}: ${(err as Error).message}`);
-          allValid = false;
-        }
+      valSpinner.start(`Validating ${method.name}...`);
+      try {
+        await runner.validate(contents);
+        valSpinner.stop(`Validated ${method.name}`);
+      } catch (err) {
+        valSpinner.stop(`Validation failed: ${method.name}`);
+        p.log.error(`${method.name}: ${(err as Error).message}`);
+        allValid = false;
       }
     }
     if (!allValid) {

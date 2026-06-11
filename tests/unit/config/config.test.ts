@@ -43,7 +43,7 @@ describe("config", () => {
       const { loadConfig } = await importConfig();
       const config = loadConfig();
       expect(config.runner).toBe("pipelex");
-      expect(config.apiUrl).toBe("https://api.pipelex.com");
+      expect(config.baseUrl).toBe("https://api.pipelex.com");
       expect(config.apiKey).toBe("");
       expect(config.telemetry).toBe(true);
       expect(config.autoUpgrade).toBe(false);
@@ -55,7 +55,7 @@ describe("config", () => {
       mkdirSync(configDir, { recursive: true });
       writeFileSync(
         join(configDir, "config"),
-        "MTHDS_RUNNER=api\nPIPELEX_API_KEY=my-secret-key\n",
+        "MTHDS_RUNNER=api\nMTHDS_API_KEY=my-secret-key\n",
         "utf-8"
       );
 
@@ -63,8 +63,8 @@ describe("config", () => {
       const config = loadConfig();
       expect(config.runner).toBe("api");
       expect(config.apiKey).toBe("my-secret-key");
-      // apiUrl should still be the default
-      expect(config.apiUrl).toBe("https://api.pipelex.com");
+      // baseUrl should still be the default
+      expect(config.baseUrl).toBe("https://api.pipelex.com");
     });
 
     it("env vars override file values", async () => {
@@ -72,11 +72,11 @@ describe("config", () => {
       mkdirSync(configDir, { recursive: true });
       writeFileSync(
         join(configDir, "config"),
-        "PIPELEX_API_KEY=file-key\nMTHDS_RUNNER=pipelex\n",
+        "MTHDS_API_KEY=file-key\nMTHDS_RUNNER=pipelex\n",
         "utf-8"
       );
 
-      vi.stubEnv("PIPELEX_API_KEY", "env-key");
+      vi.stubEnv("MTHDS_API_KEY", "env-key");
       vi.stubEnv("MTHDS_RUNNER", "api");
 
       const { loadConfig } = await importConfig();
@@ -105,14 +105,43 @@ describe("config", () => {
       mkdirSync(configDir, { recursive: true });
       writeFileSync(
         join(configDir, "config"),
-        "# This is a comment\n\nPIPELEX_API_KEY=test-key\n\n# Another comment\nPIPELEX_API_URL=https://custom.api.com\n",
+        "# This is a comment\n\nMTHDS_API_KEY=test-key\n\n# Another comment\nMTHDS_API_URL=http://localhost:8081\n",
         "utf-8"
       );
 
       const { loadConfig } = await importConfig();
       const config = loadConfig();
       expect(config.apiKey).toBe("test-key");
-      expect(config.apiUrl).toBe("https://custom.api.com");
+      expect(config.baseUrl).toBe("http://localhost:8081");
+    });
+
+    it("reads baseUrl from the config file", async () => {
+      const configDir = join(tempHome, ".mthds");
+      mkdirSync(configDir, { recursive: true });
+      writeFileSync(
+        join(configDir, "config"),
+        "MTHDS_API_URL=http://localhost:8081\n",
+        "utf-8"
+      );
+
+      const { loadConfig } = await importConfig();
+      const config = loadConfig();
+      expect(config.baseUrl).toBe("http://localhost:8081");
+    });
+
+    it("env MTHDS_API_URL overrides the file value", async () => {
+      const configDir = join(tempHome, ".mthds");
+      mkdirSync(configDir, { recursive: true });
+      writeFileSync(
+        join(configDir, "config"),
+        "MTHDS_API_URL=http://file-host:8081\n",
+        "utf-8"
+      );
+      vi.stubEnv("MTHDS_API_URL", "http://env-host:8081");
+
+      const { loadConfig } = await importConfig();
+      const config = loadConfig();
+      expect(config.baseUrl).toBe("http://env-host:8081");
     });
   });
 
@@ -122,7 +151,7 @@ describe("config", () => {
   describe("getConfigValue", () => {
     it("returns default source when no file or env", async () => {
       const { getConfigValue } = await importConfig();
-      const result = getConfigValue("apiUrl");
+      const result = getConfigValue("baseUrl");
       expect(result.value).toBe("https://api.pipelex.com");
       expect(result.source).toBe("default");
     });
@@ -132,7 +161,7 @@ describe("config", () => {
       mkdirSync(configDir, { recursive: true });
       writeFileSync(
         join(configDir, "config"),
-        "PIPELEX_API_KEY=file-key\n",
+        "MTHDS_API_KEY=file-key\n",
         "utf-8"
       );
 
@@ -143,11 +172,11 @@ describe("config", () => {
     });
 
     it("returns env source when env var is set", async () => {
-      vi.stubEnv("PIPELEX_API_URL", "https://env.api.com");
+      vi.stubEnv("MTHDS_API_URL", "http://env-host:8081");
 
       const { getConfigValue } = await importConfig();
-      const result = getConfigValue("apiUrl");
-      expect(result.value).toBe("https://env.api.com");
+      const result = getConfigValue("baseUrl");
+      expect(result.value).toBe("http://env-host:8081");
       expect(result.source).toBe("env");
     });
 
@@ -156,10 +185,10 @@ describe("config", () => {
       mkdirSync(configDir, { recursive: true });
       writeFileSync(
         join(configDir, "config"),
-        "PIPELEX_API_KEY=file-key\n",
+        "MTHDS_API_KEY=file-key\n",
         "utf-8"
       );
-      vi.stubEnv("PIPELEX_API_KEY", "env-key");
+      vi.stubEnv("MTHDS_API_KEY", "env-key");
 
       const { getConfigValue } = await importConfig();
       const result = getConfigValue("apiKey");
@@ -180,7 +209,18 @@ describe("config", () => {
         join(tempHome, ".mthds", "config"),
         "utf-8"
       );
-      expect(content).toContain("PIPELEX_API_KEY=new-key");
+      expect(content).toContain("MTHDS_API_KEY=new-key");
+    });
+
+    it("writes baseUrl under the MTHDS_API_URL file key", async () => {
+      const { setConfigValue } = await importConfig();
+      setConfigValue("baseUrl", "http://localhost:8081");
+
+      const content = readFileSync(
+        join(tempHome, ".mthds", "config"),
+        "utf-8"
+      );
+      expect(content).toContain("MTHDS_API_URL=http://localhost:8081");
     });
 
     it("creates config directory if it does not exist", async () => {
@@ -195,7 +235,7 @@ describe("config", () => {
     });
 
     it("coerces telemetry values correctly when using config set", async () => {
-      const { setConfigValue, loadConfig } = await importConfig();
+      const { setConfigValue } = await importConfig();
 
       // "false" should disable telemetry (write DISABLE_TELEMETRY=1)
       setConfigValue("telemetry", "false");
@@ -226,7 +266,7 @@ describe("config", () => {
       mkdirSync(configDir, { recursive: true });
       writeFileSync(
         join(configDir, "config"),
-        "PIPELEX_API_KEY=existing-key\n",
+        "MTHDS_API_KEY=existing-key\n",
         "utf-8"
       );
 
@@ -237,7 +277,7 @@ describe("config", () => {
         join(configDir, "config"),
         "utf-8"
       );
-      expect(content).toContain("PIPELEX_API_KEY=existing-key");
+      expect(content).toContain("MTHDS_API_KEY=existing-key");
       expect(content).toContain("MTHDS_RUNNER=pipelex");
     });
   });

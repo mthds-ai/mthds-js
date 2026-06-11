@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import * as p from "@clack/prompts";
 import { printLogo } from "./index.js";
 import { isPipelexRunner, extractPassthroughArgs } from "./utils.js";
@@ -80,7 +80,12 @@ export async function validatePipe(
   if (isPipelexRunner(runner)) {
     p.log.step("Validating via pipelex...");
     try {
-      await runner.validatePassthrough(extractPassthroughArgs("validate", 1));
+      // The pipelex CLI dispatches `validate pipe <code>` vs
+      // `validate bundle <path>` — map a file target onto the bundle
+      // subcommand (the user-facing `mthds validate pipe` accepts both).
+      const isBundlePath = target.endsWith(".mthds") || existsSync(target);
+      const passthrough = extractPassthroughArgs("validate", 2);
+      await runner.validatePassthrough([isBundlePath ? "bundle" : "pipe", ...passthrough]);
       p.outro("Done");
     } catch (err) {
       p.log.error((err as Error).message);
@@ -118,21 +123,10 @@ export async function validatePipe(
   s.start("Validating...");
 
   try {
-    const result = await runner.validate({ mthds_contents: [mthdsContent] });
-
-    if (result.success) {
-      s.stop("Validation passed.");
-      p.log.success(result.message);
-    } else {
-      s.stop("Validation failed.");
-      p.log.error(result.message);
-    }
-
+    await runner.validate([mthdsContent]);
+    s.stop("Validation passed.");
+    p.log.success("MTHDS content validated successfully");
     p.outro("Done");
-
-    if (!result.success) {
-      process.exit(1);
-    }
   } catch (err) {
     s.stop("Validation failed.");
     p.log.error((err as Error).message);

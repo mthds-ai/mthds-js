@@ -11,7 +11,7 @@ const PLXT_CONSTRAINT = BINARY_RECOVERY["plxt"].version_constraint;
 vi.mock("../../../src/config/config.js", () => ({
   loadConfig: vi.fn(() => ({
     runner: "api",
-    apiUrl: "",
+    baseUrl: "",
     apiKey: "",
     telemetry: true,
     autoUpgrade: false,
@@ -112,7 +112,7 @@ describe("update-check", () => {
     // Reset defaults
     vi.mocked(loadConfig).mockReturnValue({
       runner: "api" as const,
-      apiUrl: "",
+      baseUrl: "",
       apiKey: "",
       telemetry: true,
       autoUpgrade: false,
@@ -136,7 +136,7 @@ describe("update-check", () => {
   it("emits explicit disabled signal when updateCheck config is false", async () => {
     vi.mocked(loadConfig).mockReturnValue({
       runner: "api" as const,
-      apiUrl: "",
+      baseUrl: "",
       apiKey: "",
       telemetry: true,
       autoUpgrade: false,
@@ -450,7 +450,7 @@ describe("update-check", () => {
   it("checks both pipelex-agent and plxt when runner=pipelex", async () => {
     vi.mocked(loadConfig).mockReturnValue({
       runner: "pipelex" as const,
-      apiUrl: "",
+      baseUrl: "",
       apiKey: "",
       telemetry: true,
       autoUpgrade: false,

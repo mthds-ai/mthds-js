@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help install check c test t clean build rebuild run dev pack all
+.PHONY: help install check c test t clean build rebuild run dev pack all depcruise
 
 # Colors
 BLUE := \033[0;34m
@@ -62,8 +62,14 @@ test:
 	@npx vitest run
 	@echo "$(GREEN)✓ All tests passed$(NC)"
 
+depcruise:
+	$(call PRINT_TITLE,"Checking Architectural Boundaries")
+	@npm run depcruise
+	@echo "$(GREEN)✓ protocol/ boundary intact$(NC)"
+
 check:
 	$(MAKE) build
+	$(MAKE) depcruise
 	$(MAKE) test
 	@echo "$(GREEN)✓ All checks passed$(NC)"
 

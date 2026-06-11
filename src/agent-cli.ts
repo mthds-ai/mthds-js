@@ -173,7 +173,7 @@ const config = program.command("config").description("Manage configuration").exi
 
 config
   .command("set")
-  .argument("<key>", "Config key (runner, api-url, api-key, telemetry)")
+  .argument("<key>", "Config key (runner, base-url, api-key, telemetry, auto-upgrade, update-check)")
   .argument("<value>", "Value to set")
   .description("Set a config value")
   .exitOverride()
@@ -183,7 +183,7 @@ config
 
 config
   .command("get")
-  .argument("<key>", "Config key (runner, api-url, api-key, telemetry)")
+  .argument("<key>", "Config key (runner, base-url, api-key, telemetry, auto-upgrade, update-check)")
   .description("Get a config value")
   .exitOverride()
   .action(async (key: string) => {
@@ -313,14 +313,22 @@ runnerSetup
   .command("api")
   .description("Set up the API runner")
   .requiredOption("--api-key <key>", "API key for the MTHDS API")
-  .option("--api-url <url>", "API URL (optional, uses default if omitted)")
+  .option(
+    "--base-url <url>",
+    "API base URL — host only, no version prefix (optional, uses the hosted default if omitted)"
+  )
   .exitOverride()
-  .action(async (options: { apiKey: string; apiUrl?: string }) => {
-    if (options.apiUrl) {
-      await agentConfigSet("api-url", options.apiUrl);
+  .action(
+    async (options: {
+      apiKey: string;
+      baseUrl?: string;
+    }) => {
+      if (options.baseUrl) {
+        await agentConfigSet("base-url", options.baseUrl);
+      }
+      await agentConfigSet("api-key", options.apiKey);
     }
-    await agentConfigSet("api-key", options.apiKey);
-  });
+  );
 
 // ── mthds-agent plxt <cmd> [args...] ─────────────────────────────────
 

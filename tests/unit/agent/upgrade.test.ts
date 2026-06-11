@@ -10,7 +10,7 @@ const PLXT_CONSTRAINT = BINARY_RECOVERY["plxt"].version_constraint;
 vi.mock("../../../src/config/config.js", () => ({
   loadConfig: vi.fn(() => ({
     runner: "api",
-    apiUrl: "",
+    baseUrl: "",
     apiKey: "",
     telemetry: true,
     autoUpgrade: false,
@@ -72,7 +72,7 @@ describe("agentUpgrade", () => {
     // Reset defaults
     vi.mocked(loadConfig).mockReturnValue({
       runner: "api" as const,
-      apiUrl: "",
+      baseUrl: "",
       apiKey: "",
       telemetry: true,
       autoUpgrade: false,
@@ -118,7 +118,7 @@ describe("agentUpgrade", () => {
   it("upgrades both pipelex-agent and plxt (runner=pipelex)", async () => {
     vi.mocked(loadConfig).mockReturnValue({
       runner: "pipelex" as const,
-      apiUrl: "",
+      baseUrl: "",
       apiKey: "",
       telemetry: true,
       autoUpgrade: false,
@@ -166,7 +166,7 @@ describe("agentUpgrade", () => {
   it("de-duplicates shared uv_package (pipelex + pipelex-agent)", async () => {
     vi.mocked(loadConfig).mockReturnValue({
       runner: "pipelex" as const,
-      apiUrl: "",
+      baseUrl: "",
       apiKey: "",
       telemetry: true,
       autoUpgrade: false,
@@ -224,7 +224,7 @@ describe("agentUpgrade", () => {
   it("outputs UPGRADE_PARTIAL when one succeeds and one fails", async () => {
     vi.mocked(loadConfig).mockReturnValue({
       runner: "pipelex" as const,
-      apiUrl: "",
+      baseUrl: "",
       apiKey: "",
       telemetry: true,
       autoUpgrade: false,
@@ -328,7 +328,7 @@ describe("agentUpgrade", () => {
   it("writes marker with correct old versions JSON", async () => {
     vi.mocked(loadConfig).mockReturnValue({
       runner: "pipelex" as const,
-      apiUrl: "",
+      baseUrl: "",
       apiKey: "",
       telemetry: true,
       autoUpgrade: false,

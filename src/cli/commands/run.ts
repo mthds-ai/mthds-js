@@ -4,8 +4,8 @@ import * as p from "@clack/prompts";
 import { printLogo } from "./index.js";
 import { isPipelexRunner, extractPassthroughArgs } from "./utils.js";
 import { createRunner } from "../../runners/registry.js";
-import type { RunnerType } from "../../runners/types.js";
-import type { ExecutePipelineOptions } from "../../client/pipeline.js";
+import type { Runner, RunnerType } from "../../runners/types.js";
+import type { StartOptions } from "../../protocol/options.js";
 
 interface RunOptions {
   pipe?: string;
@@ -16,6 +16,72 @@ interface RunOptions {
   libraryDir?: string[];
 }
 
+function libraryDirs(options: RunOptions): string[] | undefined {
+  return options.libraryDir?.length ? options.libraryDir : undefined;
+}
+
+/** Merge an optional JSON inputs file into the run options. */
+function withInputs(options: StartOptions, inputsFile?: string): StartOptions {
+  if (inputsFile) {
+    options.inputs = JSON.parse(readFileSync(inputsFile, "utf-8")) as Record<
+      string,
+      unknown
+    >;
+  }
+  return options;
+}
+
+/**
+ * Run through the MTHDS Protocol primitives, dispatched on the runner:
+ *  - pipelex runner → `execute` (local, blocking, in-process — streams logs).
+ *  - API runner     → `startAndWaitForResult` (durable start, then poll to result).
+ *
+ * `StartRequest = RunRequest`, so the same options object drives either path.
+ * `execute` returns `pipe_output`; `startAndWaitForResult` returns `main_stuff`
+ * (with `pipe_output` as the bare-runner fallback) — print whichever is present.
+ */
+async function dispatchRun(
+  runner: Runner,
+  options: StartOptions,
+  cli: RunOptions
+): Promise<void> {
+  try {
+    let result;
+    if (isPipelexRunner(runner)) {
+      // The pipelex CLI streams its own logs to stderr — no spinner, or it
+      // would fight the streamed output for the terminal.
+      p.log.step("Executing via pipelex...");
+      result = await runner.execute(options);
+    } else {
+      const s = p.spinner();
+      s.start("Starting run and waiting for result...");
+      result = await runner.startAndWaitForResult(options);
+      s.stop("Run completed.");
+    }
+
+    if (cli.output) {
+      writeFileSync(
+        cli.output,
+        JSON.stringify(result, null, 2) + "\n",
+        "utf-8"
+      );
+      p.log.success(`Output written to ${cli.output}`);
+    }
+
+    const output =
+      ("main_stuff" in result ? result.main_stuff : null) ?? result.pipe_output;
+    if (cli.prettyPrint !== false && output) {
+      p.log.info(JSON.stringify(output, null, 2));
+    }
+
+    p.outro("Done");
+  } catch (err) {
+    p.log.error((err as Error).message);
+    p.outro("");
+    process.exit(1);
+  }
+}
+
 export async function runMethod(
   name: string,
   options: RunOptions
@@ -23,13 +89,15 @@ export async function runMethod(
   printLogo();
   p.intro("mthds run method");
 
-  const libraryDirs = options.libraryDir?.length
-    ? options.libraryDir
-    : undefined;
-  const runner = createRunner(options.runner, libraryDirs);
+  const runner = createRunner(options.runner, libraryDirs(options));
 
   if (isPipelexRunner(runner)) {
-    p.log.step("Running via pipelex...");
+    // `pipelex run method <name>` resolves an INSTALLED method by name (its
+    // main pipe) — distinct from `run pipe <code>`. Collapsing it onto the
+    // protocol `execute` (which only knows `pipe_code`) would emit
+    // `pipelex run pipe <name>` and break methods whose name differs from
+    // their main pipe code. Forward the method subcommand verbatim.
+    p.log.step("Executing via pipelex...");
     try {
       await runner.runPassthrough(extractPassthroughArgs("run", 1));
       p.outro("Done");
@@ -41,7 +109,12 @@ export async function runMethod(
     return;
   }
 
-  p.log.error("Method target is not yet supported for the API runner. Use 'mthds run pipe <target>' instead.\nYou can also specify a different runner with --runner <name>, or change the default with 'mthds set-default runner <name>'.");
+  // Running an installed method by name is a local-library concept; the API
+  // runner has no name→method resolution (it addresses pipes/bundles).
+  p.log.error(
+    "Running an installed method by name is only supported by the pipelex runner.\n" +
+      "With the API runner, use 'mthds run pipe <code>' or 'mthds run bundle <file>' (--runner pipelex to run a method by name)."
+  );
   p.outro("");
   process.exit(1);
 }
@@ -53,27 +126,22 @@ export async function runBundle(
   printLogo();
   p.intro("mthds run bundle");
 
-  const libraryDirs = options.libraryDir?.length
-    ? options.libraryDir
-    : undefined;
-  const runner = createRunner(options.runner, libraryDirs);
+  const runner = createRunner(options.runner, libraryDirs(options));
 
-  if (isPipelexRunner(runner)) {
-    p.log.step("Running via pipelex...");
-    try {
-      await runner.runPassthrough(extractPassthroughArgs("run", 1));
-      p.outro("Done");
-    } catch (err) {
-      p.log.error((err as Error).message);
-      p.outro("");
-      process.exit(1);
+  let runOptions: StartOptions;
+  try {
+    runOptions = { mthds_contents: [readFileSync(resolve(target), "utf-8")] };
+    if (options.pipe) {
+      runOptions.pipe_code = options.pipe;
     }
-    return;
+    withInputs(runOptions, options.inputs);
+  } catch (err) {
+    p.log.error((err as Error).message);
+    p.outro("");
+    process.exit(1);
   }
 
-  p.log.error("Bundle target is only supported with the pipelex runner.\nYou can specify a different runner with --runner <name>, or change the default with 'mthds set-default runner <name>'.");
-  p.outro("");
-  process.exit(1);
+  await dispatchRun(runner, runOptions, options);
 }
 
 export async function runPipe(
@@ -83,72 +151,27 @@ export async function runPipe(
   printLogo();
   p.intro("mthds run pipe");
 
-  const libraryDirs = options.libraryDir?.length
-    ? options.libraryDir
-    : undefined;
-  const runner = createRunner(options.runner, libraryDirs);
+  const runner = createRunner(options.runner, libraryDirs(options));
 
-  if (isPipelexRunner(runner)) {
-    p.log.step("Running via pipelex...");
-    try {
-      await runner.runPassthrough(extractPassthroughArgs("run", 1));
-      p.outro("Done");
-    } catch (err) {
-      p.log.error((err as Error).message);
-      p.outro("");
-      process.exit(1);
-    }
-    return;
-  }
-
-  // API runner: target is a pipe code or a .mthds bundle file
+  // A target is either a pipe code or a .mthds bundle file.
   const isBundlePath = target.endsWith(".mthds") || existsSync(target);
-  const pipelineOptions: ExecutePipelineOptions = {};
 
+  let runOptions: StartOptions;
   try {
     if (isBundlePath) {
-      pipelineOptions.mthds_contents = [readFileSync(resolve(target), "utf-8")];
+      runOptions = { mthds_contents: [readFileSync(resolve(target), "utf-8")] };
       if (options.pipe) {
-        pipelineOptions.pipe_code = options.pipe;
+        runOptions.pipe_code = options.pipe;
       }
     } else {
-      pipelineOptions.pipe_code = target;
+      runOptions = { pipe_code: target };
     }
-
-    if (options.inputs) {
-      pipelineOptions.inputs = JSON.parse(readFileSync(options.inputs, "utf-8"));
-    }
+    withInputs(runOptions, options.inputs);
   } catch (err) {
     p.log.error((err as Error).message);
     p.outro("");
     process.exit(1);
   }
 
-  const s = p.spinner();
-  s.start("Executing pipeline...");
-
-  try {
-    const result = await runner.executePipeline(pipelineOptions);
-    s.stop(`Pipeline ${result.pipeline_state.toLowerCase()}.`);
-
-    if (options.output) {
-      writeFileSync(
-        options.output,
-        JSON.stringify(result, null, 2) + "\n",
-        "utf-8"
-      );
-      p.log.success(`Output written to ${options.output}`);
-    }
-
-    if (options.prettyPrint !== false && result.pipe_output) {
-      p.log.info(JSON.stringify(result.pipe_output, null, 2));
-    }
-
-    p.outro("Done");
-  } catch (err) {
-    s.stop("Pipeline execution failed.");
-    p.log.error((err as Error).message);
-    p.outro("");
-    process.exit(1);
-  }
+  await dispatchRun(runner, runOptions, options);
 }

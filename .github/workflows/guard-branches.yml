@@ -1,63 +1,79 @@
+# Enforces the branch flow: work-branch → dev → release/vX.Y.Z → main.
+# Catches wrong-target PRs from maintainers. Convention enforcement, not security
+# (real protection comes from the branch-protection ruleset on main).
 name: Guard branch flow
+
 on:
-  pull_request_target:
+  pull_request:
     types: [opened, edited, synchronize, reopened]
 
+permissions: {}
+
 jobs:
-  # ───────────────────────────────────────────────────────────────
-  # 1) Only release/vX.Y.Z → main
-  # ───────────────────────────────────────────────────────────────
+  # ─────────────────────────────────────────────────────────────
+  # main  ←  release/vX.Y.Z   (release promotion)
+  # ─────────────────────────────────────────────────────────────
   gate-main:
     if: github.event.pull_request.base.ref == 'main'
     runs-on: ubuntu-latest
     steps:
-      - name: Verify source branch is a Release
+      - name: Only release/vX.Y.Z from this repo may target main
         env:
           HEAD: ${{ github.event.pull_request.head.ref }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          REPO: ${{ github.repository }}
         run: |
-          echo "PR → main from $HEAD"
-          if [[ ! "$HEAD" =~ ^release\/v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+          echo "PR → main from $HEAD ($HEAD_REPO)"
+          if [[ "$HEAD_REPO" != "$REPO" ]]; then
+            echo "::error::PRs to main must come from a release/vX.Y.Z branch in this repository, not a fork."
+            exit 1
+          fi
+          if [[ ! "$HEAD" =~ ^release/v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             echo "::error::Only release/vX.Y.Z branches may merge into main."
             exit 1
           fi
 
-  # ───────────────────────────────────────────────────────────────
-  # 2) Only work-branches → release/vX.Y.Z
-  # ───────────────────────────────────────────────────────────────
+  # ─────────────────────────────────────────────────────────────
+  # release/vX.Y.Z  ←  dev   (release cut)
+  # ─────────────────────────────────────────────────────────────
   gate-release:
-    if: startsWith(github.event.pull_request.base.ref, 'release/v') || github.event.pull_request.base.ref == 'dev'
+    if: startsWith(github.event.pull_request.base.ref, 'release/v')
     runs-on: ubuntu-latest
     steps:
-      - name: Verify source branch uses allowed prefix
+      - name: Only dev from this repo may target release/vX.Y.Z
         env:
           HEAD: ${{ github.event.pull_request.head.ref }}
+          BASE: ${{ github.event.pull_request.base.ref }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          REPO: ${{ github.repository }}
         run: |
-          echo "PR → ${{ github.event.pull_request.base.ref }} from $HEAD"
-          if [[ "$HEAD" == "dev" ]]; then
-            exit 0
+          echo "PR → $BASE from $HEAD ($HEAD_REPO)"
+          if [[ ! "$BASE" =~ ^release/v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Release branches must follow the release/vX.Y.Z semver pattern."
+            exit 1
           fi
-          if [[ ! "$HEAD" =~ ^(fix|feature|refactor|chore|docs|ci-cd|changelog|codex)\/[A-Za-z0-9._\/\<\>\=\-]+$ ]]; then
-            echo "::error::Branch must start with fix/, feature/, refactor/, chore/, docs/, or ci-cd/."
+          if [[ "$HEAD_REPO" != "$REPO" ]]; then
+            echo "::error::release/vX.Y.Z PRs must come from this repository's dev branch, not a fork."
+            exit 1
+          fi
+          if [[ "$HEAD" != "dev" ]]; then
+            echo "::error::Only the dev branch may merge into release/vX.Y.Z."
             exit 1
           fi
 
-  # ───────────────────────────────────────────────────────────────
-  # 3) Prevent forks from editing your workflows
-  # ───────────────────────────────────────────────────────────────
-  protect-workflows:
+  # ─────────────────────────────────────────────────────────────
+  # dev  ←  work branches   (everyday development)
+  # ─────────────────────────────────────────────────────────────
+  gate-dev:
+    if: github.event.pull_request.base.ref == 'dev'
     runs-on: ubuntu-latest
-    # only block non-maintainers
-    if: github.event.pull_request.author_association == 'CONTRIBUTOR'
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - name: Detect workflow changes
+      - name: Only work branches may target dev
+        env:
+          HEAD: ${{ github.event.pull_request.head.ref }}
         run: |
-          git fetch origin "${{ github.event.pull_request.base.ref }}" --depth=1
-          CHANGED=$(git diff --name-only FETCH_HEAD HEAD | grep -E '^\.github/workflows/.*\.ya?ml$' || true)
-          if [ -n "$CHANGED" ]; then
-            echo "::error::External contributors may not modify workflow files: $CHANGED"
+          echo "PR → dev from $HEAD"
+          if [[ ! "$HEAD" =~ ^(fix|feature|refactor|chore|docs|ci-cd|changelog|codex)/[A-Za-z0-9._/=-]+$ ]]; then
+            echo "::error::Branch must start with fix/, feature/, refactor/, chore/, docs/, ci-cd/, changelog/, or codex/."
             exit 1
           fi

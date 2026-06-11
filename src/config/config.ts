@@ -13,7 +13,12 @@ import type { RunnerType } from "../runners/types.js";
 
 export interface MthdsConfig {
   runner: RunnerType;
-  apiUrl: string;
+  /**
+   * API base URL — host only, NO version prefix (e.g. `https://api.pipelex.com`
+   * or `http://localhost:8081`). Every endpoint composes as
+   * `{baseUrl}/v1/{endpoint}`; `/health` resolves to the origin root.
+   */
+  baseUrl: string;
   apiKey: string;
   telemetry: boolean;
   autoUpgrade: boolean;
@@ -31,8 +36,8 @@ const CONFIG_PATH = join(CONFIG_DIR, "config");
 
 /** Map from config key to env var name */
 const ENV_NAMES: Record<keyof MthdsConfig, string> = {
-  apiUrl: "PIPELEX_API_URL",
-  apiKey: "PIPELEX_API_KEY",
+  baseUrl: "MTHDS_API_URL",
+  apiKey: "MTHDS_API_KEY",
   runner: "MTHDS_RUNNER",
   telemetry: "DISABLE_TELEMETRY",
   autoUpgrade: "MTHDS_AUTO_UPGRADE",
@@ -41,18 +46,21 @@ const ENV_NAMES: Record<keyof MthdsConfig, string> = {
 
 /** Map from config key to file key (used in ~/.mthds/config) */
 const FILE_KEYS: Record<keyof MthdsConfig, string> = {
-  apiUrl: "PIPELEX_API_URL",
-  apiKey: "PIPELEX_API_KEY",
+  baseUrl: "MTHDS_API_URL",
+  apiKey: "MTHDS_API_KEY",
   runner: "MTHDS_RUNNER",
   telemetry: "DISABLE_TELEMETRY",
   autoUpgrade: "MTHDS_AUTO_UPGRADE",
   updateCheck: "MTHDS_UPDATE_CHECK",
 };
 
+/** Hosted default — host only; endpoints compose as `{base}/v1/{endpoint}`. */
+export const DEFAULT_BASE_URL = "https://api.pipelex.com";
+
 /** Defaults */
 const DEFAULTS: MthdsConfig = {
   runner: Runners.PIPELEX,
-  apiUrl: "https://api.pipelex.com",
+  baseUrl: DEFAULT_BASE_URL,
   apiKey: "",
   telemetry: true,
   autoUpgrade: false,
@@ -62,7 +70,7 @@ const DEFAULTS: MthdsConfig = {
 /** Map from CLI flag names (kebab-case) to config keys */
 const KEY_ALIASES: Record<string, keyof MthdsConfig> = {
   runner: "runner",
-  "api-url": "apiUrl",
+  "base-url": "baseUrl",
   "api-key": "apiKey",
   telemetry: "telemetry",
   "auto-upgrade": "autoUpgrade",
@@ -87,6 +95,26 @@ const INVERTED_BOOLEAN_KEYS: Set<keyof MthdsConfig> = new Set([
 const TRUTHY_STRINGS: ReadonlySet<string> = new Set(["true", "1", "yes", "on"]);
 
 export const VALID_KEYS = Object.keys(KEY_ALIASES);
+
+/**
+ * A base URL must be HOST ONLY — http/https, no path, query, or fragment.
+ * The client composes `{base}/v1/{endpoint}`; a path-prefixed value (e.g. a
+ * leftover `.../runner/v1`) would produce malformed `/v1/v1/...` endpoints.
+ */
+export function isValidBaseUrl(value: string): boolean {
+  let parsed: URL;
+  try {
+    parsed = new URL(value);
+  } catch {
+    return false;
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return false;
+  if (parsed.pathname !== "/" && parsed.pathname !== "") return false;
+  // Host only also means no embedded credentials — auth travels in the
+  // Authorization header (MTHDS_API_KEY), never in the URL.
+  if (parsed.username || parsed.password) return false;
+  return !parsed.search && !parsed.hash;
+}
 
 export function resolveKey(
   cliKey: string

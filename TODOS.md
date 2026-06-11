@@ -26,15 +26,17 @@ Scope confirmed with user (2026-05-23):
 
 ### Affected mthds-js sites (audit, before any edits)
 
+> Note: the runner moved in the protocol⊥runners split — it is now `src/runners/pipelex/runner.ts` (paths below updated; the line numbers are pre-split approximations). The JSON-parse bugs (#1–#2) are still open and intentionally tracked here.
+
 | # | File | Line | Command invoked | Reads stdout as | Risk under pipelex 0.29.x |
 |---|---|---|---|---|---|
-| 1 | `src/runners/pipelex-runner.ts` | 254-266 | `pipelex-agent check-model <ref> [--type <t>] [--format <f>]` | `JSON.parse` | **BROKEN** if caller omits `request.format`. `check-model` is markdown-default. |
-| 2 | `src/runners/pipelex-runner.ts` | 269-280 | `pipelex-agent models [--type <t>...]` | `JSON.parse` | **BROKEN** unconditionally — never passes `--format json`. |
-| 3 | `src/runners/pipelex-runner.ts` | 142-157 | `pipelex-agent inputs bundle <p> --pipe <c>` | `JSON.parse` | Safe (changelog: `inputs` stays JSON-default). |
-| 4 | `src/runners/pipelex-runner.ts` | 228-235 | `pipelex-agent concept --spec <json>` | `JSON.parse` | Safe (changelog: `concept` stays JSON-default). |
-| 5 | `src/runners/pipelex-runner.ts` | 238-251 | `pipelex-agent pipe --type <t> --spec <json>` | `JSON.parse` | Safe (changelog: `pipe` stays JSON-default). |
-| 6 | `src/runners/pipelex-runner.ts` | 160-188 | `pipelex build output bundle ...` | `JSON.parse` | Likely safe — this is `pipelex build`, not the agent CLI's `run/validate/init`. **Phase-1 verifies**. |
-| 7 | `src/runners/pipelex-runner.ts` | execute(), validate(), runPassthrough(), buildRunner() | streaming | n/a — `stdio: inherit` | Safe (no parsing). |
+| 1 | `src/runners/pipelex/runner.ts` | 254-266 | `pipelex-agent check-model <ref> [--type <t>] [--format <f>]` | `JSON.parse` | **BROKEN** if caller omits `request.format`. `check-model` is markdown-default. |
+| 2 | `src/runners/pipelex/runner.ts` | 269-280 | `pipelex-agent models [--type <t>...]` | `JSON.parse` | **BROKEN** unconditionally — never passes `--format json`. |
+| 3 | `src/runners/pipelex/runner.ts` | 142-157 | `pipelex-agent inputs bundle <p> --pipe <c>` | `JSON.parse` | Safe (changelog: `inputs` stays JSON-default). |
+| 4 | `src/runners/pipelex/runner.ts` | 228-235 | `pipelex-agent concept --spec <json>` | `JSON.parse` | Safe (changelog: `concept` stays JSON-default). |
+| 5 | `src/runners/pipelex/runner.ts` | 238-251 | `pipelex-agent pipe --type <t> --spec <json>` | `JSON.parse` | Safe (changelog: `pipe` stays JSON-default). |
+| 6 | `src/runners/pipelex/runner.ts` | 160-188 | `pipelex build output bundle ...` | `JSON.parse` | Likely safe — this is `pipelex build`, not the agent CLI's `run/validate/init`. **Phase-1 verifies**. |
+| 7 | `src/runners/pipelex/runner.ts` | execute(), validate(), runPassthrough(), buildRunner() | streaming | n/a — `stdio: inherit` | Safe (no parsing). |
 | 8 | `src/agent/commands/pipelex-passthrough.ts` | whole file | passthrough to `pipelex-agent` for `run / validate / init / models / check-model` | n/a — `stdio: inherit` | User-visible output flips to markdown. Per user decision: keep pipelex defaults; do nothing. |
 
 ### Known pipelex side issue (out of our scope, but worth flagging)
@@ -127,7 +129,7 @@ Goal: make every JSON.parse site in `PipelexRunner` reliable against pipelex 0.2
 
 **Checkpoint 2 notes** (filled in 2026-05-25):
 
-- **Files edited**: `src/runners/pipelex-runner.ts` (5 method fixes, +21/-10 lines).
+- **Files edited**: `src/runners/pipelex/runner.ts` (5 method fixes, +21/-10 lines).
 - **Test additions**: `tests/unit/runners/pipelex-runner.test.ts` (new, 6 tests: checkModel default format, checkModel preserve format, models format, concept wrapper, pipeSpec wrapper, buildOutput file read-back).
 - **`make check` result**: 674 passed, 0 failed.
 - **Defensive parser introduced?**: No — dropped (2.4). Pipelex upstream fix (0.30.0) routes logs to stderr; no stdout pollution for standard installs.

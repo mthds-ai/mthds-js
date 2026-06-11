@@ -28,8 +28,8 @@ export interface MTHDSProtocol {
   /**
    * Start a method asynchronously without waiting for completion.
    *
-   * `options.pipeline_run_id` is bare-runner-only (hosted 422s it); server-specific
-   * extension args ride `options.extra`. The returned `StartAck.pipeline_run_id` is authoritative.
+   * Carries the protocol's basic arguments only; server-specific extension
+   * args ride `options.extra`. The returned `StartAck.pipeline_run_id` is authoritative.
    */
   start(options: StartOptions): Promise<StartAck>;
 

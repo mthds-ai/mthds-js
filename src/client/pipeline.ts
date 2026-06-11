@@ -36,20 +36,14 @@ export interface RunRequest {
 }
 
 /**
- * Body of the protocol's `POST /start` — `RunRequest` plus `pipeline_run_id`.
+ * Body of the protocol's `POST /start` — the same basic arguments as `RunRequest`.
  *
- * Mirrors `StartRequest` in `mthds-protocol.openapi.yaml`. Extension args are
- * NOT protocol fields — the server that defines an extension arg is the one
- * that handles it; callers pass them through the generic `extra` option.
+ * The protocol declares no start-only request fields. Anything an
+ * implementation accepts on top (a client-supplied run id, anything else) is
+ * an extension arg — the server that defines it is the one that handles it;
+ * callers pass it through the generic `extra` option.
  */
-export interface StartRequest extends RunRequest {
-  /**
-   * Client-supplied run identifier — bare runners only. The hosted API always
-   * generates the id server-side and rejects a client-supplied one with 422
-   * (never silently ignores it). `StartAck.pipeline_run_id` is always authoritative.
-   */
-  pipeline_run_id?: string | null;
-}
+export type StartRequest = RunRequest;
 
 /**
  * The generic extension passthrough: server-specific args merged into the

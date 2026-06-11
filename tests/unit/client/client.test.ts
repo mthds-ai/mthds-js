@@ -369,14 +369,14 @@ describe("MthdsApiClient.start", () => {
     expect(body.extra).toBeUndefined();
   });
 
-  it("forwards pipeline_run_id when provided (bare-runner protocol arg)", async () => {
+  it("passes a client-supplied pipeline_run_id through extra (server-defined extension)", async () => {
     const client = makeClient();
     const fetchSpy = vi
       .spyOn(globalThis, "fetch")
       .mockResolvedValue(jsonResponse(202, { pipeline_run_id: "client-id", state: "STARTED", created_at: "t0" }));
     await client.start({
       pipe_code: "p",
-      pipeline_run_id: "client-id",
+      extra: { pipeline_run_id: "client-id" },
     });
     const body = JSON.parse((fetchSpy.mock.calls[0]![1] as RequestInit).body as string);
     expect(body.pipeline_run_id).toBe("client-id");
@@ -385,7 +385,7 @@ describe("MthdsApiClient.start", () => {
   it("rejects protocol args smuggled through extra", async () => {
     const client = makeClient();
     await expect(
-      client.start({ pipe_code: "p", extra: { pipeline_run_id: "smuggled" } })
+      client.start({ mthds_contents: ["domain d"], extra: { pipe_code: "smuggled" } })
     ).rejects.toBeInstanceOf(PipelineRequestError);
   });
 

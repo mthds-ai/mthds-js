@@ -41,8 +41,8 @@ const ack = await client.start({
   inputs: { question: "…" },
   // optional output controls (forwarded to the runner):
   // output_name, output_multiplicity, dynamic_output_concept_ref
-  // protocol async extra: pipeline_run_id (bare runners only)
-  // server-specific extension args ride `extra`, e.g. extra: { … }
+  // server-specific extension args ride `extra` (a client-supplied run id,
+  // where a server supports one, is such an extension), e.g. extra: { … }
 });
 
 // Or do the whole lifecycle in one call:

@@ -4,7 +4,8 @@
 
 ### Changed
 
-- **Extension args removed from the SDK; generic `extra` passthrough added.** The SDK carries the MTHDS Protocol's basic arguments only (plus `pipeline_run_id` on `start`) — server-specific extension args never appear in it, not even as named options. Both `execute` and `start` accept the generic `extra` option: any server-specific arg merges into the request body as a top-level property and the server that defines it handles it (protocol args inside `extra` are rejected client-side). The `mthds-agent` CLI's stored-method runs now pass the hosted selector through `extra`.
+- **Request-side `pipeline_run_id` dropped from the protocol surface.** It is not a protocol argument: `StartRequest`/`StartOptions` no longer name it and the client no longer forwards it as a named option. A server that accepts a client-supplied run identifier defines it as an extension arg — pass it through `extra` like any other. The `pipeline_run_id` in responses (`StartAck`, run-lifecycle reads) is unchanged and always authoritative.
+- **Extension args removed from the SDK; generic `extra` passthrough added.** The SDK carries the MTHDS Protocol's basic arguments only — server-specific extension args never appear in it, not even as named options. Both `execute` and `start` accept the generic `extra` option: any server-specific arg merges into the request body as a top-level property and the server that defines it handles it (protocol args inside `extra` are rejected client-side). The `mthds-agent` CLI's stored-method runs now pass the hosted selector through `extra`.
 
 ### Added
 

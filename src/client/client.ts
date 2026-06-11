@@ -291,11 +291,11 @@ export class MthdsApiClient implements MTHDSProtocol {
   /**
    * Start a method asynchronously — `POST /v1/start` (202 `StartAck`).
    *
-   * `options.pipeline_run_id` is bare-runner-only (the hosted API rejects it with 422 —
-   * the returned `pipeline_run_id` is always authoritative). Server-specific
-   * extension args ride `options.extra` and merge into the request body —
-   * the server you call defines and handles them. On a hosted deployment the
-   * id is durable — poll `getRunStatus` / `getRunResult`.
+   * Server-specific extension args ride `options.extra` and merge into the
+   * request body — the server you call defines and handles them (including a
+   * client-supplied run id where a server supports one). The returned
+   * `pipeline_run_id` is always authoritative; on a hosted deployment it is
+   * durable — poll `getRunStatus` / `getRunResult`.
    */
   async start(options: StartOptions): Promise<StartAck> {
     const extensions = buildExtensions(options.extra);
@@ -317,7 +317,6 @@ export class MthdsApiClient implements MTHDSProtocol {
       output_name: options.output_name ?? undefined,
       output_multiplicity: options.output_multiplicity ?? undefined,
       dynamic_output_concept_ref: options.dynamic_output_concept_ref ?? undefined,
-      pipeline_run_id: options.pipeline_run_id ?? undefined,
       ...extensions,
     };
 
@@ -488,7 +487,6 @@ const PROTOCOL_REQUEST_KEYS: ReadonlySet<string> = new Set([
   "output_name",
   "output_multiplicity",
   "dynamic_output_concept_ref",
-  "pipeline_run_id",
 ]);
 
 /**

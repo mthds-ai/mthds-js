@@ -60,9 +60,8 @@ export function isSuccessRunStatus(status: RunStatus): boolean {
 
 /**
  * Options for `MTHDSProtocol.start` — the `StartRequest` wire fields (the
- * `RunRequest` execution fields plus `pipeline_run_id`, bare-runner-only; the
- * hosted API rejects a client-supplied run id with 422) plus the generic
- * `extra` extension passthrough (server-specific args, merged into the body).
+ * protocol's basic execution arguments) plus the generic `extra` extension
+ * passthrough (server-specific args, merged into the body).
  */
 export type StartOptions = StartRequest & ExtensionOptions;
 

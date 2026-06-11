@@ -47,10 +47,6 @@ The SDK composes every endpoint under `/v1`, which requires a pipelex-api image 
 
 The self-hosted blocking `run pipe` returns the runner's native `pipe_output`; the hosted durable path returns `main_stuff` + `graph_spec`. For v1 this difference is documented, not normalized (TODO).
 
-## Migrating from the two-URL config
-
-`runnerUrl` / `PIPELEX_RUNNER_URL` and `platformUrl` / `PIPELEX_PLATFORM_URL` (and the older `apiUrl` / `PIPELEX_API_URL`, plus `PIPELEX_API_KEY`) are replaced by the single `MTHDS_API_URL` + `MTHDS_API_KEY` pair. There is no backward compatibility: if a leftover legacy key is detected (env or `~/.mthds/config`) while the api-runner needs a value that was never set under its new name, the SDK fails fast with a one-line migration hint. Migrate with `mthds config set base-url <host>` and `mthds config set api-key <key>`.
-
 ## SDK
 
 ```typescript

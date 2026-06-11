@@ -251,19 +251,6 @@ The client implements the MTHDS Protocol plus the hosted run-lifecycle extension
 
 Either `pipe_code` or `mthds_contents` must be provided. `start()` additionally accepts `pipeline_run_id` (bare-runner-only — the hosted API rejects a client-supplied run id with 422), `callback_urls` (HMAC-signed completion webhooks), and `method_id` (hosted stored-method extension).
 
-### Migrating from 0.9.x
-
-| Old | New |
-|-----|-----|
-| `runnerUrl` / `PIPELEX_RUNNER_URL` (`…/runner/v1`) | `base-url` / `MTHDS_API_URL` (host only) |
-| `platformUrl` / `PIPELEX_PLATFORM_URL` (`…/platform/v1`) | removed — one base URL serves everything |
-| `PIPELEX_API_KEY` | `MTHDS_API_KEY` |
-| `executePipeline()` / `startPipeline()` / `startRun()` | `execute()` / `start()` |
-| `getRun()` / `getResult()` | `getRunStatus()` / `getRunResult()` |
-| wire fields `pipeline_run_id` / `pipeline_state` | `pipeline_run_id` / `state` |
-
-A leftover legacy key (env or `~/.mthds/config`) makes the API runner fail fast with a one-line migration hint — run `mthds config set base-url …` / `mthds config set api-key …` to migrate.
-
 ## Telemetry
 
 Anonymous usage data is collected to help rank methods on the leaderboard. Each `install` event includes the package address, name, version, and manifest metadata. No personal or device information is collected.

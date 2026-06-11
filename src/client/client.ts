@@ -305,7 +305,8 @@ export class MthdsApiClient implements MTHDSProtocol {
    *
    * `options.pipeline_run_id` is bare-runner-only (the hosted API rejects it with 422 —
    * the returned `pipeline_run_id` is always authoritative); `options.method_id` is the
-   * hosted stored-method extension, mutually exclusive with `mthds_contents`.
+   * hosted stored-method extension, combinable with `mthds_contents` (the
+   * hosted API runs the inline contents; `method_id` links run history).
    * On a hosted deployment the id is durable — poll `getRunStatus` /
    * `getRunResult`.
    */

@@ -56,7 +56,9 @@ export interface StartRequest extends RunRequest {
   callback_urls?: string[] | null;
   /**
    * HOSTED EXTENSION — id of a stored method in the active org's catalog,
-   * mutually exclusive with `mthds_contents`. Bare runners do not implement it.
+   * combinable with `mthds_contents` — the hosted API runs the inline
+   * contents (precedence) and records `method_id` as the run-history
+   * linkage. Bare runners do not implement it.
    */
   method_id?: string | null;
 }

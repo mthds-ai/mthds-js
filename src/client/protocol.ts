@@ -1,4 +1,4 @@
-import type { RunOptions, RunResult, StartAck } from "./pipeline.js";
+import type { RunOptions, RunResult } from "./pipeline.js";
 import type { StartOptions } from "./runs.js";
 import type {
   ModelCategory,
@@ -20,7 +20,7 @@ export interface MTHDSProtocol {
   /**
    * Execute a method synchronously and wait for its completion.
    *
-   * Throws `RunStillRunningError` if the server answers `202 + StartAck` (the
+   * Throws `RunStillRunningError` if the server answers 202 (the
    * protocol's optional async degrade) instead of a final result.
    */
   execute(options: RunOptions): Promise<RunResult>;
@@ -29,9 +29,10 @@ export interface MTHDSProtocol {
    * Start a method asynchronously without waiting for completion.
    *
    * Carries the protocol's basic arguments only; server-specific extension
-   * args ride `options.extra`. The returned `StartAck.pipeline_run_id` is authoritative.
+   * args ride `options.extra`. Returns the protocol's `RunResult` with
+   * `pipe_output` absent — the returned `pipeline_run_id` is authoritative.
    */
-  start(options: StartOptions): Promise<StartAck>;
+  start(options: StartOptions): Promise<RunResult>;
 
   /**
    * Parse, validate, and dry-run an MTHDS bundle.

@@ -15,7 +15,7 @@ import { RunFailedError, RunTimeoutError } from "./exceptions.js";
  * `RunLifecycleUnavailableError`.
  *
  * Wire contract mirrors the hosted MTHDS API:
- *   POST /v1/start                  → StartAck         (start, 202)
+ *   POST /v1/start                  → RunResult ack    (start, 202)
  *   GET  /v1/runs/{pipeline_run_id}/status   → RunRead          (status, self-healing)
  *   GET  /v1/runs/{pipeline_run_id}/results  → 202 / 200 / 409  (results)
  */
@@ -24,7 +24,7 @@ import { RunFailedError, RunTimeoutError } from "./exceptions.js";
 
 /**
  * Hosted run lifecycle status. Mirrors `pipelex_shared.schemas.run.RunStatus`
- * — a superset of the protocol's `RunState` (the hosted store tracks extra
+ * — run states are a hosted-implementation concept; the protocol defines none (the hosted store tracks
  * states like `PENDING`). `STARTED` is deprecated server-side but kept here
  * for historical rows.
  */

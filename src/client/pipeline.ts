@@ -4,14 +4,6 @@ import type { PipelineInputs } from "./models/pipeline_inputs.js";
 
 // ── Run state ──────────────────────────────────────────────────────
 
-/** Run lifecycle state — mirrors the protocol's `RunState` enum. */
-export type RunState =
-  | "STARTED"
-  | "RUNNING"
-  | "COMPLETED"
-  | "FAILED"
-  | "CANCELLED"
-  | "ERROR";
 
 // ── Requests (wire bodies) ─────────────────────────────────────────
 
@@ -58,27 +50,22 @@ export interface ExtensionOptions {
 // ── Responses ──────────────────────────────────────────────────────
 
 /**
- * Result of a completed execution — `POST /execute` 200 and callback
- * payloads. Mirrors the protocol's `RunResult`.
+ * The protocol's single run response — `POST /execute` 200 (`pipe_output`
+ * present), `POST /start` 202 and the optional `/execute` 202 degrade
+ * (`pipe_output` absent).
+ *
+ * Exactly two base fields: the authoritative server-generated
+ * `pipeline_run_id` and the method's `pipe_output`. Anything more an
+ * implementation returns (a run state, timestamps, output naming, anything
+ * else) is an extension field — preserved via the index signature, never
+ * named by this SDK.
  */
 export interface RunResult {
   pipeline_run_id: string;
-  created_at: string;
-  state: RunState;
-  finished_at?: string | null;
-  main_stuff_name?: string | null;
-  /** The method's full output working memory (serialized stuffs). */
+  /** The method's full output working memory (serialized stuffs). Absent on `/start`. */
   pipe_output?: DictPipeOutput | null;
-}
-
-/**
- * Ack of a started execution — `POST /start` 202 (and the protocol's
- * optional `POST /execute` 202 degrade). `pipeline_run_id` is always authoritative.
- */
-export interface StartAck {
-  pipeline_run_id: string;
-  created_at: string;
-  state: RunState;
+  /** Implementation extension fields — defined and documented by the server. */
+  [extension: string]: unknown;
 }
 
 // ── Method options ─────────────────────────────────────────────────

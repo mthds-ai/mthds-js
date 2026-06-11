@@ -5,7 +5,7 @@ import {
   type RunResultState,
   type WaitForResultOptions,
 } from "../client/runs.js";
-import type { StartAck } from "../client/pipeline.js";
+import type { RunResult } from "../client/pipeline.js";
 
 /**
  * Shared base for every runner. Provides the two run-lifecycle COMPOSITES —
@@ -20,8 +20,8 @@ import type { StartAck } from "../client/pipeline.js";
  * drift between runtimes.
  */
 export abstract class BaseRunner {
-  /** Start a run and return its ack immediately (no waiting). `StartAck.pipeline_run_id` is authoritative. */
-  abstract start(options: StartOptions): Promise<StartAck>;
+  /** Start a run and return its 202 ack immediately (no waiting; `pipe_output` absent). The returned `pipeline_run_id` is authoritative. */
+  abstract start(options: StartOptions): Promise<RunResult>;
 
   /** Single-shot result lookup: running (202) / completed (200) / failed (409). */
   abstract getRunResult(

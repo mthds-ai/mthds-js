@@ -12,7 +12,7 @@ import type {
   PipeSpecRequest,
   PipeSpecResponse,
 } from "./types.js";
-import type { RunOptions, RunResult, StartAck } from "../client/pipeline.js";
+import type { RunOptions, RunResult } from "../client/pipeline.js";
 import type {
   StartOptions,
   RunRead,
@@ -120,7 +120,7 @@ export class ApiRunner extends BaseRunner implements Runner {
     return this.client.execute(options);
   }
 
-  async start(options: StartOptions): Promise<StartAck> {
+  async start(options: StartOptions): Promise<RunResult> {
     return this.client.start(options);
   }
 

@@ -20,7 +20,6 @@ export const RUNNER_NAMES: RunnerType[] = Object.values(Runners);
 
 // ── Shared enums / literals ─────────────────────────────────────────
 
-export type { RunState } from "../client/pipeline.js";
 
 export type ConceptRepresentationFormat = "json" | "python" | "schema";
 

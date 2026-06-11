@@ -52,7 +52,7 @@ afterEach(() => {
 describe("ApiRunner.startAndWaitForResult (hosted — durable start+poll path)", () => {
   it("handshakes /v1/version, starts on /v1/start, then polls to the result", async () => {
     const runner = new ApiRunner("http://localhost:8081", "test-token");
-    // version (hosted) → start (202 StartAck) → results (200). The 202→200
+    // version (hosted) → start (202 ack) → results (200). The 202→200
     // polling transition is covered at the client level; here we just prove
     // the runner takes the durable path and maps the result.
     const fetchSpy = vi
@@ -138,14 +138,14 @@ describe("ApiRunner against a bare runner (no run store)", () => {
 });
 
 describe("ApiRunner run-lifecycle delegation", () => {
-  it("start returns the StartAck", async () => {
+  it("start returns the RunResult ack", async () => {
     const runner = new ApiRunner("http://localhost:8081", "test-token");
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
       jsonResponse(202, { pipeline_run_id: "run-9", state: "STARTED", created_at: "t0" })
     );
     const ack = await runner.start({ pipe_code: "p", mthds_contents: ["x"] });
     expect(ack.pipeline_run_id).toBe("run-9");
-    expect(ack.state).toBe("STARTED");
+    expect(ack.state).toBe("STARTED"); // server extension field, preserved via the index signature
   });
 
   it("getRunResult reports a still-running run as running", async () => {

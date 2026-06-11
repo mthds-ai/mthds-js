@@ -3,7 +3,6 @@ import type {
   RunOptions,
   RunRequest,
   RunResult,
-  StartAck,
   StartRequest,
 } from "./pipeline.js";
 import type {
@@ -206,7 +205,7 @@ export class MthdsApiClient implements MTHDSProtocol {
   }
 
   /**
-   * Map the protocol's optional `202 + StartAck` execute degrade to a typed
+   * Map the protocol's optional 202 execute degrade to a typed
    * error. Hosted does not emit 202 today, but the protocol permits it;
    * raising a typed error (with the `pipeline_run_id` + `Location` + `Retry-After`
    * hints) beats a generic parse failure on an unexpected body shape.
@@ -241,7 +240,7 @@ export class MthdsApiClient implements MTHDSProtocol {
    * Behind the hosted gateway, synchronous requests terminate at ~30s; a run
    * that exceeds that surfaces as `PipelineExecuteTimeoutError` pointing at the
    * durable start+poll path. Throws `RunStillRunningError` on the protocol's
-   * optional `202 + StartAck` degrade.
+   * optional 202 degrade.
    */
   async execute(options: RunOptions): Promise<RunResult> {
     const extensions = buildExtensions(options.extra);
@@ -289,7 +288,7 @@ export class MthdsApiClient implements MTHDSProtocol {
   }
 
   /**
-   * Start a method asynchronously — `POST /v1/start` (202 `StartAck`).
+   * Start a method asynchronously — `POST /v1/start` (202, `pipe_output` absent).
    *
    * Server-specific extension args ride `options.extra` and merge into the
    * request body — the server you call defines and handles them (including a
@@ -297,7 +296,7 @@ export class MthdsApiClient implements MTHDSProtocol {
    * `pipeline_run_id` is always authoritative; on a hosted deployment it is
    * durable — poll `getRunStatus` / `getRunResult`.
    */
-  async start(options: StartOptions): Promise<StartAck> {
+  async start(options: StartOptions): Promise<RunResult> {
     const extensions = buildExtensions(options.extra);
     if (
       !options.pipe_code &&
@@ -327,7 +326,7 @@ export class MthdsApiClient implements MTHDSProtocol {
     if (res.status < 200 || res.status >= 300) {
       this.throwApiResponseError("POST", "start", res);
     }
-    return JSON.parse(res.body) as StartAck;
+    return JSON.parse(res.body) as RunResult;
   }
 
   /**
@@ -464,7 +463,7 @@ export class MthdsApiClient implements MTHDSProtocol {
 
   /**
    * Start a run and poll it to completion — the whole async lifecycle in one
-   * call: `start` (202 `StartAck`) followed by `waitForResult` on the returned
+   * call: `start` (202 ack) followed by `waitForResult` on the returned
    * `pipeline_run_id`. All `start` options apply, including the generic `extra`
    * extension passthrough; `waitOptions` tunes the poll loop.
    */

@@ -25,7 +25,7 @@ import type {
   CheckModelResponse,
   ConceptRepresentationFormat,
 } from "./types.js";
-import type { RunOptions, RunResult, StartAck } from "../client/pipeline.js";
+import type { RunOptions, RunResult } from "../client/pipeline.js";
 import type {
   StartOptions,
   RunRead,
@@ -404,11 +404,10 @@ export class PipelexRunner extends BaseRunner implements Runner {
         reducedRoot[stuffName] = { concept: conceptRef, content: stuff["content"] };
       }
 
+      // `main_stuff_name` is a pipelex extension field riding the protocol's
+      // extension-open response — not a protocol field.
       return {
         pipeline_run_id: "",
-        created_at: new Date().toISOString(),
-        state: "COMPLETED",
-        finished_at: new Date().toISOString(),
         pipe_output: {
           working_memory: { root: reducedRoot, aliases },
           pipeline_run_id: "",
@@ -476,7 +475,7 @@ export class PipelexRunner extends BaseRunner implements Runner {
     };
   }
 
-  async start(_options: StartOptions): Promise<StartAck> {
+  async start(_options: StartOptions): Promise<RunResult> {
     throw new Error(RUN_LIFECYCLE_UNSUPPORTED);
   }
 

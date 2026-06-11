@@ -12,11 +12,9 @@ export {
   RunLifecycleUnavailableError,
 } from "./exceptions.js";
 export type {
-  RunState,
   RunRequest,
   StartRequest,
   RunResult,
-  StartAck,
   RunOptions,
 } from "./pipeline.js";
 export { MTHDS_PROTOCOL_VERSION, MODEL_CATEGORIES } from "./protocol-models.js";

@@ -328,12 +328,12 @@ describe("MthdsApiClient happy path", () => {
     );
     const result = await client.execute({ pipe_code: "p" });
     expect(result.pipeline_run_id).toBe("ok");
-    expect(result.state).toBe("COMPLETED");
+    expect(result.state).toBe("COMPLETED"); // server extension field, preserved via the index signature
   });
 });
 
 describe("MthdsApiClient.start", () => {
-  it("POSTs /v1/start and returns the StartAck", async () => {
+  it("POSTs /v1/start and returns the RunResult ack", async () => {
     const client = makeClient();
     const fetchSpy = vi
       .spyOn(globalThis, "fetch")

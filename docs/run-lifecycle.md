@@ -17,7 +17,7 @@ The `GET /v1/version` handshake (`VersionInfo.implementation`) tells the SDK whi
 
 | Method | Path | Returns |
 |---|---|---|
-| `POST` | `/v1/start` | `202 StartAck` — the authoritative `pipeline_run_id` (executes asynchronously) |
+| `POST` | `/v1/start` | `202 RunResult` (`pipe_output` absent) — the authoritative `pipeline_run_id` (executes asynchronously) |
 | `GET` | `/v1/runs/{pipeline_run_id}/status` | `RunRead` — status, self-healing (`degraded` flag + `Retry-After` when Temporal is unreachable) |
 | `GET` | `/v1/runs/{pipeline_run_id}/results` | `202` still running · `200` result · `409` terminal failure |
 
@@ -25,7 +25,7 @@ The status read is self-healing: a run that timed out, was terminated, or whose 
 
 `status` is one of `PENDING`, `STARTED` (deprecated), `RUNNING`, `COMPLETED`, `FAILED`, `CANCELLED`, `TERMINATED`, `TIMED_OUT`. Only `COMPLETED` has a result; every other terminal status is a failure (`getRunResult` returns `409`, surfaced as `RunFailedError`).
 
-Server-specific extension args ride the generic `extra` option and merge into the request body — the server you call defines and handles them (see its API documentation). A client-supplied `pipeline_run_id` is bare-runner-only — the hosted API rejects it with 422 (the `StartAck.pipeline_run_id` is always authoritative).
+Server-specific extension args ride the generic `extra` option and merge into the request body — the server you call defines and handles them (see its API documentation). A client-supplied run identifier, where a server supports one, is such an extension — the `pipeline_run_id` returned by `start` is always authoritative.
 
 ## SDK — `MthdsApiClient`
 
@@ -73,7 +73,7 @@ Lower-level single-shot lookups:
 
 Both throw `RunLifecycleUnavailableError` when `MTHDS_API_URL` points at a bare runner (route-absent 404, distinguished from the platform's structured run-not-found 404 by the missing `code` field).
 
-The blocking `execute()` path may also throw `RunStillRunningError`: the protocol permits an implementation to degrade a synchronous `/execute` into `202 + StartAck` when it cannot hold the connection open. The error carries the `pipeline_run_id`, the `Retry-After` hint, and the `Location` header — resume by id.
+The blocking `execute()` path may also throw `RunStillRunningError`: the protocol permits an implementation to degrade a synchronous `/execute` into a 202 (no `pipe_output` yet) when it cannot hold the connection open. The error carries the `pipeline_run_id`, the `Retry-After` hint, and the `Location` header — resume by id.
 
 ## Runner surface
 
@@ -86,7 +86,7 @@ All commands emit a single JSON envelope via the agent's `agentSuccess` / `agent
 ```bash
 # Submit and return the id without waiting
 mthds-agent --runner api run start bundle.mthds --pipe my_pipe -i inputs.json
-# → { "pipeline_run_id": "…", "state": "STARTED", "created_at": "…" }
+# → { "pipeline_run_id": "…", …hosted extension fields (state, created_at) }
 
 # Single-shot status / result (do not block)
 mthds-agent --runner api run status <pipeline_run_id>

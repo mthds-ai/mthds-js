@@ -4,12 +4,13 @@
 
 ### Changed
 
-- **Request-side `pipeline_run_id` dropped from the protocol surface.** It is not a protocol argument: `StartRequest`/`StartOptions` no longer name it and the client no longer forwards it as a named option. A server that accepts a client-supplied run identifier defines it as an extension arg — pass it through `extra` like any other. The `pipeline_run_id` in responses (`StartAck`, run-lifecycle reads) is unchanged and always authoritative.
+- **`StartAck` and `RunState` are gone — one `RunResult`, two base fields.** The protocol's single run response is `RunResult{pipeline_run_id, pipe_output}` (`pipeline_run_id` mandatory and authoritative; `pipe_output` present on a completed `execute`, absent on `start`), extension-open via an index signature. `state`, `created_at`, `finished_at`, and `main_stuff_name` are implementation extension fields — never named by the SDK. `start` now returns `RunResult`; run states are a hosted/implementation concept (`RunStatus` in the run-lifecycle extension models is unchanged).
+- **Request-side `pipeline_run_id` dropped from the protocol surface.** It is not a protocol argument: `StartRequest`/`StartOptions` no longer name it and the client no longer forwards it as a named option. A server that accepts a client-supplied run identifier defines it as an extension arg — pass it through `extra` like any other. The `pipeline_run_id` in responses is unchanged and always authoritative.
 - **Extension args removed from the SDK; generic `extra` passthrough added.** The SDK carries the MTHDS Protocol's basic arguments only — server-specific extension args never appear in it, not even as named options. Both `execute` and `start` accept the generic `extra` option: any server-specific arg merges into the request body as a top-level property and the server that defines it handles it (protocol args inside `extra` are rejected client-side). The `mthds-agent` CLI's stored-method runs now pass the hosted selector through `extra`.
 
 ### Added
 
-- `startAndWait(options, waitOptions?)` — the whole async lifecycle in one call: `start` (202 `StartAck`) followed by `waitForResult` on the returned run id.
+- `startAndWait(options, waitOptions?)` — the whole async lifecycle in one call: `start` (202 ack) followed by `waitForResult` on the returned run id.
 
 ## [v0.10.0] - 2026-06-10
 

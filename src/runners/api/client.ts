@@ -36,6 +36,7 @@ import {
   RunLifecycleUnavailableError,
   RunStillRunningError,
 } from "./exceptions.js";
+import { isValidBaseUrl } from "../../config/config.js";
 
 interface MthdsApiClientOptions {
   /** API token (Bearer). Falls back to `MTHDS_API_KEY`. Optional for anonymous bare runners. */
@@ -109,9 +110,25 @@ export class MthdsApiClient extends BaseRunner implements Runner {
   constructor(options: MthdsApiClientOptions = {}) {
     super();
     this.apiToken = options.apiToken ?? process.env.MTHDS_API_KEY;
-    const resolvedBaseUrl =
-      options.baseUrl ?? process.env.MTHDS_API_URL ?? DEFAULT_API_BASE_URL;
-    this.baseUrl = resolvedBaseUrl.replace(/\/+$/, "");
+    const normalizedBaseUrl = (
+      options.baseUrl ??
+      process.env.MTHDS_API_URL ??
+      DEFAULT_API_BASE_URL
+    ).replace(/\/+$/, "");
+    // `config set base-url` validates host-only; direct SDK usage and
+    // MTHDS_API_URL reach this constructor and must be held to the same rule,
+    // or a path-prefixed value (e.g. `.../v1`) composes as `/v1/v1/...` and
+    // fails with a misleading endpoint error instead of a clear base-URL one.
+    // Trailing slashes are stripped first (leniency the SDK has always had);
+    // a remaining path/query/fragment/credentials is rejected.
+    if (!isValidBaseUrl(normalizedBaseUrl)) {
+      throw new PipelineRequestError(
+        `Invalid API base URL "${normalizedBaseUrl}": must be host-only ` +
+          `(http/https, no path, query, fragment, or credentials). Endpoints ` +
+          `compose as {base}/v1/{endpoint}.`
+      );
+    }
+    this.baseUrl = normalizedBaseUrl;
     this.originUrl = new URL("/", this.baseUrl).origin;
   }
 
@@ -390,10 +407,15 @@ export class MthdsApiClient extends BaseRunner implements Runner {
       ...extensions,
     };
 
-    const res = await this.requestRaw("POST", this.url("start"), {
+    const url = this.url("start");
+    const res = await this.requestRaw("POST", url, {
       body: request,
       timeoutMs: POLL_REQUEST_TIMEOUT_MS,
     });
+    // A bare runner with no run store 404s here just as it does on the result
+    // routes — surface the same clear `RunLifecycleUnavailableError` (and let
+    // `startAndWaitForResult` fall back to the blocking `execute`).
+    this.throwIfLifecycleUnavailable(res, url);
     if (res.status < 200 || res.status >= 300) {
       this.throwApiResponseError("POST", "start", res);
     }
@@ -574,9 +596,33 @@ export class MthdsApiClient extends BaseRunner implements Runner {
     pollOptions?: WaitForResultOptions
   ): Promise<RunResults> {
     if (await this.supportsRunLifecycle()) {
-      return super.startAndWaitForResult(options, pollOptions);
+      // A runner can look hosted yet lack the durable routes — `implementation`
+      // is an extension field, so a compliant bare runner that omits it is
+      // misdetected here. Such a runner raises `RunLifecycleUnavailableError`
+      // from `start()`, BEFORE any run is created, so falling back to the
+      // blocking path cannot double-run. Cache the negative so later calls skip
+      // the durable attempt.
+      let ack: RunResultStart;
+      try {
+        ack = await this.start(options);
+      } catch (err) {
+        if (!(err instanceof RunLifecycleUnavailableError)) throw err;
+        this.lifecycleAvailable = false;
+        return this.executeBlocking(options);
+      }
+      return this.waitForResult(ack.pipeline_run_id, pollOptions);
     }
 
+    return this.executeBlocking(options);
+  }
+
+  /**
+   * Blocking `POST /v1/execute` adapted onto `RunResults` — the bare-runner
+   * path. Forwards every protocol field PLUS the `extra` extension passthrough:
+   * an extension-only call (`{ extra }` with no pipe_code/bundle) or a vendor
+   * selector riding `extra` must survive this path, not just the durable one.
+   */
+  private async executeBlocking(options: StartOptions): Promise<RunResults> {
     const response = await this.execute({
       pipe_code: options.pipe_code ?? undefined,
       mthds_contents: options.mthds_contents ?? undefined,
@@ -584,6 +630,7 @@ export class MthdsApiClient extends BaseRunner implements Runner {
       output_name: options.output_name ?? undefined,
       output_multiplicity: options.output_multiplicity ?? undefined,
       dynamic_output_concept_ref: options.dynamic_output_concept_ref ?? undefined,
+      extra: options.extra ?? undefined,
     });
     return mapRunResultToRunResults(response);
   }

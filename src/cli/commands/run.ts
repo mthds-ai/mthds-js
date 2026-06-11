@@ -2,7 +2,7 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import * as p from "@clack/prompts";
 import { printLogo } from "./index.js";
-import { isPipelexRunner } from "./utils.js";
+import { isPipelexRunner, extractPassthroughArgs } from "./utils.js";
 import { createRunner } from "../../runners/registry.js";
 import type { Runner, RunnerType } from "../../runners/types.js";
 import type { StartOptions } from "../../protocol/options.js";
@@ -91,19 +91,32 @@ export async function runMethod(
 
   const runner = createRunner(options.runner, libraryDirs(options));
 
-  let runOptions: StartOptions;
-  try {
-    // An installed method is addressed by its pipe code (the method name, or an
-    // explicit `--pipe` override). The pipelex runner resolves it from its
-    // library; the API runner resolves it server-side.
-    runOptions = withInputs({ pipe_code: options.pipe ?? name }, options.inputs);
-  } catch (err) {
-    p.log.error((err as Error).message);
-    p.outro("");
-    process.exit(1);
+  if (isPipelexRunner(runner)) {
+    // `pipelex run method <name>` resolves an INSTALLED method by name (its
+    // main pipe) — distinct from `run pipe <code>`. Collapsing it onto the
+    // protocol `execute` (which only knows `pipe_code`) would emit
+    // `pipelex run pipe <name>` and break methods whose name differs from
+    // their main pipe code. Forward the method subcommand verbatim.
+    p.log.step("Executing via pipelex...");
+    try {
+      await runner.runPassthrough(extractPassthroughArgs("run", 1));
+      p.outro("Done");
+    } catch (err) {
+      p.log.error((err as Error).message);
+      p.outro("");
+      process.exit(1);
+    }
+    return;
   }
 
-  await dispatchRun(runner, runOptions, options);
+  // Running an installed method by name is a local-library concept; the API
+  // runner has no name→method resolution (it addresses pipes/bundles).
+  p.log.error(
+    "Running an installed method by name is only supported by the pipelex runner.\n" +
+      "With the API runner, use 'mthds run pipe <code>' or 'mthds run bundle <file>' (--runner pipelex to run a method by name)."
+  );
+  p.outro("");
+  process.exit(1);
 }
 
 export async function runBundle(

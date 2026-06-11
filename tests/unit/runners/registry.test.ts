@@ -3,17 +3,21 @@ import { MthdsApiClient } from "../../../src/runners/api/client.js";
 import { PipelexRunner } from "../../../src/runners/pipelex/runner.js";
 
 // Mock the config module so createRunner() does not read the real filesystem
-vi.mock("../../../src/config/config.js", () => ({
-  loadConfig: vi.fn(() => ({
-    runner: "api",
-    baseUrl: "https://api.pipelex.com",
-    apiKey: "",
-    telemetry: true,
-  })),
-  getConfigValue: vi.fn(() => ({ value: "https://api.pipelex.com", source: "default" })),
-  findLegacyUrlKey: vi.fn(() => undefined),
-  findLegacyApiKeyKey: vi.fn(() => undefined),
-}));
+vi.mock("../../../src/config/config.js", async (importOriginal) => {
+  const original = await importOriginal<typeof import("../../../src/config/config.js")>();
+  return {
+    ...original,
+    loadConfig: vi.fn(() => ({
+      runner: "api",
+      baseUrl: "https://api.pipelex.com",
+      apiKey: "",
+      telemetry: true,
+    })),
+    getConfigValue: vi.fn(() => ({ value: "https://api.pipelex.com", source: "default" })),
+    findLegacyUrlKey: vi.fn(() => undefined),
+    findLegacyApiKeyKey: vi.fn(() => undefined),
+  };
+});
 
 // Import after mock setup
 import { createRunner } from "../../../src/runners/registry.js";

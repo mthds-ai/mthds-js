@@ -88,6 +88,18 @@ describe("MthdsApiClient constructor", () => {
     );
   });
 
+  it("rejects a path-prefixed base URL instead of composing /v1/v1/...", () => {
+    // A leftover path (e.g. `.../v1`) would otherwise yield malformed
+    // `/v1/v1/...` endpoints with a misleading per-request error.
+    expect(() => new MthdsApiClient({ baseUrl: "https://api.pipelex.com/v1" })).toThrow(
+      /host-only/,
+    );
+    // A trailing slash on a path prefix is still a path prefix.
+    expect(() => new MthdsApiClient({ baseUrl: "https://api.pipelex.com/v1/" })).toThrow(
+      /host-only/,
+    );
+  });
+
   it("reads MTHDS_API_URL from the environment", async () => {
     const originalUrl = process.env.MTHDS_API_URL;
     process.env.MTHDS_API_URL = "http://env-host:9999";

@@ -24,10 +24,22 @@ vi.mock("node:os", () => ({
 }));
 
 import { readFileSync, existsSync } from "node:fs";
+import { spawn } from "node:child_process";
 import { PipelexRunner } from "../../../src/runners/pipelex/runner.js";
 
 const mockedReadFileSync = vi.mocked(readFileSync);
 const mockedExistsSync = vi.mocked(existsSync);
+const mockedSpawn = vi.mocked(spawn);
+
+/** Make `spawn` return a fake child that closes with the given exit code. */
+function mockSpawnExit(code: number): void {
+  mockedSpawn.mockReturnValue({
+    on(event: string, cb: (arg: number) => void) {
+      if (event === "close") cb(code);
+      return this;
+    },
+  } as unknown as ReturnType<typeof spawn>);
+}
 
 describe("PipelexRunner", () => {
   let runner: PipelexRunner;
@@ -342,6 +354,74 @@ describe("PipelexRunner", () => {
         })
       ).rejects.toThrow(/native\.Anything/);
       expect(mockedReadFileSync).not.toHaveBeenCalled();
+    });
+  });
+
+  // The basic `mthds run` CLI dispatches to `execute` (pipelex, blocking) — this
+  // is the local-runner half of the protocol's execute/start split.
+  describe("execute", () => {
+    it("runs `pipelex run bundle` and reduces working memory to the {concept, content} wire shape", async () => {
+      mockSpawnExit(0);
+      mockedExistsSync.mockReturnValue(true);
+      mockedReadFileSync.mockReturnValue(
+        JSON.stringify({
+          root: {
+            main_stuff: {
+              stuff_code: "s1",
+              concept: { code: "Greeting", domain_code: "hello" },
+              content: { text: "hi" },
+            },
+          },
+          aliases: { main_stuff: "main_stuff" },
+        })
+      );
+
+      const result = await runner.execute({ mthds_contents: ["bundle content"] });
+
+      // spawn was invoked as `pipelex run bundle <path> -L <tmp> ...`
+      const spawnArgs = mockedSpawn.mock.calls[0]![1] as string[];
+      expect(spawnArgs.slice(0, 2)).toEqual(["run", "bundle"]);
+
+      const root = (
+        result.pipe_output as {
+          working_memory: { root: Record<string, { concept: string; content: unknown }> };
+        }
+      ).working_memory.root;
+      expect(root.main_stuff).toEqual({
+        concept: "hello.Greeting",
+        content: { text: "hi" },
+      });
+      expect(result.main_stuff_name).toBe("main_stuff");
+    });
+
+    it("throws `pipelex exited with code N` when the CLI fails", async () => {
+      mockSpawnExit(1);
+      await expect(
+        runner.execute({ mthds_contents: ["bundle content"] })
+      ).rejects.toThrow(/pipelex exited with code 1/);
+    });
+  });
+
+  // The API runner polls a durable run; the pipelex runner has no run id, so its
+  // `startAndWaitForResult` override just runs `execute` blocking and adapts the
+  // result into the hosted `RunResults` shape (pipe_output, no main_stuff).
+  describe("startAndWaitForResult", () => {
+    it("delegates to execute and returns a RunResults with pipe_output (no main_stuff)", async () => {
+      mockSpawnExit(0);
+      mockedExistsSync.mockReturnValue(true);
+      mockedReadFileSync.mockReturnValue(
+        JSON.stringify({ root: {}, aliases: {} })
+      );
+
+      const result = await runner.startAndWaitForResult({
+        mthds_contents: ["bundle content"],
+      });
+
+      expect(result.main_stuff).toBeNull();
+      expect(result.graph_spec).toBeNull();
+      expect(result.pipe_output).toMatchObject({
+        working_memory: { root: {}, aliases: {} },
+      });
     });
   });
 });

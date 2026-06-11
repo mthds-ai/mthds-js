@@ -357,7 +357,7 @@ const config = program.command("config").description("Manage configuration").exi
 
 config
   .command("set")
-  .argument("<key>", "Config key (runner, runner-url, platform-url, api-key, telemetry, auto-upgrade, update-check)")
+  .argument("<key>", "Config key (runner, base-url, api-key, telemetry, auto-upgrade, update-check)")
   .argument("<value>", "Value to set")
   .description("Set a config value")
   .exitOverride()
@@ -367,7 +367,7 @@ config
 
 config
   .command("get")
-  .argument("<key>", "Config key (runner, runner-url, platform-url, api-key, telemetry, auto-upgrade, update-check)")
+  .argument("<key>", "Config key (runner, base-url, api-key, telemetry, auto-upgrade, update-check)")
   .description("Get a config value")
   .exitOverride()
   .action(async (key: string) => {

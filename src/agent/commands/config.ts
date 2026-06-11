@@ -3,13 +3,11 @@
  */
 
 import { agentSuccess, agentError, AGENT_ERROR_DOMAINS } from "../output.js";
-import {
-  VALID_KEYS,
+import { VALID_KEYS,
   resolveKey,
   getConfigValue,
   setConfigValue,
-  listConfig,
-} from "../../config/config.js";
+  listConfig, isValidBaseUrl } from "../../config/config.js";
 import { RUNNER_NAMES } from "../../runners/types.js";
 import type { RunnerType } from "../../runners/types.js";
 
@@ -43,11 +41,7 @@ export async function agentConfigSet(
     );
   }
 
-  // Only platformUrl may be set empty (to disable the durable platform surface);
-  // an empty runnerUrl is invalid — the runner base URL is required.
-  const isUrlKey = configKey === "runnerUrl" || configKey === "platformUrl";
-  const allowEmpty = configKey === "platformUrl" && value === "";
-  if (isUrlKey && !allowEmpty && !isValidUrl(value)) {
+  if (configKey === "baseUrl" && !isValidBaseUrl(value)) {
     agentError(`Invalid URL: ${value}`, "ConfigError", {
       error_domain: AGENT_ERROR_DOMAINS.CONFIG,
     });

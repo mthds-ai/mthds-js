@@ -5,7 +5,7 @@ import { isPipelexInstalled } from "../../installer/runtime/check.js";
 import { ensureRuntime } from "../../installer/runtime/installer.js";
 import { shutdown } from "../../installer/telemetry/posthog.js";
 import { printLogo } from "./index.js";
-import { getConfigValue, setConfigValue, loadConfig } from "../../config/config.js";
+import { DEFAULT_BASE_URL, getConfigValue, isValidBaseUrl, setConfigValue } from "../../config/config.js";
 import { Runners, RUNNER_NAMES } from "../../runners/types.js";
 import { maskApiKey } from "./utils.js";
 
@@ -14,42 +14,27 @@ const execFileAsync = promisify(execFile);
 // ── mthds runner setup <name> ───────────────────────────────────────
 
 async function initApi(): Promise<void> {
-  const { value: currentRunnerUrl, source: runnerUrlSource } =
-    getConfigValue("runnerUrl");
-  const { value: currentPlatformUrl, source: platformUrlSource } =
-    getConfigValue("platformUrl");
+  const { value: currentBaseUrl, source: baseUrlSource } =
+    getConfigValue("baseUrl");
   const { value: currentKey } = getConfigValue("apiKey");
 
   const validateUrl = (val: string | undefined): string | undefined => {
-    if (!val) return undefined; // will use default
-    try {
-      new URL(val);
-    } catch {
-      return "Must be a valid URL";
+    if (!val) return undefined; // empty resets to the default
+    if (!isValidBaseUrl(val)) {
+      return "Must be a host-only http(s) URL — no path (e.g. https://api.pipelex.com)";
     }
+    return undefined;
   };
 
-  const runnerUrl = await p.text({
-    message: "Runner URL (includes version prefix, e.g. /runner/v1 or /api/v1)",
-    placeholder: currentRunnerUrl,
-    initialValue: runnerUrlSource !== "default" ? currentRunnerUrl : "",
-    validate: validateUrl,
-  });
-
-  if (p.isCancel(runnerUrl)) {
-    p.cancel("Cancelled.");
-    process.exit(0);
-  }
-
-  const platformUrl = await p.text({
+  const baseUrl = await p.text({
     message:
-      "Platform URL (optional — leave empty for a self-hosted runner with no run store)",
-    placeholder: currentPlatformUrl,
-    initialValue: platformUrlSource !== "default" ? currentPlatformUrl : "",
+      "API base URL (host only, e.g. https://api.pipelex.com or http://localhost:8081)",
+    placeholder: currentBaseUrl,
+    initialValue: baseUrlSource !== "default" ? currentBaseUrl : "",
     validate: validateUrl,
   });
 
-  if (p.isCancel(platformUrl)) {
+  if (p.isCancel(baseUrl)) {
     p.cancel("Cancelled.");
     process.exit(0);
   }
@@ -66,20 +51,9 @@ async function initApi(): Promise<void> {
     process.exit(0);
   }
 
-  if (runnerUrl) {
-    setConfigValue("runnerUrl", runnerUrl);
-  }
-  if (platformUrl) {
-    setConfigValue("platformUrl", platformUrl);
-  } else if (platformUrlSource === "file") {
-    // The user cleared a platform URL that lives in the config FILE → disable the
-    // durable platform surface (write empty) instead of keeping the stale value.
-    // Only when it's file-sourced: an env-sourced value can't be overridden from
-    // the file (env wins, so writing empty would be hidden state that bites once
-    // the env var is removed), and a never-set default should keep auto-following
-    // the runner URL.
-    setConfigValue("platformUrl", "");
-  }
+  // Always persist: a non-empty value is saved; an emptied field resets a
+  // previously-saved custom URL back to the default.
+  setConfigValue("baseUrl", (baseUrl as string) || DEFAULT_BASE_URL);
   if (apiKey) {
     setConfigValue("apiKey", apiKey as string);
   }
@@ -218,16 +192,11 @@ export async function runnerStatus(): Promise<void> {
   p.log.info(`Default runner: ${defaultRunner}${sourceLabel}`);
 
   // API runner
-  const { value: runnerUrl } = getConfigValue("runnerUrl");
-  // Effective platform URL — `loadConfig` applies the "platform follows runner"
-  // auto-derive, so a self-hosted runner correctly shows the platform as unset
-  // (a raw key lookup would print the hosted default even when it's disabled).
-  const { platformUrl } = loadConfig();
+  const { value: baseUrl } = getConfigValue("baseUrl");
   const { value: apiKey } = getConfigValue("apiKey");
   p.log.message(`\n  API runner`);
-  p.log.message(`    Runner URL:   ${runnerUrl}`);
-  p.log.message(`    Platform URL: ${platformUrl || "(unset — self-hosted, durable runs disabled)"}`);
-  p.log.message(`    API key:      ${maskApiKey(apiKey)}`);
+  p.log.message(`    Base URL: ${baseUrl}`);
+  p.log.message(`    API key:  ${maskApiKey(apiKey)}`);
 
   // Pipelex runner
   const pipelexVersion = await getPipelexVersion();

@@ -4,7 +4,7 @@ export function maskApiKey(key: string): string {
   return `${key.slice(0, 4)}${"*".repeat(key.length - 4)}`;
 }
 
-import { PipelexRunner } from "../../runners/pipelex-runner.js";
+import { PipelexRunner } from "../../runners/pipelex/runner.js";
 import { Runners } from "../../runners/types.js";
 import type { Runner } from "../../runners/types.js";
 

@@ -14,19 +14,11 @@ import type { RunnerType } from "../runners/types.js";
 export interface MthdsConfig {
   runner: RunnerType;
   /**
-   * Base URL of the runner surface, INCLUDING its version prefix
-   * (hosted: `.../runner/v1`; self-hosted: `http://<host>/api/v1`).
-   * Runner endpoints (`/pipeline/execute`, `/validate`, `/build/*`, `/models`,
-   * `/pipelex_version`) are appended to this; `/health` resolves to its origin.
+   * API base URL — host only, NO version prefix (e.g. `https://api.pipelex.com`
+   * or `http://localhost:8081`). Every endpoint composes as
+   * `{baseUrl}/v1/{endpoint}`; `/health` resolves to the origin root.
    */
-  runnerUrl: string;
-  /**
-   * Base URL of the platform surface, INCLUDING its version prefix
-   * (hosted: `.../platform/v1`). Optional: when empty/undefined the SDK is in
-   * self-hosted mode — durable run commands are disabled and `run pipe` falls
-   * back to the runner's blocking `/pipeline/execute`.
-   */
-  platformUrl: string;
+  baseUrl: string;
   apiKey: string;
   telemetry: boolean;
   autoUpgrade: boolean;
@@ -44,9 +36,8 @@ const CONFIG_PATH = join(CONFIG_DIR, "config");
 
 /** Map from config key to env var name */
 const ENV_NAMES: Record<keyof MthdsConfig, string> = {
-  runnerUrl: "PIPELEX_RUNNER_URL",
-  platformUrl: "PIPELEX_PLATFORM_URL",
-  apiKey: "PIPELEX_API_KEY",
+  baseUrl: "MTHDS_API_URL",
+  apiKey: "MTHDS_API_KEY",
   runner: "MTHDS_RUNNER",
   telemetry: "DISABLE_TELEMETRY",
   autoUpgrade: "MTHDS_AUTO_UPGRADE",
@@ -55,24 +46,21 @@ const ENV_NAMES: Record<keyof MthdsConfig, string> = {
 
 /** Map from config key to file key (used in ~/.mthds/config) */
 const FILE_KEYS: Record<keyof MthdsConfig, string> = {
-  runnerUrl: "PIPELEX_RUNNER_URL",
-  platformUrl: "PIPELEX_PLATFORM_URL",
-  apiKey: "PIPELEX_API_KEY",
+  baseUrl: "MTHDS_API_URL",
+  apiKey: "MTHDS_API_KEY",
   runner: "MTHDS_RUNNER",
   telemetry: "DISABLE_TELEMETRY",
   autoUpgrade: "MTHDS_AUTO_UPGRADE",
   updateCheck: "MTHDS_UPDATE_CHECK",
 };
 
-/** Hosted defaults. Each base includes its own version prefix. */
-const DEFAULT_RUNNER_URL = "https://api.pipelex.com/runner/v1";
-const DEFAULT_PLATFORM_URL = "https://api.pipelex.com/platform/v1";
+/** Hosted default — host only; endpoints compose as `{base}/v1/{endpoint}`. */
+export const DEFAULT_BASE_URL = "https://api.pipelex.com";
 
 /** Defaults */
 const DEFAULTS: MthdsConfig = {
   runner: Runners.PIPELEX,
-  runnerUrl: DEFAULT_RUNNER_URL,
-  platformUrl: DEFAULT_PLATFORM_URL,
+  baseUrl: DEFAULT_BASE_URL,
   apiKey: "",
   telemetry: true,
   autoUpgrade: false,
@@ -82,34 +70,12 @@ const DEFAULTS: MthdsConfig = {
 /** Map from CLI flag names (kebab-case) to config keys */
 const KEY_ALIASES: Record<string, keyof MthdsConfig> = {
   runner: "runner",
-  "runner-url": "runnerUrl",
-  "platform-url": "platformUrl",
+  "base-url": "baseUrl",
   "api-key": "apiKey",
   telemetry: "telemetry",
   "auto-upgrade": "autoUpgrade",
   "update-check": "updateCheck",
 };
-
-/** Legacy file/env key that this version replaces. Used only for fail-fast hints. */
-const LEGACY_API_URL_KEY = "PIPELEX_API_URL";
-
-/** One-line migration message used wherever a legacy `apiUrl` is detected. */
-export const LEGACY_API_URL_MIGRATION_MESSAGE =
-  "`apiUrl` is replaced by `runnerUrl` (required) + `platformUrl` (optional). " +
-  "Hosted: runnerUrl=https://api.pipelex.com/runner/v1 ; " +
-  "Self-host: runnerUrl=http://<host>/api/v1";
-
-/**
- * Detect a leftover legacy `apiUrl`/`PIPELEX_API_URL` value (file or env).
- * Used by the api-runner request path to fail fast with a migration hint;
- * deliberately NOT consulted by `loadConfig()` so pure `pipelex`-runner flows
- * and unrelated commands are never blocked.
- */
-export function hasLegacyApiUrl(): boolean {
-  if (process.env[LEGACY_API_URL_KEY] !== undefined) return true;
-  const file = readConfigFile();
-  return LEGACY_API_URL_KEY in file;
-}
 
 // ── Boolean key sets ──────────────────────────────────────────────
 
@@ -129,6 +95,26 @@ const INVERTED_BOOLEAN_KEYS: Set<keyof MthdsConfig> = new Set([
 const TRUTHY_STRINGS: ReadonlySet<string> = new Set(["true", "1", "yes", "on"]);
 
 export const VALID_KEYS = Object.keys(KEY_ALIASES);
+
+/**
+ * A base URL must be HOST ONLY — http/https, no path, query, or fragment.
+ * The client composes `{base}/v1/{endpoint}`; a path-prefixed value (e.g. a
+ * leftover `.../runner/v1`) would produce malformed `/v1/v1/...` endpoints.
+ */
+export function isValidBaseUrl(value: string): boolean {
+  let parsed: URL;
+  try {
+    parsed = new URL(value);
+  } catch {
+    return false;
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return false;
+  if (parsed.pathname !== "/" && parsed.pathname !== "") return false;
+  // Host only also means no embedded credentials — auth travels in the
+  // Authorization header (MTHDS_API_KEY), never in the URL.
+  if (parsed.username || parsed.password) return false;
+  return !parsed.search && !parsed.hash;
+}
 
 export function resolveKey(
   cliKey: string
@@ -215,26 +201,6 @@ export function loadConfig(): MthdsConfig {
     if (envVal !== undefined) {
       merged[key] = coerceValue(key as keyof MthdsConfig, envVal);
     }
-  }
-
-  // The platform follows the runner. The durable run lifecycle (start/poll/
-  // result by id) is a hosted Pipelex Platform feature; the open-source runner
-  // has no run store. So unless the platform URL is explicitly chosen, it is
-  // present ONLY when the runner is the hosted Pipelex runner. Pointing the
-  // runner at a self-hosted URL therefore disables the platform automatically —
-  // `config set runner-url <self-hosted>` is sufficient; you don't also have to
-  // clear the platform URL (and you can't accidentally poll the hosted platform
-  // for a run that executed on your local runner).
-  const platformUrlExplicit =
-    process.env[ENV_NAMES.platformUrl] !== undefined ||
-    FILE_KEYS.platformUrl in file;
-  if (!platformUrlExplicit) {
-    // Compare against the hosted default with the trailing slash normalized away,
-    // so a valid `…/runner/v1/` still counts as the hosted runner (and keeps the
-    // durable platform) instead of being treated as self-hosted.
-    const normalizedRunnerUrl = String(merged.runnerUrl).replace(/\/+$/, "");
-    merged.platformUrl =
-      normalizedRunnerUrl === DEFAULT_RUNNER_URL ? DEFAULT_PLATFORM_URL : "";
   }
 
   return merged as unknown as MthdsConfig;

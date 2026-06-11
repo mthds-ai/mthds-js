@@ -1,55 +1,51 @@
 # Self-hosting the runner
 
-mthds-js targets either the hosted Pipelex API or a runner you boot yourself ([pipelex-api](https://github.com/Pipelex/pipelex-api), open source). The same SDK and CLI drive both — the only difference is configuration.
+mthds-js targets either the hosted MTHDS API or a runner you boot yourself ([pipelex-api](https://github.com/Pipelex/pipelex-api), open source). The same SDK and CLI drive both — the only difference is the base URL.
 
-## Two base URLs
+## One base URL
 
-The SDK addresses two surfaces, each by its own base URL that **already includes its version prefix**:
+There is a single configuration pair. The base URL is the **host only — no version prefix**; the SDK composes every endpoint as `{base}/v1/{endpoint}`:
 
-| Config key | Env var | Surface | Required |
-|---|---|---|---|
-| `runnerUrl` | `PIPELEX_RUNNER_URL` | Stateless execution engine — `/pipeline/execute`, `/pipeline/start`, `/validate`, `/build/*`, `/models`, `/pipelex_version` | yes |
-| `platformUrl` | `PIPELEX_PLATFORM_URL` | Durable run lifecycle — `/runs`, `/runs/by-id/{id}`, `/runs/by-id/{id}/result` | no |
+| Config key | Env var | Default |
+|---|---|---|
+| `base-url` | `MTHDS_API_URL` | `https://api.pipelex.com` |
+| `api-key` | `MTHDS_API_KEY` | (empty) |
 
-Endpoints are appended to the base **without re-adding a version prefix**: `executePipeline` hits `<runnerUrl>/pipeline/execute`. `/health` is the exception — it is origin-level, so it resolves to the runner's origin root (`<scheme>://<host>/health`), not under the version prefix.
+`execute` hits `<base>/v1/execute`, `validate` hits `<base>/v1/validate`, and so on. `/health` is the exception — it is origin-level, so it resolves to the origin root (`<scheme>://<host>/health`), not under `/v1`.
+
+The protocol surface (`/v1/execute`, `/v1/start`, `/v1/validate`, `/v1/models`, `/v1/version`) is identical on the hosted API and on a bare runner. Only the hosted extensions differ — e.g. the durable run lifecycle (`/v1/runs/*`) — detectable via the `GET /v1/version` handshake.
 
 ## Hosted (default)
 
 ```bash
 mthds config set runner api          # use the HTTP runner (default is the local `pipelex` passthrough)
-mthds config set runner-url https://api.pipelex.com/runner/v1
-mthds config set platform-url https://api.pipelex.com/platform/v1
+mthds config set base-url https://api.pipelex.com
 mthds config set api-key YOUR_KEY
 ```
 
-`run pipe` starts a durable run on the platform and polls it to completion (survives long runs); `run start` / `run status` / `run result` / `run poll` drive the run lifecycle by id.
+`run pipe` starts a durable run and polls it to completion (survives long runs); `run start` / `run status` / `run result` / `run poll` drive the run lifecycle by id.
 
-## Self-hosted (runner only, no platform)
+## Self-hosted (bare runner, no run store)
 
-The open-source runner is stateless and has no run store. The runner's standard prefix is `/api/v1`.
+The open-source runner is stateless and has no run store. It mounts the same `/v1` paths.
 
 ```bash
 mthds config set runner api          # use the HTTP runner
-mthds config set runner-url http://localhost:8081/api/v1
-# do NOT set platform-url
+mthds config set base-url http://localhost:8081
 ```
-
-Pointing `runnerUrl` at a non-hosted URL **automatically disables the platform** — when you haven't explicitly set `platformUrl`, it is present only while the runner is the hosted Pipelex runner. So you never have to clear it manually, and you can't accidentally poll the hosted platform for a run that executed on your local runner. (If you previously set `platform-url` explicitly, clear it with `mthds config set platform-url ""`.)
 
 In this mode:
 
-- **`run pipe` / `run bundle`** → blocking `POST <runnerUrl>/pipeline/execute`. There is no hosted-gateway 30s cap off-platform — but your own reverse proxy (nginx, ALB, Cloud Run, …) typically imposes its own idle timeout (~60s). Raise it for long runs, or use the async lifecycle below.
-- **`run start` / `run status` / `run result` / `run poll`** → the runner serves the async lifecycle itself (`POST <runnerUrl>/runs`, then `GET <runnerUrl>/runs/by-id/{id}` and `.../result`). The SDK drives it against the runner with no platform configured — start a run, poll by id, fetch the result. State is kept in an in-process store (no Temporal/database); it is single-process and lost on restart. The hosted Pipelex Platform is the durable, multi-tenant version of the same surface — set `platformUrl` to use it instead.
+- **`run pipe` / `run bundle`** → blocking `POST <base>/v1/execute` (the `/v1/version` handshake reports `implementation: "pipelex-api"`, so the SDK takes the blocking path). There is no hosted-gateway 30s cap off-platform — but your own reverse proxy (nginx, ALB, Cloud Run, …) typically imposes its own idle timeout (~60s). Raise it for long runs, or use `start` (completion delivery is implementation-defined — `pipelex-api` offers HMAC-signed completion webhooks via its `callback_urls` extension arg, passed through `extra`).
+- **`run start`** → `POST <base>/v1/start` works (fire-and-callback; you may pass your own `pipeline_run_id` — a bare runner accepts it, the hosted API rejects it with 422), but **`run status` / `run result` / `run poll` do not**: the bare runner 404s `/v1/runs/*`, which the SDK surfaces as a clear `RunLifecycleUnavailableError`. The durable poll-by-id lifecycle is a hosted-API extension.
 
-The run-lifecycle base resolves to `platformUrl` when set, otherwise to `runnerUrl`, so the same `run start`/`poll` code drives either tier.
+### Minimum server version
+
+The SDK composes every endpoint under `/v1`, which requires a pipelex-api image that mounts its API at `/v1` (the MTHDS Protocol cutover) — older images mounted `/api/v1` and answer 404 on every call, including the `/v1/version` handshake itself. Upgrade your runner image before (or together with) this SDK version.
 
 ### Output shape
 
-The self-hosted `run pipe` returns the runner's native `pipe_output`; the hosted durable path returns `main_stuff` + `graph_spec`. For v1 this difference is documented, not normalized (TODO).
-
-## Migrating from `apiUrl`
-
-The single `apiUrl` / `PIPELEX_API_URL` key has been replaced by `runnerUrl` + `platformUrl`. There is no backward compatibility: if a leftover legacy `apiUrl` is detected while the api-runner needs a URL and `runnerUrl` was never set, the SDK fails fast with a migration hint. Set `runnerUrl` (and optionally `platformUrl`) as above.
+The self-hosted blocking `run pipe` returns the runner's native `pipe_output`; the hosted durable path returns `main_stuff` + `graph_spec`. For v1 this difference is documented, not normalized (TODO).
 
 ## SDK
 
@@ -58,16 +54,15 @@ import { MthdsApiClient } from "mthds";
 
 // Hosted
 const hosted = new MthdsApiClient({
-  runnerBaseUrl: "https://api.pipelex.com/runner/v1",
-  platformBaseUrl: "https://api.pipelex.com/platform/v1",
+  baseUrl: "https://api.pipelex.com",
   apiToken: "your-api-key",
 });
 
-// Self-hosted (no platform store)
+// Self-hosted (bare runner)
 const selfHosted = new MthdsApiClient({
-  runnerBaseUrl: "http://localhost:8081/api/v1",
+  baseUrl: "http://localhost:8081",
   apiToken: "your-api-key",
 });
 ```
 
-See also the runner's own OpenAPI contract and quickstart in [pipelex-api](https://github.com/Pipelex/pipelex-api) (`docs/index.md`).
+See also the runner's own OpenAPI contract and quickstart in [pipelex-api](https://github.com/Pipelex/pipelex-api) (`docs/index.md`), and the MTHDS Protocol spec (`mthds-protocol.openapi.yaml`) in the mthds standard repo.

@@ -2,7 +2,6 @@ import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
 import {
   existsSync,
-  mkdirSync,
   writeFileSync,
   readFileSync,
   mkdtempSync,
@@ -10,7 +9,7 @@ import {
 } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { Runners } from "./types.js";
+import { Runners } from "../types.js";
 import type {
   Runner,
   RunnerType,
@@ -18,29 +17,32 @@ import type {
   BuildOutputRequest,
   BuildRunnerRequest,
   BuildRunnerResponse,
-  ExecuteRequest,
-  PipelineResponse,
-  ValidateRequest,
-  ValidateResponse,
   ConceptRequest,
   ConceptResponse,
   PipeSpecRequest,
   PipeSpecResponse,
   CheckModelRequest,
   CheckModelResponse,
-  ModelsRequest,
-  ModelsResponse,
   ConceptRepresentationFormat,
-} from "./types.js";
+} from "../types.js";
+import type { RunOptions, StartOptions } from "../../protocol/options.js";
 import type {
-  StartRunOptions,
-  RunPublic,
+  ModelCategory,
+  ModelDeck,
+  ModelInfo,
+  ValidationReport,
+  VersionInfo,
+} from "../../protocol/models.js";
+import { MTHDS_PROTOCOL_VERSION } from "../../protocol/models.js";
+import { conceptRef } from "../../protocol/concept.js";
+import type { DictPipeOutput, DictRunResultExecute } from "../api/models.js";
+import type {
   RunRead,
-  RunResult,
+  RunResults,
   RunResultState,
   WaitForResultOptions,
-} from "../client/runs.js";
-import { BaseRunner } from "./base-runner.js";
+} from "../api/runs.js";
+import { BaseRunner } from "../base-runner.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -144,13 +146,20 @@ export class PipelexRunner extends BaseRunner implements Runner {
     }
   }
 
-  async version(): Promise<Record<string, string>> {
+  async version(): Promise<VersionInfo> {
     const { stdout } = await this.exec(["--version"]);
-    return { pipelex: stdout.trim() };
+    const pipelexVersion = stdout.trim();
+    return {
+      protocol_version: MTHDS_PROTOCOL_VERSION,
+      runner_version: pipelexVersion,
+      // Implementation identity rides the protocol's extension-open VersionInfo.
+      implementation: "pipelex",
+      implementation_version: pipelexVersion,
+      runtime_version: pipelexVersion,
+    };
   }
 
   // ── Build ───────────────────────────────────────────────────────
-  // buildInputs and buildOutput have no CLI equivalent.
 
   // pipelex-agent inputs bundle <bundle.mthds> --pipe <pipe_code>
   async buildInputs(request: BuildInputsRequest): Promise<unknown> {
@@ -298,11 +307,13 @@ export class PipelexRunner extends BaseRunner implements Runner {
   }
 
   // pipelex-agent check-model <reference> --type <type> --format json
-  // The local runner always forces --format json: pipelex-agent's markdown output is plain
-  // text (via print()), which can't satisfy the CheckModelResponse contract. The request's
-  // `format` field is intentionally ignored here.
-  // pipelex-agent declares --type as a required typer option (no default), so we guard
-  // here for SDK consumers that bypass the agent CLI's parser.
+  // check-model is a LOCAL CLI capability of this runner only — the MTHDS API
+  // has no check-model route, so this method is NOT on the shared `Runner`
+  // interface. The local runner always forces --format json: pipelex-agent's
+  // markdown output is plain text (via print()), which can't satisfy the
+  // CheckModelResponse contract. The request's `format` field is intentionally
+  // ignored here. pipelex-agent declares --type as a required typer option (no
+  // default), so we guard here for SDK consumers that bypass the agent CLI's parser.
   async checkModel(request: CheckModelRequest): Promise<CheckModelResponse> {
     if (!request.type) {
       throw new Error("checkModel requires `type` (one of: llm, extract, img_gen, search)");
@@ -314,73 +325,98 @@ export class PipelexRunner extends BaseRunner implements Runner {
     return JSON.parse(stdout) as CheckModelResponse;
   }
 
-  // pipelex-agent models [--type <type>...] --format json
-  async models(request?: ModelsRequest): Promise<ModelsResponse> {
+  // pipelex-agent models [--type <type>] --format json
+  async models(category?: ModelCategory): Promise<ModelDeck> {
     const args = ["models"];
-    if (request?.type) {
-      for (const t of request.type) {
-        args.push("--type", t);
-      }
+    if (category) {
+      args.push("--type", category);
     }
     args.push("--format", "json");
     const { stdout } = await execFileAsync("pipelex-agent", args, {
       encoding: "utf-8",
     });
-    return JSON.parse(stdout) as ModelsResponse;
+    return toModelDeck(JSON.parse(stdout));
   }
 
-  // ── Pipeline execution ──────────────────────────────────────────
+  // ── Method execution ────────────────────────────────────────────
   // pipelex run <target> [--pipe code] [--inputs file] [--output-dir dir]
   // Local, blocking, in-process — there is no durable run to poll by id, so
-  // `startAndWaitForResult` runs through here and the granular durable
-  // primitives (start/getRun/getResult/waitForResult) are unsupported.
+  // `execute` / `startAndWaitForResult` run through here and the async
+  // primitives (start / getRunStatus / getRunResult / waitForResult) are
+  // unsupported.
 
-  private async executeLocal(request: ExecuteRequest): Promise<PipelineResponse> {
+  async execute(options: RunOptions): Promise<DictRunResultExecute> {
     const tmp = makeTmpDir();
     try {
+      // The pipelex CLI dispatches through `run bundle <path>` / `run pipe <code>`.
       const args: string[] = ["run"];
 
-      if (request.mthds_contents?.length) {
-        const bundlePath = writeMthdsContents(tmp, request.mthds_contents);
-        args.push(bundlePath);
+      if (options.mthds_contents?.length) {
+        const bundlePath = writeMthdsContents(tmp, options.mthds_contents);
+        args.push("bundle", bundlePath);
         args.push("-L", tmp);
-        if (request.pipe_code) {
-          args.push("--pipe", request.pipe_code);
+        if (options.pipe_code) {
+          args.push("--pipe", options.pipe_code);
         }
-      } else if (request.pipe_code) {
-        args.push(request.pipe_code);
+      } else if (options.pipe_code) {
+        args.push("pipe", options.pipe_code);
       }
 
-      if (request.inputs) {
+      if (options.inputs) {
         const inputsPath = join(tmp, "inputs.json");
         writeFileSync(
           inputsPath,
-          JSON.stringify(request.inputs),
+          JSON.stringify(options.inputs),
           "utf-8"
         );
         args.push("--inputs", inputsPath);
       }
 
-      args.push("--output-dir", tmp);
+      // Pin the working-memory artifact to a known path; other outputs go to
+      // an incremental directory under --output-dir which we don't need.
+      const wmPath = join(tmp, "working_memory.json");
+      args.push("--working-memory-path", wmPath);
+      args.push("--output-dir", join(tmp, "results"));
+      args.push("--no-pretty-print");
 
       await this.execStreaming(args);
 
-      const wmPath = join(tmp, "working_memory.json");
       const raw = existsSync(wmPath)
         ? (JSON.parse(readFileSync(wmPath, "utf-8")) as Record<string, unknown>)
         : {};
 
-      // The CLI output is working memory JSON. Wrap it in PipelineResponse shape.
+      // The CLI writes the runtime's FULL working memory
+      // (`{root: {name: {stuff_code, stuff_name, concept: {...}, content}}, aliases}`).
+      // Reduce each stuff to the SDK wire shape `{concept: <ref string>, content}` —
+      // the same reduction the API runner performs server-side. The runtime-internal
+      // id keeps its `pipeline_run_id` name (D1: internals are out of the rename scope).
+      const rawRoot = (raw["root"] ?? {}) as Record<string, Record<string, unknown>>;
+      const aliases = (raw["aliases"] ?? {}) as Record<string, string>;
+      const reducedRoot: Record<string, { concept: string; content: unknown }> = {};
+      for (const [stuffName, stuff] of Object.entries(rawRoot)) {
+        const conceptRaw = stuff["concept"];
+        let conceptRefStr: string;
+        if (conceptRaw && typeof conceptRaw === "object") {
+          const conceptObj = conceptRaw as Record<string, unknown>;
+          const code = typeof conceptObj["code"] === "string" ? conceptObj["code"] : "";
+          const domainCode = typeof conceptObj["domain_code"] === "string" ? conceptObj["domain_code"] : "";
+          // A missing domain_code falls back to the bare code (no leading dot).
+          conceptRefStr = domainCode ? conceptRef({ domain_code: domainCode, code }) : code;
+        } else {
+          conceptRefStr = String(conceptRaw ?? "");
+        }
+        reducedRoot[stuffName] = { concept: conceptRefStr, content: stuff["content"] };
+      }
+
+      // `main_stuff_name` is a pipelex extension field riding the protocol's
+      // extension-open response — not a protocol field.
       return {
-        pipeline_run_id: (raw["pipeline_run_id"] as string) ?? "local",
-        created_at: new Date().toISOString(),
-        pipeline_state: "COMPLETED",
-        finished_at: new Date().toISOString(),
-        pipe_output: raw["pipe_output"]
-          ? (raw["pipe_output"] as PipelineResponse["pipe_output"])
-          : null,
-        main_stuff_name:
-          (raw["main_stuff_name"] as string | undefined) ?? null,
+        pipeline_run_id: "",
+        pipe_output: {
+          working_memory: { root: reducedRoot, aliases },
+          pipeline_run_id: "",
+        } as DictPipeOutput,
+        main_stuff_name: aliases["main_stuff"] ?? "main_stuff",
       };
     } finally {
       rmSync(tmp, { recursive: true, force: true });
@@ -388,77 +424,71 @@ export class PipelexRunner extends BaseRunner implements Runner {
   }
 
   // ── Validation ──────────────────────────────────────────────────
-  // pipelex validate method <github-url-or-local-path>
+  // pipelex validate bundle <bundle.mthds> [--allow-signatures]
 
-  async validate(request: ValidateRequest): Promise<ValidateResponse> {
-    const url = request.method_url;
-    if (!url) {
-      return {
-        mthds_contents: request.mthds_contents ?? [],
-        pipelex_bundle_blueprint: { domain: "local" },
-        success: false,
-        message: "method_url is required for pipelex validation",
-      };
-    }
-
+  async validate(
+    mthdsContents: string[],
+    allowSignatures = false
+  ): Promise<ValidationReport> {
+    const tmp = makeTmpDir();
     try {
-      const args = ["validate", "method", url];
-      if (request.pipe_code) {
-        args.push("--pipe", request.pipe_code);
+      const bundlePath = writeMthdsContents(tmp, mthdsContents);
+      const args = ["validate", "bundle", bundlePath, "-L", tmp];
+      if (allowSignatures) {
+        args.push("--allow-signatures");
       }
-      await this.execStreaming(args);
-
-      return {
-        mthds_contents: request.mthds_contents ?? [],
-        pipelex_bundle_blueprint: { domain: "local" },
-        success: true,
-        message: "Method validated via local CLI",
-      };
-    } catch (err) {
-      const message =
-        err instanceof Error ? err.message : "Validation failed";
-      return {
-        mthds_contents: request.mthds_contents ?? [],
-        pipelex_bundle_blueprint: { domain: "local" },
-        success: false,
-        message,
-      };
+      try {
+        await this.exec(args);
+      } catch (err) {
+        const execError = err as Error & { stderr?: string; stdout?: string };
+        const detail = execError.stderr?.trim() || execError.stdout?.trim() || execError.message;
+        throw new Error(`Bundle validation failed:\n${detail}`);
+      }
+      // The local CLI validates but emits human-readable output, not the
+      // structural artifacts — a valid bundle yields an empty report.
+      return {};
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
     }
   }
 
   // ── Run lifecycle ──────────────────────────────────────────────────
-  // The local pipelex CLI runs pipelines in-process; there is no durable run
-  // to poll by id, so the granular primitives belong to the hosted platform
-  // (use --runner api). `startAndWaitForResult` is supported — it runs the CLI
+  // The local pipelex CLI runs methods in-process; there is no durable run
+  // to poll by id, so the async primitives belong to the hosted API (use
+  // --runner api). `startAndWaitForResult` is supported — it runs the CLI
   // blocking and returns the result directly.
 
-  async startAndWaitForResult(
-    options: StartRunOptions,
+  override async startAndWaitForResult(
+    options: StartOptions,
     _pollOptions?: WaitForResultOptions
-  ): Promise<RunResult> {
-    const response = await this.executeLocal({
+  ): Promise<RunResults> {
+    const response = await this.execute({
       mthds_contents: options.mthds_contents ?? undefined,
       pipe_code: options.pipe_code ?? undefined,
       inputs: options.inputs ?? undefined,
+      output_name: options.output_name ?? undefined,
+      output_multiplicity: options.output_multiplicity ?? undefined,
+      dynamic_output_concept_ref: options.dynamic_output_concept_ref ?? undefined,
     });
+    const pipeOutput = response.pipe_output as DictPipeOutput | null | undefined;
     return {
       pipeline_run_id: response.pipeline_run_id,
-      main_stuff: response.main_stuff ?? null,
-      graph_spec: response.graph_spec ?? null,
-      pipe_output:
-        (response.pipe_output as Record<string, unknown> | null | undefined) ?? null,
+      main_stuff: null,
+      // The local CLI blocking `pipe_output` carries no graph artifact.
+      graph_spec: null,
+      pipe_output: (pipeOutput as Record<string, unknown> | null | undefined) ?? null,
     };
   }
 
-  async start(_options: StartRunOptions): Promise<RunPublic> {
+  async start(_options: StartOptions): Promise<never> {
     throw new Error(RUN_LIFECYCLE_UNSUPPORTED);
   }
 
-  async getRun(_runId: string): Promise<RunRead> {
+  async getRunStatus(_runId: string): Promise<RunRead> {
     throw new Error(RUN_LIFECYCLE_UNSUPPORTED);
   }
 
-  async getResult(
+  async getRunResult(
     _runId: string,
     _options?: { signal?: AbortSignal }
   ): Promise<RunResultState> {
@@ -468,3 +498,47 @@ export class PipelexRunner extends BaseRunner implements Runner {
 
 const RUN_LIFECYCLE_UNSUPPORTED =
   "Run lifecycle (start/status/result/poll) is not supported by the pipelex CLI runner. Use the API runner instead (--runner api).";
+
+/**
+ * Normalize the local CLI's models output into the protocol `ModelDeck`.
+ *
+ * Accepts the deck shape verbatim (`{ models, aliases, waterfalls }`) and maps
+ * the legacy `pipelex-agent models` shape (`presets` / nested `aliases` /
+ * nested `waterfalls`, keyed by category) by flattening it.
+ */
+function toModelDeck(parsed: unknown): ModelDeck {
+  const root = (parsed && typeof parsed === "object" ? parsed : {}) as Record<string, unknown>;
+
+  if (Array.isArray(root.models)) {
+    return {
+      models: root.models as ModelInfo[],
+      aliases: (root.aliases as Record<string, string> | undefined) ?? {},
+      waterfalls: (root.waterfalls as Record<string, string[]> | undefined) ?? {},
+    };
+  }
+
+  const models: ModelInfo[] = [];
+  const presets = (root.presets ?? {}) as Record<string, Array<{ name: string }>>;
+  for (const [category, entries] of Object.entries(presets)) {
+    if (!Array.isArray(entries)) continue;
+    for (const entry of entries) {
+      if (entry && typeof entry.name === "string") {
+        models.push({ name: entry.name, type: category as ModelInfo["type"] });
+      }
+    }
+  }
+
+  const aliases: Record<string, string> = {};
+  const rawAliases = (root.aliases ?? {}) as Record<string, Record<string, string>>;
+  for (const group of Object.values(rawAliases)) {
+    if (group && typeof group === "object") Object.assign(aliases, group);
+  }
+
+  const waterfalls: Record<string, string[]> = {};
+  const rawWaterfalls = (root.waterfalls ?? {}) as Record<string, Record<string, string[]>>;
+  for (const group of Object.values(rawWaterfalls)) {
+    if (group && typeof group === "object") Object.assign(waterfalls, group);
+  }
+
+  return { models, aliases, waterfalls };
+}

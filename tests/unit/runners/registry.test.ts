@@ -1,19 +1,18 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { ApiRunner } from "../../../src/runners/api-runner.js";
-import { PipelexRunner } from "../../../src/runners/pipelex-runner.js";
+import { MthdsApiClient } from "../../../src/runners/api/client.js";
+import { PipelexRunner } from "../../../src/runners/pipelex/runner.js";
 
 // Mock the config module so createRunner() does not read the real filesystem
 vi.mock("../../../src/config/config.js", () => ({
   loadConfig: vi.fn(() => ({
     runner: "api",
-    runnerUrl: "https://api.pipelex.com/runner/v1",
-    platformUrl: "https://api.pipelex.com/platform/v1",
+    baseUrl: "https://api.pipelex.com",
     apiKey: "",
     telemetry: true,
   })),
-  getConfigValue: vi.fn(() => ({ value: "https://api.pipelex.com/runner/v1", source: "default" })),
-  hasLegacyApiUrl: vi.fn(() => false),
-  LEGACY_API_URL_MIGRATION_MESSAGE: "legacy apiUrl migration",
+  getConfigValue: vi.fn(() => ({ value: "https://api.pipelex.com", source: "default" })),
+  findLegacyUrlKey: vi.fn(() => undefined),
+  findLegacyApiKeyKey: vi.fn(() => undefined),
 }));
 
 // Import after mock setup
@@ -27,9 +26,9 @@ describe("createRunner", () => {
     vi.clearAllMocks();
   });
 
-  it("returns ApiRunner when type is 'api'", () => {
+  it("returns the API client (the API runner) when type is 'api'", () => {
     const runner = createRunner("api");
-    expect(runner).toBeInstanceOf(ApiRunner);
+    expect(runner).toBeInstanceOf(MthdsApiClient);
     expect(runner.type).toBe("api");
   });
 
@@ -42,10 +41,11 @@ describe("createRunner", () => {
   it("reads default runner type from config when no type is passed", () => {
     mockedLoadConfig.mockReturnValue({
       runner: "pipelex",
-      runnerUrl: "https://api.pipelex.com/runner/v1",
-      platformUrl: "https://api.pipelex.com/platform/v1",
+      baseUrl: "https://api.pipelex.com",
       apiKey: "",
       telemetry: true,
+      autoUpgrade: false,
+      updateCheck: true,
     });
 
     const runner = createRunner();
@@ -56,14 +56,15 @@ describe("createRunner", () => {
   it("uses config default 'api' runner", () => {
     mockedLoadConfig.mockReturnValue({
       runner: "api",
-      runnerUrl: "https://api.pipelex.com/runner/v1",
-      platformUrl: "https://api.pipelex.com/platform/v1",
+      baseUrl: "https://api.pipelex.com",
       apiKey: "test-key",
       telemetry: true,
+      autoUpgrade: false,
+      updateCheck: true,
     });
 
     const runner = createRunner();
-    expect(runner).toBeInstanceOf(ApiRunner);
+    expect(runner).toBeInstanceOf(MthdsApiClient);
     expect(loadConfig).toHaveBeenCalled();
   });
 

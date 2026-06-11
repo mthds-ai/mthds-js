@@ -24,10 +24,22 @@ vi.mock("node:os", () => ({
 }));
 
 import { readFileSync, existsSync } from "node:fs";
-import { PipelexRunner } from "../../../src/runners/pipelex-runner.js";
+import { spawn } from "node:child_process";
+import { PipelexRunner } from "../../../src/runners/pipelex/runner.js";
 
 const mockedReadFileSync = vi.mocked(readFileSync);
 const mockedExistsSync = vi.mocked(existsSync);
+const mockedSpawn = vi.mocked(spawn);
+
+/** Make `spawn` return a fake child that closes with the given exit code. */
+function mockSpawnExit(code: number): void {
+  mockedSpawn.mockReturnValue({
+    on(event: string, cb: (arg: number) => void) {
+      if (event === "close") cb(code);
+      return this;
+    },
+  } as unknown as ReturnType<typeof spawn>);
+}
 
 describe("PipelexRunner", () => {
   let runner: PipelexRunner;
@@ -84,17 +96,100 @@ describe("PipelexRunner", () => {
   });
 
   describe("models", () => {
-    it("always passes --format json", async () => {
+    it("always passes --format json and forwards the single --type filter", async () => {
       execFileAsync.mockResolvedValue({
         stdout: '{"success":true,"presets":{}}',
         stderr: "",
       });
 
-      await runner.models({ type: ["llm"] });
+      await runner.models("llm");
 
       const args = execFileAsync.mock.calls[0]![1] as string[];
       expect(args).toContain("--format");
       expect(args[args.indexOf("--format") + 1]).toBe("json");
+      expect(args[args.indexOf("--type") + 1]).toBe("llm");
+    });
+
+    it("maps the legacy pipelex-agent shape (presets / nested aliases) to a ModelDeck", async () => {
+      execFileAsync.mockResolvedValue({
+        stdout: JSON.stringify({
+          success: true,
+          presets: { llm: [{ name: "gpt-4o" }], img_gen: [{ name: "flux" }] },
+          aliases: { llm: { best: "gpt-4o" } },
+          waterfalls: { llm: { default: ["gpt-4o"] } },
+        }),
+        stderr: "",
+      });
+
+      const deck = await runner.models();
+
+      expect(deck.models).toEqual([
+        { name: "gpt-4o", type: "llm" },
+        { name: "flux", type: "img_gen" },
+      ]);
+      expect(deck.aliases).toEqual({ best: "gpt-4o" });
+      expect(deck.waterfalls).toEqual({ default: ["gpt-4o"] });
+    });
+
+    it("passes a protocol-shaped ModelDeck through verbatim", async () => {
+      execFileAsync.mockResolvedValue({
+        stdout: JSON.stringify({
+          models: [{ name: "gpt-4o", type: "llm" }],
+          aliases: { best: "gpt-4o" },
+          waterfalls: {},
+        }),
+        stderr: "",
+      });
+
+      const deck = await runner.models();
+      expect(deck.models).toEqual([{ name: "gpt-4o", type: "llm" }]);
+      expect(deck.aliases).toEqual({ best: "gpt-4o" });
+    });
+  });
+
+  describe("validate", () => {
+    it("runs `pipelex validate bundle` on the written contents and returns an empty report", async () => {
+      execFileAsync.mockResolvedValue({ stdout: "", stderr: "" });
+
+      const report = await runner.validate(["domain = 'x'"]);
+
+      expect(report).toEqual({});
+      const args = execFileAsync.mock.calls[0]![1] as string[];
+      expect(args[0]).toBe("validate");
+      expect(args[1]).toBe("bundle");
+      expect(args).not.toContain("--allow-signatures");
+    });
+
+    it("passes --allow-signatures when requested", async () => {
+      execFileAsync.mockResolvedValue({ stdout: "", stderr: "" });
+
+      await runner.validate(["domain = 'x'"], true);
+
+      const args = execFileAsync.mock.calls[0]![1] as string[];
+      expect(args).toContain("--allow-signatures");
+    });
+
+    it("throws with the pipelex stderr when validation fails", async () => {
+      const failure = Object.assign(new Error("Command failed"), {
+        stderr: "Pipe 'broken' references unknown concept",
+        stdout: "",
+      });
+      execFileAsync.mockRejectedValue(failure);
+
+      await expect(runner.validate(["broken"])).rejects.toThrow(/unknown concept/);
+    });
+  });
+
+  describe("version", () => {
+    it("wraps the local pipelex version in a VersionInfo handshake", async () => {
+      execFileAsync.mockResolvedValue({ stdout: "0.32.0\n", stderr: "" });
+
+      const info = await runner.version();
+
+      expect(info.implementation).toBe("pipelex");
+      expect(info.implementation_version).toBe("0.32.0");
+      expect(info.runtime_version).toBe("0.32.0");
+      expect(info.protocol_version).toBeTruthy();
     });
   });
 
@@ -259,6 +354,74 @@ describe("PipelexRunner", () => {
         })
       ).rejects.toThrow(/native\.Anything/);
       expect(mockedReadFileSync).not.toHaveBeenCalled();
+    });
+  });
+
+  // The basic `mthds run` CLI dispatches to `execute` (pipelex, blocking) — this
+  // is the local-runner half of the protocol's execute/start split.
+  describe("execute", () => {
+    it("runs `pipelex run bundle` and reduces working memory to the {concept, content} wire shape", async () => {
+      mockSpawnExit(0);
+      mockedExistsSync.mockReturnValue(true);
+      mockedReadFileSync.mockReturnValue(
+        JSON.stringify({
+          root: {
+            main_stuff: {
+              stuff_code: "s1",
+              concept: { code: "Greeting", domain_code: "hello" },
+              content: { text: "hi" },
+            },
+          },
+          aliases: { main_stuff: "main_stuff" },
+        })
+      );
+
+      const result = await runner.execute({ mthds_contents: ["bundle content"] });
+
+      // spawn was invoked as `pipelex run bundle <path> -L <tmp> ...`
+      const spawnArgs = mockedSpawn.mock.calls[0]![1] as string[];
+      expect(spawnArgs.slice(0, 2)).toEqual(["run", "bundle"]);
+
+      const root = (
+        result.pipe_output as {
+          working_memory: { root: Record<string, { concept: string; content: unknown }> };
+        }
+      ).working_memory.root;
+      expect(root.main_stuff).toEqual({
+        concept: "hello.Greeting",
+        content: { text: "hi" },
+      });
+      expect(result.main_stuff_name).toBe("main_stuff");
+    });
+
+    it("throws `pipelex exited with code N` when the CLI fails", async () => {
+      mockSpawnExit(1);
+      await expect(
+        runner.execute({ mthds_contents: ["bundle content"] })
+      ).rejects.toThrow(/pipelex exited with code 1/);
+    });
+  });
+
+  // The API runner polls a durable run; the pipelex runner has no run id, so its
+  // `startAndWaitForResult` override just runs `execute` blocking and adapts the
+  // result into the hosted `RunResults` shape (pipe_output, no main_stuff).
+  describe("startAndWaitForResult", () => {
+    it("delegates to execute and returns a RunResults with pipe_output (no main_stuff)", async () => {
+      mockSpawnExit(0);
+      mockedExistsSync.mockReturnValue(true);
+      mockedReadFileSync.mockReturnValue(
+        JSON.stringify({ root: {}, aliases: {} })
+      );
+
+      const result = await runner.startAndWaitForResult({
+        mthds_contents: ["bundle content"],
+      });
+
+      expect(result.main_stuff).toBeNull();
+      expect(result.graph_spec).toBeNull();
+      expect(result.pipe_output).toMatchObject({
+        working_memory: { root: {}, aliases: {} },
+      });
     });
   });
 });

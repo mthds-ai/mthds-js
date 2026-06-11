@@ -1,12 +1,10 @@
 import * as p from "@clack/prompts";
 import { printLogo } from "./index.js";
-import {
-  VALID_KEYS,
+import { VALID_KEYS,
   resolveKey,
   getConfigValue,
   setConfigValue,
-  listConfig,
-} from "../../config/config.js";
+  listConfig, isValidBaseUrl } from "../../config/config.js";
 import { RUNNER_NAMES } from "../../runners/types.js";
 import type { RunnerType } from "../../runners/types.js";
 import { maskApiKey } from "./utils.js";
@@ -40,9 +38,7 @@ export async function configSet(cliKey: string, value: string): Promise<void> {
     process.exit(1);
   }
 
-  // platformUrl may be set empty to disable the durable platform surface.
-  const isUrlKey = configKey === "runnerUrl" || configKey === "platformUrl";
-  if (isUrlKey && value !== "" && !isValidUrl(value)) {
+  if (configKey === "baseUrl" && !isValidBaseUrl(value)) {
     p.log.error(`Invalid URL: ${value}`);
     p.outro("");
     process.exit(1);

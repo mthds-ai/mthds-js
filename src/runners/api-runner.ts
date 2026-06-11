@@ -1,9 +1,4 @@
-import {
-  loadConfig,
-  getConfigValue,
-  findLegacyUrlKey,
-  findLegacyApiKeyKey,
-} from "../config/config.js";
+import { loadConfig } from "../config/config.js";
 import { Runners } from "./types.js";
 import type {
   Runner,
@@ -32,7 +27,6 @@ import type {
   VersionInfo,
 } from "../client/protocol-models.js";
 import { MthdsApiClient } from "../client/client.js";
-import { ClientAuthenticationError } from "../client/exceptions.js";
 import { BaseRunner } from "./base-runner.js";
 
 /**
@@ -59,28 +53,6 @@ export class ApiRunner extends BaseRunner implements Runner {
   constructor(baseUrl?: string, apiKey?: string) {
     super();
     const config = loadConfig();
-
-    // Fail fast (scoped to the api-runner path) when a NEW key is still at its
-    // default AND a leftover legacy `PIPELEX_*` key is present — that user
-    // upgraded across the rename and must migrate. These checks live here, not
-    // in `loadConfig()`, so pure `pipelex`-runner flows and unrelated commands
-    // are never blocked.
-    const baseUrlIsExplicit =
-      baseUrl !== undefined || getConfigValue("baseUrl").source !== "default";
-    if (!baseUrlIsExplicit) {
-      const legacyUrl = findLegacyUrlKey();
-      if (legacyUrl) {
-        throw new ClientAuthenticationError(legacyUrl.message);
-      }
-    }
-    const apiKeyIsExplicit =
-      apiKey !== undefined || getConfigValue("apiKey").source !== "default";
-    if (!apiKeyIsExplicit) {
-      const legacyKey = findLegacyApiKeyKey();
-      if (legacyKey) {
-        throw new ClientAuthenticationError(legacyKey.message);
-      }
-    }
 
     this.baseUrl = (baseUrl ?? config.baseUrl).replace(/\/+$/, "");
     this.originUrl = new URL("/", this.baseUrl).origin;

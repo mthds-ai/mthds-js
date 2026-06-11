@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [v0.10.0] - 2026-06-12
 
 ### Changed — structural split: `protocol/` ⊥ `runners/` (exact mirror of mthds-python)
 
@@ -16,8 +16,6 @@ The SDK is physically reorganized so the pure MTHDS Protocol (the interface + wi
 - **Extension args removed from the SDK; generic `extra` passthrough.** The SDK carries the MTHDS Protocol's basic arguments only — server-specific extension args never appear in it, not even as named options. Both `execute` and `start` accept the generic `extra` option: any server-specific arg merges into the request body as a top-level property and the server that defines it handles it (protocol args inside `extra` are rejected client-side). The SDK and CLI never name a server-specific arg: there is no `method_id` (or any hosted selector) anywhere in mthds-js — exactly like mthds-python. The `mthds-agent run start` CLI takes a generic `--extra <json>` flag whose object is forwarded verbatim as `extra` (e.g. `--extra '{"method_id":"…"}'` for a stored-method run, or `callback_urls`, etc.).
 
 > **n8n drift:** `n8n-nodes-pipelex` mirrors these wire shapes by hand (it builds against the public API only, no SDK dependency). The run-response split and slimmed discovery models land there separately with `09-n8n-nodes-pipelex.md` — not in this PR.
-
-## [v0.10.0] - 2026-06-10
 
 ### BREAKING — MTHDS Protocol unification (one API, one base URL)
 

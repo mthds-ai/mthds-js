@@ -136,24 +136,31 @@ npx mthds setup runner pipelex
 
 ### Configure the API runner
 
-The API runner is the default. Set it up interactively:
+The local pipelex runner is the default; to use the hosted (or self-hosted) API instead, set up the API runner interactively:
 
 ```bash
 mthds setup runner api
 ```
 
-This prompts for the API URL and API key (masked input) and saves them to `~/.mthds/config`.
+This prompts for the API base URL and an API key (masked input), and saves them to `~/.mthds/config`.
+
+There is ONE base URL — the host only, with no version prefix. The SDK composes every endpoint as `{base}/v1/{endpoint}`:
+
+- **`base-url`** — hosted: `https://api.pipelex.com` (the default). Self-hosted: `http://localhost:8081` (a bare [pipelex-api](https://github.com/Pipelex/pipelex-api) runner).
 
 You can also set values directly:
 
 ```bash
 mthds config set api-key YOUR_KEY
-mthds config set api-url https://your-api-instance.com
+# Hosted (default):
+mthds config set base-url https://api.pipelex.com
+# Self-hosted bare runner:
+mthds config set base-url http://localhost:8081
 ```
 
 Configuration is stored in `~/.mthds/config` and shared between mthds-js and mthds-python.
 
-You can also use environment variables (`PIPELEX_API_KEY`, `PIPELEX_API_URL`) which take precedence over the config file.
+You can also use environment variables (`MTHDS_API_KEY`, `MTHDS_API_URL`) which take precedence over the config file.
 
 See the [SDK Usage](#sdk-usage) section below to connect to a Pipelex API instance programmatically.
 
@@ -171,11 +178,11 @@ npm install mthds
 import { MthdsApiClient } from "mthds";
 
 const client = new MthdsApiClient({
-  apiBaseUrl: "https://api.pipelex.com",
+  baseUrl: "https://api.pipelex.com",
   apiToken: "your-api-key",
 });
 
-const result = await client.executePipeline({
+const result = await client.execute({
   pipe_code: "my-pipeline",
   inputs: {
     topic: "quantum computing",
@@ -185,16 +192,22 @@ const result = await client.executePipeline({
 console.log(result.pipe_output);
 ```
 
+The base URL is the host only — every endpoint composes as `{baseUrl}/v1/{endpoint}` (e.g. `https://api.pipelex.com/v1/execute`); `/health` resolves to the origin root.
+
 ### Self-hosted API
 
-Point the client to your own [pipelex-api](https://github.com/Pipelex/pipelex-api) instance:
+Point the client at your own [pipelex-api](https://github.com/Pipelex/pipelex-api) instance — the same `MTHDSProtocol` surface, same paths:
 
 ```typescript
 const client = new MthdsApiClient({
-  apiBaseUrl: "http://localhost:8081",
+  baseUrl: "http://localhost:8081",
   apiToken: "your-api-key",
 });
 ```
+
+The bare open-source runner has no run store, so the durable run-lifecycle methods (`getRunStatus`/`getRunResult`/`waitForResult`) throw a clear `RunLifecycleUnavailableError` against it — use `execute` (blocking) or `start` instead (completion delivery is implementation-defined — see your runner's API documentation). The `GET /v1/version` handshake tells the SDK which deployment it is talking to.
+
+> Note: the bare-runner blocking path returns the runner's native `pipe_output`, whereas the hosted durable path returns `main_stuff` + `graph_spec`. Cross-shape normalization is a v1 TODO.
 
 ### Environment variables
 
@@ -202,33 +215,42 @@ Instead of passing options to the constructor, you can set environment variables
 
 | Variable | Description |
 |----------|-------------|
-| `PIPELEX_API_URL` | Base URL of the API |
-| `PIPELEX_API_KEY` | API authentication token |
+| `MTHDS_API_URL` | API base URL — host only, no version prefix (default `https://api.pipelex.com`) |
+| `MTHDS_API_KEY` | API authentication token |
 
 ```typescript
-// Reads PIPELEX_API_URL and PIPELEX_API_KEY from the environment
+// Reads MTHDS_API_URL and MTHDS_API_KEY from the environment
 const client = new MthdsApiClient();
 ```
 
 ### Methods
 
-| Method | Description |
-|--------|-------------|
-| `executePipeline(options)` | Execute a pipeline and wait for the result |
-| `startPipeline(options)` | Start a pipeline asynchronously |
+The client implements the MTHDS Protocol plus the hosted run-lifecycle extension:
 
-### Pipeline options
+| Method | Route | Description |
+|--------|-------|-------------|
+| `execute(options)` | `POST /v1/execute` | Execute a method and wait for the result — returns a `RunResultExecute` (throws `RunStillRunningError` on the protocol's optional 202 degrade) |
+| `start(options)` | `POST /v1/start` | Start a method asynchronously — returns a `RunResultStart` with the authoritative `pipeline_run_id` |
+| `validate(contents, allowSignatures?)` | `POST /v1/validate` | Parse, validate, and dry-run a bundle |
+| `models(category?)` | `GET /v1/models` | The model deck the runner routes to |
+| `version()` | `GET /v1/version` | Protocol + implementation versions (the feature-detection handshake) |
+| `getRunStatus(runId)` | `GET /v1/runs/{id}/status` | Hosted extension — self-healing status read |
+| `getRunResult(runId)` | `GET /v1/runs/{id}/results` | Hosted extension — single-shot result lookup |
+| `waitForResult(runId, options?)` | — | Hosted extension — poll to a terminal state |
+
+### Run options
 
 | Option | Type | Description |
 |--------|------|-------------|
-| `pipe_code` | `string` | Pipeline code to execute |
-| `mthds_content` | `string` | Raw method content (alternative to `pipe_code`) |
-| `inputs` | `Record<string, string \| string[] \| object>` | Pipeline input variables |
+| `pipe_code` | `string` | Pipe code to execute |
+| `mthds_contents` | `string[]` | Raw bundle contents (alternative to `pipe_code`) |
+| `inputs` | `Record<string, string \| string[] \| object>` | Method input variables |
 | `output_name` | `string` | Name of the output to return |
 | `output_multiplicity` | `boolean \| number` | Expected output multiplicity |
-| `dynamic_output_concept_code` | `string` | Dynamic output concept code |
+| `dynamic_output_concept_ref` | `string` | Dynamic output concept reference |
+| `extra` | `Record<string, unknown>` | Server-specific extension args, forwarded verbatim into the request body (e.g. a stored-method id) |
 
-Either `pipe_code` or `mthds_content` must be provided.
+Either `pipe_code` or `mthds_contents` must be provided (or a server-specific extension arg via `extra`). Anything beyond the protocol's basic args is server-specific and rides the generic `extra` option, merged into the request body — the server you call defines and handles its own extension args (a client-supplied run id, where a server supports one, is such an extension; the request side never names it). `startAndWaitForResult()` runs the whole start + poll lifecycle in one call.
 
 ## Telemetry
 

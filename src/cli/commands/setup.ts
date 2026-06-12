@@ -5,7 +5,7 @@ import { isPipelexInstalled } from "../../installer/runtime/check.js";
 import { ensureRuntime } from "../../installer/runtime/installer.js";
 import { shutdown } from "../../installer/telemetry/posthog.js";
 import { printLogo } from "./index.js";
-import { getConfigValue, setConfigValue } from "../../config/config.js";
+import { DEFAULT_BASE_URL, getConfigValue, isValidBaseUrl, setConfigValue } from "../../config/config.js";
 import { Runners, RUNNER_NAMES } from "../../runners/types.js";
 import { maskApiKey } from "./utils.js";
 
@@ -14,24 +14,27 @@ const execFileAsync = promisify(execFile);
 // ── mthds runner setup <name> ───────────────────────────────────────
 
 async function initApi(): Promise<void> {
-  const { value: currentUrl, source: urlSource } = getConfigValue("apiUrl");
+  const { value: currentBaseUrl, source: baseUrlSource } =
+    getConfigValue("baseUrl");
   const { value: currentKey } = getConfigValue("apiKey");
 
-  const apiUrl = await p.text({
-    message: "API URL",
-    placeholder: currentUrl,
-    initialValue: urlSource !== "default" ? currentUrl : "",
-    validate: (val) => {
-      if (!val) return undefined; // will use default
-      try {
-        new URL(val);
-      } catch {
-        return "Must be a valid URL";
-      }
-    },
+  const validateUrl = (val: string | undefined): string | undefined => {
+    if (!val) return undefined; // empty resets to the default
+    if (!isValidBaseUrl(val)) {
+      return "Must be a host-only http(s) URL — no path (e.g. https://api.pipelex.com)";
+    }
+    return undefined;
+  };
+
+  const baseUrl = await p.text({
+    message:
+      "API base URL (host only, e.g. https://api.pipelex.com or http://localhost:8081)",
+    placeholder: currentBaseUrl,
+    initialValue: baseUrlSource !== "default" ? currentBaseUrl : "",
+    validate: validateUrl,
   });
 
-  if (p.isCancel(apiUrl)) {
+  if (p.isCancel(baseUrl)) {
     p.cancel("Cancelled.");
     process.exit(0);
   }
@@ -48,9 +51,9 @@ async function initApi(): Promise<void> {
     process.exit(0);
   }
 
-  if (apiUrl) {
-    setConfigValue("apiUrl", apiUrl);
-  }
+  // Always persist: a non-empty value is saved; an emptied field resets a
+  // previously-saved custom URL back to the default.
+  setConfigValue("baseUrl", (baseUrl as string) || DEFAULT_BASE_URL);
   if (apiKey) {
     setConfigValue("apiKey", apiKey as string);
   }
@@ -189,11 +192,11 @@ export async function runnerStatus(): Promise<void> {
   p.log.info(`Default runner: ${defaultRunner}${sourceLabel}`);
 
   // API runner
-  const { value: apiUrl } = getConfigValue("apiUrl");
+  const { value: baseUrl } = getConfigValue("baseUrl");
   const { value: apiKey } = getConfigValue("apiKey");
   p.log.message(`\n  API runner`);
-  p.log.message(`    URL:     ${apiUrl}`);
-  p.log.message(`    API key: ${maskApiKey(apiKey)}`);
+  p.log.message(`    Base URL: ${baseUrl}`);
+  p.log.message(`    API key:  ${maskApiKey(apiKey)}`);
 
   // Pipelex runner
   const pipelexVersion = await getPipelexVersion();

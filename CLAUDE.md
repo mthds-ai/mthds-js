@@ -28,17 +28,20 @@ src/
 │   ├── setup.ts                    # mthds setup runner
 │   ├── install.ts                  # mthds install (JS-only)
 │   └── package/stubs.ts            # mthds package <cmd> (stubs)
-├── client/                         # API client
-│   ├── client.ts
-│   ├── protocol.ts
-│   ├── pipeline.ts
-│   ├── exceptions.ts
-│   └── models/                     # Pydantic-equivalent models
+├── protocol/                       # PURE MTHDS Protocol (interface + wire models) — see docs/architecture.md
+│   ├── protocol.ts                 # MTHDSProtocol<PipeOutputT> (generic)
+│   ├── models.ts                   # RunResultExecute<T>/RunResultStart, ModelDeck, VersionInfo, ValidationReport
+│   ├── options.ts                  # Run/Start options + extension passthrough
+│   ├── pipeline_inputs.ts          # StuffContentOrData, PipelineInputs
+│   ├── pipe_output.ts              # VariableMultiplicity, PipeOutputAbstract
+│   ├── concept.ts / stuff.ts / working_memory.ts  # abstract domain hierarchy (mirror mthds-python)
+│   └── exceptions.ts               # PipelineRequestError (protocol base)
 ├── runners/                        # Runner implementations
 │   ├── types.ts                    # Runner interface + request/response types
+│   ├── base-runner.ts              # lifecycle composites (waitForResult, startAndWaitForResult)
 │   ├── registry.ts                 # createRunner() factory
-│   ├── api-runner.ts               # API runner
-│   └── pipelex-runner.ts           # Pipelex CLI runner
+│   ├── api/                        # MthdsApiClient (IS the api runner) + run lifecycle + Dict models + errors
+│   └── pipelex/runner.ts           # Pipelex CLI runner
 ├── config/
 │   └── config.ts                   # ~/.mthds/config handling
 ├── package/

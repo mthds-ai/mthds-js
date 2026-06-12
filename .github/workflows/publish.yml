@@ -1,9 +1,22 @@
+# Publishes the npm package after a merge into main. The only workflow that
+# handles release credentials. Authenticates to npm via OIDC trusted publishing
+# (id-token: write + --provenance), not a long-lived NPM_TOKEN.
+#
+# - permissions: {}            deny by default; each job grants the minimum it needs.
+# - concurrency (no cancel):   two merges to main never race into a double-publish.
+# - skip-if-already-published: re-running on a no-op merge is safe.
 name: Publish to npm
 
 on:
   push:
     branches:
       - main
+
+permissions: {}
+
+concurrency:
+  group: publish-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   publish:
@@ -33,19 +46,20 @@ jobs:
         id: get_version
         run: |
           VERSION=$(node -p "require('./package.json').version")
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "Publishing version: $VERSION"
 
       - name: Check if version is already published
         id: check_published
+        env:
+          VERSION: ${{ steps.get_version.outputs.version }}
         run: |
-          VERSION=${{ steps.get_version.outputs.version }}
-          if npm view mthds@$VERSION version 2>/dev/null; then
+          if npm view "mthds@$VERSION" version 2>/dev/null; then
             echo "Version $VERSION is already published to npm"
-            echo "already_published=true" >> $GITHUB_OUTPUT
+            echo "already_published=true" >> "$GITHUB_OUTPUT"
           else
             echo "Version $VERSION is not yet published"
-            echo "already_published=false" >> $GITHUB_OUTPUT
+            echo "already_published=false" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Install dependencies
@@ -64,8 +78,8 @@ jobs:
         if: steps.check_published.outputs.already_published == 'false'
         env:
           GITHUB_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.get_version.outputs.version }}
         run: |
-          VERSION=${{ steps.get_version.outputs.version }}
           git tag "v$VERSION"
           git push origin "v$VERSION"
 
@@ -86,19 +100,20 @@ jobs:
       contents: write
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
       - name: Extract changelog notes for current version
+        env:
+          VERSION: ${{ needs.publish.outputs.version }}
         run: |
-          VERSION=${{ needs.publish.outputs.version }}
-          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
           echo "Extracting changelog for version v$VERSION"
 
           START_LINE=$(grep -n "## \[v$VERSION\] - " CHANGELOG.md | cut -d: -f1)
 
           if [ -z "$START_LINE" ]; then
             echo "Warning: No changelog entry found for version v$VERSION"
-            echo "CHANGELOG_NOTES=" >> $GITHUB_ENV
+            echo "CHANGELOG_NOTES=" >> "$GITHUB_ENV"
             exit 0
           fi
 
@@ -116,9 +131,9 @@ jobs:
 
           CHANGELOG_CONTENT=$(printf "%s\n\n%s" "$HEADER_LINE" "$CONTENT_LINES")
 
-          echo "CHANGELOG_NOTES<<EOF" >> $GITHUB_ENV
-          echo "$CHANGELOG_CONTENT" >> $GITHUB_ENV
-          echo "EOF" >> $GITHUB_ENV
+          echo "CHANGELOG_NOTES<<EOF" >> "$GITHUB_ENV"
+          echo "$CHANGELOG_CONTENT" >> "$GITHUB_ENV"
+          echo "EOF" >> "$GITHUB_ENV"
 
       - name: Download all the dists
         uses: actions/download-artifact@v4

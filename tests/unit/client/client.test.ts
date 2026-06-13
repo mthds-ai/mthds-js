@@ -426,7 +426,7 @@ describe("MthdsApiClient.validate", () => {
         jsonResponse(200, {
           bundle_blueprint: { domain: "x" },
           graph_spec: null,
-          pipe_structures: {},
+          pipe_io_contracts: {},
           validated_pipes: [],
           pending_signatures: [],
           is_runnable: true,

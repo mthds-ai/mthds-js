@@ -92,7 +92,7 @@ export interface ModelDeck {
  * anything else), preserved here as extension fields.
  */
 export interface ValidationReport {
-  /** Implementation extension fields (e.g. `bundle_blueprint`, `graph_spec`, `pipe_structures`, `pending_signatures`, `is_runnable`). */
+  /** Implementation extension fields (e.g. `bundle_blueprint`, `graph_spec`, `pipe_io_contracts`, `pending_signatures`, `is_runnable`). */
   [extension: string]: unknown;
 }
 

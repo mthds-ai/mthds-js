@@ -422,11 +422,21 @@ describe("MthdsApiClient.validate", () => {
     const client = makeClient();
     const fetchSpy = vi
       .spyOn(globalThis, "fetch")
-      .mockResolvedValue(jsonResponse(200, { blueprint: { domain: "x" }, graph_spec: {}, pipe_structures: {} }));
+      .mockResolvedValue(
+        jsonResponse(200, {
+          bundle_blueprint: { domain: "x" },
+          graph_spec: null,
+          pipe_io_contracts: {},
+          validated_pipes: [],
+          pending_signatures: [],
+          is_runnable: true,
+        }),
+      );
 
     const report = await client.validate(["domain = 'x'"], true);
 
-    expect(report.blueprint).toEqual({ domain: "x" });
+    expect(report.bundle_blueprint).toEqual({ domain: "x" });
+    expect(report.is_runnable).toBe(true);
     const [url, init] = fetchSpy.mock.calls[0]!;
     expect(url).toBe("http://localhost:8081/v1/validate");
     expect(JSON.parse((init as RequestInit).body as string)).toEqual({

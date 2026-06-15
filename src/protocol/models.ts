@@ -108,6 +108,15 @@ export interface ValidationReport {
 export interface VersionInfo {
   protocol_version: string;
   runner_version?: string | null;
-  /** Implementation extension fields (e.g. `implementation`, `runtime_version`). */
+  /**
+   * Implementation package version — the field clients gate capabilities on
+   * (e.g. the VS Code extension's `MIN_API_IMPLEMENTATION_VERSION`). An
+   * extension field (the protocol declares only `protocol_version` /
+   * `runner_version`), typed here as the one well-known extension so consumers
+   * gate on it without reaching through the untyped index signature. Absent on
+   * a runner that does not advertise it.
+   */
+  implementation_version?: string;
+  /** Further implementation extension fields (e.g. `implementation`, `runtime_version`). */
   [extension: string]: unknown;
 }

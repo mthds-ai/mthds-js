@@ -69,10 +69,15 @@ export type {
   WaitForResultOptions,
 } from "./runners/api/runs.js";
 
-// ── Dict-serialized concretes (runners/api) ──────────────────────────
+// ── Dict-serialized concretes + Pipelex-API validate types (runners/api) ──
 export type {
   DictStuff,
   DictWorkingMemory,
   DictPipeOutput,
   DictRunResultExecute,
+  PipelexValidationReport,
+  ValidatedPipeEntry,
+  DryRunStatus,
+  ValidationErrorItem,
+  ValidationErrorCategory,
 } from "./runners/api/models.js";

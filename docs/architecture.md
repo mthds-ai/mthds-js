@@ -22,8 +22,10 @@ src/protocol/                 PURE — the MTHDS Protocol mirror (imports nothin
 src/runners/api/
   client.ts                   MthdsApiClient — IS the api runner: extends BaseRunner implements Runner
   runs.ts                     run-lifecycle TYPES + the pollUntilResult loop (RunStatus/RunRead/RunResults/…)
-  models.ts                   DictStuff/DictWorkingMemory/DictPipeOutput + DictRunResultExecute (default binding)
-  exceptions.ts               ApiResponseError, ApiUnreachableError, ClientAuthenticationError,
+  models.ts                   DictStuff/DictWorkingMemory/DictPipeOutput + DictRunResultExecute (default binding);
+                              PipelexValidationReport/ValidatedPipeEntry/DryRunStatus + ValidationErrorItem/Category
+                              (typed Pipelex-API extensions over the protocol's ValidationReport)
+  exceptions.ts               ApiResponseError (+ validationErrors), ApiUnreachableError, ClientAuthenticationError,
                               RunFailedError, RunTimeoutError, RunStillRunningError,
                               RunLifecycleUnavailableError, PipelineExecuteTimeoutError
 src/runners/pipelex/
@@ -45,6 +47,16 @@ src/index.ts                  public barrel → re-exports protocol/ + runners/
 - `start` → `RunResultStart{pipeline_run_id}` — a started run has no output yet; how completion is later delivered (polling, callbacks) is implementation-defined and outside the protocol.
 
 Both are extension-open (index signature): anything more an implementation returns (`state`, `created_at`, `main_stuff_name`, …) is preserved but never named by the SDK. The discovery models (`ModelDeck`, `VersionInfo`, `ValidationReport`) are slim + extension-open the same way.
+
+## Typed Pipelex-API extensions over the validate surface
+
+The protocol's `ValidationReport` and `VersionInfo` stay slim, but the API runner talks to the Pipelex API, which fills them with a known body. `runners/api/models.ts` types those extensions so consumers (the VS Code extension, `pipelex-app`) don't reach through the index signature:
+
+- **`PipelexValidationReport`** — the typed 200 body of `POST /v1/validate` for a valid bundle (`bundle_blueprint`, `pipe_io_contracts`, `graph_spec`, `validated_pipes`, `pending_signatures`, `is_runnable`, plus the route extras `success`/`message`). `bundle_blueprint`/`pipe_io_contracts`/`graph_spec` stay opaque transport — their canonical schemas are owned by the runtime and `@pipelex/mthds-ui`. `validate()` returns this type; `mthds_names` (a third, optional, parallel-array arg) names each submitted content so the server threads `blueprint.source` for cross-file diagnostics.
+- **`ValidationErrorItem`** (+ `ValidationErrorCategory`) — one structured per-error item on an invalid-bundle 422. The list rides the `application/problem+json` envelope as a top-level `validation_errors[]` and is parsed onto `ApiResponseError.validationErrors`. Throw-on-422 is unchanged — an invalid bundle is still an `ApiResponseError`; the caller reads the typed field. `undefined` for any non-validation error (auth, transport, a request-shape 422).
+- **`VersionInfo.implementation_version`** — the one well-known `VersionInfo` extension is typed (still optional) so capability gating reads `version().implementation_version` directly.
+
+Token precedence in the constructor: an explicitly-passed `apiToken` wins over `MTHDS_API_KEY` from the environment (`options.apiToken ?? process.env.MTHDS_API_KEY`), so a wrapper (e.g. the VS Code extension's SecretStorage) can override a native env read.
 
 ## The API client IS the API runner (D-B)
 

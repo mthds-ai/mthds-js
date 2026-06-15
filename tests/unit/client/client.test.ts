@@ -455,12 +455,104 @@ describe("MthdsApiClient.validate", () => {
     expect(body.allow_signatures).toBe(false);
   });
 
-  it("surfaces an invalid bundle (422 problem) as ApiResponseError", async () => {
+  it("returns the typed PipelexValidationReport fields on a valid 200", async () => {
     const client = makeClient();
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      jsonResponse(422, { detail: "Bundle failed validation" })
+      jsonResponse(200, {
+        bundle_blueprint: { domain: "x" },
+        pipe_io_contracts: { "x.greet": { inputs: {}, output: {} } },
+        graph_spec: null,
+        validated_pipes: [{ pipe_ref: "x.greet", status: "SUCCESS" }],
+        pending_signatures: [],
+        is_runnable: true,
+        success: true,
+        message: "MTHDS content validated successfully",
+        mthds_contents: ["domain = 'x'"],
+      }),
     );
-    await expect(client.validate(["broken"])).rejects.toBeInstanceOf(ApiResponseError);
+    const report = await client.validate(["domain = 'x'"]);
+    expect(report.validated_pipes[0]).toEqual({ pipe_ref: "x.greet", status: "SUCCESS" });
+    expect(report.pending_signatures).toEqual([]);
+    expect(report.is_runnable).toBe(true);
+    expect(report.success).toBe(true);
+    expect(report.graph_spec).toBeNull();
+  });
+
+  it("sends mthds_names parallel to mthds_contents when provided (Issue 5)", async () => {
+    const client = makeClient();
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(jsonResponse(200, {}));
+    await client.validate(["domain = 'x'", "domain = 'y'"], true, ["x.mthds", "y.mthds"]);
+    const body = JSON.parse((fetchSpy.mock.calls[0]![1] as RequestInit).body as string);
+    expect(body).toEqual({
+      mthds_contents: ["domain = 'x'", "domain = 'y'"],
+      allow_signatures: true,
+      mthds_names: ["x.mthds", "y.mthds"],
+    });
+  });
+
+  it("omits mthds_names from the body when not provided", async () => {
+    const client = makeClient();
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(jsonResponse(200, {}));
+    await client.validate(["domain = 'x'"]);
+    const body = JSON.parse((fetchSpy.mock.calls[0]![1] as RequestInit).body as string);
+    expect("mthds_names" in body).toBe(false);
+  });
+
+  it("surfaces structured validation_errors on an invalid-bundle 422", async () => {
+    const client = makeClient();
+    // The Phase 2 wire shape: RFC 7807 problem + the top-level validation_errors[]
+    // projection of ValidateBundleError, with the threaded `source` per Issue 5.
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      jsonResponse(
+        422,
+        {
+          error_type: "ValidateBundleError",
+          title: "Validate Bundle Error",
+          detail: "Bundle failed validation",
+          validation_errors: [
+            {
+              category: "blueprint_validation",
+              message: "missing main pipe output",
+              source: "broken.mthds",
+              domain_code: "demo",
+            },
+            {
+              category: "pipe_factory",
+              message: "unknown concept demo.Missing",
+              pipe_code: "demo.greet",
+              missing_concept_code: "demo.Missing",
+            },
+          ],
+        },
+        { "content-type": "application/problem+json" },
+      ),
+    );
+    const err = await client.validate(["broken"], false, ["broken.mthds"]).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ApiResponseError);
+    const e = err as ApiResponseError;
+    expect(e.status).toBe(422);
+    expect(e.errorType).toBe("ValidateBundleError");
+    expect(e.validationErrors).toHaveLength(2);
+    expect(e.validationErrors![0]).toMatchObject({
+      category: "blueprint_validation",
+      source: "broken.mthds",
+    });
+    expect(e.validationErrors![1]!.category).toBe("pipe_factory");
+    expect(e.validationErrors![1]!.missing_concept_code).toBe("demo.Missing");
+  });
+
+  it("leaves validationErrors undefined on a plain 422 (no validation_errors)", async () => {
+    const client = makeClient();
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      jsonResponse(422, { detail: "mthds_names length must match mthds_contents" })
+    );
+    const err = await client.validate(["x"], false, ["a", "b"]).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ApiResponseError);
+    expect((err as ApiResponseError).validationErrors).toBeUndefined();
   });
 });
 
@@ -502,6 +594,10 @@ describe("MthdsApiClient.version", () => {
     expect(info.implementation).toBe("pipelex-api");
     expect(info.protocol_version).toBe("0.6.0");
     expect(info.runtime_version).toBe("0.32.0");
+    // Typed extension field — clients gate capabilities on it without reaching
+    // through the untyped index signature.
+    const implVersion: string | undefined = info.implementation_version;
+    expect(implVersion).toBe("1.2.3");
     expect(fetchSpy.mock.calls[0]![0]).toBe("http://localhost:8081/v1/version");
   });
 });

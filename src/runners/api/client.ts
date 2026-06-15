@@ -17,10 +17,14 @@ import type {
   ModelCategory,
   ModelDeck,
   RunResultStart,
-  ValidationReport,
   VersionInfo,
 } from "../../protocol/models.js";
-import type { DictPipeOutput, DictRunResultExecute } from "./models.js";
+import type {
+  DictPipeOutput,
+  DictRunResultExecute,
+  PipelexValidationReport,
+  ValidationErrorItem,
+} from "./models.js";
 import type {
   RunRead,
   RunResults,
@@ -256,7 +260,7 @@ export class MthdsApiClient extends BaseRunner implements Runner {
     endpoint: string,
     res: RawResponse
   ): never {
-    const { errorType, serverMessage } = parseErrorBody(res.body);
+    const { errorType, serverMessage, validationErrors } = parseErrorBody(res.body);
     throw new ApiResponseError(
       `API ${method} /${API_PREFIX}/${endpoint} failed (${res.status}): ${serverMessage ?? (res.body || res.statusText)}`,
       this.baseUrl,
@@ -264,7 +268,8 @@ export class MthdsApiClient extends BaseRunner implements Runner {
       res.statusText,
       res.body,
       errorType,
-      serverMessage
+      serverMessage,
+      validationErrors
     );
   }
 
@@ -425,20 +430,33 @@ export class MthdsApiClient extends BaseRunner implements Runner {
   /**
    * Parse, validate, and dry-run an MTHDS bundle — `POST /v1/validate`.
    *
-   * Returns the structural artifacts of a valid bundle; an invalid bundle is
-   * an HTTP 422 problem, surfaced as `ApiResponseError`.
+   * Returns the typed `PipelexValidationReport` of a valid bundle; an invalid
+   * bundle is an HTTP 422 problem, surfaced as `ApiResponseError` whose
+   * `validationErrors` carries the structured per-error list.
+   *
+   * `mthdsNames` (optional, parallel to `mthdsContents`) names each submitted
+   * content — a Pipelex-API extension threaded onto `blueprint.source`, so
+   * cross-file diagnostics name the owning file (an unnamed content yields
+   * `source: null`). The server 422s a length mismatch; this client sends the
+   * arrays verbatim and surfaces that as an `ApiResponseError`.
    */
   async validate(
     mthdsContents: string[],
-    allowSignatures = false
-  ): Promise<ValidationReport> {
-    const res = await this.requestRaw("POST", this.url("validate"), {
-      body: { mthds_contents: mthdsContents, allow_signatures: allowSignatures },
-    });
+    allowSignatures = false,
+    mthdsNames?: string[]
+  ): Promise<PipelexValidationReport> {
+    const body: Record<string, unknown> = {
+      mthds_contents: mthdsContents,
+      allow_signatures: allowSignatures,
+    };
+    if (mthdsNames !== undefined) {
+      body.mthds_names = mthdsNames;
+    }
+    const res = await this.requestRaw("POST", this.url("validate"), { body });
     if (res.status < 200 || res.status >= 300) {
       this.throwApiResponseError("POST", "validate", res);
     }
-    return JSON.parse(res.body) as ValidationReport;
+    return JSON.parse(res.body) as PipelexValidationReport;
   }
 
   /** The model deck the runner can route to — `GET /v1/models[?type=]`. */
@@ -763,19 +781,26 @@ function extractRunStatusFromMessage(message: string): RunStatus {
 /**
  * The API serializes errors as `{"detail": {"error_type": ..., "message": ...}}`
  * (HTTPException with dict detail) or `{"detail": "..."}` (auth 401s and RFC
- * 7807 problems). Both shapes are extracted here. Falls through silently on
- * non-JSON bodies.
+ * 7807 problems). Both shapes are extracted here. An invalid-bundle 422 problem
+ * additionally carries a top-level `validation_errors[]` list (the
+ * `ValidateBundleError` extension projected onto the envelope). Falls through
+ * silently on non-JSON bodies.
  */
-function parseErrorBody(body: string): { errorType: string | undefined; serverMessage: string | undefined } {
-  if (!body) return { errorType: undefined, serverMessage: undefined };
+function parseErrorBody(body: string): {
+  errorType: string | undefined;
+  serverMessage: string | undefined;
+  validationErrors: ValidationErrorItem[] | undefined;
+} {
+  const empty = { errorType: undefined, serverMessage: undefined, validationErrors: undefined };
+  if (!body) return empty;
   let parsed: unknown;
   try {
     parsed = JSON.parse(body);
   } catch {
-    return { errorType: undefined, serverMessage: undefined };
+    return empty;
   }
   if (!parsed || typeof parsed !== "object") {
-    return { errorType: undefined, serverMessage: undefined };
+    return empty;
   }
   const root = parsed as Record<string, unknown>;
   const detail = root.detail;
@@ -790,5 +815,12 @@ function parseErrorBody(body: string): { errorType: string | undefined; serverMe
   }
   if (errorType === undefined && typeof root.error_type === "string") errorType = root.error_type;
   if (serverMessage === undefined && typeof root.message === "string") serverMessage = root.message;
-  return { errorType, serverMessage };
+  // `validation_errors` rides the problem envelope as a top-level array (the
+  // VERBOSE projection of `ErrorReport.validation_errors`, retained under STRICT
+  // too — it describes the caller's own bundle, not server internals). Kept as a
+  // shallow array guard; per-item shape is the typed `ValidationErrorItem` contract.
+  const validationErrors = Array.isArray(root.validation_errors)
+    ? (root.validation_errors as ValidationErrorItem[])
+    : undefined;
+  return { errorType, serverMessage, validationErrors };
 }

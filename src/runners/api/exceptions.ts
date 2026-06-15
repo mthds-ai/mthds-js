@@ -6,6 +6,7 @@
  */
 
 import { PipelineRequestError } from "../../protocol/exceptions.js";
+import type { ValidationErrorItem } from "./models.js";
 
 export { PipelineRequestError };
 
@@ -157,6 +158,14 @@ export class ApiResponseError extends PipelineRequestError {
   public readonly responseBody: string;
   public readonly errorType: string | undefined;
   public readonly serverMessage: string | undefined;
+  /**
+   * Structured per-error diagnostics on an invalid-bundle 422 from
+   * `POST /v1/validate` (`error_type === "ValidateBundleError"`). The list the
+   * VS Code extension maps to per-line problems; `undefined` on any other error
+   * (auth, transport, a non-validation 422). Throw-on-422 semantics are kept —
+   * an invalid bundle is still an `ApiResponseError`, the caller reads this field.
+   */
+  public readonly validationErrors: ValidationErrorItem[] | undefined;
 
   constructor(
     message: string,
@@ -166,6 +175,7 @@ export class ApiResponseError extends PipelineRequestError {
     responseBody: string,
     errorType: string | undefined,
     serverMessage: string | undefined,
+    validationErrors: ValidationErrorItem[] | undefined,
     options?: { cause?: unknown },
   ) {
     super(message, options);
@@ -176,5 +186,6 @@ export class ApiResponseError extends PipelineRequestError {
     this.responseBody = responseBody;
     this.errorType = errorType;
     this.serverMessage = serverMessage;
+    this.validationErrors = validationErrors;
   }
 }

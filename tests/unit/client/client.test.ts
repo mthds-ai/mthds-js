@@ -547,11 +547,18 @@ describe("MthdsApiClient.validate", () => {
 
   it("leaves validationErrors undefined on a plain 422 (no validation_errors)", async () => {
     const client = makeClient();
+    // Models the real request-shape 422: pipelex-api's RequestValidationError handler
+    // emits an RFC 7807 problem with a top-level error_type "ValidationError" and a
+    // string detail — and NO validation_errors key (that's a ValidateBundleError thing).
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      jsonResponse(422, { detail: "mthds_names length must match mthds_contents" })
+      jsonResponse(422, {
+        error_type: "ValidationError",
+        detail: "mthds_names length must match mthds_contents",
+      })
     );
     const err = await client.validate(["x"], false, ["a", "b"]).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(ApiResponseError);
+    expect((err as ApiResponseError).errorType).toBe("ValidationError");
     expect((err as ApiResponseError).validationErrors).toBeUndefined();
   });
 });

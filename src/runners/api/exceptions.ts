@@ -161,9 +161,16 @@ export class ApiResponseError extends PipelineRequestError {
   /**
    * Structured per-error diagnostics on an invalid-bundle 422 from
    * `POST /v1/validate` (`error_type === "ValidateBundleError"`). The list the
-   * VS Code extension maps to per-line problems; `undefined` on any other error
-   * (auth, transport, a non-validation 422). Throw-on-422 semantics are kept —
-   * an invalid bundle is still an `ApiResponseError`, the caller reads this field.
+   * VS Code extension maps to per-line problems. Throw-on-422 semantics are kept
+   * — an invalid bundle is still an `ApiResponseError`, the caller reads this field.
+   *
+   * `undefined` for any non-validation error (auth, transport, a request-shape
+   * 422) AND for the validation failures that carry no per-error data: a
+   * whole-bundle dry-run failure or a signature-check failure is still a
+   * `ValidateBundleError` 422, but it rides the human-readable `serverMessage`
+   * (the RFC 7807 `detail`), not this list. So a consumer must NOT assume
+   * `error_type === "ValidateBundleError"` implies a populated list — always
+   * fall back to `serverMessage` when this is empty.
    */
   public readonly validationErrors: ValidationErrorItem[] | undefined;
 

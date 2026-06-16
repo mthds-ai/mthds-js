@@ -109,4 +109,4 @@ The local pipelex CLI runner (`--runner pipelex`) runs in-process and has no dur
 
 ## Auth note
 
-The hosted run routes require an authorized identity. Today they are gated to `Role.ADMIN`; the public, scope-based (`runs:execute`) path for non-admin API keys is a launch-day data change, not a code change. Until then, exercise these against an admin-scoped key.
+The hosted run routes require an authorized identity with run access, gated by feature flags. A WorkOS web session (JWT) needs the `ff_playground` feature flag; a Pipelex API key needs the `ff_api_keys` feature flag granted to its org. A key whose org lacks `ff_api_keys` is rejected by the gateway.

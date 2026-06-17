@@ -1,5 +1,26 @@
 # Changelog
 
+## [v0.11.0] - 2026-06-17
+
+### Added
+ - **200-diagnostic `/validate` endpoint with discriminated union:** The `/validate` endpoint now returns a 200 status for both valid and invalid bundles via the `PipelexValidationResult` union, discriminated by `is_valid`. `is_valid: true` yields a `PipelexValidationReport` with structural artifacts (`bundle_blueprint`, `pipe_io_contracts`, `graph_spec`, etc.); `is_valid: false` yields a `PipelexInvalidReport` with structured `validation_errors[]` and runnability facts. An invalid bundle is now a produced verdict rather than a thrown error—only no-verdict conditions (malformed requests, auth issues, server faults) raise `ApiResponseError`.
+ - **Per-content source tracking:** `MthdsApiClient.validate()` now accepts an optional `mthds_sources` array parallel to `mthds_contents`, enabling cross-file diagnostics to resolve and report the owning file.
+ - **Explicit typing for `VersionInfo.implementation_version`:** Lets capability gating read the version directly instead of through an untyped index signature.
+ - **`check-min-versions` Claude Code skill:** A new read-only skill (`.claude/skills/check-min-versions/SKILL.md`) reports the minimum required versions for the mthds plugin, pipelex, and pipelex-tools.
+ - **Validation contract tests:** Added round-trip tests (`validation-contract.test.ts`) ensuring the TS types strictly match the wire boundary of the new 200-diagnostic response union.
+
+### Changed
+ - **Validation consumers use the discriminant:** All commands consuming `runner.validate()` (`mthds validate`, `mthds-agent validate`, `mthds install`) now check `report.is_valid === false` instead of catching 422 HTTP errors. Consequently, `ApiResponseError.validationErrors` only carries diagnostics for build routes (`/v1/build/*`); content validation errors no longer route through this exception.
+ - **Agent envelope shapes aligned with the hosted API protocol:** For `--runner api validate bundle`, `agentError` now accepts optional `is_valid` and `validation_errors` extras to carry structured failures. For `models`, `/models` now uses the protocol's `models` list and drops the retired `presets` and `success` extras.
+ - **Lenient Codex hook validation:** The Codex hook (Stage 3 / `apply_patch`) now passes `--allow-signatures` to `pipelex-agent validate bundle`, letting intermediate stepwise-refinement saves pass structural validation even with unimplemented `PipeSignature` placeholders.
+ - **Local CLI runner output:** The local `PipelexRunner` now returns the minimal valid arm `{ is_valid: true }` on success instead of an empty object.
+ - **Minimum dependency version bumps:** Claude Code mthds plugin `>=0.12.0` → `>=0.13.0`; `pipelex` (and `pipelex-agent`) `>=0.30.2` → `>=0.32.1`; `pipelex-tools` (`plxt`) `>=0.4.0` → `>=0.6.0`.
+ - **Documentation:** Updated `README.md` and `docs/architecture.md` to reflect the 200-diagnostic validation surface, the discriminated union types, and the `mthds_sources` parameter.
+
+### Removed
+ - **Retired the `success` extra on the models surface:** `/models` consumers now read the protocol's `models` list (the `presets` / `success` extras are gone). Validation is discriminated on `is_valid`; the agent CLI's own `success` / `error` envelope is unchanged — a valid verdict still rides `success: true`.
+
+
 ## [v0.10.0] - 2026-06-12
 
 ### Changed — structural split: `protocol/` ⊥ `runners/` (exact mirror of mthds-python)

@@ -34,6 +34,7 @@ export const AGENT_ERROR_HINTS: Record<string, string> = {
   ConfigError: "Run `mthds-agent config list` to see current configuration.",
   RunnerError: "Check that the runner is properly configured.",
   ValidationError: "Check the .mthds bundle for syntax or schema errors.",
+  ValidateBundleError: "The bundle is invalid — see validation_errors for the per-error diagnostics.",
   InstallError: "Check the address and try again.",
   PackageError:
     "Check the METHODS.toml file and try again.",
@@ -58,6 +59,10 @@ export function agentError(
     error_domain?: AgentErrorDomain;
     retryable?: boolean;
     recovery?: BinaryRecoveryInfo;
+    /** Verdict discriminant on a validate failure — `false` rides the envelope (mirrors the Python agent CLI). */
+    is_valid?: boolean;
+    /** Structured per-error diagnostics on an invalid-bundle verdict (the `/validate` 200 InvalidReport arm). */
+    validation_errors?: unknown[];
   }
 ): never {
   const payload: Record<string, unknown> = {
@@ -72,6 +77,12 @@ export function agentError(
   }
   if (extras?.recovery) {
     payload.recovery = extras.recovery;
+  }
+  if (extras?.is_valid !== undefined) {
+    payload.is_valid = extras.is_valid;
+  }
+  if (extras?.validation_errors !== undefined) {
+    payload.validation_errors = extras.validation_errors;
   }
 
   // Remove undefined values for cleaner output

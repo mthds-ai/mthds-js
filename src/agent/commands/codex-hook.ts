@@ -274,15 +274,28 @@ function runPlxt(args: string[]): PlxtRunResult {
 }
 
 /**
- * Run `pipelex-agent validate bundle <file> -L <libraryDir>`. We do NOT
- * shell out through `mthds-agent` to avoid recursing into this same CLI;
- * pipelex-agent's bundle validation is offline-safe (no remote-config or
+ * Run `pipelex-agent validate bundle <file> -L <libraryDir> --allow-signatures`.
+ * We do NOT shell out through `mthds-agent` to avoid recursing into this same
+ * CLI; pipelex-agent's bundle validation is offline-safe (no remote-config or
  * gateway fetch in this code path).
+ *
+ * `--allow-signatures` makes validation lenient: a bundle that forward-declares
+ * pipes as `PipeSignature` placeholders validates structurally instead of
+ * erroring on the unimplemented signatures. This keeps the Codex hook at parity
+ * with the Claude bash hook and lets every intermediate save during recursive
+ * (stepwise-refinement) method building pass while the signature backlog is
+ * still being drained. On a signature-free bundle lenient ≡ strict, so the flag
+ * is a no-op for every non-recursive edit. The strict gate (no leftover
+ * signatures) lives in the orchestrator skill's finalize step and in `run`, not
+ * in this per-save hook.
+ *
+ * Exported for testability — the invocation shape, including this flag, is
+ * verified in codex-hook-validate.test.ts.
  */
-function runPipelexValidate(file: string, libraryDir: string): PipelexValidateResult {
+export function runPipelexValidate(file: string, libraryDir: string): PipelexValidateResult {
   const result = spawnSync(
     "pipelex-agent",
-    ["validate", "bundle", file, "-L", libraryDir],
+    ["validate", "bundle", file, "-L", libraryDir, "--allow-signatures"],
     { encoding: "utf8" }
   );
   if (result.error) {
@@ -367,10 +380,13 @@ export async function runCodexHook(deps: CodexHookDeps): Promise<void> {
       continue; // skip Stage 3 on a fmt-broken file
     }
 
-    // Stage 3: pipelex-agent validate bundle — semantic validation. Markdown
-    // stderr is the canonical agent-facing artifact. Block on input/unknown
-    // domain (agent revises the bundle); warn via additionalContext on
-    // config/runtime (environment issue, agent should not edit the file).
+    // Stage 3: pipelex-agent validate bundle — semantic validation, run
+    // leniently (`--allow-signatures`, inside runPipelexValidate) so a bundle
+    // mid-refinement with leftover PipeSignature placeholders still passes.
+    // Markdown stderr is the canonical agent-facing artifact. Block on
+    // input/unknown domain (agent revises the bundle); warn via
+    // additionalContext on config/runtime (environment issue, agent should not
+    // edit the file).
     const libraryDir = path.dirname(file) + "/";
     const validateResult = deps.runPipelexValidate(file, libraryDir);
     const outcome = classifyStage3Result(file, validateResult);

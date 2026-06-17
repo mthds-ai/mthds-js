@@ -148,12 +148,12 @@ describe("PipelexRunner", () => {
   });
 
   describe("validate", () => {
-    it("runs `pipelex validate bundle` on the written contents and returns an empty report", async () => {
+    it("runs `pipelex validate bundle` on the written contents and returns the minimal valid arm", async () => {
       execFileAsync.mockResolvedValue({ stdout: "", stderr: "" });
 
       const report = await runner.validate(["domain = 'x'"]);
 
-      expect(report).toEqual({});
+      expect(report).toEqual({ is_valid: true });
       const args = execFileAsync.mock.calls[0]![1] as string[];
       expect(args[0]).toBe("validate");
       expect(args[1]).toBe("bundle");

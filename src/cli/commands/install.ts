@@ -178,9 +178,21 @@ export async function installMethod(options: {
 
       valSpinner.start(`Validating ${method.name}...`);
       try {
-        await runner.validate(contents);
+        const report = await runner.validate(contents);
+        if (report.is_valid === false) {
+          // A produced "invalid" verdict (the 200 InvalidReport arm) — surface the
+          // per-error diagnostics, not just the summary, so failures are debuggable.
+          valSpinner.stop(`Validation failed: ${method.name}`);
+          p.log.error(`${method.name}: ${report.message}`);
+          for (const item of report.validation_errors) {
+            p.log.error(`  [${item.category}] ${item.message}`);
+          }
+          allValid = false;
+          continue;
+        }
         valSpinner.stop(`Validated ${method.name}`);
       } catch (err) {
+        // A no-verdict condition (a local CLI runner raising, or a transport fault).
         valSpinner.stop(`Validation failed: ${method.name}`);
         p.log.error(`${method.name}: ${(err as Error).message}`);
         allValid = false;

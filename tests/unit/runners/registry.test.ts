@@ -21,6 +21,7 @@ vi.mock("../../../src/config/config.js", async (importOriginal) => {
 
 // Import after mock setup
 import { createRunner } from "../../../src/runners/registry.js";
+import { isApiRunner, isPipelexRunner } from "../../../src/cli/commands/utils.js";
 import { loadConfig } from "../../../src/config/config.js";
 
 const mockedLoadConfig = vi.mocked(loadConfig);
@@ -76,5 +77,25 @@ describe("createRunner", () => {
     expect(() => createRunner("unknown" as never)).toThrow(
       "Unknown runner type: unknown"
     );
+  });
+});
+
+describe("runner type guards", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("isApiRunner narrows the API client (the type-safe gateway to the mthds_sources extension)", () => {
+    const api = createRunner("api");
+    const pipelex = createRunner("pipelex");
+    expect(isApiRunner(api)).toBe(true);
+    expect(isApiRunner(pipelex)).toBe(false);
+  });
+
+  it("isPipelexRunner narrows the local CLI runner", () => {
+    const api = createRunner("api");
+    const pipelex = createRunner("pipelex");
+    expect(isPipelexRunner(pipelex)).toBe(true);
+    expect(isPipelexRunner(api)).toBe(false);
   });
 });

@@ -236,7 +236,7 @@ describe("ApiRunner run-lifecycle delegation", () => {
     const runner = makeApiRunner();
     const fetchSpy = vi
       .spyOn(globalThis, "fetch")
-      .mockResolvedValue(jsonResponse(200, { blueprint: {} }));
+      .mockResolvedValue(jsonResponse(200, { is_valid: true, bundle_blueprint: {} }));
     await runner.validate(["domain = 'x'"]);
     expect(fetchSpy.mock.calls[0]![0]).toBe("http://localhost:8081/v1/validate");
   });

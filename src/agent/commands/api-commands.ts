@@ -9,6 +9,7 @@ import { Command } from "commander";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { agentError, agentSuccess, AGENT_ERROR_DOMAINS } from "../output.js";
+import { isApiRunner } from "../../cli/commands/utils.js";
 import type { Runner } from "../../runners/types.js";
 import type { StartOptions } from "../../protocol/options.js";
 import type { ModelCategory } from "../../protocol/models.js";
@@ -146,7 +147,9 @@ export function registerApiRunnerCommands(
     .action(async (target: string | undefined, options: { allowSignatures?: boolean; content?: string }) => {
       const runner = safeCreateRunner(makeRunner);
       const mthdsContent = resolveContent(target, options.content);
-      await runProtocolValidate(runner, [mthdsContent], options.allowSignatures ?? false);
+      // A real file path (not inline --content) names the source for diagnostics.
+      const mthdsSources = !options.content && target ? [target] : undefined;
+      await runProtocolValidate(runner, [mthdsContent], options.allowSignatures ?? false, mthdsSources);
     });
 
   validateGroup
@@ -168,7 +171,7 @@ export function registerApiRunnerCommands(
         return;
       }
       const mthdsContent = readFileOrError(target);
-      await runProtocolValidate(runner, [mthdsContent], options.allowSignatures ?? false);
+      await runProtocolValidate(runner, [mthdsContent], options.allowSignatures ?? false, [target]);
     });
 
   validateGroup
@@ -784,18 +787,37 @@ function parseModelCategory(raw: string | undefined): ModelCategory | undefined 
 
 /**
  * Run the protocol validate (`POST /v1/validate`) and emit the agent envelope.
- * A valid bundle returns the structural artifacts; an invalid bundle is an
- * HTTP 422 problem, surfaced as a ValidationError.
+ * `/validate` is a diagnostic endpoint: a valid bundle returns the structural
+ * artifacts (`is_valid: true`); an invalid bundle is a produced verdict (a 200
+ * `is_valid: false` body), surfaced as a structured ValidateBundleError envelope —
+ * not a thrown error. A non-2xx (a no-verdict condition) still throws.
  */
-async function runProtocolValidate(
+export async function runProtocolValidate(
   runner: Runner,
   mthdsContents: string[],
-  allowSignatures: boolean
+  allowSignatures: boolean,
+  mthdsSources?: string[]
 ): Promise<void> {
   try {
-    const report = await runner.validate(mthdsContents, allowSignatures);
+    // `mthds_sources` is a Pipelex-API extension (not the pure protocol), so it
+    // rides only the concrete client — reach it via `isApiRunner`. The server
+    // threads each source onto `validation_errors[].source`, so agent consumers
+    // can resolve the owning file from the structured envelope.
+    const report =
+      mthdsSources !== undefined && isApiRunner(runner)
+        ? await runner.validate(mthdsContents, allowSignatures, mthdsSources)
+        : await runner.validate(mthdsContents, allowSignatures);
+    if (report.is_valid === false) {
+      agentError(report.message, "ValidateBundleError", {
+        error_domain: AGENT_ERROR_DOMAINS.VALIDATION,
+        is_valid: false,
+        validation_errors: report.validation_errors,
+      });
+    }
     agentSuccess({ success: true, ...report });
   } catch (err) {
+    // Only no-verdict conditions reach here now: a request-shape 422 (malformed
+    // body / mthds_sources mismatch), auth, or a server fault.
     if (err instanceof ApiResponseError && err.status === 422) {
       agentError(err.serverMessage ?? err.message, "ValidationError", {
         error_domain: AGENT_ERROR_DOMAINS.VALIDATION,

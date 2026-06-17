@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import * as p from "@clack/prompts";
 import { printLogo } from "./index.js";
-import { isPipelexRunner, extractPassthroughArgs } from "./utils.js";
+import { isPipelexRunner, isApiRunner, extractPassthroughArgs } from "./utils.js";
 import { createRunner } from "../../runners/registry.js";
 import type { RunnerType } from "../../runners/types.js";
 
@@ -123,11 +123,31 @@ export async function validatePipe(
   s.start("Validating...");
 
   try {
-    await runner.validate([mthdsContent]);
+    // Name the submitted file so cross-file diagnostics resolve the owning file.
+    // `mthds_sources` is a Pipelex-API extension carried only by the concrete
+    // client (not the pure protocol) — reach it through `isApiRunner`.
+    const report = isApiRunner(runner)
+      ? await runner.validate([mthdsContent], false, [bundlePath])
+      : await runner.validate([mthdsContent]);
+    if (report.is_valid === false) {
+      // A produced "invalid" verdict (the 200 InvalidReport arm) — report the
+      // diagnostics and exit non-zero, rather than mistaking a 200 for success.
+      s.stop("Validation failed.");
+      p.log.error(report.message);
+      for (const item of report.validation_errors) {
+        // The server attributes `source` from `mthds_sources`; fall back to the
+        // path the user passed so a diagnostic always names its file.
+        const source = (item as { source?: string }).source ?? bundlePath;
+        p.log.error(`${source}: [${item.category}] ${item.message}`);
+      }
+      p.outro("");
+      process.exit(1);
+    }
     s.stop("Validation passed.");
     p.log.success("MTHDS content validated successfully");
     p.outro("Done");
   } catch (err) {
+    // A no-verdict condition (a local CLI runner raising, or a transport fault).
     s.stop("Validation failed.");
     p.log.error((err as Error).message);
     p.outro("");

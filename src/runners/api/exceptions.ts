@@ -6,6 +6,7 @@
  */
 
 import { PipelineRequestError } from "../../protocol/exceptions.js";
+import type { ValidationErrorItem } from "./models.js";
 
 export { PipelineRequestError };
 
@@ -157,6 +158,20 @@ export class ApiResponseError extends PipelineRequestError {
   public readonly responseBody: string;
   public readonly errorType: string | undefined;
   public readonly serverMessage: string | undefined;
+  /**
+   * Structured per-error diagnostics on a problem body that carries a top-level
+   * `validation_errors[]` — the **build routes** (`POST /v1/build/*`), which still
+   * reject an invalid bundle with a 422.
+   *
+   * `POST /v1/validate` no longer routes content errors here: an invalid bundle is
+   * a produced verdict (a **200** `PipelexInvalidReport` whose `validation_errors[]`
+   * the caller reads off the returned value), not an `ApiResponseError`. This field
+   * stays for the build-route 422s and is `undefined` for any error that carries no
+   * per-error list (auth, transport, a request-shape 422). A consumer must NOT
+   * assume a given `error_type` implies a populated list — fall back to
+   * `serverMessage` when this is empty.
+   */
+  public readonly validationErrors: ValidationErrorItem[] | undefined;
 
   constructor(
     message: string,
@@ -166,6 +181,7 @@ export class ApiResponseError extends PipelineRequestError {
     responseBody: string,
     errorType: string | undefined,
     serverMessage: string | undefined,
+    validationErrors: ValidationErrorItem[] | undefined,
     options?: { cause?: unknown },
   ) {
     super(message, options);
@@ -176,5 +192,6 @@ export class ApiResponseError extends PipelineRequestError {
     this.responseBody = responseBody;
     this.errorType = errorType;
     this.serverMessage = serverMessage;
+    this.validationErrors = validationErrors;
   }
 }

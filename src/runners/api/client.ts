@@ -22,7 +22,7 @@ import type {
 import type {
   DictPipeOutput,
   DictRunResultExecute,
-  PipelexValidationReport,
+  PipelexValidationResult,
   ValidationErrorItem,
 } from "./models.js";
 import type {
@@ -430,11 +430,15 @@ export class MthdsApiClient extends BaseRunner implements Runner {
   /**
    * Parse, validate, and dry-run an MTHDS bundle — `POST /v1/validate`.
    *
-   * Returns the typed `PipelexValidationReport` of a valid bundle; an invalid
-   * bundle is an HTTP 422 problem, surfaced as `ApiResponseError` whose
-   * `validationErrors` carries the structured per-error list.
+   * `/validate` is a diagnostic endpoint: every produced verdict rides a **200**,
+   * discriminated on `is_valid`. This returns the `PipelexValidationResult` union
+   * verbatim — `is_valid: true` ⇒ the typed `PipelexValidationReport` (structural
+   * artifacts), `is_valid: false` ⇒ a `PipelexInvalidReport` (`validation_errors[]`).
+   * An invalid bundle is NOT thrown — the caller pattern-matches `is_valid`. Only a
+   * *no-verdict* condition (a malformed request, an `mthds_sources` length mismatch,
+   * auth, a server fault) is non-2xx and surfaces as `ApiResponseError`.
    *
-   * `mthdsNames` (optional, parallel to `mthdsContents`) names each submitted
+   * `mthdsSources` (optional, parallel to `mthdsContents`) names each submitted
    * content — a Pipelex-API extension threaded onto `blueprint.source`, so
    * cross-file diagnostics name the owning file (an unnamed content yields
    * `source: null`). The server 422s a length mismatch; this client sends the
@@ -443,20 +447,20 @@ export class MthdsApiClient extends BaseRunner implements Runner {
   async validate(
     mthdsContents: string[],
     allowSignatures = false,
-    mthdsNames?: string[]
-  ): Promise<PipelexValidationReport> {
+    mthdsSources?: string[]
+  ): Promise<PipelexValidationResult> {
     const body: Record<string, unknown> = {
       mthds_contents: mthdsContents,
       allow_signatures: allowSignatures,
     };
-    if (mthdsNames !== undefined) {
-      body.mthds_names = mthdsNames;
+    if (mthdsSources !== undefined) {
+      body.mthds_sources = mthdsSources;
     }
     const res = await this.requestRaw("POST", this.url("validate"), { body });
     if (res.status < 200 || res.status >= 300) {
       this.throwApiResponseError("POST", "validate", res);
     }
-    return JSON.parse(res.body) as PipelexValidationReport;
+    return JSON.parse(res.body) as PipelexValidationResult;
   }
 
   /** The model deck the runner can route to — `GET /v1/models[?type=]`. */

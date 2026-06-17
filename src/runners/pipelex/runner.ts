@@ -30,7 +30,7 @@ import type {
   ModelCategory,
   ModelDeck,
   ModelInfo,
-  ValidationReport,
+  ValidationResult,
   VersionInfo,
 } from "../../protocol/models.js";
 import { MTHDS_PROTOCOL_VERSION } from "../../protocol/models.js";
@@ -429,7 +429,7 @@ export class PipelexRunner extends BaseRunner implements Runner {
   async validate(
     mthdsContents: string[],
     allowSignatures = false
-  ): Promise<ValidationReport> {
+  ): Promise<ValidationResult> {
     const tmp = makeTmpDir();
     try {
       const bundlePath = writeMthdsContents(tmp, mthdsContents);
@@ -444,9 +444,12 @@ export class PipelexRunner extends BaseRunner implements Runner {
         const detail = execError.stderr?.trim() || execError.stdout?.trim() || execError.message;
         throw new Error(`Bundle validation failed:\n${detail}`);
       }
-      // The local CLI validates but emits human-readable output, not the
-      // structural artifacts — a valid bundle yields an empty report.
-      return {};
+      // The local CLI raises on an invalid bundle (caught above), so reaching
+      // here means the verdict is valid. It emits human-readable output, not the
+      // structural artifacts — return the minimal valid arm (the `is_valid: true`
+      // discriminant), not the full report. (Per the protocol contract, a CLI
+      // runner may raise instead of materializing the invalid arm.)
+      return { is_valid: true };
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }

@@ -47,6 +47,9 @@ export type {
   ModelInfo,
   ModelDeck,
   ValidationReport,
+  ValidationError,
+  InvalidValidationReport,
+  ValidationResult,
   VersionInfo,
 } from "./protocol/models.js";
 export type { VariableMultiplicity, PipeOutputAbstract } from "./protocol/pipe_output.js";
@@ -76,6 +79,8 @@ export type {
   DictPipeOutput,
   DictRunResultExecute,
   PipelexValidationReport,
+  PipelexInvalidReport,
+  PipelexValidationResult,
   ValidatedPipeEntry,
   DryRunStatus,
   ValidationErrorItem,

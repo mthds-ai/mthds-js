@@ -418,12 +418,13 @@ describe("MthdsApiClient.start", () => {
 });
 
 describe("MthdsApiClient.validate", () => {
-  it("POSTs /v1/validate with mthds_contents + allow_signatures and returns the report", async () => {
+  it("POSTs /v1/validate with mthds_contents + allow_signatures and returns the valid report", async () => {
     const client = makeClient();
     const fetchSpy = vi
       .spyOn(globalThis, "fetch")
       .mockResolvedValue(
         jsonResponse(200, {
+          is_valid: true,
           bundle_blueprint: { domain: "x" },
           graph_spec: null,
           pipe_io_contracts: {},
@@ -435,6 +436,8 @@ describe("MthdsApiClient.validate", () => {
 
     const report = await client.validate(["domain = 'x'"], true);
 
+    expect(report.is_valid).toBe(true);
+    if (report.is_valid === false) throw new Error("expected a valid report");
     expect(report.bundle_blueprint).toEqual({ domain: "x" });
     expect(report.is_runnable).toBe(true);
     const [url, init] = fetchSpy.mock.calls[0]!;
@@ -449,7 +452,7 @@ describe("MthdsApiClient.validate", () => {
     const client = makeClient();
     const fetchSpy = vi
       .spyOn(globalThis, "fetch")
-      .mockResolvedValue(jsonResponse(200, {}));
+      .mockResolvedValue(jsonResponse(200, { is_valid: true }));
     await client.validate(["domain = 'x'"]);
     const body = JSON.parse((fetchSpy.mock.calls[0]![1] as RequestInit).body as string);
     expect(body.allow_signatures).toBe(false);
@@ -459,105 +462,108 @@ describe("MthdsApiClient.validate", () => {
     const client = makeClient();
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
       jsonResponse(200, {
+        is_valid: true,
         bundle_blueprint: { domain: "x" },
         pipe_io_contracts: { "x.greet": { inputs: {}, output: {} } },
         graph_spec: null,
         validated_pipes: [{ pipe_ref: "x.greet", status: "SUCCESS" }],
         pending_signatures: [],
         is_runnable: true,
-        success: true,
         message: "MTHDS content validated successfully",
         mthds_contents: ["domain = 'x'"],
       }),
     );
     const report = await client.validate(["domain = 'x'"]);
+    expect(report.is_valid).toBe(true);
+    if (report.is_valid === false) throw new Error("expected a valid report");
     expect(report.validated_pipes[0]).toEqual({ pipe_ref: "x.greet", status: "SUCCESS" });
     expect(report.pending_signatures).toEqual([]);
     expect(report.is_runnable).toBe(true);
-    expect(report.success).toBe(true);
     expect(report.graph_spec).toBeNull();
   });
 
-  it("sends mthds_names parallel to mthds_contents when provided (Issue 5)", async () => {
+  it("returns the InvalidReport arm (200, is_valid: false) for an invalid bundle — not a throw", async () => {
+    const client = makeClient();
+    // The 200-diagnostic contract: an invalid bundle is a produced verdict, not a
+    // transport failure. The body carries the discriminant + the structured list
+    // (the threaded `source` per the mthds_sources hook), no structural artifacts.
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      jsonResponse(200, {
+        is_valid: false,
+        validation_errors: [
+          {
+            category: "blueprint_validation",
+            message: "missing main pipe output",
+            source: "broken.mthds",
+            domain_code: "demo",
+          },
+          {
+            category: "pipe_factory",
+            message: "unknown concept demo.Missing",
+            pipe_code: "demo.greet",
+            missing_concept_code: "demo.Missing",
+          },
+        ],
+        pending_signatures: [],
+        is_runnable: false,
+        message: "MTHDS validation found errors",
+      }),
+    );
+    const report = await client.validate(["broken"], false, ["broken.mthds"]);
+    expect(report.is_valid).toBe(false);
+    if (report.is_valid !== false) throw new Error("expected an invalid report");
+    expect(report.is_runnable).toBe(false);
+    expect(report.validation_errors).toHaveLength(2);
+    expect(report.validation_errors[0]).toMatchObject({
+      category: "blueprint_validation",
+      source: "broken.mthds",
+    });
+    expect(report.validation_errors[1]!.category).toBe("pipe_factory");
+    expect(report.validation_errors[1]!.missing_concept_code).toBe("demo.Missing");
+  });
+
+  it("sends mthds_sources parallel to mthds_contents when provided", async () => {
     const client = makeClient();
     const fetchSpy = vi
       .spyOn(globalThis, "fetch")
-      .mockResolvedValue(jsonResponse(200, {}));
+      .mockResolvedValue(jsonResponse(200, { is_valid: true }));
     await client.validate(["domain = 'x'", "domain = 'y'"], true, ["x.mthds", "y.mthds"]);
     const body = JSON.parse((fetchSpy.mock.calls[0]![1] as RequestInit).body as string);
     expect(body).toEqual({
       mthds_contents: ["domain = 'x'", "domain = 'y'"],
       allow_signatures: true,
-      mthds_names: ["x.mthds", "y.mthds"],
+      mthds_sources: ["x.mthds", "y.mthds"],
     });
   });
 
-  it("omits mthds_names from the body when not provided", async () => {
+  it("omits mthds_sources from the body when not provided", async () => {
     const client = makeClient();
     const fetchSpy = vi
       .spyOn(globalThis, "fetch")
-      .mockResolvedValue(jsonResponse(200, {}));
+      .mockResolvedValue(jsonResponse(200, { is_valid: true }));
     await client.validate(["domain = 'x'"]);
     const body = JSON.parse((fetchSpy.mock.calls[0]![1] as RequestInit).body as string);
-    expect("mthds_names" in body).toBe(false);
+    expect("mthds_sources" in body).toBe(false);
   });
 
-  it("surfaces structured validation_errors on an invalid-bundle 422", async () => {
+  it("throws ApiResponseError on a request-shape 422 (mthds_sources length mismatch)", async () => {
     const client = makeClient();
-    // The Phase 2 wire shape: RFC 7807 problem + the top-level validation_errors[]
-    // projection of ValidateBundleError, with the threaded `source` per Issue 5.
+    // The no-verdict path: pipelex-api's RequestValidationError handler emits an
+    // RFC 7807 problem with a top-level error_type "ValidationError" and a string
+    // detail. A produced verdict never 422s — only request-shape errors do.
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
       jsonResponse(
         422,
         {
-          error_type: "ValidateBundleError",
-          title: "Validate Bundle Error",
-          detail: "Bundle failed validation",
-          validation_errors: [
-            {
-              category: "blueprint_validation",
-              message: "missing main pipe output",
-              source: "broken.mthds",
-              domain_code: "demo",
-            },
-            {
-              category: "pipe_factory",
-              message: "unknown concept demo.Missing",
-              pipe_code: "demo.greet",
-              missing_concept_code: "demo.Missing",
-            },
-          ],
+          error_type: "ValidationError",
+          detail: "mthds_sources length must match mthds_contents",
         },
         { "content-type": "application/problem+json" },
       ),
     );
-    const err = await client.validate(["broken"], false, ["broken.mthds"]).catch((e: unknown) => e);
-    expect(err).toBeInstanceOf(ApiResponseError);
-    const e = err as ApiResponseError;
-    expect(e.status).toBe(422);
-    expect(e.errorType).toBe("ValidateBundleError");
-    expect(e.validationErrors).toHaveLength(2);
-    expect(e.validationErrors![0]).toMatchObject({
-      category: "blueprint_validation",
-      source: "broken.mthds",
-    });
-    expect(e.validationErrors![1]!.category).toBe("pipe_factory");
-    expect(e.validationErrors![1]!.missing_concept_code).toBe("demo.Missing");
-  });
-
-  it("leaves validationErrors undefined on a plain 422 (no validation_errors)", async () => {
-    const client = makeClient();
-    // Models the real request-shape 422: pipelex-api's RequestValidationError handler
-    // emits an RFC 7807 problem with a top-level error_type "ValidationError" and a
-    // string detail — and NO validation_errors key (that's a ValidateBundleError thing).
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      jsonResponse(422, {
-        error_type: "ValidationError",
-        detail: "mthds_names length must match mthds_contents",
-      })
-    );
     const err = await client.validate(["x"], false, ["a", "b"]).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(ApiResponseError);
+    expect((err as ApiResponseError).status).toBe(422);
     expect((err as ApiResponseError).errorType).toBe("ValidationError");
     expect((err as ApiResponseError).validationErrors).toBeUndefined();
   });

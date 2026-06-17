@@ -159,18 +159,17 @@ export class ApiResponseError extends PipelineRequestError {
   public readonly errorType: string | undefined;
   public readonly serverMessage: string | undefined;
   /**
-   * Structured per-error diagnostics on an invalid-bundle 422 from
-   * `POST /v1/validate` (`error_type === "ValidateBundleError"`). The list the
-   * VS Code extension maps to per-line problems. Throw-on-422 semantics are kept
-   * — an invalid bundle is still an `ApiResponseError`, the caller reads this field.
+   * Structured per-error diagnostics on a problem body that carries a top-level
+   * `validation_errors[]` — the **build routes** (`POST /v1/build/*`), which still
+   * reject an invalid bundle with a 422.
    *
-   * `undefined` for any non-validation error (auth, transport, a request-shape
-   * 422) AND for the validation failures that carry no per-error data: a
-   * whole-bundle dry-run failure or a signature-check failure is still a
-   * `ValidateBundleError` 422, but it rides the human-readable `serverMessage`
-   * (the RFC 7807 `detail`), not this list. So a consumer must NOT assume
-   * `error_type === "ValidateBundleError"` implies a populated list — always
-   * fall back to `serverMessage` when this is empty.
+   * `POST /v1/validate` no longer routes content errors here: an invalid bundle is
+   * a produced verdict (a **200** `PipelexInvalidReport` whose `validation_errors[]`
+   * the caller reads off the returned value), not an `ApiResponseError`. This field
+   * stays for the build-route 422s and is `undefined` for any error that carries no
+   * per-error list (auth, transport, a request-shape 422). A consumer must NOT
+   * assume a given `error_type` implies a populated list — fall back to
+   * `serverMessage` when this is empty.
    */
   public readonly validationErrors: ValidationErrorItem[] | undefined;
 

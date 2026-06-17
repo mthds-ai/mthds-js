@@ -18,7 +18,7 @@
  - **Documentation:** Updated `README.md` and `docs/architecture.md` to reflect the 200-diagnostic validation surface, the discriminated union types, and the `mthds_sources` parameter.
 
 ### Removed
- - **Retired `success` wire extra:** Removed from validation and model routes in favor of the standardized `is_valid` discriminant.
+ - **Retired the `success` extra on the models surface:** `/models` consumers now read the protocol's `models` list (the `presets` / `success` extras are gone). Validation is discriminated on `is_valid`; the agent CLI's own `success` / `error` envelope is unchanged — a valid verdict still rides `success: true`.
 
 
 ## [v0.10.0] - 2026-06-12

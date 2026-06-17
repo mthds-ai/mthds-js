@@ -33,11 +33,11 @@ The constraint format in all three is an npm-semver range string: `">=X.Y.Z"`.
 Run this from the `mthds-js` repo root to pull all three floors in one shot:
 
 ```bash
-grep -nE 'MIN_PLUGIN_VERSION\s*=' src/agent/plugin-version.ts
-grep -nE 'version_constraint:\s*"' src/agent/binaries.ts
+grep -nE 'MIN_PLUGIN_VERSION[[:space:]]*=' src/agent/plugin-version.ts
+grep -nE 'version_constraint:[[:space:]]*"' src/agent/binaries.ts
 ```
 
-The first command yields the plugin floor. The second yields two lines — the first belongs to `PIPELEX_PKG` (pipelex / pipelex-agent), the second to `PIPELEX_TOOLS_PKG` (plxt). The `:\s*"` in the pattern is deliberate: it matches only the constraint *values* (which are quoted strings) and skips the `version_constraint: string;` field declaration in the `BinaryRecoveryInfo` interface, which would otherwise show up as a phantom third match. If the two value lines ever look ambiguous, open `src/agent/binaries.ts` and confirm which constant each one sits under — the constant name is what disambiguates them.
+The first command yields the plugin floor. The second yields two lines — the first belongs to `PIPELEX_PKG` (pipelex / pipelex-agent), the second to `PIPELEX_TOOLS_PKG` (plxt). The `:[[:space:]]*"` in the pattern is deliberate: it matches only the constraint *values* (which are quoted strings) and skips the `version_constraint: string;` field declaration in the `BinaryRecoveryInfo` interface, which would otherwise show up as a phantom third match. (POSIX `[[:space:]]` is used instead of `\s` so the recipe works on the BSD `grep` that ships with macOS, where `\s` is not recognized in `-E` mode.) If the two value lines ever look ambiguous, open `src/agent/binaries.ts` and confirm which constant each one sits under — the constant name is what disambiguates them.
 
 ### 2. Report
 

@@ -180,9 +180,13 @@ export async function installMethod(options: {
       try {
         const report = await runner.validate(contents);
         if (report.is_valid === false) {
-          // A produced "invalid" verdict (the 200 InvalidReport arm).
+          // A produced "invalid" verdict (the 200 InvalidReport arm) — surface the
+          // per-error diagnostics, not just the summary, so failures are debuggable.
           valSpinner.stop(`Validation failed: ${method.name}`);
           p.log.error(`${method.name}: ${report.message}`);
+          for (const item of report.validation_errors) {
+            p.log.error(`  [${item.category}] ${item.message}`);
+          }
           allValid = false;
           continue;
         }

@@ -123,11 +123,23 @@ export async function validatePipe(
   s.start("Validating...");
 
   try {
-    await runner.validate([mthdsContent]);
+    const report = await runner.validate([mthdsContent]);
+    if (report.is_valid === false) {
+      // A produced "invalid" verdict (the 200 InvalidReport arm) — report the
+      // diagnostics and exit non-zero, rather than mistaking a 200 for success.
+      s.stop("Validation failed.");
+      p.log.error(report.message);
+      for (const item of report.validation_errors) {
+        p.log.error(`[${item.category}] ${item.message}`);
+      }
+      p.outro("");
+      process.exit(1);
+    }
     s.stop("Validation passed.");
     p.log.success("MTHDS content validated successfully");
     p.outro("Done");
   } catch (err) {
+    // A no-verdict condition (a local CLI runner raising, or a transport fault).
     s.stop("Validation failed.");
     p.log.error((err as Error).message);
     p.outro("");

@@ -154,11 +154,22 @@ export async function agentValidatePipe(
 
   try {
     const report = await runner.validate([mthdsContent]);
+    if (report.is_valid === false) {
+      // A produced "invalid" verdict (the 200 InvalidReport arm) — emit the
+      // structured failure envelope, not a success. `agentError` exits non-zero.
+      agentError(report.message, "ValidateBundleError", {
+        error_domain: AGENT_ERROR_DOMAINS.VALIDATION,
+        is_valid: false,
+        validation_errors: report.validation_errors,
+      });
+    }
     agentSuccess({
       success: true,
       ...report,
     });
   } catch (err) {
+    // A no-verdict condition (a local CLI runner raising on an invalid bundle, or
+    // a transport/auth/server fault) — surface as a validation error envelope.
     agentError((err as Error).message, "ValidationError", {
       error_domain: AGENT_ERROR_DOMAINS.VALIDATION,
     });

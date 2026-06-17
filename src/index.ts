@@ -47,6 +47,9 @@ export type {
   ModelInfo,
   ModelDeck,
   ValidationReport,
+  ValidationError,
+  InvalidValidationReport,
+  ValidationResult,
   VersionInfo,
 } from "./protocol/models.js";
 export type { VariableMultiplicity, PipeOutputAbstract } from "./protocol/pipe_output.js";
@@ -69,10 +72,17 @@ export type {
   WaitForResultOptions,
 } from "./runners/api/runs.js";
 
-// ── Dict-serialized concretes (runners/api) ──────────────────────────
+// ── Dict-serialized concretes + Pipelex-API validate types (runners/api) ──
 export type {
   DictStuff,
   DictWorkingMemory,
   DictPipeOutput,
   DictRunResultExecute,
+  PipelexValidationReport,
+  PipelexInvalidReport,
+  PipelexValidationResult,
+  ValidatedPipeEntry,
+  DryRunStatus,
+  ValidationErrorItem,
+  ValidationErrorCategory,
 } from "./runners/api/models.js";

@@ -231,7 +231,7 @@ The client implements the MTHDS Protocol plus the hosted run-lifecycle extension
 |--------|-------|-------------|
 | `execute(options)` | `POST /v1/execute` | Execute a method and wait for the result — returns a `RunResultExecute` (throws `RunStillRunningError` on the protocol's optional 202 degrade) |
 | `start(options)` | `POST /v1/start` | Start a method asynchronously — returns a `RunResultStart` with the authoritative `pipeline_run_id` |
-| `validate(contents, allowSignatures?)` | `POST /v1/validate` | Parse, validate, and dry-run a bundle |
+| `validate(contents, allowSignatures?, sources?)` | `POST /v1/validate` | Parse, validate, and dry-run a bundle — returns a typed `PipelexValidationResult` discriminated on `is_valid`; an invalid bundle is a produced verdict (`is_valid: false` with `validation_errors`), not a throw. Only a no-verdict non-2xx (malformed request, auth, server fault) throws `ApiResponseError`. `sources` (optional, parallel to `contents`) names each submitted file so cross-file diagnostics resolve the owning file |
 | `models(category?)` | `GET /v1/models` | The model deck the runner routes to |
 | `version()` | `GET /v1/version` | Protocol + implementation versions (the feature-detection handshake) |
 | `getRunStatus(runId)` | `GET /v1/runs/{id}/status` | Hosted extension — self-healing status read |

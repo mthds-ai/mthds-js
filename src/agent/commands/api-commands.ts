@@ -784,8 +784,10 @@ function parseModelCategory(raw: string | undefined): ModelCategory | undefined 
 
 /**
  * Run the protocol validate (`POST /v1/validate`) and emit the agent envelope.
- * A valid bundle returns the structural artifacts; an invalid bundle is an
- * HTTP 422 problem, surfaced as a ValidationError.
+ * `/validate` is a diagnostic endpoint: a valid bundle returns the structural
+ * artifacts (`is_valid: true`); an invalid bundle is a produced verdict (a 200
+ * `is_valid: false` body), surfaced as a structured ValidateBundleError envelope —
+ * not a thrown error. A non-2xx (a no-verdict condition) still throws.
  */
 async function runProtocolValidate(
   runner: Runner,
@@ -794,8 +796,17 @@ async function runProtocolValidate(
 ): Promise<void> {
   try {
     const report = await runner.validate(mthdsContents, allowSignatures);
+    if (report.is_valid === false) {
+      agentError(report.message, "ValidateBundleError", {
+        error_domain: AGENT_ERROR_DOMAINS.VALIDATION,
+        is_valid: false,
+        validation_errors: report.validation_errors,
+      });
+    }
     agentSuccess({ success: true, ...report });
   } catch (err) {
+    // Only no-verdict conditions reach here now: a request-shape 422 (malformed
+    // body / mthds_sources mismatch), auth, or a server fault.
     if (err instanceof ApiResponseError && err.status === 422) {
       agentError(err.serverMessage ?? err.message, "ValidationError", {
         error_domain: AGENT_ERROR_DOMAINS.VALIDATION,

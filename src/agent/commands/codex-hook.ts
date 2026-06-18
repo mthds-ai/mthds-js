@@ -118,6 +118,16 @@ interface AgentErrorEnvelope {
 }
 
 /**
+ * Coerce an untyped envelope field to a string. The envelope is parsed from an
+ * untrusted/version-skewed subprocess, so a field typed `string` here may at
+ * runtime be a number, null, etc. — calling `.trim()` on a non-string would crash
+ * the hook. Returns "" for any non-string so the safe block/warn path still runs.
+ */
+function safeStr(value: unknown): string {
+  return typeof value === "string" ? value : "";
+}
+
+/**
  * Parse the agent CLI's JSON error envelope from a stream. Returns undefined when
  * the text is empty or not a JSON object — the caller defaults to block (safety).
  *
@@ -139,10 +149,12 @@ export function parseAgentErrorEnvelope(text: string): AgentErrorEnvelope | unde
 
 /** Build an agent-facing reason from the structured envelope: the message plus a compact error list. */
 export function formatValidationReason(file: string, envelope: AgentErrorEnvelope, fallback: string): string {
-  const message = envelope.message?.trim() || fallback;
-  // Guard against a malformed / version-skewed envelope where `validation_errors`
-  // is present but not an array — `.map` on a non-array would crash the hook.
-  const errors = Array.isArray(envelope.validation_errors) ? envelope.validation_errors : [];
+  const message = safeStr(envelope.message).trim() || fallback;
+  // Guard against a malformed / version-skewed envelope: `validation_errors` may be a
+  // non-array (→ `.map` crash) and individual items may be null/non-objects (→ field-access
+  // crash). Keep only real objects so a malformed envelope still produces a clean block.
+  const rawErrors = Array.isArray(envelope.validation_errors) ? envelope.validation_errors : [];
+  const errors = rawErrors.filter((item): item is AgentValidationErrorItem => typeof item === "object" && item !== null);
   if (errors.length === 0) return `Validation failed for ${file}:\n\n${message}`;
   const lines = errors.map((item) => {
     const locators = [
@@ -206,7 +218,7 @@ export function classifyStage3Result(
   const domain = envelope.error_domain;
   if (domain === "config" || domain === "runtime") {
     const header = `Validation warning for ${file} (${domain} domain — environment issue, do not edit the file):\n\n`;
-    const body = envelope.message?.trim() || result.stderr.trim();
+    const body = safeStr(envelope.message).trim() || result.stderr.trim();
     return {
       kind: "warn",
       domain,

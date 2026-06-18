@@ -455,6 +455,21 @@ describe("formatValidationReason", () => {
     );
     expect(reason).toBe("Validation failed for x.mthds:\n\nInvalid");
   });
+
+  it("does not crash on a non-string message (version-skewed envelope) — falls back", () => {
+    const reason = formatValidationReason("x.mthds", { error: true, message: 42 as never }, "fallback");
+    expect(reason).toBe("Validation failed for x.mthds:\n\nfallback");
+  });
+
+  it("does not crash on null / non-object items in validation_errors", () => {
+    const reason = formatValidationReason(
+      "x.mthds",
+      { error: true, message: "Invalid", validation_errors: [null, "nope", { category: "pipe_validation", message: "real" }] as never },
+      "fallback"
+    );
+    expect(reason).toContain("[pipe_validation] real");
+    expect(reason).not.toContain("nope");
+  });
 });
 
 describe("truncateForAdditionalContext", () => {

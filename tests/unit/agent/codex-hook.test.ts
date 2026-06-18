@@ -11,6 +11,7 @@ import {
   buildPathCandidates,
   classifyStage3Result,
   commandOnPath,
+  formatValidationReason,
   parseAgentErrorEnvelope,
   runCodexHook,
   truncateForAdditionalContext,
@@ -431,6 +432,28 @@ describe("parseAgentErrorEnvelope", () => {
 
   it("returns undefined on a JSON scalar (not an object)", () => {
     expect(parseAgentErrorEnvelope("42")).toBeUndefined();
+  });
+});
+
+describe("formatValidationReason", () => {
+  it("formats the message + validation_errors list", () => {
+    const reason = formatValidationReason(
+      "x.mthds",
+      { error: true, message: "Invalid", validation_errors: [{ category: "pipe_validation", message: "bad ref", pipe_code: "p" }] },
+      "fallback"
+    );
+    expect(reason).toContain("Invalid");
+    expect(reason).toContain("[pipe_validation] bad ref");
+    expect(reason).toContain("pipe: p");
+  });
+
+  it("does not crash when validation_errors is a non-array (malformed / version-skewed envelope)", () => {
+    const reason = formatValidationReason(
+      "x.mthds",
+      { error: true, message: "Invalid", validation_errors: { not: "an array" } as never },
+      "fallback"
+    );
+    expect(reason).toBe("Validation failed for x.mthds:\n\nInvalid");
   });
 });
 

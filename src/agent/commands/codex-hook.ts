@@ -140,7 +140,9 @@ export function parseAgentErrorEnvelope(text: string): AgentErrorEnvelope | unde
 /** Build an agent-facing reason from the structured envelope: the message plus a compact error list. */
 export function formatValidationReason(file: string, envelope: AgentErrorEnvelope, fallback: string): string {
   const message = envelope.message?.trim() || fallback;
-  const errors = envelope.validation_errors ?? [];
+  // Guard against a malformed / version-skewed envelope where `validation_errors`
+  // is present but not an array — `.map` on a non-array would crash the hook.
+  const errors = Array.isArray(envelope.validation_errors) ? envelope.validation_errors : [];
   if (errors.length === 0) return `Validation failed for ${file}:\n\n${message}`;
   const lines = errors.map((item) => {
     const locators = [

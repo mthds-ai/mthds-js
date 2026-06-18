@@ -20,7 +20,7 @@ describe("runPipelexValidate — Stage 3 invocation shape", () => {
     spawnSyncMock.mockReset();
   });
 
-  it("validates the bundle leniently with -L and --allow-signatures", () => {
+  it("validates the bundle leniently with -L, --allow-signatures, and JSON formats", () => {
     spawnSyncMock.mockReturnValue({ status: 0, stderr: "" });
 
     const result = runPipelexValidate("bundles/core.mthds", "bundles/");
@@ -35,16 +35,21 @@ describe("runPipelexValidate — Stage 3 invocation shape", () => {
       "-L",
       "bundles/",
       "--allow-signatures",
+      "--format",
+      "json",
+      "--error-format",
+      "json",
     ]);
     expect(result).toEqual({ exitCode: 0, stderr: "" });
   });
 
-  it("passes a non-zero exit code and stderr through unchanged", () => {
-    spawnSyncMock.mockReturnValue({ status: 1, stderr: "# Error: ValidateBundleError\n" });
+  it("passes a non-zero exit code and stderr (the JSON error envelope) through unchanged", () => {
+    const stderr = JSON.stringify({ error: true, is_valid: false, error_domain: "input" });
+    spawnSyncMock.mockReturnValue({ status: 1, stderr });
 
     const result = runPipelexValidate("a.mthds", "./");
 
-    expect(result).toEqual({ exitCode: 1, stderr: "# Error: ValidateBundleError\n" });
+    expect(result).toEqual({ exitCode: 1, stderr });
   });
 
   it("maps a spawn failure (binary missing) to exit 127 with the error message", () => {

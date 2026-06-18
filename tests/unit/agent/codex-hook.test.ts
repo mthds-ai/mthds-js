@@ -11,11 +11,15 @@ import {
   buildPathCandidates,
   classifyStage3Result,
   commandOnPath,
-  extractErrorDomain,
+  parseAgentErrorEnvelope,
   runCodexHook,
-  stripErrorSourceSection,
   truncateForAdditionalContext,
 } from "../../../src/agent/commands/codex-hook.js";
+
+// The agent CLI's `--error-format json` failure envelope, as a string on stderr.
+function errorEnvelope(fields: Record<string, unknown>): string {
+  return JSON.stringify({ error: true, ...fields });
+}
 
 // Pure helpers ────────────────────────────────────────────────────────
 
@@ -406,42 +410,27 @@ describe("runCodexHook", () => {
 
 // Stage 3 pure helpers ────────────────────────────────────────────────
 
-describe("stripErrorSourceSection", () => {
-  it("drops the `## Error source` section and everything after it", () => {
-    const md =
-      "# Error: LibraryError\n\nPipe not found\n\n## Error source\n\n```\nframe1\nframe2\n```\n";
-    const out = stripErrorSourceSection(md);
-    expect(out).toContain("# Error: LibraryError");
-    expect(out).toContain("Pipe not found");
-    expect(out).not.toContain("## Error source");
-    expect(out).not.toContain("frame1");
+describe("parseAgentErrorEnvelope", () => {
+  it("parses the JSON error envelope into an object", () => {
+    const env = parseAgentErrorEnvelope(
+      errorEnvelope({ is_valid: false, error_domain: "input", message: "bad" })
+    );
+    expect(env?.error_domain).toBe("input");
+    expect(env?.is_valid).toBe(false);
+    expect(env?.message).toBe("bad");
   });
 
-  it("is a no-op when no `## Error source` section is present", () => {
-    const md = "# Error: X\n\nDetails\n\n## Details\n\n- **error_domain:** input\n";
-    expect(stripErrorSourceSection(md)).toBe(md);
+  it("returns undefined on empty input", () => {
+    expect(parseAgentErrorEnvelope("")).toBeUndefined();
+    expect(parseAgentErrorEnvelope("   \n ")).toBeUndefined();
   });
 
-  it("only matches `## Error source` at the start of a line", () => {
-    const md = "# Error\n\nfoo bar ## Error source not at line start\n";
-    expect(stripErrorSourceSection(md)).toBe(md);
-  });
-});
-
-describe("extractErrorDomain", () => {
-  it("returns the value from the `## Details` section", () => {
-    const md =
-      "# Error: X\n\n## Details\n\n- **error_domain:** input\n- **pipe_code:** foo\n";
-    expect(extractErrorDomain(md)).toBe("input");
+  it("returns undefined on non-JSON input (e.g. a raw traceback)", () => {
+    expect(parseAgentErrorEnvelope("Traceback (most recent call last): ...")).toBeUndefined();
   });
 
-  it("returns undefined when no error_domain line is present", () => {
-    expect(extractErrorDomain("# Error: LibraryError\n\nNo details here\n")).toBeUndefined();
-  });
-
-  it("returns the first match when multiple are present (defensive)", () => {
-    const md = "- **error_domain:** config\n- **error_domain:** runtime\n";
-    expect(extractErrorDomain(md)).toBe("config");
+  it("returns undefined on a JSON scalar (not an object)", () => {
+    expect(parseAgentErrorEnvelope("42")).toBeUndefined();
   });
 });
 
@@ -491,83 +480,83 @@ describe("classifyStage3Result", () => {
     expect(out.reason).toContain("no stderr output");
   });
 
-  it("blocks with a generic reason when stderr is only the stripped stack-trace section", () => {
+  it("blocks with a generic reason when stderr is not a JSON envelope", () => {
     const out = classifyStage3Result("a.mthds", {
       exitCode: 1,
-      stderr: "## Error source\n\n```\nframe\n```\n",
+      stderr: "Traceback (most recent call last): boom\n",
     });
     expect(out.kind).toBe("block");
     if (out.kind !== "block") return;
-    expect(out.reason).toContain("no stderr output");
+    expect(out.reason).toContain("a.mthds");
+    expect(out.reason).toContain("Traceback");
   });
 
-  it("blocks with markdown verbatim when error_domain is input", () => {
-    const md =
-      "# Error: ValidateBundleError\n\nMissing required field 'source'\n\n## Details\n\n- **error_domain:** input\n";
-    const out = classifyStage3Result("bundles/x.mthds", { exitCode: 1, stderr: md });
+  it("blocks with the structured message + errors when error_domain is input", () => {
+    const stderr = errorEnvelope({
+      error_type: "ValidateBundleError",
+      is_valid: false,
+      error_domain: "input",
+      message: "Validation error(s) in the bundle",
+      validation_errors: [
+        { category: "pipe_validation", message: "Missing required field 'source'", pipe_code: "extract_info" },
+      ],
+    });
+    const out = classifyStage3Result("bundles/x.mthds", { exitCode: 1, stderr });
     expect(out.kind).toBe("block");
     if (out.kind !== "block") return;
     expect(out.reason).toContain("bundles/x.mthds");
-    expect(out.reason).toContain("# Error: ValidateBundleError");
+    expect(out.reason).toContain("Validation error(s) in the bundle");
     expect(out.reason).toContain("Missing required field");
+    expect(out.reason).toContain("pipe: extract_info");
   });
 
-  it("blocks (safety default) when no error_domain is set", () => {
-    const md = "# Error: LibraryError\n\nPipe 'build_scorecard' not found.\n";
-    const out = classifyStage3Result("a.mthds", { exitCode: 1, stderr: md });
+  it("blocks (safety default) when error_domain is absent (no-verdict / unknown)", () => {
+    const stderr = errorEnvelope({
+      error_type: "LibraryError",
+      message: "Pipe 'build_scorecard' not found.",
+    });
+    const out = classifyStage3Result("a.mthds", { exitCode: 1, stderr });
     expect(out.kind).toBe("block");
     if (out.kind !== "block") return;
-    expect(out.reason).toContain("LibraryError");
     expect(out.reason).toContain("build_scorecard");
   });
 
-  it("strips the `## Error source` section from a block reason", () => {
-    const md =
-      "# Error: LibraryError\n\nPipe not found\n\n## Error source\n\n```\nlibrary.py:140\n```\n";
-    const out = classifyStage3Result("a.mthds", { exitCode: 1, stderr: md });
-    expect(out.kind).toBe("block");
-    if (out.kind !== "block") return;
-    expect(out.reason).not.toContain("## Error source");
-    expect(out.reason).not.toContain("library.py:140");
-  });
-
   it("warns (additionalContext) on config domain", () => {
-    const md =
-      "# Error: TelemetryConfigValidationError\n\nBad config\n\n## Details\n\n- **error_domain:** config\n";
-    const out = classifyStage3Result("a.mthds", { exitCode: 1, stderr: md });
+    const stderr = errorEnvelope({
+      error_type: "TelemetryConfigValidationError",
+      is_valid: false,
+      error_domain: "config",
+      message: "Telemetry config is invalid",
+    });
+    const out = classifyStage3Result("a.mthds", { exitCode: 1, stderr });
     expect(out.kind).toBe("warn");
     if (out.kind !== "warn") return;
     expect(out.domain).toBe("config");
     expect(out.context).toContain("a.mthds");
     expect(out.context).toContain("config domain");
     expect(out.context).toContain("do not edit the file");
-    expect(out.context).toContain("TelemetryConfigValidationError");
+    expect(out.context).toContain("Telemetry config is invalid");
   });
 
   it("warns on runtime domain", () => {
-    const md =
-      "# Error: PipeRunError\n\nconnection refused\n\n## Details\n\n- **error_domain:** runtime\n";
-    const out = classifyStage3Result("a.mthds", { exitCode: 1, stderr: md });
+    const stderr = errorEnvelope({
+      error_type: "PipeRunError",
+      error_domain: "runtime",
+      message: "connection refused",
+    });
+    const out = classifyStage3Result("a.mthds", { exitCode: 1, stderr });
     expect(out.kind).toBe("warn");
     if (out.kind !== "warn") return;
     expect(out.domain).toBe("runtime");
     expect(out.context).toContain("runtime domain");
   });
 
-  it("strips the `## Error source` section from a warn context too", () => {
-    const md =
-      "# Error: TelemetryConfigValidationError\n\nBad config\n\n## Details\n\n- **error_domain:** config\n\n## Error source\n\n```\ntelemetry.py:42\n```\n";
-    const out = classifyStage3Result("a.mthds", { exitCode: 1, stderr: md });
-    expect(out.kind).toBe("warn");
-    if (out.kind !== "warn") return;
-    expect(out.context).not.toContain("## Error source");
-    expect(out.context).not.toContain("telemetry.py:42");
-  });
-
-  it("truncates oversized config-domain markdown in the additionalContext", () => {
-    const padding = "x".repeat(12000);
-    const md = `# Error: TelemetryConfigValidationError\n\n${padding}\n\n## Details\n\n- **error_domain:** config\n`;
-    const out = classifyStage3Result("a.mthds", { exitCode: 1, stderr: md });
+  it("truncates an oversized config-domain message in the additionalContext", () => {
+    const stderr = errorEnvelope({
+      error_domain: "config",
+      message: "x".repeat(12000),
+    });
+    const out = classifyStage3Result("a.mthds", { exitCode: 1, stderr });
     expect(out.kind).toBe("warn");
     if (out.kind !== "warn") return;
     expect(out.context).toContain("[truncated,");
@@ -610,45 +599,58 @@ describe("runCodexHook — Stage 3", () => {
     expect(pipelexCalls).toEqual([{ file: "a.mthds", libraryDir: "./" }]);
   });
 
-  it("blocks when validate returns input-domain markdown", async () => {
-    const md =
-      "# Error: ValidateBundleError\n\nMissing required field 'source' in 'extract_info'\n\n## Details\n\n- **error_domain:** input\n";
+  it("blocks when validate returns an input-domain JSON envelope", async () => {
+    const stderr = errorEnvelope({
+      error_type: "ValidateBundleError",
+      is_valid: false,
+      error_domain: "input",
+      message: "Validation error(s) in the bundle",
+      validation_errors: [
+        { category: "pipe_validation", message: "Missing required field 'source'", pipe_code: "extract_info" },
+      ],
+    });
     const { deps, emitted } = makeDeps({
       stdin: PAYLOAD("*** Update File: a.mthds"),
       files: new Set(["a.mthds"]),
-      pipelexResults: new Map([["a.mthds", { exitCode: 1, stderr: md }]]),
+      pipelexResults: new Map([["a.mthds", { exitCode: 1, stderr }]]),
     });
     await runCodexHook(deps);
     expect(emitted).toHaveLength(1);
     const parsed = JSON.parse(emitted[0]!.trim());
     expect(parsed.decision).toBe("block");
     expect(parsed.reason).toContain("a.mthds");
-    expect(parsed.reason).toContain("# Error: ValidateBundleError");
+    expect(parsed.reason).toContain("Missing required field");
     expect(parsed.reason).toContain("extract_info");
   });
 
-  it("blocks (safety default) when validate returns markdown with no error_domain", async () => {
-    const md = "# Error: LibraryError\n\nPipe 'build_scorecard' not found.\n";
+  it("blocks (safety default) when the JSON envelope has no error_domain", async () => {
+    const stderr = errorEnvelope({
+      error_type: "LibraryError",
+      message: "Pipe 'build_scorecard' not found.",
+    });
     const { deps, emitted } = makeDeps({
       stdin: PAYLOAD("*** Update File: a.mthds"),
       files: new Set(["a.mthds"]),
-      pipelexResults: new Map([["a.mthds", { exitCode: 1, stderr: md }]]),
+      pipelexResults: new Map([["a.mthds", { exitCode: 1, stderr }]]),
     });
     await runCodexHook(deps);
     expect(emitted).toHaveLength(1);
     const parsed = JSON.parse(emitted[0]!.trim());
     expect(parsed.decision).toBe("block");
-    expect(parsed.reason).toContain("LibraryError");
     expect(parsed.reason).toContain("build_scorecard");
   });
 
-  it("emits additionalContext (no block) on config-domain validate error", async () => {
-    const md =
-      "# Error: TelemetryConfigValidationError\n\nTelemetry config missing required field\n\n## Details\n\n- **error_domain:** config\n";
+  it("emits additionalContext (no block) on a config-domain JSON envelope", async () => {
+    const stderr = errorEnvelope({
+      error_type: "TelemetryConfigValidationError",
+      is_valid: false,
+      error_domain: "config",
+      message: "Telemetry config missing required field",
+    });
     const { deps, emitted } = makeDeps({
       stdin: PAYLOAD("*** Update File: a.mthds"),
       files: new Set(["a.mthds"]),
-      pipelexResults: new Map([["a.mthds", { exitCode: 1, stderr: md }]]),
+      pipelexResults: new Map([["a.mthds", { exitCode: 1, stderr }]]),
     });
     await runCodexHook(deps);
     expect(emitted).toHaveLength(1);
@@ -657,36 +659,25 @@ describe("runCodexHook — Stage 3", () => {
     expect(parsed.hookSpecificOutput.hookEventName).toBe("PostToolUse");
     expect(parsed.hookSpecificOutput.additionalContext).toContain("config domain");
     expect(parsed.hookSpecificOutput.additionalContext).toContain("do not edit the file");
-    expect(parsed.hookSpecificOutput.additionalContext).toContain("TelemetryConfigValidationError");
+    expect(parsed.hookSpecificOutput.additionalContext).toContain("Telemetry config missing required field");
     expect(parsed.hookSpecificOutput.additionalContext).toContain("a.mthds");
   });
 
-  it("emits additionalContext on runtime-domain validate error", async () => {
-    const md =
-      "# Error: PipeRunError\n\nconnection refused\n\n## Details\n\n- **error_domain:** runtime\n";
+  it("emits additionalContext on a runtime-domain JSON envelope", async () => {
+    const stderr = errorEnvelope({
+      error_type: "PipeRunError",
+      error_domain: "runtime",
+      message: "connection refused",
+    });
     const { deps, emitted } = makeDeps({
       stdin: PAYLOAD("*** Update File: a.mthds"),
       files: new Set(["a.mthds"]),
-      pipelexResults: new Map([["a.mthds", { exitCode: 1, stderr: md }]]),
+      pipelexResults: new Map([["a.mthds", { exitCode: 1, stderr }]]),
     });
     await runCodexHook(deps);
     expect(emitted).toHaveLength(1);
     const parsed = JSON.parse(emitted[0]!.trim());
     expect(parsed.hookSpecificOutput.additionalContext).toContain("runtime domain");
-  });
-
-  it("strips the `## Error source` stack-trace from a Stage 3 block reason", async () => {
-    const md =
-      "# Error: LibraryError\n\nPipe not found\n\n## Error source\n\n```\nlibrary.py:140\n```\n";
-    const { deps, emitted } = makeDeps({
-      stdin: PAYLOAD("*** Update File: a.mthds"),
-      files: new Set(["a.mthds"]),
-      pipelexResults: new Map([["a.mthds", { exitCode: 1, stderr: md }]]),
-    });
-    await runCodexHook(deps);
-    const parsed = JSON.parse(emitted[0]!.trim());
-    expect(parsed.reason).not.toContain("## Error source");
-    expect(parsed.reason).not.toContain("library.py:140");
   });
 
   it("blocks with a generic reason when validate fails with empty stderr", async () => {
@@ -733,14 +724,23 @@ describe("runCodexHook — Stage 3", () => {
   });
 
   it("when one file blocks and another warns, emits block only (warning is deferred)", async () => {
-    const blockMd = "# Error: ValidateBundleError\n\nbad bundle a\n\n## Details\n\n- **error_domain:** input\n";
-    const warnMd = "# Error: TelemetryConfigValidationError\n\nbad config\n\n## Details\n\n- **error_domain:** config\n";
+    const blockStderr = errorEnvelope({
+      error_type: "ValidateBundleError",
+      is_valid: false,
+      error_domain: "input",
+      message: "bad bundle a",
+    });
+    const warnStderr = errorEnvelope({
+      error_type: "TelemetryConfigValidationError",
+      error_domain: "config",
+      message: "bad config",
+    });
     const { deps, emitted } = makeDeps({
       stdin: PAYLOAD("*** Update File: a.mthds\n*** Add File: b.mthds"),
       files: new Set(["a.mthds", "b.mthds"]),
       pipelexResults: new Map([
-        ["a.mthds", { exitCode: 1, stderr: blockMd }],
-        ["b.mthds", { exitCode: 1, stderr: warnMd }],
+        ["a.mthds", { exitCode: 1, stderr: blockStderr }],
+        ["b.mthds", { exitCode: 1, stderr: warnStderr }],
       ]),
     });
     await runCodexHook(deps);
@@ -751,14 +751,14 @@ describe("runCodexHook — Stage 3", () => {
     expect(parsed.reason).toContain("bad bundle a");
     // Warning was deferred — must not leak into the block payload or as
     // a second emit.
-    expect(parsed.reason).not.toContain("TelemetryConfigValidationError");
+    expect(parsed.reason).not.toContain("bad config");
     expect(parsed.reason).not.toContain("do not edit the file");
     expect(parsed.hookSpecificOutput).toBeUndefined();
   });
 
   it("aggregates multiple warnings (no block) into a single additionalContext payload", async () => {
-    const warnA = "# Error: ConfigA\n\nbad cfg a\n\n## Details\n\n- **error_domain:** config\n";
-    const warnB = "# Error: RuntimeB\n\nbad rt b\n\n## Details\n\n- **error_domain:** runtime\n";
+    const warnA = errorEnvelope({ error_domain: "config", message: "bad cfg a" });
+    const warnB = errorEnvelope({ error_domain: "runtime", message: "bad rt b" });
     const { deps, emitted } = makeDeps({
       stdin: PAYLOAD("*** Update File: a.mthds\n*** Add File: b.mthds"),
       files: new Set(["a.mthds", "b.mthds"]),
@@ -774,7 +774,7 @@ describe("runCodexHook — Stage 3", () => {
     const ctx = parsed.hookSpecificOutput.additionalContext;
     expect(ctx).toContain("a.mthds");
     expect(ctx).toContain("b.mthds");
-    expect(ctx).toContain("ConfigA");
-    expect(ctx).toContain("RuntimeB");
+    expect(ctx).toContain("bad cfg a");
+    expect(ctx).toContain("bad rt b");
   });
 });

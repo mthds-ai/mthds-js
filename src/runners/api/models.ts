@@ -98,6 +98,13 @@ export interface PipelexValidationReport extends ValidationReport {
   message: string;
   /** Route extra: echo of the submitted `mthds_contents`. */
   mthds_contents?: string[];
+  /**
+   * Opt-in Pipelex-API presentation extra: the server-rendered Markdown view of the
+   * verdict, present only when the request asked for it (`render: ["markdown"]`).
+   * Absent by default. Rendered once server-side by pipelex's shared renderer, so it
+   * matches the local CLI's `--format markdown` output in format/structure.
+   */
+  rendered_markdown?: string;
 }
 
 /**
@@ -111,6 +118,12 @@ export interface PipelexValidationReport extends ValidationReport {
 export interface PipelexInvalidReport extends InvalidValidationReport {
   /** Structured per-error diagnostics, built by pipelex's one shared builder. */
   validation_errors: ValidationErrorItem[];
+  /**
+   * Opt-in Pipelex-API presentation extra: the server-rendered Markdown view of the
+   * invalid verdict (`# Validation failed` + the `validation_errors`), present only
+   * when the request asked for it (`render: ["markdown"]`). Absent by default.
+   */
+  rendered_markdown?: string;
 }
 
 /**

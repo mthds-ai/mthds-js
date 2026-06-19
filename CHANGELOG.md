@@ -3,7 +3,7 @@
 ## [v0.12.0] - 2026-06-19
 
 ### Added
- - **CLI `validate` command:** Added `--format` and `--error-format` options to choose between `markdown` (default) and `json` output.
+ - **CLI `validate` command:** Added `--format` and `--error-format` options to choose between `markdown` (default) and `json` output. An out-of-vocabulary value (e.g. a typo) is rejected with a clear `ArgumentError` on the API runner rather than silently coerced to `markdown`.
  - **Server-rendered Markdown:** Added support for requesting Markdown (`render: ["markdown"]`) from the API. The CLI emits it verbatim to `stdout` on success or `stderr` on failure, ensuring parity with the local `pipelex-agent`.
 
 ### Changed

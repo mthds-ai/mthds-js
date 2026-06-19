@@ -5,7 +5,7 @@
  * interface, and wraps results with agentSuccess(). No passthrough logic.
  */
 
-import { Command } from "commander";
+import { Command, Option } from "commander";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { agentError, agentSuccess, agentMarkdownSuccess, agentMarkdownError, AGENT_ERROR_DOMAINS } from "../output.js";
@@ -140,8 +140,13 @@ export function registerApiRunnerCommands(
     .argument("[target]", "Bundle file (.mthds) or directory")
     .option("--allow-signatures", "Tolerate unimplemented pipe signatures")
     .option("--content <mthds>", "Bundle content as a string")
-    .option("--format <fmt>", "Success output format: markdown (default) or json")
-    .option("--error-format <fmt>", "Error output format (defaults to --format): markdown or json")
+    .addOption(new Option("--format <fmt>", "Success output format: markdown (default) or json").choices(["markdown", "json"]))
+    .addOption(
+      new Option("--error-format <fmt>", "Error output format (defaults to --format): markdown or json").choices([
+        "markdown",
+        "json",
+      ])
+    )
     .description("Validate a bundle file or content")
     .allowUnknownOption()
     .allowExcessArguments(true)
@@ -170,8 +175,13 @@ export function registerApiRunnerCommands(
     .command("pipe")
     .argument("<target>", ".mthds bundle file")
     .option("--allow-signatures", "Tolerate unimplemented pipe signatures")
-    .option("--format <fmt>", "Success output format: markdown (default) or json")
-    .option("--error-format <fmt>", "Error output format (defaults to --format): markdown or json")
+    .addOption(new Option("--format <fmt>", "Success output format: markdown (default) or json").choices(["markdown", "json"]))
+    .addOption(
+      new Option("--error-format <fmt>", "Error output format (defaults to --format): markdown or json").choices([
+        "markdown",
+        "json",
+      ])
+    )
     .description("Validate a bundle file (protocol validate covers every pipe in it)")
     .allowUnknownOption()
     .allowExcessArguments(true)

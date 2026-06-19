@@ -49,6 +49,23 @@ export function agentSuccess(result: Record<string, unknown>): void {
   process.stdout.write(JSON.stringify(result, null, 2) + "\n");
 }
 
+// ── Markdown output (validate --format markdown) ──────────────────────
+
+/** Emit a server-rendered Markdown success to stdout (exit 0) — the `--format markdown` valid arm. */
+export function agentMarkdownSuccess(markdown: string): void {
+  process.stdout.write(markdown.endsWith("\n") ? markdown : markdown + "\n");
+}
+
+/**
+ * Emit a server-rendered Markdown failure to stderr + `process.exit(1)` — the
+ * `--format markdown` invalid arm (a produced negative verdict). Mirrors the
+ * local CLI, which writes the failure Markdown to stderr and exits non-zero.
+ */
+export function agentMarkdownError(markdown: string): never {
+  process.stderr.write(markdown.endsWith("\n") ? markdown : markdown + "\n");
+  process.exit(1);
+}
+
 // ── Error output ─────────────────────────────────────────────────────
 
 export function agentError(

@@ -614,3 +614,37 @@ describe("MthdsApiClient.version", () => {
     expect(fetchSpy.mock.calls[0]![0]).toBe("http://localhost:8081/v1/version");
   });
 });
+
+describe("MthdsApiClient.validate render extra", () => {
+  function bodyOf(fetchSpy: ReturnType<typeof vi.spyOn>): Record<string, unknown> {
+    const init = fetchSpy.mock.calls[0]![1] as { body?: string };
+    return JSON.parse(init.body ?? "{}") as Record<string, unknown>;
+  }
+
+  it("sends render in the request body when asked", async () => {
+    const client = makeClient();
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(jsonResponse(200, { is_valid: true, rendered_markdown: "# Validation passed" }));
+    await client.validate(["domain = 'x'"], false, undefined, ["markdown"]);
+    expect(bodyOf(fetchSpy).render).toEqual(["markdown"]);
+  });
+
+  it("omits render when none is requested (lean structured-only body)", async () => {
+    const client = makeClient();
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(jsonResponse(200, { is_valid: true }));
+    await client.validate(["domain = 'x'"], false);
+    expect("render" in bodyOf(fetchSpy)).toBe(false);
+  });
+
+  it("omits render when given an empty list", async () => {
+    const client = makeClient();
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(jsonResponse(200, { is_valid: true }));
+    await client.validate(["domain = 'x'"], false, undefined, []);
+    expect("render" in bodyOf(fetchSpy)).toBe(false);
+  });
+});

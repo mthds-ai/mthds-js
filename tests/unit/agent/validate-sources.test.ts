@@ -41,13 +41,15 @@ describe("runProtocolValidate — mthds_sources threading", () => {
   it("passes the file path as mthds_sources to the API client", async () => {
     const { runner, validate } = makeRunner("api", VALID_REPORT);
     await runProtocolValidate(runner, ["domain = 'x'"], false, ["bundle.mthds"]);
-    expect(validate).toHaveBeenCalledWith(["domain = 'x'"], false, ["bundle.mthds"]);
+    // The default output format is markdown, so the client also opts into the
+    // server's rendered_markdown extra (render: ["markdown"]); mthds_sources rides arg 3.
+    expect(validate).toHaveBeenCalledWith(["domain = 'x'"], false, ["bundle.mthds"], ["markdown"]);
   });
 
   it("omits the sources argument when none is provided (inline --content)", async () => {
     const { runner, validate } = makeRunner("api", VALID_REPORT);
     await runProtocolValidate(runner, ["domain = 'x'"], true);
-    expect(validate).toHaveBeenCalledWith(["domain = 'x'"], true);
+    expect(validate).toHaveBeenCalledWith(["domain = 'x'"], true, undefined, ["markdown"]);
   });
 
   it("does not thread sources through a non-API runner (extension lives on the client)", async () => {

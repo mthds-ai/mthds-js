@@ -443,11 +443,17 @@ export class MthdsApiClient extends BaseRunner implements Runner {
    * cross-file diagnostics name the owning file (an unnamed content yields
    * `source: null`). The server 422s a length mismatch; this client sends the
    * arrays verbatim and surfaces that as an `ApiResponseError`.
+   *
+   * `render` (optional) is the opt-in Pipelex-API presentation hint — a list of
+   * view-format tokens (e.g. `["markdown"]`). When set, the 200 body gains a
+   * `rendered_markdown` field on both verdict arms; unknown tokens are server-side
+   * lenient-ignored (never a 422). Omit it for the lean structured-only response.
    */
   async validate(
     mthdsContents: string[],
     allowSignatures = false,
-    mthdsSources?: string[]
+    mthdsSources?: string[],
+    render?: string[]
   ): Promise<PipelexValidationResult> {
     const body: Record<string, unknown> = {
       mthds_contents: mthdsContents,
@@ -455,6 +461,9 @@ export class MthdsApiClient extends BaseRunner implements Runner {
     };
     if (mthdsSources !== undefined) {
       body.mthds_sources = mthdsSources;
+    }
+    if (render !== undefined && render.length > 0) {
+      body.render = render;
     }
     const res = await this.requestRaw("POST", this.url("validate"), { body });
     if (res.status < 200 || res.status >= 300) {

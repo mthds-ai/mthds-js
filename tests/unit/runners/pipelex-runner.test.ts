@@ -424,4 +424,49 @@ describe("PipelexRunner", () => {
       });
     });
   });
+
+  describe("validate — 0/1/2 exit-code policy", () => {
+    it("returns the valid arm when the CLI exits 0", async () => {
+      execFileAsync.mockResolvedValue({ stdout: "OK", stderr: "" });
+
+      const result = await runner.validate(["bundle content"]);
+
+      expect(result).toEqual({ is_valid: true });
+    });
+
+    it("returns the invalid arm (a verdict, not a throw) when the CLI exits 1", async () => {
+      const execError = Object.assign(new Error("nonzero"), {
+        code: 1,
+        stderr: "Bundle validation failed: undefined concept",
+        stdout: "",
+      });
+      execFileAsync.mockRejectedValue(execError);
+
+      const result = await runner.validate(["bundle content"]);
+
+      expect(result.is_valid).toBe(false);
+      if (result.is_valid !== false) return;
+      expect(result.message).toContain("undefined concept");
+      expect(result.validation_errors).toEqual([]);
+      expect(result.is_runnable).toBe(false);
+    });
+
+    it("throws on exit 2 (a no-verdict: setup / bad args / internal)", async () => {
+      const execError = Object.assign(new Error("nonzero"), {
+        code: 2,
+        stderr: "Failed to validate: no .mthds bundle file found",
+        stdout: "",
+      });
+      execFileAsync.mockRejectedValue(execError);
+
+      await expect(runner.validate(["bundle content"])).rejects.toThrow("Bundle validation failed");
+    });
+
+    it("throws on a spawn failure (code is a string like ENOENT — a no-verdict)", async () => {
+      const execError = Object.assign(new Error("spawn ENOENT"), { code: "ENOENT" });
+      execFileAsync.mockRejectedValue(execError);
+
+      await expect(runner.validate(["bundle content"])).rejects.toThrow();
+    });
+  });
 });

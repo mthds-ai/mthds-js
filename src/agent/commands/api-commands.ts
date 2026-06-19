@@ -5,10 +5,10 @@
  * interface, and wraps results with agentSuccess(). No passthrough logic.
  */
 
-import { Command } from "commander";
+import { Command, Option } from "commander";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { agentError, agentSuccess, AGENT_ERROR_DOMAINS } from "../output.js";
+import { agentError, agentSuccess, agentMarkdownSuccess, agentMarkdownError, AGENT_ERROR_DOMAINS } from "../output.js";
 import { isApiRunner } from "../../cli/commands/utils.js";
 import type { Runner } from "../../runners/types.js";
 import type { StartOptions } from "../../protocol/options.js";
@@ -140,27 +140,53 @@ export function registerApiRunnerCommands(
     .argument("[target]", "Bundle file (.mthds) or directory")
     .option("--allow-signatures", "Tolerate unimplemented pipe signatures")
     .option("--content <mthds>", "Bundle content as a string")
+    .addOption(new Option("--format <fmt>", "Success output format: markdown (default) or json").choices(["markdown", "json"]))
+    .addOption(
+      new Option("--error-format <fmt>", "Error output format (defaults to --format): markdown or json").choices([
+        "markdown",
+        "json",
+      ])
+    )
     .description("Validate a bundle file or content")
     .allowUnknownOption()
     .allowExcessArguments(true)
     .exitOverride()
-    .action(async (target: string | undefined, options: { allowSignatures?: boolean; content?: string }) => {
-      const runner = safeCreateRunner(makeRunner);
-      const mthdsContent = resolveContent(target, options.content);
-      // A real file path (not inline --content) names the source for diagnostics.
-      const mthdsSources = !options.content && target ? [target] : undefined;
-      await runProtocolValidate(runner, [mthdsContent], options.allowSignatures ?? false, mthdsSources);
-    });
+    .action(
+      async (
+        target: string | undefined,
+        options: { allowSignatures?: boolean; content?: string; format?: string; errorFormat?: string }
+      ) => {
+        const runner = safeCreateRunner(makeRunner);
+        const mthdsContent = resolveContent(target, options.content);
+        // A real file path (not inline --content) names the source for diagnostics.
+        const mthdsSources = !options.content && target ? [target] : undefined;
+        await runProtocolValidate(
+          runner,
+          [mthdsContent],
+          options.allowSignatures ?? false,
+          mthdsSources,
+          options.format,
+          options.errorFormat
+        );
+      }
+    );
 
   validateGroup
     .command("pipe")
     .argument("<target>", ".mthds bundle file")
     .option("--allow-signatures", "Tolerate unimplemented pipe signatures")
+    .addOption(new Option("--format <fmt>", "Success output format: markdown (default) or json").choices(["markdown", "json"]))
+    .addOption(
+      new Option("--error-format <fmt>", "Error output format (defaults to --format): markdown or json").choices([
+        "markdown",
+        "json",
+      ])
+    )
     .description("Validate a bundle file (protocol validate covers every pipe in it)")
     .allowUnknownOption()
     .allowExcessArguments(true)
     .exitOverride()
-    .action(async (target: string, options: { allowSignatures?: boolean }) => {
+    .action(async (target: string, options: { allowSignatures?: boolean; format?: string; errorFormat?: string }) => {
       const runner = safeCreateRunner(makeRunner);
       if (!target.endsWith(".mthds")) {
         agentError(
@@ -171,7 +197,14 @@ export function registerApiRunnerCommands(
         return;
       }
       const mthdsContent = readFileOrError(target);
-      await runProtocolValidate(runner, [mthdsContent], options.allowSignatures ?? false, [target]);
+      await runProtocolValidate(
+        runner,
+        [mthdsContent],
+        options.allowSignatures ?? false,
+        [target],
+        options.format,
+        options.errorFormat
+      );
     });
 
   validateGroup
@@ -785,34 +818,66 @@ function parseModelCategory(raw: string | undefined): ModelCategory | undefined 
   throw new Error("unreachable");
 }
 
+/** Normalize a `--format` / `--error-format` value: markdown unless explicitly `json`. */
+function normValidateFormat(format?: string): "markdown" | "json" {
+  return (format ?? "markdown").trim().toLowerCase() === "json" ? "json" : "markdown";
+}
+
 /**
  * Run the protocol validate (`POST /v1/validate`) and emit the agent envelope.
  * `/validate` is a diagnostic endpoint: a valid bundle returns the structural
  * artifacts (`is_valid: true`); an invalid bundle is a produced verdict (a 200
  * `is_valid: false` body), surfaced as a structured ValidateBundleError envelope —
  * not a thrown error. A non-2xx (a no-verdict condition) still throws.
+ *
+ * `outputFormat` (default `markdown`, matching the local `pipelex-agent`) governs
+ * the success arm; `errorFormat` (default = `outputFormat`) governs the failure
+ * arm. When Markdown is wanted, the request opts into the server's `rendered_markdown`
+ * extra (`render: ["markdown"]`) and emits it verbatim — stdout on the valid arm,
+ * stderr (exit 1) on the invalid arm — so the API runner matches the local CLI.
+ * If the server omits `rendered_markdown` (older server), each arm falls back to its
+ * JSON envelope so output is never empty. No-verdict conditions stay JSON (no server
+ * Markdown rides a non-200).
  */
 export async function runProtocolValidate(
   runner: Runner,
   mthdsContents: string[],
   allowSignatures: boolean,
-  mthdsSources?: string[]
+  mthdsSources?: string[],
+  outputFormat?: string,
+  errorFormat?: string
 ): Promise<void> {
+  const successWantsMarkdown = normValidateFormat(outputFormat) === "markdown";
+  const errorWantsMarkdown = normValidateFormat(errorFormat ?? outputFormat) === "markdown";
+  // Opt into the server's rendered_markdown extra when either arm wants Markdown.
+  const render = successWantsMarkdown || errorWantsMarkdown ? ["markdown"] : undefined;
   try {
-    // `mthds_sources` is a Pipelex-API extension (not the pure protocol), so it
-    // rides only the concrete client — reach it via `isApiRunner`. The server
-    // threads each source onto `validation_errors[].source`, so agent consumers
-    // can resolve the owning file from the structured envelope.
-    const report =
-      mthdsSources !== undefined && isApiRunner(runner)
-        ? await runner.validate(mthdsContents, allowSignatures, mthdsSources)
-        : await runner.validate(mthdsContents, allowSignatures);
+    // `mthds_sources` + `render` are Pipelex-API extensions (not the pure protocol),
+    // so they ride only the concrete client — reach it via `isApiRunner`. The server
+    // threads each source onto `validation_errors[].source` and (when `render` asks)
+    // attaches `rendered_markdown` to the verdict body.
+    const report = isApiRunner(runner)
+      ? await runner.validate(mthdsContents, allowSignatures, mthdsSources, render)
+      : await runner.validate(mthdsContents, allowSignatures);
+    // `rendered_markdown` is an optional Pipelex-API extra present on both verdict
+    // arms only when `render` was requested; read it through a safe optional access
+    // (the pure-protocol union does not declare it).
+    const renderedMarkdownRaw = (report as { rendered_markdown?: unknown }).rendered_markdown;
+    const renderedMarkdown =
+      typeof renderedMarkdownRaw === "string" && renderedMarkdownRaw.length > 0 ? renderedMarkdownRaw : undefined;
     if (report.is_valid === false) {
+      if (errorWantsMarkdown && renderedMarkdown !== undefined) {
+        agentMarkdownError(renderedMarkdown);
+      }
       agentError(report.message, "ValidateBundleError", {
         error_domain: AGENT_ERROR_DOMAINS.VALIDATION,
         is_valid: false,
         validation_errors: report.validation_errors,
       });
+    }
+    if (successWantsMarkdown && renderedMarkdown !== undefined) {
+      agentMarkdownSuccess(renderedMarkdown);
+      return;
     }
     agentSuccess({ success: true, ...report });
   } catch (err) {

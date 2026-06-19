@@ -94,30 +94,82 @@ export function buildAdditionalContextPayload(context: string): string {
   );
 }
 
-/**
- * Drop the `## Error source` section and everything after it.
- *
- * Stopgap: pipelex 0.30.2 already omits this section from `validate bundle`
- * markdown output, so once the floor is bumped past 0.30.2 this is a no-op.
- * Kept defensively so a user lagging on pipelex doesn't leak stack frames
- * into the agent-facing block reason.
- */
-export function stripErrorSourceSection(markdown: string): string {
-  const match = markdown.match(/^## Error source/m);
-  if (!match || match.index === undefined) return markdown;
-  return markdown.slice(0, match.index);
+/** One structured diagnostic on an invalid verdict (the `--error-format json` envelope). */
+interface AgentValidationErrorItem {
+  category?: string;
+  message?: string;
+  pipe_code?: string;
+  concept_code?: string;
+  domain_code?: string;
+  field_name?: string;
+  source?: string;
 }
 
 /**
- * Parse `- **error_domain:** <value>` out of the `## Details` section.
- *
- * Returns the first match (pipelex only emits one). Undefined when the
- * raised error class has no `error_domain` and is not in pipelex's
- * `AGENT_ERROR_DOMAINS` lookup (e.g. bare `LibraryError`).
+ * The agent CLI's `--error-format json` failure envelope (the subset the hook reads).
+ * `is_valid` / `error_domain` drive the block-vs-warn decision; `message` +
+ * `validation_errors` build the agent-facing reason.
  */
-export function extractErrorDomain(markdown: string): string | undefined {
-  const match = markdown.match(/^- \*\*error_domain:\*\* *(\S+)/m);
-  return match ? match[1] : undefined;
+interface AgentErrorEnvelope {
+  is_valid?: boolean;
+  error_domain?: string;
+  message?: string;
+  validation_errors?: AgentValidationErrorItem[];
+}
+
+/**
+ * Coerce an untyped envelope field to a string. The envelope is parsed from an
+ * untrusted/version-skewed subprocess, so a field typed `string` here may at
+ * runtime be a number, null, etc. — calling `.trim()` on a non-string would crash
+ * the hook. Returns "" for any non-string so the safe block/warn path still runs.
+ */
+function safeStr(value: unknown): string {
+  return typeof value === "string" ? value : "";
+}
+
+/**
+ * Parse the agent CLI's JSON error envelope from a stream. Returns undefined when
+ * the text is empty or not a JSON object — the caller defaults to block (safety).
+ *
+ * Exported for testability — the structured-read contract replaces the old
+ * Markdown grep (the decision now keys on `is_valid` / `error_domain`, per D-C).
+ */
+export function parseAgentErrorEnvelope(text: string): AgentErrorEnvelope | undefined {
+  const trimmed = text.trim();
+  if (trimmed.length === 0) return undefined;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(trimmed);
+  } catch {
+    return undefined;
+  }
+  if (parsed === null || typeof parsed !== "object") return undefined;
+  return parsed as AgentErrorEnvelope;
+}
+
+/** Build an agent-facing reason from the structured envelope: the message plus a compact error list. */
+export function formatValidationReason(file: string, envelope: AgentErrorEnvelope, fallback: string): string {
+  const message = safeStr(envelope.message).trim() || fallback;
+  // Guard against a malformed / version-skewed envelope: `validation_errors` may be a
+  // non-array (→ `.map` crash) and individual items may be null/non-objects (→ field-access
+  // crash). Keep only real objects so a malformed envelope still produces a clean block.
+  const rawErrors = Array.isArray(envelope.validation_errors) ? envelope.validation_errors : [];
+  const errors = rawErrors.filter((item): item is AgentValidationErrorItem => typeof item === "object" && item !== null);
+  if (errors.length === 0) return `Validation failed for ${file}:\n\n${message}`;
+  const lines = errors.map((item) => {
+    const locators = [
+      item.pipe_code ? `pipe: ${item.pipe_code}` : undefined,
+      item.concept_code ? `concept: ${item.concept_code}` : undefined,
+      item.domain_code ? `domain: ${item.domain_code}` : undefined,
+      item.field_name ? `field: ${item.field_name}` : undefined,
+      item.source ? `source: ${item.source}` : undefined,
+    ]
+      .filter(Boolean)
+      .join(", ");
+    const category = item.category ? `[${item.category}] ` : "";
+    return `- ${category}${item.message ?? ""}${locators ? ` (${locators})` : ""}`;
+  });
+  return `Validation failed for ${file}:\n\n${message}\n\n${lines.join("\n")}`;
 }
 
 export function truncateForAdditionalContext(text: string): string {
@@ -135,14 +187,15 @@ export type Stage3Outcome =
   | { kind: "warn"; context: string; domain: string };
 
 /**
- * Decide what to emit for a single file's `pipelex-agent validate bundle`
- * result. The block/warn split mirrors the bash hook in mthds-plugins.
+ * Decide what to emit for a single file's `pipelex-agent validate bundle` result,
+ * reading the STRUCTURED JSON envelope (`is_valid` / `error_domain`) rather than
+ * grepping Markdown (D-C). The block/warn split mirrors the bash hook in mthds-plugins.
  *
- * - exit 0                        → pass (no output)
- * - empty stderr (post-strip)     → block with a generic "no stderr" reason
- * - error_domain ∈ {config,runtime} → warn (additionalContext), no block
- * - anything else (input, unknown, missing) → block with markdown verbatim
- *   (default-to-block is the safety choice)
+ * - exit 0                          → pass (no output)
+ * - error_domain ∈ {config,runtime} → warn (additionalContext, environment issue)
+ * - anything else (input, unknown, no-verdict) → block (default-to-block safety),
+ *   reason built from the envelope's `message` + `validation_errors`
+ * - unparseable / empty stderr      → block with a generic reason
  */
 export function classifyStage3Result(
   file: string,
@@ -150,18 +203,22 @@ export function classifyStage3Result(
 ): Stage3Outcome {
   if (result.exitCode === 0) return { kind: "pass" };
 
-  const trimmed = stripErrorSourceSection(result.stderr);
-  if (trimmed.trim().length === 0) {
+  const envelope = parseAgentErrorEnvelope(result.stderr);
+  if (envelope === undefined) {
+    const detail = result.stderr.trim();
     return {
       kind: "block",
-      reason: `Validation failed for ${file} (pipelex-agent exited ${result.exitCode} with no stderr output)`,
+      reason:
+        detail.length === 0
+          ? `Validation failed for ${file} (pipelex-agent exited ${result.exitCode} with no stderr output)`
+          : `Validation failed for ${file}:\n\n${truncateForAdditionalContext(detail)}`,
     };
   }
 
-  const body = trimmed.replace(/\s+$/, "");
-  const domain = extractErrorDomain(trimmed);
+  const domain = envelope.error_domain;
   if (domain === "config" || domain === "runtime") {
     const header = `Validation warning for ${file} (${domain} domain — environment issue, do not edit the file):\n\n`;
+    const body = safeStr(envelope.message).trim() || result.stderr.trim();
     return {
       kind: "warn",
       domain,
@@ -171,7 +228,7 @@ export function classifyStage3Result(
 
   return {
     kind: "block",
-    reason: `Validation failed for ${file}:\n\n${body}`,
+    reason: truncateForAdditionalContext(formatValidationReason(file, envelope, result.stderr.trim())),
   };
 }
 
@@ -274,10 +331,15 @@ function runPlxt(args: string[]): PlxtRunResult {
 }
 
 /**
- * Run `pipelex-agent validate bundle <file> -L <libraryDir> --allow-signatures`.
- * We do NOT shell out through `mthds-agent` to avoid recursing into this same
- * CLI; pipelex-agent's bundle validation is offline-safe (no remote-config or
- * gateway fetch in this code path).
+ * Run `pipelex-agent validate bundle <file> -L <libraryDir> --allow-signatures
+ * --format json --error-format json`. We do NOT shell out through `mthds-agent`
+ * to avoid recursing into this same CLI; pipelex-agent's bundle validation is
+ * offline-safe (no remote-config or gateway fetch in this code path).
+ *
+ * `--format json --error-format json` is the load-bearing decision input: the
+ * hook reads the structured `is_valid` / `error_domain` from the JSON envelope
+ * (stderr on a non-zero exit) rather than grepping Markdown — so the block/warn
+ * decision no longer depends on a fragile text shape.
  *
  * `--allow-signatures` makes validation lenient: a bundle that forward-declares
  * pipes as `PipeSignature` placeholders validates structurally instead of
@@ -295,7 +357,7 @@ function runPlxt(args: string[]): PlxtRunResult {
 export function runPipelexValidate(file: string, libraryDir: string): PipelexValidateResult {
   const result = spawnSync(
     "pipelex-agent",
-    ["validate", "bundle", file, "-L", libraryDir, "--allow-signatures"],
+    ["validate", "bundle", file, "-L", libraryDir, "--allow-signatures", "--format", "json", "--error-format", "json"],
     { encoding: "utf8" }
   );
   if (result.error) {
@@ -383,8 +445,8 @@ export async function runCodexHook(deps: CodexHookDeps): Promise<void> {
     // Stage 3: pipelex-agent validate bundle — semantic validation, run
     // leniently (`--allow-signatures`, inside runPipelexValidate) so a bundle
     // mid-refinement with leftover PipeSignature placeholders still passes.
-    // Markdown stderr is the canonical agent-facing artifact. Block on
-    // input/unknown domain (agent revises the bundle); warn via
+    // The decision reads the structured JSON envelope (`is_valid` / `error_domain`).
+    // Block on input/unknown domain (agent revises the bundle); warn via
     // additionalContext on config/runtime (environment issue, agent should not
     // edit the file).
     const libraryDir = path.dirname(file) + "/";

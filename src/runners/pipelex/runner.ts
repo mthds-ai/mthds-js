@@ -440,15 +440,30 @@ export class PipelexRunner extends BaseRunner implements Runner {
       try {
         await this.exec(args);
       } catch (err) {
-        const execError = err as Error & { stderr?: string; stdout?: string };
+        const execError = err as Error & { code?: number | string; stderr?: string; stdout?: string };
         const detail = execError.stderr?.trim() || execError.stdout?.trim() || execError.message;
+        // The bare `pipelex validate` follows the 0/1/2 exit policy: exit 1 is a
+        // produced negative verdict (the bundle is invalid), exit 2+ (or a spawn
+        // failure, whose `code` is a string like "ENOENT") is a *no-verdict*
+        // condition (setup / bad args / internal). A negative verdict is a result,
+        // not a transport failure → return the minimal invalid arm (mirroring the
+        // minimal valid arm below — the CLI emits human text, not structured
+        // diagnostics, so validation_errors is empty). Re-raise everything else.
+        if (execError.code === 1) {
+          return {
+            is_valid: false,
+            validation_errors: [],
+            pending_signatures: [],
+            is_runnable: false,
+            message: `Bundle validation failed:\n${detail}`,
+          };
+        }
         throw new Error(`Bundle validation failed:\n${detail}`);
       }
-      // The local CLI raises on an invalid bundle (caught above), so reaching
-      // here means the verdict is valid. It emits human-readable output, not the
-      // structural artifacts — return the minimal valid arm (the `is_valid: true`
+      // Exit 0 — a valid verdict. The CLI emits human-readable output, not the
+      // structural artifacts, so return the minimal valid arm (the `is_valid: true`
       // discriminant), not the full report. (Per the protocol contract, a CLI
-      // runner may raise instead of materializing the invalid arm.)
+      // runner may return minimal discriminant arms.)
       return { is_valid: true };
     } finally {
       rmSync(tmp, { recursive: true, force: true });

@@ -1,5 +1,16 @@
 # Changelog
 
+## [v0.12.0] - 2026-06-19
+
+### Added
+ - **CLI `validate` command:** Added `--format` and `--error-format` options to choose between `markdown` (default) and `json` output. An out-of-vocabulary value (e.g. a typo) is rejected with a clear `ArgumentError` on the API runner rather than silently coerced to `markdown`.
+ - **Server-rendered Markdown:** Added support for requesting Markdown (`render: ["markdown"]`) from the API. The CLI emits it verbatim to `stdout` on success or `stderr` on failure, ensuring parity with the local `pipelex-agent`.
+
+### Changed
+ - **Codex hook:** Now invokes the agent with `--format json --error-format json` and parses the structured JSON envelope (`is_valid`, `error_domain`, `validation_errors`) for block/warn decisions, replacing the fragile Markdown-grepping approach (and its legacy `stripErrorSourceSection` / `extractErrorDomain` utilities).
+ - **`PipelexRunner` exit codes:** Refined to a strict 0/1/2 policy. Exit code `1` (invalid bundle) now returns a structured negative verdict instead of throwing; exceptions are reserved for exit codes `2+` or spawn failures.
+ - **Dependencies:** Bumped minimum `pipelex` to `>=0.35.0` and the minimum plugin version to `>=0.14.0`.
+
 ## [v0.11.0] - 2026-06-17
 
 ### Added

@@ -56,6 +56,7 @@ vi.mock("node:fs", async (importOriginal) => {
   };
 });
 
+import semver from "semver";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import {
@@ -67,6 +68,18 @@ import {
   pluginUpdateCommand,
   readCodexPluginVersion,
 } from "../../../src/agent/plugin-version.js";
+
+// ── Floor-derived fixtures ───────────────────────────────────────
+//
+// Satisfying versions are derived from MIN_PLUGIN_VERSION, never hardcoded, so
+// bumping the floor (bump-required-versions skill) needs no edits here — the
+// fixtures float with it. `FLOOR_OK` is the lowest version that clears the
+// floor; `ABOVE_FLOOR` is a distinct, higher satisfying version for tests that
+// need two. The "outdated" fixtures below stay hardcoded low: a fixed version
+// is always below a floor that only ever rises.
+
+const FLOOR_OK = semver.minVersion(MIN_PLUGIN_VERSION)!.version;
+const ABOVE_FLOOR = semver.inc(FLOOR_OK, "patch")!;
 
 // ── Helpers ──────────────────────────────────────────────────────
 
@@ -231,8 +244,8 @@ describe("pluginUpdateCommand", () => {
 
 describe("checkPluginVersion (Claude)", () => {
   it("returns ok when plugin version satisfies constraint", () => {
-    installPrimaryClaude("0.14.0");
-    expect(checkPluginVersion("claude")).toEqual({ s: "ok", v: "0.14.0" });
+    installPrimaryClaude(FLOOR_OK);
+    expect(checkPluginVersion("claude")).toEqual({ s: "ok", v: FLOOR_OK });
   });
 
   it("returns outdated when plugin version is below minimum", () => {
@@ -291,12 +304,12 @@ describe("checkPluginVersion (Claude)", () => {
         plugins: {
           [PLUGIN_KEYS[0]]: [
             { scope: "local", version: "0.5.0", installPath: "/tmp" },
-            { scope: "user", version: "0.14.0", installPath: "/tmp" },
+            { scope: "user", version: FLOOR_OK, installPath: "/tmp" },
           ],
         },
       })
     );
-    expect(checkPluginVersion("claude")).toEqual({ s: "ok", v: "0.14.0" });
+    expect(checkPluginVersion("claude")).toEqual({ s: "ok", v: FLOOR_OK });
   });
 
   it("finds the plugin under the dev key when prod key is absent", () => {
@@ -322,12 +335,12 @@ describe("checkPluginVersion (Claude)", () => {
       JSON.stringify({
         version: 2,
         plugins: {
-          [PLUGIN_KEYS[0]]: [{ scope: "user", version: "0.14.0", installPath: "/tmp" }],
+          [PLUGIN_KEYS[0]]: [{ scope: "user", version: FLOOR_OK, installPath: "/tmp" }],
           [PLUGIN_KEYS[1]]: [{ scope: "user", version: "0.1.0", installPath: "/tmp" }],
         },
       })
     );
-    expect(checkPluginVersion("claude")).toEqual({ s: "ok", v: "0.14.0" });
+    expect(checkPluginVersion("claude")).toEqual({ s: "ok", v: FLOOR_OK });
   });
 });
 
@@ -335,13 +348,13 @@ describe("checkPluginVersion (Claude)", () => {
 
 describe("checkPluginVersion (Codex)", () => {
   it("returns ok when a satisfying version is installed", () => {
-    installCodexPlugin("mthds", ["0.14.0"]);
-    expect(checkPluginVersion("codex")).toEqual({ s: "ok", v: "0.14.0" });
+    installCodexPlugin("mthds", [FLOOR_OK]);
+    expect(checkPluginVersion("codex")).toEqual({ s: "ok", v: FLOOR_OK });
   });
 
   it("picks the highest version directory when multiple are installed", () => {
-    installCodexPlugin("mthds", ["0.9.0", "0.14.0", "0.8.3"]);
-    expect(checkPluginVersion("codex")).toEqual({ s: "ok", v: "0.14.0" });
+    installCodexPlugin("mthds", ["0.9.0", FLOOR_OK, "0.8.3"]);
+    expect(checkPluginVersion("codex")).toEqual({ s: "ok", v: FLOOR_OK });
   });
 
   it("returns outdated when only an old version is installed", () => {
@@ -377,47 +390,47 @@ describe("checkPluginVersion (Codex)", () => {
   });
 
   it("ignores dotfile entries when picking a version", () => {
-    fsState.dirs.set(codexPluginDir("mthds"), [".DS_Store", "0.14.0"]);
-    fsState.dirs.set(codexVersionDir("mthds", "0.14.0"), [".codex-plugin"]);
+    fsState.dirs.set(codexPluginDir("mthds"), [".DS_Store", FLOOR_OK]);
+    fsState.dirs.set(codexVersionDir("mthds", FLOOR_OK), [".codex-plugin"]);
     fsState.dirs.set(
-      join(codexVersionDir("mthds", "0.14.0"), ".codex-plugin"),
+      join(codexVersionDir("mthds", FLOOR_OK), ".codex-plugin"),
       ["plugin.json"]
     );
     fsState.files.set(
-      codexManifestPath("mthds", "0.14.0"),
-      JSON.stringify({ version: "0.14.0" })
+      codexManifestPath("mthds", FLOOR_OK),
+      JSON.stringify({ version: FLOOR_OK })
     );
-    expect(checkPluginVersion("codex")).toEqual({ s: "ok", v: "0.14.0" });
+    expect(checkPluginVersion("codex")).toEqual({ s: "ok", v: FLOOR_OK });
   });
 
   it("prefers the prod plugin name over mthds-dev", () => {
-    installCodexPlugin("mthds", ["0.14.0"]);
+    installCodexPlugin("mthds", [FLOOR_OK]);
     installCodexPlugin("mthds-dev", ["0.1.0"]);
-    expect(checkPluginVersion("codex")).toEqual({ s: "ok", v: "0.14.0" });
+    expect(checkPluginVersion("codex")).toEqual({ s: "ok", v: FLOOR_OK });
   });
 
   it("falls back to mthds-dev when prod is absent", () => {
-    installCodexPlugin("mthds-dev", ["0.14.0"]);
-    expect(checkPluginVersion("codex")).toEqual({ s: "ok", v: "0.14.0" });
+    installCodexPlugin("mthds-dev", [FLOOR_OK]);
+    expect(checkPluginVersion("codex")).toEqual({ s: "ok", v: FLOOR_OK });
   });
 
   it("prefers the manifest version over the directory name", () => {
-    installCodexPlugin("mthds", ["0.14.0"], { manifestVersion: "0.14.5" });
-    expect(checkPluginVersion("codex")).toEqual({ s: "ok", v: "0.14.5" });
+    installCodexPlugin("mthds", [FLOOR_OK], { manifestVersion: ABOVE_FLOOR });
+    expect(checkPluginVersion("codex")).toEqual({ s: "ok", v: ABOVE_FLOOR });
   });
 
   it("falls back to the directory name when the manifest is unreadable", () => {
     // Set up everything but the manifest file content.
-    fsState.dirs.set(codexPluginDir("mthds"), ["0.14.0"]);
-    fsState.dirs.set(codexVersionDir("mthds", "0.14.0"), [".codex-plugin"]);
-    expect(checkPluginVersion("codex")).toEqual({ s: "ok", v: "0.14.0" });
+    fsState.dirs.set(codexPluginDir("mthds"), [FLOOR_OK]);
+    fsState.dirs.set(codexVersionDir("mthds", FLOOR_OK), [".codex-plugin"]);
+    expect(checkPluginVersion("codex")).toEqual({ s: "ok", v: FLOOR_OK });
   });
 
   it("respects $CODEX_HOME when set", () => {
     const customHome = "/custom/codex";
     process.env.CODEX_HOME = customHome;
-    installCodexPlugin("mthds", ["0.14.0"], { codexHome: customHome });
-    expect(checkPluginVersion("codex")).toEqual({ s: "ok", v: "0.14.0" });
+    installCodexPlugin("mthds", [FLOOR_OK], { codexHome: customHome });
+    expect(checkPluginVersion("codex")).toEqual({ s: "ok", v: FLOOR_OK });
   });
 });
 

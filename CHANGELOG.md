@@ -1,5 +1,11 @@
 # Changelog
 
+## [v0.12.1] - 2026-06-22
+
+### Changed
+ - **Dependencies:** Bumped minimum `pipelex` (and `pipelex-agent`) to `>=0.35.1` and the minimum Claude Code mthds plugin version to `>=0.14.1`.
+ - **Tests:** `plugin-version` test fixtures now derive their satisfying versions from `MIN_PLUGIN_VERSION` instead of hardcoded literals, so future floor bumps no longer require test edits.
+
 ## [v0.12.0] - 2026-06-19
 
 ### Added

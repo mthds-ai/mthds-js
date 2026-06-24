@@ -42,6 +42,20 @@ import {
 } from "./exceptions.js";
 import { isValidBaseUrl } from "../../config/config.js";
 
+export interface MthdsFile {
+  /** File contents to validate. */
+  content: string;
+  /** Optional provenance URI threaded into validation diagnostics. */
+  uri?: string;
+}
+
+export interface ValidateFilesOptions {
+  /** Whether unresolved pipe signatures are accepted as pending instead of invalid. */
+  allowSignatures?: boolean;
+  /** Optional validate presentation hints, e.g. ["markdown"]. */
+  render?: string[];
+}
+
 interface MthdsApiClientOptions {
   /** API token (Bearer). Falls back to `MTHDS_API_KEY`. Optional for anonymous bare runners. */
   apiToken?: string;
@@ -470,6 +484,36 @@ export class MthdsApiClient extends BaseRunner implements Runner {
       this.throwApiResponseError("POST", "validate", res);
     }
     return JSON.parse(res.body) as PipelexValidationResult;
+  }
+
+  /**
+   * Validate paired MTHDS files while preserving URI attribution for diagnostics.
+   *
+   * This adapter intentionally keeps the low-level `validate(...)` payload shape
+   * intact for existing consumers. When any file has a URI, every content gets a
+   * parallel source label; inline labels are deterministic so the server never
+   * sees a length-mismatched `mthds_sources` array.
+   */
+  async validateFiles(
+    files: MthdsFile[],
+    options: ValidateFilesOptions = {}
+  ): Promise<PipelexValidationResult> {
+    if (files.length === 0) {
+      throw new PipelineRequestError("At least one MTHDS file must be provided to validateFiles().");
+    }
+
+    const mthdsContents = files.map((file) => file.content);
+    const hasAnyUri = files.some((file) => file.uri !== undefined);
+    const mthdsSources = hasAnyUri
+      ? files.map((file, index) => file.uri ?? `inline://file-${index + 1}.mthds`)
+      : undefined;
+
+    return this.validate(
+      mthdsContents,
+      options.allowSignatures ?? false,
+      mthdsSources,
+      options.render
+    );
   }
 
   /** The model deck the runner can route to — `GET /v1/models[?type=]`. */

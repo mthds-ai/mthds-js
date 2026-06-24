@@ -569,6 +569,94 @@ describe("MthdsApiClient.validate", () => {
   });
 });
 
+describe("MthdsApiClient.validateFiles", () => {
+  function bodyOf(fetchSpy: ReturnType<typeof vi.spyOn>): Record<string, unknown> {
+    const init = fetchSpy.mock.calls[0]![1] as { body?: string };
+    return JSON.parse(init.body ?? "{}") as Record<string, unknown>;
+  }
+
+  it("sends content and sources for files that all have URIs", async () => {
+    const client = makeClient();
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(jsonResponse(200, { is_valid: true }));
+
+    await client.validateFiles(
+      [
+        { uri: "file:///bundle/main.mthds", content: "domain = 'x'" },
+        { uri: "file:///bundle/pipes.mthds", content: "pipe x.greet" },
+      ],
+      { allowSignatures: true }
+    );
+
+    expect(fetchSpy.mock.calls[0]![0]).toBe("http://localhost:8081/v1/validate");
+    expect(bodyOf(fetchSpy)).toEqual({
+      mthds_contents: ["domain = 'x'", "pipe x.greet"],
+      allow_signatures: true,
+      mthds_sources: ["file:///bundle/main.mthds", "file:///bundle/pipes.mthds"],
+    });
+  });
+
+  it("omits mthds_sources when no file has a URI", async () => {
+    const client = makeClient();
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(jsonResponse(200, { is_valid: true }));
+
+    await client.validateFiles([{ content: "domain = 'x'" }, { content: "pipe x.greet" }]);
+
+    expect(bodyOf(fetchSpy)).toEqual({
+      mthds_contents: ["domain = 'x'", "pipe x.greet"],
+      allow_signatures: false,
+    });
+  });
+
+  it("fills deterministic inline sources for missing URIs in mixed input", async () => {
+    const client = makeClient();
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(jsonResponse(200, { is_valid: true }));
+
+    await client.validateFiles([
+      { uri: "file:///bundle/main.mthds", content: "domain = 'x'" },
+      { content: "pipe x.inline" },
+      { uri: "file:///bundle/other.mthds", content: "pipe x.other" },
+    ]);
+
+    expect(bodyOf(fetchSpy)).toMatchObject({
+      mthds_contents: ["domain = 'x'", "pipe x.inline", "pipe x.other"],
+      mthds_sources: [
+        "file:///bundle/main.mthds",
+        "inline://file-2.mthds",
+        "file:///bundle/other.mthds",
+      ],
+    });
+  });
+
+  it("rejects empty files before calling the API", async () => {
+    const client = makeClient();
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+
+    await expect(client.validateFiles([])).rejects.toBeInstanceOf(PipelineRequestError);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("passes render options through to validate", async () => {
+    const client = makeClient();
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(jsonResponse(200, { is_valid: true, rendered_markdown: "# ok" }));
+
+    await client.validateFiles([{ content: "domain = 'x'" }], { render: ["markdown"] });
+
+    expect(bodyOf(fetchSpy)).toEqual({
+      mthds_contents: ["domain = 'x'"],
+      allow_signatures: false,
+      render: ["markdown"],
+    });
+  });
+});
+
 describe("MthdsApiClient.models", () => {
   it("GETs /v1/models and returns the deck", async () => {
     const client = makeClient();

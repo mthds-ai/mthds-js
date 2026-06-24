@@ -12,6 +12,7 @@
 
 // ── API runner / client (runners/api) ────────────────────────────────
 export { MthdsApiClient, DEFAULT_API_BASE_URL } from "./runners/api/client.js";
+export type { MthdsFile, ValidateFilesOptions } from "./runners/api/client.js";
 
 // ── Protocol interface (protocol) ────────────────────────────────────
 export type { MTHDSProtocol } from "./protocol/protocol.js";

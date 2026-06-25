@@ -30,7 +30,7 @@
     "format": "prettier --write \"src/**/*.ts\" \"tests/**/*.ts\" \"*.ts\"",
     "format:check": "prettier --check \"src/**/*.ts\" \"tests/**/*.ts\" \"*.ts\"",
     "depcruise": "depcruise --config .dependency-cruiser.cjs src",
-    "check": "npm run lint && npm run format:check && npm run typecheck && npm run typecheck:test && npm run build && npm run depcruise && npm test",
+    "check": "npm run lint && npm run format:check && npm run typecheck && npm run typecheck:test && npm run build && npm run depcruise",
     "example": "npx tsx examples/call_api.ts",
     "prepare": "tsc"
   },

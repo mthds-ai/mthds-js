@@ -267,6 +267,8 @@ mthds telemetry disable
 ```bash
 make install    # install dependencies
 make check      # typecheck + build
+make test       # run the test suite
+make all        # clean + check + test
 make dev        # watch mode
 make run        # build and run the CLI
 make pack       # create tarball for local npx testing

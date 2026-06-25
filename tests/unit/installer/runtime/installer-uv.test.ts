@@ -45,7 +45,9 @@ describe("requireUv", () => {
   it("throws with install URL when uv is not found (ENOENT)", () => {
     const err = new Error("spawn ENOENT") as NodeJS.ErrnoException;
     err.code = "ENOENT";
-    mockedExecFileSync.mockImplementation(() => { throw err; });
+    mockedExecFileSync.mockImplementation(() => {
+      throw err;
+    });
 
     expect(() => requireUv()).toThrow("uv is required but not found");
     expect(() => requireUv()).toThrow("https://docs.astral.sh/uv");
@@ -54,7 +56,9 @@ describe("requireUv", () => {
   it("throws with actual error when uv exists but fails (non-ENOENT)", () => {
     const err = new Error("Permission denied") as NodeJS.ErrnoException;
     err.code = "EACCES";
-    mockedExecFileSync.mockImplementation(() => { throw err; });
+    mockedExecFileSync.mockImplementation(() => {
+      throw err;
+    });
 
     expect(() => requireUv()).toThrow("uv was found but failed to run");
     expect(() => requireUv()).toThrow("Permission denied");
@@ -73,7 +77,7 @@ describe("uvToolInstallSync", () => {
     expect(mockedExecFileSync).toHaveBeenCalledWith(
       "uv",
       ["tool", "install", "--upgrade", "--refresh-package", "pipelex", `pipelex${PX_CONSTRAINT}`],
-      { stdio: "pipe", timeout: 60000 }
+      { stdio: "pipe", timeout: 60000 },
     );
   });
 
@@ -87,7 +91,7 @@ describe("uvToolInstallSync", () => {
     expect(mockedExecFileSync).toHaveBeenCalledWith(
       "uv",
       ["tool", "install", "--upgrade", "--refresh-package", "pipelex", "pipelex"],
-      { stdio: "pipe", timeout: 60000 }
+      { stdio: "pipe", timeout: 60000 },
     );
   });
 
@@ -96,15 +100,17 @@ describe("uvToolInstallSync", () => {
     uvError.stderr = Buffer.from("No matching distribution found for nonexistent>=1.0.0");
     mockedExecFileSync
       .mockReturnValueOnce(Buffer.from("uv 0.7.2")) // requireUv
-      .mockImplementationOnce(() => { throw uvError; });
+      .mockImplementationOnce(() => {
+        throw uvError;
+      });
 
     expect(() => uvToolInstallSync("nonexistent", ">=1.0.0")).toThrow(
-      'uv tool install failed for "nonexistent>=1.0.0"'
+      'uv tool install failed for "nonexistent>=1.0.0"',
     );
     expect(() => {
-      mockedExecFileSync
-        .mockReturnValueOnce(Buffer.from("uv 0.7.2"))
-        .mockImplementationOnce(() => { throw uvError; });
+      mockedExecFileSync.mockReturnValueOnce(Buffer.from("uv 0.7.2")).mockImplementationOnce(() => {
+        throw uvError;
+      });
       uvToolInstallSync("nonexistent", ">=1.0.0");
     }).toThrow("No matching distribution found");
   });
@@ -112,10 +118,10 @@ describe("uvToolInstallSync", () => {
   it("throws requireUv error when uv is missing", () => {
     const err = new Error("spawn ENOENT") as NodeJS.ErrnoException;
     err.code = "ENOENT";
-    mockedExecFileSync.mockImplementation(() => { throw err; });
+    mockedExecFileSync.mockImplementation(() => {
+      throw err;
+    });
 
-    expect(() => uvToolInstallSync("pipelex")).toThrow(
-      "uv is required but not found"
-    );
+    expect(() => uvToolInstallSync("pipelex")).toThrow("uv is required but not found");
   });
 });

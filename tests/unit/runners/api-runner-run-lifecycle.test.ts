@@ -47,7 +47,11 @@ const BASE_ONLY_VERSION = {
   runner_version: "9.9.9",
 };
 
-function jsonResponse(status: number, body: unknown, headers: Record<string, string> = {}): Response {
+function jsonResponse(
+  status: number,
+  body: unknown,
+  headers: Record<string, string> = {},
+): Response {
   return new Response(JSON.stringify(body), {
     status,
     headers: { "Content-Type": "application/json", ...headers },
@@ -76,10 +80,14 @@ describe("ApiRunner.startAndWaitForResult (hosted — durable start+poll path)",
       .spyOn(globalThis, "fetch")
       .mockResolvedValueOnce(jsonResponse(200, HOSTED_VERSION))
       .mockResolvedValueOnce(
-        jsonResponse(202, { pipeline_run_id: "run-1", state: "STARTED", created_at: "t0" })
+        jsonResponse(202, { pipeline_run_id: "run-1", state: "STARTED", created_at: "t0" }),
       )
       .mockResolvedValueOnce(
-        jsonResponse(200, { pipeline_run_id: "run-1", main_stuff: { answer: 42 }, graph_spec: { n: 1 } })
+        jsonResponse(200, {
+          pipeline_run_id: "run-1",
+          main_stuff: { answer: 42 },
+          graph_spec: { n: 1 },
+        }),
       );
 
     const result = await runner.startAndWaitForResult({ pipe_code: "p", mthds_contents: ["x"] });
@@ -98,16 +106,20 @@ describe("ApiRunner.startAndWaitForResult (hosted — durable start+poll path)",
     const fetchSpy = vi
       .spyOn(globalThis, "fetch")
       .mockResolvedValueOnce(jsonResponse(200, HOSTED_VERSION))
-      .mockResolvedValueOnce(jsonResponse(202, { pipeline_run_id: "r1", state: "STARTED", created_at: "t0" }))
+      .mockResolvedValueOnce(
+        jsonResponse(202, { pipeline_run_id: "r1", state: "STARTED", created_at: "t0" }),
+      )
       .mockResolvedValueOnce(jsonResponse(200, { pipeline_run_id: "r1", main_stuff: {} }))
-      .mockResolvedValueOnce(jsonResponse(202, { pipeline_run_id: "r2", state: "STARTED", created_at: "t1" }))
+      .mockResolvedValueOnce(
+        jsonResponse(202, { pipeline_run_id: "r2", state: "STARTED", created_at: "t1" }),
+      )
       .mockResolvedValueOnce(jsonResponse(200, { pipeline_run_id: "r2", main_stuff: {} }));
 
     await runner.startAndWaitForResult({ pipe_code: "p" });
     await runner.startAndWaitForResult({ pipe_code: "p" });
 
     const versionCalls = fetchSpy.mock.calls.filter((call) =>
-      String(call[0]).endsWith("/v1/version")
+      String(call[0]).endsWith("/v1/version"),
     );
     expect(versionCalls).toHaveLength(1);
   });
@@ -120,7 +132,7 @@ describe("ApiRunner against a bare runner (no run store)", () => {
       .spyOn(globalThis, "fetch")
       .mockResolvedValueOnce(jsonResponse(200, BARE_VERSION))
       .mockResolvedValueOnce(
-        jsonResponse(200, { pipeline_run_id: "run-x", created_at: "t0", state: "COMPLETED" })
+        jsonResponse(200, { pipeline_run_id: "run-x", created_at: "t0", state: "COMPLETED" }),
       );
 
     const result = await runner.startAndWaitForResult({ pipe_code: "p", mthds_contents: ["x"] });
@@ -136,7 +148,7 @@ describe("ApiRunner against a bare runner (no run store)", () => {
       .spyOn(globalThis, "fetch")
       .mockResolvedValueOnce(jsonResponse(200, BARE_VERSION))
       .mockResolvedValueOnce(
-        jsonResponse(200, { pipeline_run_id: "run-x", created_at: "t0", state: "COMPLETED" })
+        jsonResponse(200, { pipeline_run_id: "run-x", created_at: "t0", state: "COMPLETED" }),
       );
 
     await runner.startAndWaitForResult({
@@ -159,11 +171,11 @@ describe("ApiRunner against a bare runner (no run store)", () => {
       .mockResolvedValueOnce(jsonResponse(200, BASE_ONLY_VERSION))
       .mockResolvedValueOnce(jsonResponse(404, { detail: "Not Found" }))
       .mockResolvedValueOnce(
-        jsonResponse(200, { pipeline_run_id: "run-z", created_at: "t0", state: "COMPLETED" })
+        jsonResponse(200, { pipeline_run_id: "run-z", created_at: "t0", state: "COMPLETED" }),
       )
       // A second call must skip the durable attempt entirely (negative cached).
       .mockResolvedValueOnce(
-        jsonResponse(200, { pipeline_run_id: "run-z2", created_at: "t1", state: "COMPLETED" })
+        jsonResponse(200, { pipeline_run_id: "run-z2", created_at: "t1", state: "COMPLETED" }),
       );
 
     const result = await runner.startAndWaitForResult({ pipe_code: "p" });
@@ -183,9 +195,7 @@ describe("ApiRunner against a bare runner (no run store)", () => {
   it("the run-lifecycle primitives surface RunLifecycleUnavailableError on the bare 404", async () => {
     const runner = makeApiRunner();
     // Bare runner: Starlette's default 404 body — no structured `code` field.
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      jsonResponse(404, { detail: "Not Found" })
-    );
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(jsonResponse(404, { detail: "Not Found" }));
 
     await expect(runner.getRunStatus("r")).rejects.toBeInstanceOf(RunLifecycleUnavailableError);
     await expect(runner.getRunResult("r")).rejects.toBeInstanceOf(RunLifecycleUnavailableError);
@@ -208,7 +218,7 @@ describe("ApiRunner run-lifecycle delegation", () => {
   it("start returns the RunResult ack", async () => {
     const runner = makeApiRunner();
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      jsonResponse(202, { pipeline_run_id: "run-9", state: "STARTED", created_at: "t0" })
+      jsonResponse(202, { pipeline_run_id: "run-9", state: "STARTED", created_at: "t0" }),
     );
     const ack = await runner.start({ pipe_code: "p", mthds_contents: ["x"] });
     expect(ack.pipeline_run_id).toBe("run-9");
@@ -263,11 +273,19 @@ describe("ApiRunner run-lifecycle delegation", () => {
 describe("PipelexRunner run-lifecycle", () => {
   it("rejects the durable run-lifecycle primitives with a clear unsupported message", async () => {
     const runner = new PipelexRunner();
-    await expect(runner.start({ pipe_code: "p" })).rejects.toThrow(/not supported by the pipelex CLI runner/);
-    await expect(runner.getRunStatus("x")).rejects.toThrow(/not supported by the pipelex CLI runner/);
-    await expect(runner.getRunResult("x")).rejects.toThrow(/not supported by the pipelex CLI runner/);
+    await expect(runner.start({ pipe_code: "p" })).rejects.toThrow(
+      /not supported by the pipelex CLI runner/,
+    );
+    await expect(runner.getRunStatus("x")).rejects.toThrow(
+      /not supported by the pipelex CLI runner/,
+    );
+    await expect(runner.getRunResult("x")).rejects.toThrow(
+      /not supported by the pipelex CLI runner/,
+    );
     // waitForResult is the inherited BaseRunner composite; it surfaces the same
     // unsupported error because it polls getRunResult.
-    await expect(runner.waitForResult("x")).rejects.toThrow(/not supported by the pipelex CLI runner/);
+    await expect(runner.waitForResult("x")).rejects.toThrow(
+      /not supported by the pipelex CLI runner/,
+    );
   });
 });

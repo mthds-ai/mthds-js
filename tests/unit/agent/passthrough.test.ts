@@ -18,18 +18,16 @@ vi.mock("../../../src/installer/runtime/installer.js", () => ({
 class AgentErrorThrow extends Error {
   constructor(
     public errorType: string,
-    public extras?: Record<string, unknown>
+    public extras?: Record<string, unknown>,
   ) {
     super(errorType);
   }
 }
 
 vi.mock("../../../src/agent/output.js", () => ({
-  agentError: vi.fn(
-    (message: string, errorType: string, extras?: Record<string, unknown>) => {
-      throw new AgentErrorThrow(errorType, { message, ...extras });
-    }
-  ),
+  agentError: vi.fn((message: string, errorType: string, extras?: Record<string, unknown>) => {
+    throw new AgentErrorThrow(errorType, { message, ...extras });
+  }),
   AGENT_ERROR_DOMAINS: {
     ARGUMENT: "argument",
     CONFIG: "config",
@@ -83,11 +81,9 @@ describe("passthrough", () => {
 
     passthrough("pipelex-agent", ["run", "--pipe", "test"]);
 
-    expect(mockedSpawnSync).toHaveBeenCalledWith(
-      "pipelex-agent",
-      ["run", "--pipe", "test"],
-      { stdio: "inherit" }
-    );
+    expect(mockedSpawnSync).toHaveBeenCalledWith("pipelex-agent", ["run", "--pipe", "test"], {
+      stdio: "inherit",
+    });
     expect(mockExit).toHaveBeenCalledWith(0);
   });
 
@@ -109,7 +105,7 @@ describe("passthrough", () => {
       "BinaryNotFoundError",
       expect.objectContaining({
         error_domain: "binary",
-      })
+      }),
     );
   });
 
@@ -181,9 +177,7 @@ describe("passthrough", () => {
     passthrough("pipelex-agent", ["run"], { autoInstall: true });
 
     expect(mockedUvToolInstallSync).toHaveBeenCalled();
-    expect(stderrSpy).toHaveBeenCalledWith(
-      expect.stringContaining("may not have taken effect")
-    );
+    expect(stderrSpy).toHaveBeenCalledWith(expect.stringContaining("may not have taken effect"));
     // Still proceeds to spawn despite warning
     expect(mockedSpawnSync).toHaveBeenCalled();
     stderrSpy.mockRestore();
@@ -200,9 +194,7 @@ describe("passthrough", () => {
 
     passthrough("pipelex-agent", ["run"], { autoInstall: true });
 
-    expect(stderrSpy).toHaveBeenCalledWith(
-      expect.stringContaining("Could not parse version")
-    );
+    expect(stderrSpy).toHaveBeenCalledWith(expect.stringContaining("Could not parse version"));
     expect(mockedUvToolInstallSync).not.toHaveBeenCalled();
     expect(mockedSpawnSync).toHaveBeenCalled();
     stderrSpy.mockRestore();
@@ -218,14 +210,14 @@ describe("passthrough", () => {
       throw new Error("Network error");
     });
 
-    expect(() =>
-      passthrough("pipelex-agent", ["run"], { autoInstall: true })
-    ).toThrow(AgentErrorThrow);
+    expect(() => passthrough("pipelex-agent", ["run"], { autoInstall: true })).toThrow(
+      AgentErrorThrow,
+    );
 
     expect(mockedAgentError).toHaveBeenCalledWith(
       expect.stringContaining("Network error"),
       "InstallError",
-      expect.objectContaining({ error_domain: "install" })
+      expect.objectContaining({ error_domain: "install" }),
     );
   });
 
@@ -237,14 +229,14 @@ describe("passthrough", () => {
     });
     mockedUvToolInstallSync.mockImplementation(() => {}); // install "succeeds"
 
-    expect(() =>
-      passthrough("pipelex-agent", ["run"], { autoInstall: true })
-    ).toThrow(AgentErrorThrow);
+    expect(() => passthrough("pipelex-agent", ["run"], { autoInstall: true })).toThrow(
+      AgentErrorThrow,
+    );
 
     expect(mockedAgentError).toHaveBeenCalledWith(
       expect.stringContaining("not reachable"),
       "InstallError",
-      expect.objectContaining({ error_domain: "install" })
+      expect.objectContaining({ error_domain: "install" }),
     );
   });
 
@@ -257,9 +249,9 @@ describe("passthrough", () => {
       version_constraint: PX_CONSTRAINT,
     });
 
-    expect(() =>
-      passthrough("pipelex-agent", ["run"], { autoInstall: false })
-    ).toThrow(AgentErrorThrow);
+    expect(() => passthrough("pipelex-agent", ["run"], { autoInstall: false })).toThrow(
+      AgentErrorThrow,
+    );
 
     expect(mockedAgentError).toHaveBeenCalledWith(
       expect.stringContaining("not installed"),
@@ -267,7 +259,7 @@ describe("passthrough", () => {
       expect.objectContaining({
         error_domain: "binary",
         hint: expect.stringContaining("Install"),
-      })
+      }),
     );
     expect(mockedUvToolInstallSync).not.toHaveBeenCalled();
   });
@@ -279,9 +271,9 @@ describe("passthrough", () => {
       version_constraint: PX_CONSTRAINT,
     });
 
-    expect(() =>
-      passthrough("pipelex-agent", ["run"], { autoInstall: false })
-    ).toThrow(AgentErrorThrow);
+    expect(() => passthrough("pipelex-agent", ["run"], { autoInstall: false })).toThrow(
+      AgentErrorThrow,
+    );
 
     expect(mockedAgentError).toHaveBeenCalledWith(
       expect.stringContaining("outdated"),
@@ -289,7 +281,7 @@ describe("passthrough", () => {
       expect.objectContaining({
         error_domain: "install",
         hint: expect.stringContaining("Upgrade"),
-      })
+      }),
     );
     expect(mockedUvToolInstallSync).not.toHaveBeenCalled();
   });
@@ -317,10 +309,6 @@ describe("passthrough", () => {
     });
 
     expect(mockedCheckBinaryVersion).not.toHaveBeenCalled();
-    expect(mockedSpawnSync).toHaveBeenCalledWith(
-      "pipelex-agent",
-      ["run"],
-      { stdio: "inherit" }
-    );
+    expect(mockedSpawnSync).toHaveBeenCalledWith("pipelex-agent", ["run"], { stdio: "inherit" });
   });
 });

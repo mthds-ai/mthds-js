@@ -33,7 +33,10 @@ describe("bundle-scanner", () => {
 
     it("collects main_pipe from bundle", () => {
       const file = join(tempDir, "scoring.mthds");
-      writeFileSync(file, `domain = "scoring"\nmain_pipe = "compute_score"\n\n[pipe.compute_score]\ntype = "gen"\n`);
+      writeFileSync(
+        file,
+        `domain = "scoring"\nmain_pipe = "compute_score"\n\n[pipe.compute_score]\ntype = "gen"\n`,
+      );
 
       const { domainMainPipes, errors } = scanBundlesForDomainInfo([file]);
       expect(errors).toHaveLength(0);
@@ -83,12 +86,8 @@ describe("bundle-scanner", () => {
     });
 
     it("includes main_pipe in exported pipes", () => {
-      const domainPipes = new Map<string, Set<string>>([
-        ["scoring", new Set(["normalize"])],
-      ]);
-      const domainMainPipes = new Map<string, string>([
-        ["scoring", "compute_score"],
-      ]);
+      const domainPipes = new Map<string, Set<string>>([["scoring", new Set(["normalize"])]]);
+      const domainMainPipes = new Map<string, string>([["scoring", "compute_score"]]);
 
       const exports = buildDomainExportsFromScan(domainPipes, domainMainPipes);
       expect(exports["scoring"]!.pipes).toContain("compute_score");

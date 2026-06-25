@@ -36,7 +36,9 @@ describe("checkBinaryVersion", () => {
   it("returns 'missing' when binary is not found (ENOENT)", () => {
     const err = new Error("spawn ENOENT") as NodeJS.ErrnoException;
     err.code = "ENOENT";
-    mockedExecFileSync.mockImplementation(() => { throw err; });
+    mockedExecFileSync.mockImplementation(() => {
+      throw err;
+    });
 
     const result = checkBinaryVersion(makeRecovery());
 
@@ -48,7 +50,9 @@ describe("checkBinaryVersion", () => {
   it("returns 'unparseable' when binary exists but crashes (non-ENOENT error)", () => {
     const err = new Error("Command failed") as NodeJS.ErrnoException;
     err.code = "EACCES";
-    mockedExecFileSync.mockImplementation(() => { throw err; });
+    mockedExecFileSync.mockImplementation(() => {
+      throw err;
+    });
 
     const result = checkBinaryVersion(makeRecovery());
 
@@ -87,7 +91,7 @@ describe("checkBinaryVersion", () => {
     mockedExecFileSync.mockReturnValue(Buffer.from("something unexpected"));
 
     const result = checkBinaryVersion(
-      makeRecovery({ version_extract: /^pipelex\s+(\d+\.\d+\.\d+)/ })
+      makeRecovery({ version_extract: /^pipelex\s+(\d+\.\d+\.\d+)/ }),
     );
 
     expect(result.status).toBe("unparseable");
@@ -108,9 +112,7 @@ describe("checkBinaryVersion", () => {
   it("handles pipelex-agent version format", () => {
     mockedExecFileSync.mockReturnValue(Buffer.from("pipelex-agent 99.0.0"));
 
-    const result = checkBinaryVersion(
-      makeRecovery({ binary: "pipelex-agent" })
-    );
+    const result = checkBinaryVersion(makeRecovery({ binary: "pipelex-agent" }));
 
     expect(result.status).toBe("ok");
     expect(result.installed_version).toBe("99.0.0");
@@ -124,7 +126,7 @@ describe("checkBinaryVersion", () => {
         binary: "plxt",
         uv_package: "pipelex-tools",
         version_constraint: PLXT_CONSTRAINT,
-      })
+      }),
     );
 
     expect(result.status).toBe("ok");

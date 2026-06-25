@@ -82,13 +82,19 @@ describe("buildShareUrls", () => {
   it("truncates long descriptions to 15 words in multi-method mode", () => {
     const urls = buildShareUrls({
       methods: [
-        { displayName: "Method A", description: "one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen seventeen" },
+        {
+          displayName: "Method A",
+          description:
+            "one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen seventeen",
+        },
         { displayName: "Method B", description: "short desc" },
       ],
       address: "org/repo",
     });
     const text = decodeURIComponent(urls.x.replace("https://twitter.com/intent/tweet?text=", ""));
-    expect(text).toContain("- Method A: one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen...");
+    expect(text).toContain(
+      "- Method A: one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen...",
+    );
     expect(text).toContain("- Method B: short desc");
   });
 

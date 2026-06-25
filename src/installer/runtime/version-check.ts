@@ -34,9 +34,7 @@ export interface VersionCheckResult {
  * - `outdated`    — installed but below the required version
  * - `unparseable` — `--version` output could not be parsed (warns, doesn't block)
  */
-export function checkBinaryVersion(
-  recovery: BinaryRecoveryInfo
-): VersionCheckResult {
+export function checkBinaryVersion(recovery: BinaryRecoveryInfo): VersionCheckResult {
   const { version_constraint } = recovery;
 
   // 1. Try running `<binary> --version`

@@ -15,7 +15,7 @@ import { passthroughToPipelexAgent } from "./pipelex-passthrough.js";
  */
 export function registerPipelexRunnerCommands(
   program: Command,
-  getAutoInstall: () => boolean
+  getAutoInstall: () => boolean,
 ): void {
   const action = () => {
     passthroughToPipelexAgent(getAutoInstall());
@@ -26,27 +26,17 @@ export function registerPipelexRunnerCommands(
 
   // ── init ──
 
-  stub(
-    program
-      .command("init")
-      .description("Initialize Pipelex configuration")
-  );
+  stub(program.command("init").description("Initialize Pipelex configuration"));
 
   // ── concept ──
 
   stub(
-    program
-      .command("concept")
-      .description("Structure a concept from JSON spec and output TOML")
+    program.command("concept").description("Structure a concept from JSON spec and output TOML"),
   );
 
   // ── pipe ──
 
-  stub(
-    program
-      .command("pipe")
-      .description("Structure a pipe from JSON spec and output TOML")
-  );
+  stub(program.command("pipe").description("Structure a pipe from JSON spec and output TOML"));
 
   // ── validate ──
 
@@ -56,9 +46,24 @@ export function registerPipelexRunnerCommands(
     .passThroughOptions()
     .allowUnknownOption();
 
-  stub(validateGroup.command("bundle").argument("[target]", "Bundle file (.mthds) or directory").description("Validate a bundle file or content"));
-  stub(validateGroup.command("pipe").argument("<target>", "Pipe code or .mthds bundle file").description("Validate a pipe by code or bundle file"));
-  stub(validateGroup.command("method").argument("<target>", "Method name, GitHub URL, or local path").description("Validate a method"));
+  stub(
+    validateGroup
+      .command("bundle")
+      .argument("[target]", "Bundle file (.mthds) or directory")
+      .description("Validate a bundle file or content"),
+  );
+  stub(
+    validateGroup
+      .command("pipe")
+      .argument("<target>", "Pipe code or .mthds bundle file")
+      .description("Validate a pipe by code or bundle file"),
+  );
+  stub(
+    validateGroup
+      .command("method")
+      .argument("<target>", "Method name, GitHub URL, or local path")
+      .description("Validate a method"),
+  );
 
   // ── run ──
 
@@ -68,16 +73,29 @@ export function registerPipelexRunnerCommands(
     .passThroughOptions()
     .allowUnknownOption();
 
-  stub(runGroup.command("method").argument("<name>", "Name of the installed method").description("Run an installed method by name"));
-  stub(runGroup.command("pipe").argument("[target]", "Bundle file (.mthds) or directory").description("Run a pipe from a bundle file, directory, or content"));
-  stub(runGroup.command("bundle").argument("[target]", "Bundle file (.mthds) or directory").description("Run a bundle file or content"));
+  stub(
+    runGroup
+      .command("method")
+      .argument("<name>", "Name of the installed method")
+      .description("Run an installed method by name"),
+  );
+  stub(
+    runGroup
+      .command("pipe")
+      .argument("[target]", "Bundle file (.mthds) or directory")
+      .description("Run a pipe from a bundle file, directory, or content"),
+  );
+  stub(
+    runGroup
+      .command("bundle")
+      .argument("[target]", "Bundle file (.mthds) or directory")
+      .description("Run a bundle file or content"),
+  );
 
   // ── models ──
 
   stub(
-    program
-      .command("models")
-      .description("List available model presets, aliases, and waterfalls")
+    program.command("models").description("List available model presets, aliases, and waterfalls"),
   );
 
   // ── check-model ──
@@ -86,15 +104,13 @@ export function registerPipelexRunnerCommands(
     program
       .command("check-model")
       .argument("<reference>", "Model reference to check")
-      .description("Validate a model reference with fuzzy suggestions")
+      .description("Validate a model reference with fuzzy suggestions"),
   );
 
   // ── accept-gateway-terms ──
 
   stub(
-    program
-      .command("accept-gateway-terms")
-      .description("Accept Pipelex Gateway terms of service")
+    program.command("accept-gateway-terms").description("Accept Pipelex Gateway terms of service"),
   );
 
   // ── inputs ──
@@ -105,7 +121,22 @@ export function registerPipelexRunnerCommands(
     .passThroughOptions()
     .allowUnknownOption();
 
-  stub(inputsGroup.command("bundle").argument("[target]", "Bundle file (.mthds) or directory").description("Generate inputs from a bundle file or content"));
-  stub(inputsGroup.command("pipe").argument("<target>", "Bundle file (.mthds) or pipe code").description("Generate inputs for a pipe"));
-  stub(inputsGroup.command("method").argument("<name>", "Method name").description("Generate inputs for an installed method"));
+  stub(
+    inputsGroup
+      .command("bundle")
+      .argument("[target]", "Bundle file (.mthds) or directory")
+      .description("Generate inputs from a bundle file or content"),
+  );
+  stub(
+    inputsGroup
+      .command("pipe")
+      .argument("<target>", "Bundle file (.mthds) or pipe code")
+      .description("Generate inputs for a pipe"),
+  );
+  stub(
+    inputsGroup
+      .command("method")
+      .argument("<name>", "Method name")
+      .description("Generate inputs for an installed method"),
+  );
 }

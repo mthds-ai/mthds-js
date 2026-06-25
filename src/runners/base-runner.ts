@@ -24,23 +24,17 @@ export abstract class BaseRunner {
   abstract start(options: StartOptions): Promise<RunResultStart>;
 
   /** Single-shot result lookup: running (202) / completed (200) / failed (409). */
-  abstract getRunResult(
-    runId: string,
-    options?: { signal?: AbortSignal }
-  ): Promise<RunResultState>;
+  abstract getRunResult(runId: string, options?: { signal?: AbortSignal }): Promise<RunResultState>;
 
   /** Poll an already-started run (by id) until it reaches a terminal state. */
-  async waitForResult(
-    runId: string,
-    options?: WaitForResultOptions
-  ): Promise<RunResults> {
+  async waitForResult(runId: string, options?: WaitForResultOptions): Promise<RunResults> {
     return pollUntilResult((id, opts) => this.getRunResult(id, opts), runId, options);
   }
 
   /** Start a run, then wait for its result — the one-call convenience. */
   async startAndWaitForResult(
     options: StartOptions,
-    pollOptions?: WaitForResultOptions
+    pollOptions?: WaitForResultOptions,
   ): Promise<RunResults> {
     const ack = await this.start(options);
     return this.waitForResult(ack.pipeline_run_id, pollOptions);

@@ -32,11 +32,7 @@ function buildShareText(options: ShareOptions): string {
 
   if (methods.length === 1) {
     const m = methods[0]!;
-    lines.push(
-      `I just published "${m.displayName}" on mthds.sh! 🚀`,
-      "",
-      m.description,
-    );
+    lines.push(`I just published "${m.displayName}" on mthds.sh! 🚀`, "", m.description);
   } else {
     lines.push(
       `I just published ${methods.length} methods on mthds.sh! 🚀`,
@@ -45,12 +41,7 @@ function buildShareText(options: ShareOptions): string {
     );
   }
 
-  lines.push(
-    "",
-    `Install: npx mthds install ${address}`,
-    "",
-    "#mthds #AI",
-  );
+  lines.push("", `Install: npx mthds install ${address}`, "", "#mthds #AI");
 
   return lines.join("\n");
 }

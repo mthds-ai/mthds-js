@@ -36,7 +36,11 @@ vi.mock("../../../src/config/config.js", async (importOriginal) => {
   };
 });
 
-function jsonResponse(status: number, body: unknown, headers: Record<string, string> = {}): Response {
+function jsonResponse(
+  status: number,
+  body: unknown,
+  headers: Record<string, string> = {},
+): Response {
   return new Response(JSON.stringify(body), {
     status,
     headers: { "Content-Type": "application/json", ...headers },
@@ -289,7 +293,7 @@ describe("MthdsApiClient.execute gateway 30s timeout", () => {
     vi.spyOn(globalThis, "fetch").mockRejectedValue(new DOMException("timed out", "TimeoutError"));
     vi.spyOn(Date, "now").mockReturnValueOnce(0).mockReturnValueOnce(30_500);
     await expect(client.execute({ pipe_code: "p" })).rejects.toBeInstanceOf(
-      PipelineExecuteTimeoutError
+      PipelineExecuteTimeoutError,
     );
   });
 
@@ -310,8 +314,8 @@ describe("MthdsApiClient.execute 202 degrade (eng-review 3B)", () => {
       jsonResponse(
         202,
         { pipeline_run_id: "run-202", state: "RUNNING", created_at: "t0" },
-        { "Retry-After": "5", Location: "/v1/runs/run-202/status" }
-      )
+        { "Retry-After": "5", Location: "/v1/runs/run-202/status" },
+      ),
     );
     const err = await client.execute({ pipe_code: "p" }).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(RunStillRunningError);
@@ -349,7 +353,9 @@ describe("MthdsApiClient.start", () => {
     const client = makeClient();
     const fetchSpy = vi
       .spyOn(globalThis, "fetch")
-      .mockResolvedValue(jsonResponse(202, { pipeline_run_id: "run-1", state: "STARTED", created_at: "t0" }));
+      .mockResolvedValue(
+        jsonResponse(202, { pipeline_run_id: "run-1", state: "STARTED", created_at: "t0" }),
+      );
 
     const ack = await client.start({
       pipe_code: "my_pipe",
@@ -372,7 +378,9 @@ describe("MthdsApiClient.start", () => {
     const client = makeClient();
     const fetchSpy = vi
       .spyOn(globalThis, "fetch")
-      .mockResolvedValue(jsonResponse(202, { pipeline_run_id: "run-2", state: "STARTED", created_at: "t0" }));
+      .mockResolvedValue(
+        jsonResponse(202, { pipeline_run_id: "run-2", state: "STARTED", created_at: "t0" }),
+      );
     await client.start({ inputs: { q: "hi" }, extra: { some_vendor_selector: "sel_123" } });
     const body = JSON.parse((fetchSpy.mock.calls[0]![1] as RequestInit).body as string);
     expect(body).toEqual({ some_vendor_selector: "sel_123", inputs: { q: "hi" } });
@@ -385,7 +393,9 @@ describe("MthdsApiClient.start", () => {
     const client = makeClient();
     const fetchSpy = vi
       .spyOn(globalThis, "fetch")
-      .mockResolvedValue(jsonResponse(202, { pipeline_run_id: "client-id", state: "STARTED", created_at: "t0" }));
+      .mockResolvedValue(
+        jsonResponse(202, { pipeline_run_id: "client-id", state: "STARTED", created_at: "t0" }),
+      );
     await client.start({
       pipe_code: "p",
       extra: { pipeline_run_id: "client-id" },
@@ -397,7 +407,7 @@ describe("MthdsApiClient.start", () => {
   it("rejects protocol args smuggled through extra", async () => {
     const client = makeClient();
     await expect(
-      client.start({ mthds_contents: ["domain d"], extra: { pipe_code: "smuggled" } })
+      client.start({ mthds_contents: ["domain d"], extra: { pipe_code: "smuggled" } }),
     ).rejects.toBeInstanceOf(PipelineRequestError);
   });
 
@@ -409,9 +419,11 @@ describe("MthdsApiClient.start", () => {
   it("surfaces a non-2xx start as ApiResponseError (hosted 422 on client pipeline_run_id)", async () => {
     const client = makeClient();
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      jsonResponse(422, { detail: "Client-supplied pipeline_run_id is not accepted" })
+      jsonResponse(422, { detail: "Client-supplied pipeline_run_id is not accepted" }),
     );
-    const err = await client.start({ pipe_code: "p", pipeline_run_id: "nope" }).catch((e: unknown) => e);
+    const err = await client
+      .start({ pipe_code: "p", pipeline_run_id: "nope" } as never)
+      .catch((e: unknown) => e);
     expect(err).toBeInstanceOf(ApiResponseError);
     expect((err as ApiResponseError).status).toBe(422);
   });
@@ -420,19 +432,17 @@ describe("MthdsApiClient.start", () => {
 describe("MthdsApiClient.validate", () => {
   it("POSTs /v1/validate with mthds_contents + allow_signatures and returns the valid report", async () => {
     const client = makeClient();
-    const fetchSpy = vi
-      .spyOn(globalThis, "fetch")
-      .mockResolvedValue(
-        jsonResponse(200, {
-          is_valid: true,
-          bundle_blueprint: { domain: "x" },
-          graph_spec: null,
-          pipe_io_contracts: {},
-          validated_pipes: [],
-          pending_signatures: [],
-          is_runnable: true,
-        }),
-      );
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      jsonResponse(200, {
+        is_valid: true,
+        bundle_blueprint: { domain: "x" },
+        graph_spec: null,
+        pipe_io_contracts: {},
+        validated_pipes: [],
+        pending_signatures: [],
+        is_runnable: true,
+      }),
+    );
 
     const report = await client.validate(["domain = 'x'"], true);
 
@@ -588,7 +598,7 @@ describe("MthdsApiClient.validateFiles", () => {
         { uri: "file:///bundle/main.mthds", content: "domain = 'x'" },
         { uri: "file:///bundle/pipes.mthds", content: "pipe x.greet" },
       ],
-      { allowSignatures: true }
+      { allowSignatures: true },
     );
 
     expect(fetchSpy.mock.calls[0]![0]).toBe("http://localhost:8081/v1/validate");
@@ -665,9 +675,13 @@ describe("MthdsApiClient.validateFiles", () => {
 describe("MthdsApiClient.models", () => {
   it("GETs /v1/models and returns the deck", async () => {
     const client = makeClient();
-    const fetchSpy = vi
-      .spyOn(globalThis, "fetch")
-      .mockResolvedValue(jsonResponse(200, { models: [{ name: "gpt-4o", type: "llm" }], aliases: {}, waterfalls: {} }));
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      jsonResponse(200, {
+        models: [{ name: "gpt-4o", type: "llm" }],
+        aliases: {},
+        waterfalls: {},
+      }),
+    );
     const deck = await client.models();
     expect(deck.models[0]!.name).toBe("gpt-4o");
     expect(fetchSpy.mock.calls[0]![0]).toBe("http://localhost:8081/v1/models");
@@ -686,16 +700,14 @@ describe("MthdsApiClient.models", () => {
 describe("MthdsApiClient.version", () => {
   it("GETs /v1/version and returns the VersionInfo handshake", async () => {
     const client = makeClient();
-    const fetchSpy = vi
-      .spyOn(globalThis, "fetch")
-      .mockResolvedValue(
-        jsonResponse(200, {
-          protocol_version: "0.6.0",
-          implementation: "pipelex-api",
-          implementation_version: "1.2.3",
-          runtime_version: "0.32.0",
-        })
-      );
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      jsonResponse(200, {
+        protocol_version: "0.6.0",
+        implementation: "pipelex-api",
+        implementation_version: "1.2.3",
+        runtime_version: "0.32.0",
+      }),
+    );
     const info = await client.version();
     expect(info.implementation).toBe("pipelex-api");
     expect(info.protocol_version).toBe("0.6.0");
@@ -718,7 +730,9 @@ describe("MthdsApiClient.validate render extra", () => {
     const client = makeClient();
     const fetchSpy = vi
       .spyOn(globalThis, "fetch")
-      .mockResolvedValue(jsonResponse(200, { is_valid: true, rendered_markdown: "# Validation passed" }));
+      .mockResolvedValue(
+        jsonResponse(200, { is_valid: true, rendered_markdown: "# Validation passed" }),
+      );
     await client.validate(["domain = 'x'"], false, undefined, ["markdown"]);
     expect(bodyOf(fetchSpy).render).toEqual(["markdown"]);
   });
@@ -727,7 +741,9 @@ describe("MthdsApiClient.validate render extra", () => {
     const client = makeClient();
     const fetchSpy = vi
       .spyOn(globalThis, "fetch")
-      .mockResolvedValue(jsonResponse(200, { is_valid: true, rendered_markdown: "# Validation passed" }));
+      .mockResolvedValue(
+        jsonResponse(200, { is_valid: true, rendered_markdown: "# Validation passed" }),
+      );
     await client.validate(["domain = 'x'"], false);
     expect(bodyOf(fetchSpy).render).toEqual(["markdown"]);
   });
@@ -736,7 +752,9 @@ describe("MthdsApiClient.validate render extra", () => {
     const client = makeClient();
     const fetchSpy = vi
       .spyOn(globalThis, "fetch")
-      .mockResolvedValue(jsonResponse(200, { is_valid: true, rendered_markdown: "# Validation passed" }));
+      .mockResolvedValue(
+        jsonResponse(200, { is_valid: true, rendered_markdown: "# Validation passed" }),
+      );
     await client.validate(["domain = 'x'"], false, undefined, []);
     expect(bodyOf(fetchSpy).render).toEqual(["markdown"]);
   });
@@ -745,7 +763,9 @@ describe("MthdsApiClient.validate render extra", () => {
     const client = makeClient();
     const fetchSpy = vi
       .spyOn(globalThis, "fetch")
-      .mockResolvedValue(jsonResponse(200, { is_valid: true, rendered_markdown: "# Validation passed" }));
+      .mockResolvedValue(
+        jsonResponse(200, { is_valid: true, rendered_markdown: "# Validation passed" }),
+      );
     await client.validate(["domain = 'x'"], false, undefined, ["html"]);
     expect(bodyOf(fetchSpy).render).toEqual(["html", "markdown"]);
   });

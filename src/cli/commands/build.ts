@@ -14,14 +14,12 @@ interface WithRunner {
 
 export async function buildRunnerMethod(
   name: string,
-  options: { pipe?: string; output?: string } & WithRunner
+  options: { pipe?: string; output?: string } & WithRunner,
 ): Promise<void> {
   printLogo();
   p.intro("mthds build runner method");
 
-  const libraryDirs = options.libraryDir?.length
-    ? options.libraryDir
-    : undefined;
+  const libraryDirs = options.libraryDir?.length ? options.libraryDir : undefined;
   const runner = createRunner(options.runner, libraryDirs);
 
   if (isPipelexRunner(runner)) {
@@ -37,7 +35,9 @@ export async function buildRunnerMethod(
     return;
   }
 
-  p.log.error("Method target is not yet supported for the API runner. Use 'mthds build runner pipe <target>' instead.\nYou can also specify a different runner with --runner <name>, or change the default with 'mthds set-default runner <name>'.");
+  p.log.error(
+    "Method target is not yet supported for the API runner. Use 'mthds build runner pipe <target>' instead.\nYou can also specify a different runner with --runner <name>, or change the default with 'mthds set-default runner <name>'.",
+  );
   p.outro("");
   process.exit(1);
 }
@@ -46,14 +46,12 @@ export async function buildRunnerMethod(
 
 export async function buildRunnerPipe(
   target: string,
-  options: { pipe?: string; output?: string } & WithRunner
+  options: { pipe?: string; output?: string } & WithRunner,
 ): Promise<void> {
   printLogo();
   p.intro("mthds build runner pipe");
 
-  const libraryDirs = options.libraryDir?.length
-    ? options.libraryDir
-    : undefined;
+  const libraryDirs = options.libraryDir?.length ? options.libraryDir : undefined;
   const runner = createRunner(options.runner, libraryDirs);
 
   if (isPipelexRunner(runner)) {
@@ -83,9 +81,7 @@ export async function buildRunnerPipe(
     }
     pipeCode = options.pipe;
   } else {
-    p.log.error(
-      "build runner requires a .mthds bundle file. Pass the bundle path as the target."
-    );
+    p.log.error("build runner requires a .mthds bundle file. Pass the bundle path as the target.");
     p.outro("");
     process.exit(1);
     return; // unreachable, keeps TS happy
@@ -121,14 +117,12 @@ export async function buildRunnerPipe(
 
 export async function buildInputsMethod(
   name: string,
-  options: { pipe?: string } & WithRunner
+  options: { pipe?: string } & WithRunner,
 ): Promise<void> {
   printLogo();
   p.intro("mthds build inputs method");
 
-  const libraryDirs = options.libraryDir?.length
-    ? options.libraryDir
-    : undefined;
+  const libraryDirs = options.libraryDir?.length ? options.libraryDir : undefined;
   const runner = createRunner(options.runner, libraryDirs);
 
   if (isPipelexRunner(runner)) {
@@ -144,7 +138,9 @@ export async function buildInputsMethod(
     return;
   }
 
-  p.log.error("Method target is not yet supported for the API runner. Use 'mthds build inputs pipe <target>' instead.\nYou can also specify a different runner with --runner <name>, or change the default with 'mthds set-default runner <name>'.");
+  p.log.error(
+    "Method target is not yet supported for the API runner. Use 'mthds build inputs pipe <target>' instead.\nYou can also specify a different runner with --runner <name>, or change the default with 'mthds set-default runner <name>'.",
+  );
   p.outro("");
   process.exit(1);
 }
@@ -153,14 +149,12 @@ export async function buildInputsMethod(
 
 export async function buildInputsPipe(
   target: string,
-  options: { pipe?: string } & WithRunner
+  options: { pipe?: string } & WithRunner,
 ): Promise<void> {
   printLogo();
   p.intro("mthds build inputs pipe");
 
-  const libraryDirs = options.libraryDir?.length
-    ? options.libraryDir
-    : undefined;
+  const libraryDirs = options.libraryDir?.length ? options.libraryDir : undefined;
   const runner = createRunner(options.runner, libraryDirs);
 
   if (isPipelexRunner(runner)) {
@@ -214,14 +208,12 @@ export async function buildInputsPipe(
 
 export async function buildOutputMethod(
   name: string,
-  options: { pipe?: string; format?: string } & WithRunner
+  options: { pipe?: string; format?: string } & WithRunner,
 ): Promise<void> {
   printLogo();
   p.intro("mthds build output method");
 
-  const libraryDirs = options.libraryDir?.length
-    ? options.libraryDir
-    : undefined;
+  const libraryDirs = options.libraryDir?.length ? options.libraryDir : undefined;
   const runner = createRunner(options.runner, libraryDirs);
 
   if (isPipelexRunner(runner)) {
@@ -237,7 +229,9 @@ export async function buildOutputMethod(
     return;
   }
 
-  p.log.error("Method target is not yet supported for the API runner. Use 'mthds build output pipe <target>' instead.\nYou can also specify a different runner with --runner <name>, or change the default with 'mthds set-default runner <name>'.");
+  p.log.error(
+    "Method target is not yet supported for the API runner. Use 'mthds build output pipe <target>' instead.\nYou can also specify a different runner with --runner <name>, or change the default with 'mthds set-default runner <name>'.",
+  );
   p.outro("");
   process.exit(1);
 }
@@ -246,14 +240,12 @@ export async function buildOutputMethod(
 
 export async function buildOutputPipe(
   target: string,
-  options: { pipe?: string; format?: string } & WithRunner
+  options: { pipe?: string; format?: string } & WithRunner,
 ): Promise<void> {
   printLogo();
   p.intro("mthds build output pipe");
 
-  const libraryDirs = options.libraryDir?.length
-    ? options.libraryDir
-    : undefined;
+  const libraryDirs = options.libraryDir?.length ? options.libraryDir : undefined;
   const runner = createRunner(options.runner, libraryDirs);
 
   if (isPipelexRunner(runner)) {

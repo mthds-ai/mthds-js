@@ -49,9 +49,7 @@ describe("parseAddress", () => {
   });
 
   it("rejects invalid characters", () => {
-    expect(() => parseAddress("org/repo with space")).toThrow(
-      "Invalid address segment"
-    );
+    expect(() => parseAddress("org/repo with space")).toThrow("Invalid address segment");
   });
 
   it("rejects empty string", () => {

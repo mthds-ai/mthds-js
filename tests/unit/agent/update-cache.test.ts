@@ -48,7 +48,7 @@ vi.mock("node:fs", async (importOriginal) => {
       return real.writeFileSync(
         p as Parameters<typeof real.writeFileSync>[0],
         data as Parameters<typeof real.writeFileSync>[1],
-        opts as Parameters<typeof real.writeFileSync>[2]
+        opts as Parameters<typeof real.writeFileSync>[2],
       );
     }),
     mkdirSync: vi.fn((p: unknown, opts?: unknown) => {
@@ -58,7 +58,7 @@ vi.mock("node:fs", async (importOriginal) => {
       }
       return real.mkdirSync(
         p as Parameters<typeof real.mkdirSync>[0],
-        opts as Parameters<typeof real.mkdirSync>[1]
+        opts as Parameters<typeof real.mkdirSync>[1],
       );
     }),
     // Hardened writes go through openSync (for O_NOFOLLOW), so the
@@ -71,7 +71,7 @@ vi.mock("node:fs", async (importOriginal) => {
       return real.openSync(
         p as Parameters<typeof real.openSync>[0],
         flags as Parameters<typeof real.openSync>[1],
-        mode as Parameters<typeof real.openSync>[2]
+        mode as Parameters<typeof real.openSync>[2],
       );
     }),
     unlinkSync: vi.fn((p: unknown) => {
@@ -204,7 +204,11 @@ describe("update-cache", () => {
 
     it("returns null when payload entries are missing required 's' field", async () => {
       mkdirSync(stateDir(), { recursive: true });
-      const bad = { mthds_agent: { v: "0.2.1" }, pipelex_agent: { s: "ok", v: "0.22.0" }, plxt: { s: "ok", v: "0.3.2" } };
+      const bad = {
+        mthds_agent: { v: "0.2.1" },
+        pipelex_agent: { s: "ok", v: "0.22.0" },
+        plxt: { s: "ok", v: "0.3.2" },
+      };
       writeFileSync(cachePath(), "UP_TO_DATE\n" + JSON.stringify(bad) + "\n", "utf-8");
 
       const { readCache } = await importModule();
@@ -226,8 +230,7 @@ describe("update-cache", () => {
 
     it("returns null when UPGRADE_AVAILABLE cache is expired (>720min)", async () => {
       mkdirSync(stateDir(), { recursive: true });
-      const content =
-        "UPGRADE_AVAILABLE\n" + JSON.stringify(OUTDATED_PAYLOAD) + "\n";
+      const content = "UPGRADE_AVAILABLE\n" + JSON.stringify(OUTDATED_PAYLOAD) + "\n";
       writeFileSync(cachePath(), content, "utf-8");
 
       // Set mtime to 721 minutes ago
@@ -252,16 +255,15 @@ describe("update-cache", () => {
 
     it("returns cached result when UPGRADE_AVAILABLE and within TTL", async () => {
       mkdirSync(stateDir(), { recursive: true });
-      const content =
-        "UPGRADE_AVAILABLE\n" + JSON.stringify(OUTDATED_PAYLOAD) + "\n";
+      const content = "UPGRADE_AVAILABLE\n" + JSON.stringify(OUTDATED_PAYLOAD) + "\n";
       writeFileSync(cachePath(), content, "utf-8");
 
       const { readCache } = await importModule();
       const result = readCache();
       expect(result).not.toBeNull();
       expect(result!.aggregate).toBe("UPGRADE_AVAILABLE");
-      expect(result!.payload.pipelex_agent.s).toBe("outdated");
-      expect(result!.payload.pipelex_agent.r).toBe(PX_CONSTRAINT);
+      expect(result!.payload.pipelex_agent!.s).toBe("outdated");
+      expect(result!.payload.pipelex_agent!.r).toBe(PX_CONSTRAINT);
     });
   });
 
@@ -356,7 +358,7 @@ describe("update-cache", () => {
       writeFileSync(
         fallbackCachePath(),
         "UP_TO_DATE\n" + JSON.stringify(OK_PAYLOAD) + "\n",
-        "utf-8"
+        "utf-8",
       );
 
       const { readCache } = await importModule();
@@ -373,7 +375,7 @@ describe("update-cache", () => {
       writeFileSync(
         cachePath(),
         "UPGRADE_AVAILABLE\n" + JSON.stringify(OUTDATED_PAYLOAD) + "\n",
-        "utf-8"
+        "utf-8",
       );
       const old = new Date(Date.now() - 30 * 60 * 1000);
       utimesSync(cachePath(), old, old);
@@ -382,7 +384,7 @@ describe("update-cache", () => {
       writeFileSync(
         fallbackCachePath(),
         "UP_TO_DATE\n" + JSON.stringify(OK_PAYLOAD) + "\n",
-        "utf-8"
+        "utf-8",
       );
 
       const { readCache } = await importModule();
@@ -397,17 +399,13 @@ describe("update-cache", () => {
       writeFileSync(
         fallbackCachePath(),
         "UPGRADE_AVAILABLE\n" + JSON.stringify(OUTDATED_PAYLOAD) + "\n",
-        "utf-8"
+        "utf-8",
       );
       const old = new Date(Date.now() - 30 * 60 * 1000);
       utimesSync(fallbackCachePath(), old, old);
 
       mkdirSync(stateDir(), { recursive: true });
-      writeFileSync(
-        cachePath(),
-        "UP_TO_DATE\n" + JSON.stringify(OK_PAYLOAD) + "\n",
-        "utf-8"
-      );
+      writeFileSync(cachePath(), "UP_TO_DATE\n" + JSON.stringify(OK_PAYLOAD) + "\n", "utf-8");
 
       const { readCache } = await importModule();
       const result = readCache();
@@ -440,7 +438,7 @@ describe("update-cache", () => {
       mod.writeCache({ aggregate: "UP_TO_DATE", payload: OK_PAYLOAD });
 
       const warnings = stderrSpy.mock.calls.filter((args) =>
-        String(args[0]).includes("could not write update-check cache")
+        String(args[0]).includes("could not write update-check cache"),
       );
       expect(warnings.length).toBe(1);
 
@@ -455,7 +453,7 @@ describe("update-cache", () => {
       mod.writeCache({ aggregate: "UP_TO_DATE", payload: OK_PAYLOAD });
 
       const warnings = stderrSpy.mock.calls.filter((args) =>
-        String(args[0]).includes("could not write update-check cache")
+        String(args[0]).includes("could not write update-check cache"),
       );
       expect(warnings.length).toBe(0);
 
@@ -614,7 +612,7 @@ describe("update-cache", () => {
         writeUpgradeMarker(MARKER_DATA);
 
         const warnings = stderrSpy.mock.calls.filter((args) =>
-          String(args[0]).includes("could not write upgrade marker")
+          String(args[0]).includes("could not write upgrade marker"),
         );
         expect(warnings.length).toBe(1);
 
@@ -634,7 +632,7 @@ describe("update-cache", () => {
 
         expect(existsSync(fallbackMarkerPath())).toBe(false);
         const warning = stderrSpy.mock.calls.find((args) =>
-          String(args[0]).includes("could not write upgrade marker")
+          String(args[0]).includes("could not write upgrade marker"),
         );
         expect(warning).toBeDefined();
         expect(String(warning![0])).toContain("ENOSPC");
@@ -749,7 +747,7 @@ describe("update-cache", () => {
         readAndClearUpgradeMarker();
 
         const warnings = stderrSpy.mock.calls.filter((args) =>
-          String(args[0]).includes("could not clear upgrade marker")
+          String(args[0]).includes("could not clear upgrade marker"),
         );
         expect(warnings.length).toBe(1);
 
@@ -800,16 +798,14 @@ describe("update-cache", () => {
       mkdirSync(evil, { recursive: true });
       symlinkSync(evil, fallbackDir());
 
-      const stderrSpy = vi
-        .spyOn(process.stderr, "write")
-        .mockImplementation(() => true);
+      const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
       const { ensureFallbackDir } = await importModule();
       const res = ensureFallbackDir(true);
       expect(res).toEqual({ usable: false, reason: "symlink" });
       expect(
         stderrSpy.mock.calls.some((a) =>
-          String(a[0]).includes("refusing fallback state directory")
-        )
+          String(a[0]).includes("refusing fallback state directory"),
+        ),
       ).toBe(true);
       stderrSpy.mockRestore();
     });
@@ -854,14 +850,10 @@ describe("update-cache", () => {
     });
 
     it("reports the fallback as absent without warning when the directory is missing", async () => {
-      const stderrSpy = vi
-        .spyOn(process.stderr, "write")
-        .mockImplementation(() => true);
+      const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
       const { ensureFallbackDir } = await importModule();
       expect(ensureFallbackDir(false)).toEqual({ usable: false, reason: "absent" });
-      expect(
-        stderrSpy.mock.calls.some((a) => String(a[0]).includes("refusing"))
-      ).toBe(false);
+      expect(stderrSpy.mock.calls.some((a) => String(a[0]).includes("refusing"))).toBe(false);
       stderrSpy.mockRestore();
     });
 
@@ -870,15 +862,13 @@ describe("update-cache", () => {
       mkdirSync(evil, { recursive: true });
       symlinkSync(evil, fallbackDir());
 
-      const stderrSpy = vi
-        .spyOn(process.stderr, "write")
-        .mockImplementation(() => true);
+      const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
       const { ensureFallbackDir } = await importModule();
       expect(ensureFallbackDir(true).reason).toBe("symlink");
       expect(ensureFallbackDir(false).reason).toBe("symlink");
       expect(ensureFallbackDir(true).reason).toBe("symlink");
       const warnings = stderrSpy.mock.calls.filter((a) =>
-        String(a[0]).includes("refusing fallback state directory")
+        String(a[0]).includes("refusing fallback state directory"),
       );
       expect(warnings.length).toBe(1);
       stderrSpy.mockRestore();
@@ -900,11 +890,7 @@ describe("update-cache", () => {
 
     it("readCache ignores a symlinked fallback directory and uses the primary", async () => {
       mkdirSync(stateDir(), { recursive: true });
-      writeFileSync(
-        cachePath(),
-        "UP_TO_DATE\n" + JSON.stringify(OK_PAYLOAD) + "\n",
-        "utf-8"
-      );
+      writeFileSync(cachePath(), "UP_TO_DATE\n" + JSON.stringify(OK_PAYLOAD) + "\n", "utf-8");
       const evil = join(tempHome, "evil");
       mkdirSync(evil, { recursive: true });
       symlinkSync(evil, fallbackDir());
@@ -965,11 +951,7 @@ describe("update-cache", () => {
 
       it("returns null when wrong field type", async () => {
         mkdirSync(stateDir(), { recursive: true });
-        writeFileSync(
-          remotePath(),
-          '{"mthds_agent_latest":42,"plugin_latest":null}',
-          "utf-8",
-        );
+        writeFileSync(remotePath(), '{"mthds_agent_latest":42,"plugin_latest":null}', "utf-8");
         const { readRemoteCache } = await importModule();
         expect(readRemoteCache()).toBeNull();
       });

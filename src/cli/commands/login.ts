@@ -14,7 +14,7 @@ export async function login(): Promise<void> {
 
     if (!isPipelexInstalled()) {
       p.log.error(
-        "pipelex was installed but is not reachable. Make sure the uv tools bin directory is in your PATH."
+        "pipelex was installed but is not reachable. Make sure the uv tools bin directory is in your PATH.",
       );
       process.exit(1);
     }
@@ -28,9 +28,7 @@ export async function login(): Promise<void> {
     const child = spawn("pipelex", ["login", "--no-logo"], {
       stdio: "inherit",
     });
-    child.on("error", (err) =>
-      reject(new Error(`pipelex not found: ${err.message}`))
-    );
+    child.on("error", (err) => reject(new Error(`pipelex not found: ${err.message}`)));
     child.on("close", (code) => {
       if (code === 0) {
         resolve();

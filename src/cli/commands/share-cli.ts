@@ -55,7 +55,9 @@ export async function shareMethod(options: {
       process.exit(1);
     }
 
-    s.message(`Resolving methods from ${parsed.org}/${parsed.repo}${parsed.subpath ? `/${parsed.subpath}` : ""}...`);
+    s.message(
+      `Resolving methods from ${parsed.org}/${parsed.repo}${parsed.subpath ? `/${parsed.subpath}` : ""}...`,
+    );
     try {
       resolved = await resolveFromGitHub(parsed);
     } catch (err) {
@@ -79,7 +81,7 @@ export async function shareMethod(options: {
     if (!match) {
       const available = resolved.methods.map((m) => m.name).join(", ");
       p.log.error(
-        `Method "${methodFilter}" not found. Available methods: ${available || "(none)"}`
+        `Method "${methodFilter}" not found. Available methods: ${available || "(none)"}`,
       );
       p.outro("");
       process.exit(1);
@@ -127,7 +129,11 @@ export async function shareMethod(options: {
           p.outro("Done");
           return;
         }
-        p.log.warning(chalk.yellow("No methods selected. Use space to toggle selection, then press enter to confirm."));
+        p.log.warning(
+          chalk.yellow(
+            "No methods selected. Use space to toggle selection, then press enter to confirm.",
+          ),
+        );
         continue;
       }
       selected = result;
@@ -171,7 +177,11 @@ export async function shareMethod(options: {
         p.outro("Done");
         return;
       }
-      p.log.warning(chalk.yellow("No platforms selected. Use space to toggle selection, then press enter to confirm."));
+      p.log.warning(
+        chalk.yellow(
+          "No platforms selected. Use space to toggle selection, then press enter to confirm.",
+        ),
+      );
       continue;
     }
     sharePlatforms = result;
@@ -191,6 +201,8 @@ export async function shareMethod(options: {
     }
   }
 
-  p.log.success(`Opened ${sharePlatforms.length} browser tab${sharePlatforms.length !== 1 ? "s" : ""}.`);
+  p.log.success(
+    `Opened ${sharePlatforms.length} browser tab${sharePlatforms.length !== 1 ? "s" : ""}.`,
+  );
   p.outro("Done");
 }

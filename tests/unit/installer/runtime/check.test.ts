@@ -5,10 +5,7 @@ vi.mock("node:child_process", () => ({
 }));
 
 import { execFileSync } from "node:child_process";
-import {
-  isBinaryInstalled,
-  isPipelexInstalled,
-} from "../../../../src/installer/runtime/check.js";
+import { isBinaryInstalled, isPipelexInstalled } from "../../../../src/installer/runtime/check.js";
 
 const mockedExecFileSync = vi.mocked(execFileSync);
 
@@ -37,11 +34,6 @@ describe("isPipelexInstalled", () => {
   it("checks for pipelex binary", () => {
     mockedExecFileSync.mockReturnValue(Buffer.from(""));
     isPipelexInstalled();
-    expect(mockedExecFileSync).toHaveBeenCalledWith(
-      "pipelex",
-      ["--version"],
-      { stdio: "ignore" }
-    );
+    expect(mockedExecFileSync).toHaveBeenCalledWith("pipelex", ["--version"], { stdio: "ignore" });
   });
 });
-

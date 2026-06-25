@@ -95,8 +95,7 @@ export const STATE_DIR = join(homedir(), ".mthds", "state");
 /** uid of the current process, or null on Windows where `process.getuid` is
  *  absent. The /tmp symlink/TOCTOU hardening is POSIX-specific; on Windows the
  *  fallback keeps the legacy unsuffixed name and skips the strict checks. */
-const FALLBACK_UID: number | null =
-  typeof process.getuid === "function" ? process.getuid() : null;
+const FALLBACK_UID: number | null = typeof process.getuid === "function" ? process.getuid() : null;
 
 /** Fallback state directory, used when STATE_DIR is not writable (Codex's
  *  workspaceWrite sandbox). The name carries the current uid so that multiple
@@ -115,8 +114,7 @@ const O_NOFOLLOW = fsConstants.O_NOFOLLOW ?? 0;
 /** Flags for a create-or-truncate write — equivalent to the default `"w"`
  *  (O_WRONLY|O_CREAT|O_TRUNC) plus O_NOFOLLOW, so a hijacked leaf symlink is
  *  rejected instead of followed. */
-const WRITE_FLAGS =
-  fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_TRUNC | O_NOFOLLOW;
+const WRITE_FLAGS = fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_TRUNC | O_NOFOLLOW;
 
 const PRIMARY_CACHE_PATH = join(STATE_DIR, "last-update-check");
 const PRIMARY_MARKER_PATH = join(STATE_DIR, "just-upgraded-from");
@@ -144,16 +142,9 @@ export const TTL_REMOTE_FETCH_PARTIAL_MS = 60 * MS_PER_MINUTE; // 1h
 // replaying the announcement on every update-check.
 const MARKER_TTL_MS = 60 * MS_PER_MINUTE; // 60 min
 
-const VALID_AGGREGATES: ReadonlySet<string> = new Set([
-  "UP_TO_DATE",
-  "UPGRADE_AVAILABLE",
-]);
+const VALID_AGGREGATES: ReadonlySet<string> = new Set(["UP_TO_DATE", "UPGRADE_AVAILABLE"]);
 
-export const SANDBOX_WRITE_ERRORS: ReadonlySet<string> = new Set([
-  "EPERM",
-  "EACCES",
-  "EROFS",
-]);
+export const SANDBOX_WRITE_ERRORS: ReadonlySet<string> = new Set(["EPERM", "EACCES", "EROFS"]);
 
 /** Fallback-dir refusal reasons that indicate possible tampering (as opposed
  *  to a benign "not there yet" / transient error). These get a one-shot
@@ -253,7 +244,7 @@ function emitFallbackUnsafeWarning(reason: FallbackDirReason): void {
     "insecure-tmp": `its parent ${tmpdir()} is world-writable without the sticky bit`,
   };
   process.stderr.write(
-    `Warning: refusing fallback state directory ${FALLBACK_DIR} — ${why[reason] ?? reason}. Update state will not be cached this run.\n`
+    `Warning: refusing fallback state directory ${FALLBACK_DIR} — ${why[reason] ?? reason}. Update state will not be cached this run.\n`,
   );
 }
 
@@ -388,8 +379,7 @@ function readCacheAt(path: string): CacheAttempt | null {
     return null;
   }
 
-  const ttl =
-    aggregate === "UP_TO_DATE" ? TTL_UP_TO_DATE_MS : TTL_UPGRADE_AVAILABLE_MS;
+  const ttl = aggregate === "UP_TO_DATE" ? TTL_UP_TO_DATE_MS : TTL_UPGRADE_AVAILABLE_MS;
   const age = Date.now() - mtimeMs;
   // Negative age beyond 1 minute means clock skew — treat as expired
   if (age < -MS_PER_MINUTE || age > ttl) return null;
@@ -411,14 +401,10 @@ function readCacheAt(path: string): CacheAttempt | null {
  */
 export function readCache(): CacheResult | null {
   const primary = readCacheAt(PRIMARY_CACHE_PATH);
-  const fallback = ensureFallbackDir(false).usable
-    ? readCacheAt(FALLBACK_CACHE_PATH)
-    : null;
+  const fallback = ensureFallbackDir(false).usable ? readCacheAt(FALLBACK_CACHE_PATH) : null;
   if (!primary) return fallback?.result ?? null;
   if (!fallback) return primary.result;
-  return fallback.mtimeMs > primary.mtimeMs
-    ? fallback.result
-    : primary.result;
+  return fallback.mtimeMs > primary.mtimeMs ? fallback.result : primary.result;
 }
 
 export interface WriteAttempt {
@@ -489,9 +475,7 @@ export function writeWithFallback(
   if (primary.code && SANDBOX_WRITE_ERRORS.has(primary.code)) {
     const dir = ensureFallbackDir(true);
     if (!dir.usable) {
-      const fallbackCode = SUSPICIOUS_REASONS.has(dir.reason)
-        ? `unsafe:${dir.reason}`
-        : dir.reason;
+      const fallbackCode = SUSPICIOUS_REASONS.has(dir.reason) ? `unsafe:${dir.reason}` : dir.reason;
       return { ok: false, code: primary.code, fallbackCode };
     }
     try {
@@ -511,15 +495,9 @@ export function writeWithFallback(
  * falls back to $TMPDIR. Both failing emits at most one warning per process.
  */
 export function writeCache(result: CacheResult): void {
-  const content =
-    result.aggregate + "\n" + JSON.stringify(result.payload) + "\n";
+  const content = result.aggregate + "\n" + JSON.stringify(result.payload) + "\n";
 
-  const res = writeWithFallback(
-    STATE_DIR,
-    PRIMARY_CACHE_PATH,
-    FALLBACK_CACHE_PATH,
-    content,
-  );
+  const res = writeWithFallback(STATE_DIR, PRIMARY_CACHE_PATH, FALLBACK_CACHE_PATH, content);
   if (res.ok) return;
   emitWriteWarning(res.code, res.fallbackCode);
 }
@@ -531,7 +509,7 @@ function emitWriteWarning(primaryCode?: string, fallbackCode?: string): void {
     ? `primary=${primaryCode ?? "?"}, fallback=${fallbackCode}`
     : (primaryCode ?? "?");
   process.stderr.write(
-    `Warning: could not write update-check cache (${detail}). Check will run again next time.\n`
+    `Warning: could not write update-check cache (${detail}). Check will run again next time.\n`,
   );
 }
 
@@ -586,7 +564,7 @@ function emitMarkerWriteWarning(primaryCode?: string, fallbackCode?: string): vo
     ? `primary=${primaryCode ?? "?"}, fallback=${fallbackCode}`
     : (primaryCode ?? "?");
   process.stderr.write(
-    `Warning: could not write upgrade marker (${detail}). The next update-check may not announce the upgrade.\n`
+    `Warning: could not write upgrade marker (${detail}). The next update-check may not announce the upgrade.\n`,
   );
 }
 
@@ -678,7 +656,7 @@ export function readAndClearUpgradeMarker(): Record<string, unknown> | null {
   if ((!primaryCleared || !fallbackCleared) && !warnedAboutMarkerClear) {
     warnedAboutMarkerClear = true;
     process.stderr.write(
-      `Warning: could not clear upgrade marker (primary=${primaryCleared ? "ok" : "blocked"}, fallback=${fallbackCleared ? "ok" : "blocked"}). It will be ignored after ${MARKER_TTL_MS / MS_PER_MINUTE}min.\n`
+      `Warning: could not clear upgrade marker (primary=${primaryCleared ? "ok" : "blocked"}, fallback=${fallbackCleared ? "ok" : "blocked"}). It will be ignored after ${MARKER_TTL_MS / MS_PER_MINUTE}min.\n`,
     );
   }
 
@@ -720,10 +698,7 @@ interface RemoteReadAttempt {
   mtimeMs: number;
 }
 
-function readRemoteAt(
-  path: string,
-  enforceTtl: boolean,
-): RemoteReadAttempt | null {
+function readRemoteAt(path: string, enforceTtl: boolean): RemoteReadAttempt | null {
   let mtimeMs: number;
   let content: string;
   try {
@@ -750,8 +725,7 @@ function readRemoteAt(
     // The complete path keeps the full 24h TTL — successful upstream data is
     // long-lived. The raw reader (enforceTtl=false) ignores both TTLs because
     // its caller only wants the prior payload to preserve working halves.
-    const isPartial =
-      parsed.mthds_agent_latest === null || parsed.plugin_latest === null;
+    const isPartial = parsed.mthds_agent_latest === null || parsed.plugin_latest === null;
     const ttl = isPartial ? TTL_REMOTE_FETCH_PARTIAL_MS : TTL_REMOTE_FETCH_MS;
     if (age > ttl) return null;
   }
@@ -769,9 +743,7 @@ function readRemoteEither(enforceTtl: boolean): RemoteCachePayload | null {
     : null;
   if (!primary) return fallback?.payload ?? null;
   if (!fallback) return primary.payload;
-  return fallback.mtimeMs > primary.mtimeMs
-    ? fallback.payload
-    : primary.payload;
+  return fallback.mtimeMs > primary.mtimeMs ? fallback.payload : primary.payload;
 }
 
 /**
@@ -799,12 +771,7 @@ export function readRemoteCacheRaw(): RemoteCachePayload | null {
  */
 export function writeRemoteCache(payload: RemoteCachePayload): void {
   const content = JSON.stringify(payload) + "\n";
-  const res = writeWithFallback(
-    STATE_DIR,
-    PRIMARY_REMOTE_PATH,
-    FALLBACK_REMOTE_PATH,
-    content,
-  );
+  const res = writeWithFallback(STATE_DIR, PRIMARY_REMOTE_PATH, FALLBACK_REMOTE_PATH, content);
   if (res.ok) return;
   emitRemoteWriteWarning(res.code, res.fallbackCode);
 }
@@ -816,7 +783,7 @@ function emitRemoteWriteWarning(primaryCode?: string, fallbackCode?: string): vo
     ? `primary=${primaryCode ?? "?"}, fallback=${fallbackCode}`
     : (primaryCode ?? "?");
   process.stderr.write(
-    `Warning: could not write remote-version cache (${detail}). Upstream check will run again next time.\n`
+    `Warning: could not write remote-version cache (${detail}). Upstream check will run again next time.\n`,
   );
 }
 

@@ -46,13 +46,8 @@ interface AgentRunOptions {
   libraryDir?: string[];
 }
 
-async function agentRunTarget(
-  options: AgentRunOptions,
-  fallbackMsg: string
-): Promise<void> {
-  const libraryDirs = options.libraryDir?.length
-    ? options.libraryDir
-    : undefined;
+async function agentRunTarget(options: AgentRunOptions, fallbackMsg: string): Promise<void> {
+  const libraryDirs = options.libraryDir?.length ? options.libraryDir : undefined;
 
   let runner;
   try {
@@ -79,32 +74,23 @@ async function agentRunTarget(
   });
 }
 
-export async function agentRunMethod(
-  _name: string,
-  options: AgentRunOptions
-): Promise<void> {
+export async function agentRunMethod(_name: string, options: AgentRunOptions): Promise<void> {
   return agentRunTarget(
     options,
-    "Method target is not yet supported for the API runner. Use 'mthds-agent run pipe <target>' instead, or specify a different runner with --runner <name>."
+    "Method target is not yet supported for the API runner. Use 'mthds-agent run pipe <target>' instead, or specify a different runner with --runner <name>.",
   );
 }
 
-export async function agentRunPipe(
-  _target: string,
-  options: AgentRunOptions
-): Promise<void> {
+export async function agentRunPipe(_target: string, options: AgentRunOptions): Promise<void> {
   return agentRunTarget(
     options,
-    "Pipe target is not yet supported for the API runner via mthds-agent. Use the pipelex runner with --runner pipelex."
+    "Pipe target is not yet supported for the API runner via mthds-agent. Use the pipelex runner with --runner pipelex.",
   );
 }
 
-export async function agentRunBundle(
-  _target: string,
-  options: AgentRunOptions
-): Promise<void> {
+export async function agentRunBundle(_target: string, options: AgentRunOptions): Promise<void> {
   return agentRunTarget(
     options,
-    "Bundle target is only supported with the pipelex runner. Specify --runner pipelex."
+    "Bundle target is only supported with the pipelex runner. Specify --runner pipelex.",
   );
 }

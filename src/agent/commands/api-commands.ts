@@ -8,7 +8,13 @@
 import { Command, Option } from "commander";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { agentError, agentSuccess, agentMarkdownSuccess, agentMarkdownError, AGENT_ERROR_DOMAINS } from "../output.js";
+import {
+  agentError,
+  agentSuccess,
+  agentMarkdownSuccess,
+  agentMarkdownError,
+  AGENT_ERROR_DOMAINS,
+} from "../output.js";
 import { isApiRunner } from "../../cli/commands/utils.js";
 import type { Runner } from "../../runners/types.js";
 import type { StartOptions } from "../../protocol/options.js";
@@ -20,11 +26,7 @@ import { ApiResponseError, RunFailedError, RunTimeoutError } from "../../runners
  * Register all API-runner commands on the program.
  * Only called when --runner=api.
  */
-export function registerApiRunnerCommands(
-  program: Command,
-  makeRunner: () => Runner
-): void {
-
+export function registerApiRunnerCommands(program: Command, makeRunner: () => Runner): void {
   // ── concept ──
 
   program
@@ -140,12 +142,17 @@ export function registerApiRunnerCommands(
     .argument("[target]", "Bundle file (.mthds) or directory")
     .option("--allow-signatures", "Tolerate unimplemented pipe signatures")
     .option("--content <mthds>", "Bundle content as a string")
-    .addOption(new Option("--format <fmt>", "Success output format: markdown (default) or json").choices(["markdown", "json"]))
     .addOption(
-      new Option("--error-format <fmt>", "Error output format (defaults to --format): markdown or json").choices([
+      new Option("--format <fmt>", "Success output format: markdown (default) or json").choices([
         "markdown",
         "json",
-      ])
+      ]),
+    )
+    .addOption(
+      new Option(
+        "--error-format <fmt>",
+        "Error output format (defaults to --format): markdown or json",
+      ).choices(["markdown", "json"]),
     )
     .description("Validate a bundle file or content")
     .allowUnknownOption()
@@ -154,7 +161,12 @@ export function registerApiRunnerCommands(
     .action(
       async (
         target: string | undefined,
-        options: { allowSignatures?: boolean; content?: string; format?: string; errorFormat?: string }
+        options: {
+          allowSignatures?: boolean;
+          content?: string;
+          format?: string;
+          errorFormat?: string;
+        },
       ) => {
         const runner = safeCreateRunner(makeRunner);
         const mthdsContent = resolveContent(target, options.content);
@@ -166,46 +178,56 @@ export function registerApiRunnerCommands(
           options.allowSignatures ?? false,
           mthdsSources,
           options.format,
-          options.errorFormat
+          options.errorFormat,
         );
-      }
+      },
     );
 
   validateGroup
     .command("pipe")
     .argument("<target>", ".mthds bundle file")
     .option("--allow-signatures", "Tolerate unimplemented pipe signatures")
-    .addOption(new Option("--format <fmt>", "Success output format: markdown (default) or json").choices(["markdown", "json"]))
     .addOption(
-      new Option("--error-format <fmt>", "Error output format (defaults to --format): markdown or json").choices([
+      new Option("--format <fmt>", "Success output format: markdown (default) or json").choices([
         "markdown",
         "json",
-      ])
+      ]),
+    )
+    .addOption(
+      new Option(
+        "--error-format <fmt>",
+        "Error output format (defaults to --format): markdown or json",
+      ).choices(["markdown", "json"]),
     )
     .description("Validate a bundle file (protocol validate covers every pipe in it)")
     .allowUnknownOption()
     .allowExcessArguments(true)
     .exitOverride()
-    .action(async (target: string, options: { allowSignatures?: boolean; format?: string; errorFormat?: string }) => {
-      const runner = safeCreateRunner(makeRunner);
-      if (!target.endsWith(".mthds")) {
-        agentError(
-          "Validating a bare pipe code is not supported via the API runner — the protocol validate takes bundle contents. Pass a .mthds file.",
-          "ArgumentError",
-          { error_domain: AGENT_ERROR_DOMAINS.ARGUMENT }
+    .action(
+      async (
+        target: string,
+        options: { allowSignatures?: boolean; format?: string; errorFormat?: string },
+      ) => {
+        const runner = safeCreateRunner(makeRunner);
+        if (!target.endsWith(".mthds")) {
+          agentError(
+            "Validating a bare pipe code is not supported via the API runner — the protocol validate takes bundle contents. Pass a .mthds file.",
+            "ArgumentError",
+            { error_domain: AGENT_ERROR_DOMAINS.ARGUMENT },
+          );
+          return;
+        }
+        const mthdsContent = readFileOrError(target);
+        await runProtocolValidate(
+          runner,
+          [mthdsContent],
+          options.allowSignatures ?? false,
+          [target],
+          options.format,
+          options.errorFormat,
         );
-        return;
-      }
-      const mthdsContent = readFileOrError(target);
-      await runProtocolValidate(
-        runner,
-        [mthdsContent],
-        options.allowSignatures ?? false,
-        [target],
-        options.format,
-        options.errorFormat
-      );
-    });
+      },
+    );
 
   validateGroup
     .command("method")
@@ -219,7 +241,7 @@ export function registerApiRunnerCommands(
       agentError(
         "'validate method' is not supported via the API runner — the protocol validate takes bundle contents, not a method URL. Pass a .mthds file to 'validate bundle', or use --runner pipelex.",
         "UnsupportedError",
-        { error_domain: AGENT_ERROR_DOMAINS.RUNNER }
+        { error_domain: AGENT_ERROR_DOMAINS.RUNNER },
       );
     });
 
@@ -285,7 +307,7 @@ export function registerApiRunnerCommands(
         agentError(
           "Pipe code without a bundle file is not supported yet. Provide a .mthds file.",
           "ArgumentError",
-          { error_domain: AGENT_ERROR_DOMAINS.ARGUMENT }
+          { error_domain: AGENT_ERROR_DOMAINS.ARGUMENT },
         );
       }
     });
@@ -299,11 +321,9 @@ export function registerApiRunnerCommands(
     .allowExcessArguments(true)
     .exitOverride()
     .action(async () => {
-      agentError(
-        "'inputs method' is not yet supported via the API runner.",
-        "UnsupportedError",
-        { error_domain: AGENT_ERROR_DOMAINS.RUNNER }
-      );
+      agentError("'inputs method' is not yet supported via the API runner.", "UnsupportedError", {
+        error_domain: AGENT_ERROR_DOMAINS.RUNNER,
+      });
     });
 
   // ── run ──
@@ -324,22 +344,27 @@ export function registerApiRunnerCommands(
     .allowExcessArguments(true)
     .exitOverride()
     .action(async () => {
-      agentError(
-        "'run method' is not yet supported via the API runner.",
-        "UnsupportedError",
-        { error_domain: AGENT_ERROR_DOMAINS.RUNNER }
-      );
+      agentError("'run method' is not yet supported via the API runner.", "UnsupportedError", {
+        error_domain: AGENT_ERROR_DOMAINS.RUNNER,
+      });
     });
 
   const runAction = async (
     target: string | undefined,
-    options: { pipe?: string; inputs?: string; content?: string; inputsJson?: string; dryRun?: boolean; mockInputs?: boolean }
+    options: {
+      pipe?: string;
+      inputs?: string;
+      content?: string;
+      inputsJson?: string;
+      dryRun?: boolean;
+      mockInputs?: boolean;
+    },
   ): Promise<void> => {
     if (options.dryRun || options.mockInputs) {
       agentError(
         "--dry-run and --mock-inputs are not yet supported via the API runner.",
         "UnsupportedError",
-        { error_domain: AGENT_ERROR_DOMAINS.RUNNER }
+        { error_domain: AGENT_ERROR_DOMAINS.RUNNER },
       );
     }
     const runner = safeCreateRunner(makeRunner);
@@ -413,9 +438,15 @@ export function registerApiRunnerCommands(
     .option("-i, --inputs <file>", "Path to JSON inputs file")
     .option("--content <mthds>", "Bundle content as a string")
     .option("--inputs-json <json>", "Inputs as a JSON string")
-    .option("--extra <json>", "Server-specific extension args as a JSON object (e.g. a stored-method run) — forwarded to the runner verbatim")
+    .option(
+      "--extra <json>",
+      "Server-specific extension args as a JSON object (e.g. a stored-method run) — forwarded to the runner verbatim",
+    )
     .option("--output-name <name>", "Name of the output slot to write to")
-    .option("--output-multiplicity <value>", "Output multiplicity: 'false', 'true', or an exact count")
+    .option(
+      "--output-multiplicity <value>",
+      "Output multiplicity: 'false', 'true', or an exact count",
+    )
     .option("--dynamic-output <concept_ref>", "Override for the dynamic output concept ref")
     .description("Start a run and return its id without waiting")
     .allowUnknownOption()
@@ -433,7 +464,7 @@ export function registerApiRunnerCommands(
           outputName?: string;
           outputMultiplicity?: string;
           dynamicOutput?: string;
-        }
+        },
       ): Promise<void> => {
         const runner = safeCreateRunner(makeRunner);
         const startOptions = resolveStartOptions(target, options);
@@ -445,7 +476,7 @@ export function registerApiRunnerCommands(
             error_domain: AGENT_ERROR_DOMAINS.RUNNER,
           });
         }
-      }
+      },
     );
 
   // ── run status ──
@@ -531,10 +562,7 @@ export function registerApiRunnerCommands(
     .allowExcessArguments(true)
     .exitOverride()
     .action(
-      async (
-        runId: string,
-        options: { interval?: string; timeout?: string }
-      ): Promise<void> => {
+      async (runId: string, options: { interval?: string; timeout?: string }): Promise<void> => {
         const runner = safeCreateRunner(makeRunner);
         const intervalMs = parsePositiveSeconds(options.interval, "--interval");
         const timeoutMs = parsePositiveSeconds(options.timeout, "--timeout");
@@ -583,7 +611,7 @@ export function registerApiRunnerCommands(
         } finally {
           process.removeListener("SIGINT", onSigint);
         }
-      }
+      },
     );
 
   // ── models ──
@@ -625,7 +653,7 @@ export function registerApiRunnerCommands(
       agentError(
         "check-model is not available on the API runner — the MTHDS API has no check-model route. It is a local capability of the pipelex runner: re-run with --runner pipelex. To list what the API can route to, use: mthds-agent models",
         "UnsupportedError",
-        { error_domain: AGENT_ERROR_DOMAINS.RUNNER }
+        { error_domain: AGENT_ERROR_DOMAINS.RUNNER },
       );
     });
 }
@@ -678,7 +706,7 @@ function resolveContent(target: string | undefined, content: string | undefined)
 
 function resolveContentForRun(
   target: string | undefined,
-  options: { content?: string; inputs?: string; inputsJson?: string }
+  options: { content?: string; inputs?: string; inputsJson?: string },
 ): string {
   if (options.content) return options.content;
   if (!target) {
@@ -742,7 +770,7 @@ function resolveStartOptions(
     outputMultiplicity?: string;
     dynamicOutput?: string;
     extra?: string;
-  }
+  },
 ): StartOptions {
   const outputs = {
     output_name: options.outputName,
@@ -761,7 +789,13 @@ function resolveStartOptions(
   // resolve the bundle before reading inputs.
   const mthdsContent = resolveContentForRun(target, options);
   const pipeCode = resolvePipeCode(mthdsContent, options.pipe);
-  return { pipe_code: pipeCode, mthds_contents: [mthdsContent], inputs: resolveRunInputs(options), ...outputs, extra };
+  return {
+    pipe_code: pipeCode,
+    mthds_contents: [mthdsContent],
+    inputs: resolveRunInputs(options),
+    ...outputs,
+    extra,
+  };
 }
 
 /** Parse `--extra <json>` into the generic extension passthrough — a JSON object of server-defined args. */
@@ -787,7 +821,7 @@ function parseMultiplicity(raw: string | undefined): boolean | number | undefine
   agentError(
     "--output-multiplicity must be 'true', 'false', or a positive integer.",
     "ArgumentError",
-    { error_domain: AGENT_ERROR_DOMAINS.ARGUMENT }
+    { error_domain: AGENT_ERROR_DOMAINS.ARGUMENT },
   );
   throw new Error("unreachable");
 }
@@ -810,11 +844,9 @@ function parseModelCategory(raw: string | undefined): ModelCategory | undefined 
   if ((MODEL_CATEGORIES as readonly string[]).includes(raw)) {
     return raw as ModelCategory;
   }
-  agentError(
-    `--type must be one of: ${MODEL_CATEGORIES.join(", ")}.`,
-    "ArgumentError",
-    { error_domain: AGENT_ERROR_DOMAINS.ARGUMENT }
-  );
+  agentError(`--type must be one of: ${MODEL_CATEGORIES.join(", ")}.`, "ArgumentError", {
+    error_domain: AGENT_ERROR_DOMAINS.ARGUMENT,
+  });
   throw new Error("unreachable");
 }
 
@@ -845,7 +877,7 @@ export async function runProtocolValidate(
   allowSignatures: boolean,
   mthdsSources?: string[],
   outputFormat?: string,
-  errorFormat?: string
+  errorFormat?: string,
 ): Promise<void> {
   const successWantsMarkdown = normValidateFormat(outputFormat) === "markdown";
   const errorWantsMarkdown = normValidateFormat(errorFormat ?? outputFormat) === "markdown";
@@ -864,7 +896,9 @@ export async function runProtocolValidate(
     // (the pure-protocol union does not declare it).
     const renderedMarkdownRaw = (report as { rendered_markdown?: unknown }).rendered_markdown;
     const renderedMarkdown =
-      typeof renderedMarkdownRaw === "string" && renderedMarkdownRaw.length > 0 ? renderedMarkdownRaw : undefined;
+      typeof renderedMarkdownRaw === "string" && renderedMarkdownRaw.length > 0
+        ? renderedMarkdownRaw
+        : undefined;
     if (report.is_valid === false) {
       if (errorWantsMarkdown && renderedMarkdown !== undefined) {
         agentMarkdownError(renderedMarkdown);

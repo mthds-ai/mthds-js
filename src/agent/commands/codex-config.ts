@@ -339,9 +339,7 @@ export function inspectCodexConfig(): CodexConfigInspection {
 
 // ── Main ───────────────────────────────────────────────────────────
 
-export async function agentCodexApplyConfig(
-  options: ApplyConfigOptions = {},
-): Promise<void> {
+export async function agentCodexApplyConfig(options: ApplyConfigOptions = {}): Promise<void> {
   const file = configFilePath();
   const checkMode = options.check === true;
   const dryRunMode = options.dryRun === true;
@@ -432,11 +430,9 @@ export async function agentCodexApplyConfig(
       // intermediate state throws here too — caught the same way.
       parseToml(nextRaw);
     } catch (err) {
-      agentError(
-        `Generated config would not re-parse: ${(err as Error).message}`,
-        "ConfigError",
-        { error_domain: AGENT_ERROR_DOMAINS.CONFIG },
-      );
+      agentError(`Generated config would not re-parse: ${(err as Error).message}`, "ConfigError", {
+        error_domain: AGENT_ERROR_DOMAINS.CONFIG,
+      });
       return;
     }
   }
@@ -451,9 +447,7 @@ export async function agentCodexApplyConfig(
     // parse_error counts: a real apply against an unreadable hooks.json would
     // surface a hard error, so dry-run must not report ALREADY_OK for it.
     const wouldChange =
-      changes.length > 0 ||
-      legacy.has_legacy_entry ||
-      legacy.parse_error !== undefined;
+      changes.length > 0 || legacy.has_legacy_entry || legacy.parse_error !== undefined;
     agentSuccess({
       status: wouldChange ? "WOULD_APPLY" : "ALREADY_OK",
       config_file: file,

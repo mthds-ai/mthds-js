@@ -148,13 +148,19 @@ export function parseAgentErrorEnvelope(text: string): AgentErrorEnvelope | unde
 }
 
 /** Build an agent-facing reason from the structured envelope: the message plus a compact error list. */
-export function formatValidationReason(file: string, envelope: AgentErrorEnvelope, fallback: string): string {
+export function formatValidationReason(
+  file: string,
+  envelope: AgentErrorEnvelope,
+  fallback: string,
+): string {
   const message = safeStr(envelope.message).trim() || fallback;
   // Guard against a malformed / version-skewed envelope: `validation_errors` may be a
   // non-array (→ `.map` crash) and individual items may be null/non-objects (→ field-access
   // crash). Keep only real objects so a malformed envelope still produces a clean block.
   const rawErrors = Array.isArray(envelope.validation_errors) ? envelope.validation_errors : [];
-  const errors = rawErrors.filter((item): item is AgentValidationErrorItem => typeof item === "object" && item !== null);
+  const errors = rawErrors.filter(
+    (item): item is AgentValidationErrorItem => typeof item === "object" && item !== null,
+  );
   if (errors.length === 0) return `Validation failed for ${file}:\n\n${message}`;
   const lines = errors.map((item) => {
     const locators = [
@@ -175,10 +181,7 @@ export function formatValidationReason(file: string, envelope: AgentErrorEnvelop
 export function truncateForAdditionalContext(text: string): string {
   if (text.length <= ADDITIONAL_CONTEXT_MAX_LEN) return text;
   const omitted = text.length - ADDITIONAL_CONTEXT_MAX_LEN;
-  return (
-    text.slice(0, ADDITIONAL_CONTEXT_MAX_LEN) +
-    `\n\n[truncated, ${omitted} chars omitted]`
-  );
+  return text.slice(0, ADDITIONAL_CONTEXT_MAX_LEN) + `\n\n[truncated, ${omitted} chars omitted]`;
 }
 
 export type Stage3Outcome =
@@ -197,10 +200,7 @@ export type Stage3Outcome =
  *   reason built from the envelope's `message` + `validation_errors`
  * - unparseable / empty stderr      → block with a generic reason
  */
-export function classifyStage3Result(
-  file: string,
-  result: PipelexValidateResult
-): Stage3Outcome {
+export function classifyStage3Result(file: string, result: PipelexValidateResult): Stage3Outcome {
   if (result.exitCode === 0) return { kind: "pass" };
 
   const envelope = parseAgentErrorEnvelope(result.stderr);
@@ -228,7 +228,9 @@ export function classifyStage3Result(
 
   return {
     kind: "block",
-    reason: truncateForAdditionalContext(formatValidationReason(file, envelope, result.stderr.trim())),
+    reason: truncateForAdditionalContext(
+      formatValidationReason(file, envelope, result.stderr.trim()),
+    ),
   };
 }
 
@@ -255,7 +257,7 @@ export function buildPathCandidates(
   name: string,
   pathEnv: string,
   platform: NodeJS.Platform,
-  pathExt: string | undefined
+  pathExt: string | undefined,
 ): string[] {
   if (!pathEnv) return [];
   const isWin = platform === "win32";
@@ -275,11 +277,7 @@ export function buildPathCandidates(
     if (!dir) continue;
     for (const ext of exts) {
       const fullName = `${name}${ext}`;
-      candidates.push(
-        dir.endsWith(pathSep)
-          ? `${dir}${fullName}`
-          : `${dir}${pathSep}${fullName}`
-      );
+      candidates.push(dir.endsWith(pathSep) ? `${dir}${fullName}` : `${dir}${pathSep}${fullName}`);
     }
   }
   return candidates;
@@ -300,7 +298,7 @@ export function commandOnPath(name: string): boolean {
     name,
     process.env.PATH ?? "",
     process.platform,
-    process.env.PATHEXT
+    process.env.PATHEXT,
   );
   for (const candidate of candidates) {
     try {
@@ -357,8 +355,19 @@ function runPlxt(args: string[]): PlxtRunResult {
 export function runPipelexValidate(file: string, libraryDir: string): PipelexValidateResult {
   const result = spawnSync(
     "pipelex-agent",
-    ["validate", "bundle", file, "-L", libraryDir, "--allow-signatures", "--format", "json", "--error-format", "json"],
-    { encoding: "utf8" }
+    [
+      "validate",
+      "bundle",
+      file,
+      "-L",
+      libraryDir,
+      "--allow-signatures",
+      "--format",
+      "json",
+      "--error-format",
+      "json",
+    ],
+    { encoding: "utf8" },
   );
   if (result.error) {
     return { exitCode: 127, stderr: result.error.message };
@@ -400,9 +409,7 @@ export async function runCodexHook(deps: CodexHookDeps): Promise<void> {
 
   if (!deps.hasPlxt()) {
     deps.emit(
-      buildBlockPayload(
-        `Missing required CLI tool: plxt (install via: ${PLXT_INSTALL_HINT})`
-      )
+      buildBlockPayload(`Missing required CLI tool: plxt (install via: ${PLXT_INSTALL_HINT})`),
     );
     return;
   }
@@ -410,8 +417,8 @@ export async function runCodexHook(deps: CodexHookDeps): Promise<void> {
   if (!deps.hasPipelexAgent()) {
     deps.emit(
       buildBlockPayload(
-        `Missing required CLI tool: pipelex-agent (install via: ${PIPELEX_AGENT_INSTALL_HINT})`
-      )
+        `Missing required CLI tool: pipelex-agent (install via: ${PIPELEX_AGENT_INSTALL_HINT})`,
+      ),
     );
     return;
   }

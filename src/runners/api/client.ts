@@ -144,7 +144,7 @@ export class MthdsApiClient extends BaseRunner implements Runner {
       throw new PipelineRequestError(
         `Invalid API base URL "${normalizedBaseUrl}": must be host-only ` +
           `(http/https, no path, query, fragment, or credentials). Endpoints ` +
-          `compose as {base}/v1/{endpoint}.`
+          `compose as {base}/v1/{endpoint}.`,
       );
     }
     this.baseUrl = normalizedBaseUrl;
@@ -174,7 +174,7 @@ export class MthdsApiClient extends BaseRunner implements Runner {
       body?: unknown;
       timeoutMs?: number;
       signal?: AbortSignal;
-    } = {}
+    } = {},
   ): Promise<RawResponse> {
     const headers: Record<string, string> = { Accept: "application/json" };
     if (this.apiToken) {
@@ -189,7 +189,7 @@ export class MthdsApiClient extends BaseRunner implements Runner {
     const controller = new AbortController();
     const timer = setTimeout(
       () => controller.abort(new DOMException("Request timed out.", "TimeoutError")),
-      timeoutMs
+      timeoutMs,
     );
     const userSignal = options.signal;
     const onUserAbort = (): void => controller.abort(userSignal?.reason);
@@ -219,7 +219,7 @@ export class MthdsApiClient extends BaseRunner implements Runner {
         `Could not reach MTHDS API at ${this.baseUrl} (${code ?? "network error"})`,
         this.baseUrl,
         code,
-        { cause: err }
+        { cause: err },
       );
     } finally {
       clearTimeout(timer);
@@ -240,11 +240,7 @@ export class MthdsApiClient extends BaseRunner implements Runner {
    * non-2xx response. Used by the build extensions and `health` — surfaces
    * that don't need the protocol's structured error taxonomy.
    */
-  private async requestJson<T>(
-    method: "GET" | "POST",
-    url: string,
-    body?: unknown
-  ): Promise<T> {
+  private async requestJson<T>(method: "GET" | "POST", url: string, body?: unknown): Promise<T> {
     const headers: Record<string, string> = { Accept: "application/json" };
     if (this.apiToken) {
       headers["Authorization"] = `Bearer ${this.apiToken}`;
@@ -259,9 +255,7 @@ export class MthdsApiClient extends BaseRunner implements Runner {
     });
     if (!res.ok) {
       const text = await res.text().catch(() => "");
-      throw new Error(
-        `API ${method} ${url} failed (${res.status}): ${text || res.statusText}`
-      );
+      throw new Error(`API ${method} ${url} failed (${res.status}): ${text || res.statusText}`);
     }
     return res.json() as Promise<T>;
   }
@@ -270,11 +264,7 @@ export class MthdsApiClient extends BaseRunner implements Runner {
     return this.requestJson("POST", this.url(path), body);
   }
 
-  private throwApiResponseError(
-    method: "GET" | "POST",
-    endpoint: string,
-    res: RawResponse
-  ): never {
+  private throwApiResponseError(method: "GET" | "POST", endpoint: string, res: RawResponse): never {
     const { errorType, serverMessage, validationErrors } = parseErrorBody(res.body);
     throw new ApiResponseError(
       `API ${method} /${API_PREFIX}/${endpoint} failed (${res.status}): ${serverMessage ?? (res.body || res.statusText)}`,
@@ -284,7 +274,7 @@ export class MthdsApiClient extends BaseRunner implements Runner {
       res.body,
       errorType,
       serverMessage,
-      validationErrors
+      validationErrors,
     );
   }
 
@@ -301,7 +291,7 @@ export class MthdsApiClient extends BaseRunner implements Runner {
       `The durable run lifecycle is not available: ${url} returned 404. Run polling is a ` +
         `hosted-API extension (/${API_PREFIX}/${RUNS}/*), not part of the MTHDS Protocol; ` +
         "MTHDS_API_URL points at a bare runner that does not serve it.",
-      this.baseUrl
+      this.baseUrl,
     );
   }
 
@@ -328,7 +318,7 @@ export class MthdsApiClient extends BaseRunner implements Runner {
         "running server-side. Poll its results (hosted) or use start().",
       runId,
       parseRetryAfter(res.headers),
-      res.headers.get("location")
+      res.headers.get("location"),
     );
   }
 
@@ -358,7 +348,7 @@ export class MthdsApiClient extends BaseRunner implements Runner {
       Object.keys(extensions).length === 0
     ) {
       throw new PipelineRequestError(
-        "Either pipe_code, mthds_contents or a server-specific extension arg (extra) must be provided to execute()."
+        "Either pipe_code, mthds_contents or a server-specific extension arg (extra) must be provided to execute().",
       );
     }
 
@@ -412,7 +402,7 @@ export class MthdsApiClient extends BaseRunner implements Runner {
       Object.keys(extensions).length === 0
     ) {
       throw new PipelineRequestError(
-        "Either pipe_code, mthds_contents or a server-specific extension arg (extra) must be provided to start()."
+        "Either pipe_code, mthds_contents or a server-specific extension arg (extra) must be provided to start().",
       );
     }
 
@@ -468,7 +458,7 @@ export class MthdsApiClient extends BaseRunner implements Runner {
     mthdsContents: string[],
     allowSignatures = false,
     mthdsSources?: string[],
-    render?: string[]
+    render?: string[],
   ): Promise<PipelexValidationResult> {
     const body: Record<string, unknown> = {
       mthds_contents: mthdsContents,
@@ -495,10 +485,12 @@ export class MthdsApiClient extends BaseRunner implements Runner {
    */
   async validateFiles(
     files: MthdsFile[],
-    options: ValidateFilesOptions = {}
+    options: ValidateFilesOptions = {},
   ): Promise<PipelexValidationResult> {
     if (files.length === 0) {
-      throw new PipelineRequestError("At least one MTHDS file must be provided to validateFiles().");
+      throw new PipelineRequestError(
+        "At least one MTHDS file must be provided to validateFiles().",
+      );
     }
 
     const mthdsContents = files.map((file) => file.content);
@@ -511,15 +503,13 @@ export class MthdsApiClient extends BaseRunner implements Runner {
       mthdsContents,
       options.allowSignatures ?? false,
       mthdsSources,
-      options.render
+      options.render,
     );
   }
 
   /** The model deck the runner can route to — `GET /v1/models[?type=]`. */
   async models(category?: ModelCategory): Promise<ModelDeck> {
-    const endpoint = category
-      ? `models?type=${encodeURIComponent(category)}`
-      : "models";
+    const endpoint = category ? `models?type=${encodeURIComponent(category)}` : "models";
     const res = await this.requestRaw("GET", this.url(endpoint), {
       timeoutMs: POLL_REQUEST_TIMEOUT_MS,
     });
@@ -603,7 +593,10 @@ export class MthdsApiClient extends BaseRunner implements Runner {
    * Throws `RunLifecycleUnavailableError` when the lifecycle routes are absent
    * (a bare runner).
    */
-  async getRunResult(runId: string, options: { signal?: AbortSignal } = {}): Promise<RunResultState> {
+  async getRunResult(
+    runId: string,
+    options: { signal?: AbortSignal } = {},
+  ): Promise<RunResultState> {
     const endpoint = `${RUNS}/${encodeURIComponent(runId)}/results`;
     const url = this.url(endpoint);
     const res = await this.requestRaw("GET", url, {
@@ -648,7 +641,9 @@ export class MthdsApiClient extends BaseRunner implements Runner {
       try {
         const info = await this.version();
         const impl = info.implementation;
-        this.lifecycleAvailable = !(typeof impl === "string" && impl === BARE_RUNNER_IMPLEMENTATION);
+        this.lifecycleAvailable = !(
+          typeof impl === "string" && impl === BARE_RUNNER_IMPLEMENTATION
+        );
       } catch {
         this.lifecycleAvailable = true;
       }
@@ -667,7 +662,7 @@ export class MthdsApiClient extends BaseRunner implements Runner {
    */
   override async startAndWaitForResult(
     options: StartOptions,
-    pollOptions?: WaitForResultOptions
+    pollOptions?: WaitForResultOptions,
   ): Promise<RunResults> {
     if (await this.supportsRunLifecycle()) {
       // A runner can look hosted yet lack the durable routes — `implementation`
@@ -746,12 +741,14 @@ const PROTOCOL_REQUEST_KEYS: ReadonlySet<string> = new Set([
  * request body as top-level properties; protocol args must be passed as named
  * options, never smuggled through `extra`.
  */
-function buildExtensions(extra: Record<string, unknown> | null | undefined): Record<string, unknown> {
+function buildExtensions(
+  extra: Record<string, unknown> | null | undefined,
+): Record<string, unknown> {
   if (!extra) return {};
   const overlap = Object.keys(extra).filter((key) => PROTOCOL_REQUEST_KEYS.has(key));
   if (overlap.length > 0) {
     throw new PipelineRequestError(
-      `extra carries protocol args [${overlap.sort().join(", ")}] — pass them as named options instead.`
+      `extra carries protocol args [${overlap.sort().join(", ")}] — pass them as named options instead.`,
     );
   }
   return { ...extra };

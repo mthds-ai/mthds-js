@@ -64,7 +64,10 @@ describe("legacy codex hook cleanup", () => {
     writeHooks({
       hooks: {
         PostToolUse: [
-          { matcher: "apply_patch", hooks: [{ type: "command", command: HOOK_COMMAND, timeout: 30 }] },
+          {
+            matcher: "apply_patch",
+            hooks: [{ type: "command", command: HOOK_COMMAND, timeout: 30 }],
+          },
         ],
       },
     });
@@ -117,7 +120,10 @@ describe("legacy codex hook cleanup", () => {
     writeHooks({
       hooks: {
         PostToolUse: [
-          { matcher: "apply_patch", hooks: [{ type: "command", command: HOOK_COMMAND, timeout: 30 }] },
+          {
+            matcher: "apply_patch",
+            hooks: [{ type: "command", command: HOOK_COMMAND, timeout: 30 }],
+          },
         ],
       },
     });
@@ -180,7 +186,10 @@ describe("legacy codex hook cleanup", () => {
         PreToolUse: [{ hooks: [{ type: "command", command: "echo before" }] }],
         PostToolUse: [
           { matcher: "Read", hooks: [{ type: "command", command: "echo unrelated" }] },
-          { matcher: "apply_patch", hooks: [{ type: "command", command: HOOK_COMMAND, timeout: 30 }] },
+          {
+            matcher: "apply_patch",
+            hooks: [{ type: "command", command: HOOK_COMMAND, timeout: 30 }],
+          },
         ],
         Stop: [{ hooks: [{ type: "command", command: "/some/other-tool.sh" }] }],
       },

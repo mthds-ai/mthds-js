@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdirSync, mkdtempSync, writeFileSync, existsSync, rmSync, readdirSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync, existsSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import {
@@ -34,9 +34,9 @@ describe("package-cache", () => {
     });
 
     it("throws PackageCacheError on path traversal", () => {
-      expect(() =>
-        getCachedPackagePath("../../etc/passwd", "1.0.0", cacheRoot),
-      ).toThrow(PackageCacheError);
+      expect(() => getCachedPackagePath("../../etc/passwd", "1.0.0", cacheRoot)).toThrow(
+        PackageCacheError,
+      );
     });
   });
 

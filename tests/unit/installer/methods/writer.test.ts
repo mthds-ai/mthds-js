@@ -5,7 +5,10 @@ import { tmpdir } from "node:os";
 import { writeMethodFiles } from "../../../../src/installer/methods/writer.js";
 import type { ResolvedRepo } from "../../../../src/package/manifest/types.js";
 
-function makeRepo(names: string[], files: { relativePath: string; content: string }[] = []): ResolvedRepo {
+function makeRepo(
+  names: string[],
+  files: { relativePath: string; content: string }[] = [],
+): ResolvedRepo {
   return {
     methods: names.map((name) => ({
       name,
@@ -29,28 +32,38 @@ function makeRepo(names: string[], files: { relativePath: string; content: strin
 
 describe("writeMethodFiles path traversal checks", () => {
   let testDir: string;
+  let originalHome: string | undefined;
 
   beforeEach(() => {
     testDir = join(tmpdir(), `mthds-writer-test-${Date.now()}`);
+    originalHome = process.env.HOME;
+    process.env.HOME = testDir;
     mkdirSync(testDir, { recursive: true });
   });
 
   afterEach(() => {
+    if (originalHome === undefined) delete process.env.HOME;
+    else process.env.HOME = originalHome;
     rmSync(testDir, { recursive: true, force: true });
   });
 
   it("rejects names that traverse outside targetDir", () => {
     const repo = makeRepo(["../../escape"]);
 
-    expect(() => writeMethodFiles(repo, join(testDir, "methods"))).toThrow(/path traversal detected/i);
+    expect(() => writeMethodFiles(repo, join(testDir, "methods"))).toThrow(
+      /path traversal detected/i,
+    );
   });
 
   it("rejects file paths that traverse outside installDir", () => {
-    const repo = makeRepo(["legit-method"], [
-      { relativePath: "../../escape.mthds", content: "bad" },
-    ]);
+    const repo = makeRepo(
+      ["legit-method"],
+      [{ relativePath: "../../escape.mthds", content: "bad" }],
+    );
 
-    expect(() => writeMethodFiles(repo, join(testDir, "methods"))).toThrow(/path traversal detected/i);
+    expect(() => writeMethodFiles(repo, join(testDir, "methods"))).toThrow(
+      /path traversal detected/i,
+    );
   });
 
   it("works correctly when targetDir is relative", () => {

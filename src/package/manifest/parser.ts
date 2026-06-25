@@ -109,7 +109,12 @@ function walkExportsTable(
 
         // Also recurse into remaining sub-tables
         for (const [subKey, subValue] of Object.entries(valueDict)) {
-          if (subKey !== "pipes" && subValue !== null && typeof subValue === "object" && !Array.isArray(subValue)) {
+          if (
+            subKey !== "pipes" &&
+            subValue !== null &&
+            typeof subValue === "object" &&
+            !Array.isArray(subValue)
+          ) {
             Object.assign(result, walkExportsTable({ [subKey]: subValue }, currentPath));
           }
         }
@@ -181,10 +186,14 @@ export function parseMethodsToml(content: string): ParsedManifest {
   if (pkg.display_name !== undefined) {
     const dn = pkg.display_name.trim();
     if (!dn) {
-      throw new ManifestValidationError("Display name must not be empty or whitespace when provided");
+      throw new ManifestValidationError(
+        "Display name must not be empty or whitespace when provided",
+      );
     }
     if (dn.length > 128) {
-      throw new ManifestValidationError(`Display name must not exceed 128 characters (got ${dn.length})`);
+      throw new ManifestValidationError(
+        `Display name must not exceed 128 characters (got ${dn.length})`,
+      );
     }
     displayName = dn;
   }
@@ -253,7 +262,7 @@ export function parseMethodsToml(content: string): ParsedManifest {
         const firstSegment = domainPath.split(".")[0]!;
         throw new ManifestValidationError(
           `Domain path '${domainPath}' uses reserved domain '${firstSegment}'. ` +
-          `Reserved domains (mthds, native, pipelex) cannot be used in package exports.`,
+            `Reserved domains (mthds, native, pipelex) cannot be used in package exports.`,
         );
       }
       for (const pipe of domainExport.pipes) {

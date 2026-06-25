@@ -23,10 +23,7 @@ function libraryDirs(options: RunOptions): string[] | undefined {
 /** Merge an optional JSON inputs file into the run options. */
 function withInputs(options: StartOptions, inputsFile?: string): StartOptions {
   if (inputsFile) {
-    options.inputs = JSON.parse(readFileSync(inputsFile, "utf-8")) as Record<
-      string,
-      unknown
-    >;
+    options.inputs = JSON.parse(readFileSync(inputsFile, "utf-8")) as Record<string, unknown>;
   }
   return options;
 }
@@ -40,11 +37,7 @@ function withInputs(options: StartOptions, inputsFile?: string): StartOptions {
  * `execute` returns `pipe_output`; `startAndWaitForResult` returns `main_stuff`
  * (with `pipe_output` as the bare-runner fallback) — print whichever is present.
  */
-async function dispatchRun(
-  runner: Runner,
-  options: StartOptions,
-  cli: RunOptions
-): Promise<void> {
+async function dispatchRun(runner: Runner, options: StartOptions, cli: RunOptions): Promise<void> {
   try {
     let result;
     if (isPipelexRunner(runner)) {
@@ -60,16 +53,11 @@ async function dispatchRun(
     }
 
     if (cli.output) {
-      writeFileSync(
-        cli.output,
-        JSON.stringify(result, null, 2) + "\n",
-        "utf-8"
-      );
+      writeFileSync(cli.output, JSON.stringify(result, null, 2) + "\n", "utf-8");
       p.log.success(`Output written to ${cli.output}`);
     }
 
-    const output =
-      ("main_stuff" in result ? result.main_stuff : null) ?? result.pipe_output;
+    const output = ("main_stuff" in result ? result.main_stuff : null) ?? result.pipe_output;
     if (cli.prettyPrint !== false && output) {
       p.log.info(JSON.stringify(output, null, 2));
     }
@@ -82,10 +70,7 @@ async function dispatchRun(
   }
 }
 
-export async function runMethod(
-  name: string,
-  options: RunOptions
-): Promise<void> {
+export async function runMethod(name: string, options: RunOptions): Promise<void> {
   printLogo();
   p.intro("mthds run method");
 
@@ -113,16 +98,13 @@ export async function runMethod(
   // runner has no name→method resolution (it addresses pipes/bundles).
   p.log.error(
     "Running an installed method by name is only supported by the pipelex runner.\n" +
-      "With the API runner, use 'mthds run pipe <code>' or 'mthds run bundle <file>' (--runner pipelex to run a method by name)."
+      "With the API runner, use 'mthds run pipe <code>' or 'mthds run bundle <file>' (--runner pipelex to run a method by name).",
   );
   p.outro("");
   process.exit(1);
 }
 
-export async function runBundle(
-  target: string,
-  options: RunOptions
-): Promise<void> {
+export async function runBundle(target: string, options: RunOptions): Promise<void> {
   printLogo();
   p.intro("mthds run bundle");
 
@@ -144,10 +126,7 @@ export async function runBundle(
   await dispatchRun(runner, runOptions, options);
 }
 
-export async function runPipe(
-  target: string,
-  options: RunOptions
-): Promise<void> {
+export async function runPipe(target: string, options: RunOptions): Promise<void> {
   printLogo();
   p.intro("mthds run pipe");
 

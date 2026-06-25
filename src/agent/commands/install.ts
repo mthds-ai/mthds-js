@@ -24,7 +24,7 @@ interface AgentInstallOptions {
 
 export async function agentInstall(
   address: string | undefined,
-  options: AgentInstallOptions
+  options: AgentInstallOptions,
 ): Promise<void> {
   if (!options.location) {
     agentError("--location is required (local or global)", "ArgumentError", {
@@ -36,24 +36,20 @@ export async function agentInstall(
     agentError(
       `Invalid location: ${options.location}. Must be "local" or "global".`,
       "ArgumentError",
-      { error_domain: AGENT_ERROR_DOMAINS.ARGUMENT }
+      { error_domain: AGENT_ERROR_DOMAINS.ARGUMENT },
     );
   }
 
   if (address && options.local) {
-    agentError(
-      "Cannot use both an address and --local at the same time.",
-      "ArgumentError",
-      { error_domain: AGENT_ERROR_DOMAINS.ARGUMENT }
-    );
+    agentError("Cannot use both an address and --local at the same time.", "ArgumentError", {
+      error_domain: AGENT_ERROR_DOMAINS.ARGUMENT,
+    });
   }
 
   if (!address && !options.local) {
-    agentError(
-      "Provide an address (org/repo) or use --local <path>.",
-      "ArgumentError",
-      { error_domain: AGENT_ERROR_DOMAINS.ARGUMENT }
-    );
+    agentError("Provide an address (org/repo) or use --local <path>.", "ArgumentError", {
+      error_domain: AGENT_ERROR_DOMAINS.ARGUMENT,
+    });
   }
 
   const selectedLocation = options.location as InstallLocation;
@@ -66,11 +62,9 @@ export async function agentInstall(
     try {
       resolved = resolveFromLocal(options.local);
     } catch (err) {
-      agentError(
-        `Failed to resolve local methods: ${(err as Error).message}`,
-        "InstallError",
-        { error_domain: AGENT_ERROR_DOMAINS.INSTALL }
-      );
+      agentError(`Failed to resolve local methods: ${(err as Error).message}`, "InstallError", {
+        error_domain: AGENT_ERROR_DOMAINS.INSTALL,
+      });
     }
     if (resolved.methods.length > 0) {
       const addr = resolved.methods[0]!.manifest.package.address;
@@ -89,11 +83,9 @@ export async function agentInstall(
     try {
       resolved = await resolveFromGitHub(parsed);
     } catch (err) {
-      agentError(
-        `Failed to resolve methods: ${(err as Error).message}`,
-        "InstallError",
-        { error_domain: AGENT_ERROR_DOMAINS.INSTALL }
-      );
+      agentError(`Failed to resolve methods: ${(err as Error).message}`, "InstallError", {
+        error_domain: AGENT_ERROR_DOMAINS.INSTALL,
+      });
     }
     orgRepo = `${parsed.org}/${parsed.repo}`;
   } else {
@@ -110,7 +102,7 @@ export async function agentInstall(
       agentError(
         `Method "${methodFilter}" not found. Available methods: ${available || "(none)"}`,
         "InstallError",
-        { error_domain: AGENT_ERROR_DOMAINS.INSTALL }
+        { error_domain: AGENT_ERROR_DOMAINS.INSTALL },
       );
     }
     resolved = { ...resolved, methods: [match] };
@@ -127,11 +119,10 @@ export async function agentInstall(
       try {
         await ensureRuntime();
       } catch (err) {
-        agentError(
-          `Failed to install pipelex runtime: ${(err as Error).message}`,
-          "InstallError",
-          { error_domain: AGENT_ERROR_DOMAINS.INSTALL, retryable: true }
-        );
+        agentError(`Failed to install pipelex runtime: ${(err as Error).message}`, "InstallError", {
+          error_domain: AGENT_ERROR_DOMAINS.INSTALL,
+          retryable: true,
+        });
       }
     }
   }
@@ -140,11 +131,9 @@ export async function agentInstall(
   try {
     result = runInstallFlow({ resolved, location: selectedLocation, orgRepo });
   } catch (err) {
-    agentError(
-      `Install failed: ${(err as Error).message}`,
-      "InstallError",
-      { error_domain: AGENT_ERROR_DOMAINS.INSTALL }
-    );
+    agentError(`Install failed: ${(err as Error).message}`, "InstallError", {
+      error_domain: AGENT_ERROR_DOMAINS.INSTALL,
+    });
   }
 
   await shutdown();

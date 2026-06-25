@@ -56,7 +56,7 @@ describe("config", () => {
       writeFileSync(
         join(configDir, "config"),
         "MTHDS_RUNNER=api\nMTHDS_API_KEY=my-secret-key\n",
-        "utf-8"
+        "utf-8",
       );
 
       const { loadConfig } = await importConfig();
@@ -73,7 +73,7 @@ describe("config", () => {
       writeFileSync(
         join(configDir, "config"),
         "MTHDS_API_KEY=file-key\nMTHDS_RUNNER=pipelex\n",
-        "utf-8"
+        "utf-8",
       );
 
       vi.stubEnv("MTHDS_API_KEY", "env-key");
@@ -88,11 +88,7 @@ describe("config", () => {
     it("handles DISABLE_TELEMETRY correctly", async () => {
       const configDir = join(tempHome, ".mthds");
       mkdirSync(configDir, { recursive: true });
-      writeFileSync(
-        join(configDir, "config"),
-        "DISABLE_TELEMETRY=1\n",
-        "utf-8"
-      );
+      writeFileSync(join(configDir, "config"), "DISABLE_TELEMETRY=1\n", "utf-8");
 
       const { loadConfig } = await importConfig();
       const config = loadConfig();
@@ -106,7 +102,7 @@ describe("config", () => {
       writeFileSync(
         join(configDir, "config"),
         "# This is a comment\n\nMTHDS_API_KEY=test-key\n\n# Another comment\nMTHDS_API_URL=http://localhost:8081\n",
-        "utf-8"
+        "utf-8",
       );
 
       const { loadConfig } = await importConfig();
@@ -118,11 +114,7 @@ describe("config", () => {
     it("reads baseUrl from the config file", async () => {
       const configDir = join(tempHome, ".mthds");
       mkdirSync(configDir, { recursive: true });
-      writeFileSync(
-        join(configDir, "config"),
-        "MTHDS_API_URL=http://localhost:8081\n",
-        "utf-8"
-      );
+      writeFileSync(join(configDir, "config"), "MTHDS_API_URL=http://localhost:8081\n", "utf-8");
 
       const { loadConfig } = await importConfig();
       const config = loadConfig();
@@ -132,11 +124,7 @@ describe("config", () => {
     it("env MTHDS_API_URL overrides the file value", async () => {
       const configDir = join(tempHome, ".mthds");
       mkdirSync(configDir, { recursive: true });
-      writeFileSync(
-        join(configDir, "config"),
-        "MTHDS_API_URL=http://file-host:8081\n",
-        "utf-8"
-      );
+      writeFileSync(join(configDir, "config"), "MTHDS_API_URL=http://file-host:8081\n", "utf-8");
       vi.stubEnv("MTHDS_API_URL", "http://env-host:8081");
 
       const { loadConfig } = await importConfig();
@@ -159,11 +147,7 @@ describe("config", () => {
     it("returns file source when value is in config file", async () => {
       const configDir = join(tempHome, ".mthds");
       mkdirSync(configDir, { recursive: true });
-      writeFileSync(
-        join(configDir, "config"),
-        "MTHDS_API_KEY=file-key\n",
-        "utf-8"
-      );
+      writeFileSync(join(configDir, "config"), "MTHDS_API_KEY=file-key\n", "utf-8");
 
       const { getConfigValue } = await importConfig();
       const result = getConfigValue("apiKey");
@@ -183,11 +167,7 @@ describe("config", () => {
     it("env takes precedence over file", async () => {
       const configDir = join(tempHome, ".mthds");
       mkdirSync(configDir, { recursive: true });
-      writeFileSync(
-        join(configDir, "config"),
-        "MTHDS_API_KEY=file-key\n",
-        "utf-8"
-      );
+      writeFileSync(join(configDir, "config"), "MTHDS_API_KEY=file-key\n", "utf-8");
       vi.stubEnv("MTHDS_API_KEY", "env-key");
 
       const { getConfigValue } = await importConfig();
@@ -205,10 +185,7 @@ describe("config", () => {
       const { setConfigValue } = await importConfig();
       setConfigValue("apiKey", "new-key");
 
-      const content = readFileSync(
-        join(tempHome, ".mthds", "config"),
-        "utf-8"
-      );
+      const content = readFileSync(join(tempHome, ".mthds", "config"), "utf-8");
       expect(content).toContain("MTHDS_API_KEY=new-key");
     });
 
@@ -216,10 +193,7 @@ describe("config", () => {
       const { setConfigValue } = await importConfig();
       setConfigValue("baseUrl", "http://localhost:8081");
 
-      const content = readFileSync(
-        join(tempHome, ".mthds", "config"),
-        "utf-8"
-      );
+      const content = readFileSync(join(tempHome, ".mthds", "config"), "utf-8");
       expect(content).toContain("MTHDS_API_URL=http://localhost:8081");
     });
 
@@ -227,10 +201,7 @@ describe("config", () => {
       const { setConfigValue } = await importConfig();
       setConfigValue("runner", "pipelex");
 
-      const content = readFileSync(
-        join(tempHome, ".mthds", "config"),
-        "utf-8"
-      );
+      const content = readFileSync(join(tempHome, ".mthds", "config"), "utf-8");
       expect(content).toContain("MTHDS_RUNNER=pipelex");
     });
 
@@ -239,10 +210,7 @@ describe("config", () => {
 
       // "false" should disable telemetry (write DISABLE_TELEMETRY=1)
       setConfigValue("telemetry", "false");
-      const content1 = readFileSync(
-        join(tempHome, ".mthds", "config"),
-        "utf-8"
-      );
+      const content1 = readFileSync(join(tempHome, ".mthds", "config"), "utf-8");
       expect(content1).toContain("DISABLE_TELEMETRY=1");
 
       // Re-import to clear cache and verify round-trip
@@ -254,29 +222,19 @@ describe("config", () => {
       const { setConfigValue } = await importConfig();
       setConfigValue("telemetry", "true");
 
-      const content = readFileSync(
-        join(tempHome, ".mthds", "config"),
-        "utf-8"
-      );
+      const content = readFileSync(join(tempHome, ".mthds", "config"), "utf-8");
       expect(content).toContain("DISABLE_TELEMETRY=0");
     });
 
     it("preserves existing values when setting a new one", async () => {
       const configDir = join(tempHome, ".mthds");
       mkdirSync(configDir, { recursive: true });
-      writeFileSync(
-        join(configDir, "config"),
-        "MTHDS_API_KEY=existing-key\n",
-        "utf-8"
-      );
+      writeFileSync(join(configDir, "config"), "MTHDS_API_KEY=existing-key\n", "utf-8");
 
       const { setConfigValue } = await importConfig();
       setConfigValue("runner", "pipelex");
 
-      const content = readFileSync(
-        join(configDir, "config"),
-        "utf-8"
-      );
+      const content = readFileSync(join(configDir, "config"), "utf-8");
       expect(content).toContain("MTHDS_API_KEY=existing-key");
       expect(content).toContain("MTHDS_RUNNER=pipelex");
     });
@@ -290,10 +248,7 @@ describe("config", () => {
       const { setConfigValue } = await importConfig();
       setConfigValue("autoUpgrade", "true");
 
-      const content = readFileSync(
-        join(tempHome, ".mthds", "config"),
-        "utf-8"
-      );
+      const content = readFileSync(join(tempHome, ".mthds", "config"), "utf-8");
       expect(content).toContain("MTHDS_AUTO_UPGRADE=1");
     });
 
@@ -301,10 +256,7 @@ describe("config", () => {
       const { setConfigValue } = await importConfig();
       setConfigValue("updateCheck", "false");
 
-      const content = readFileSync(
-        join(tempHome, ".mthds", "config"),
-        "utf-8"
-      );
+      const content = readFileSync(join(tempHome, ".mthds", "config"), "utf-8");
       expect(content).toContain("MTHDS_UPDATE_CHECK=0");
     });
 
@@ -338,11 +290,7 @@ describe("config", () => {
     it("env var MTHDS_AUTO_UPGRADE=1 overrides file value", async () => {
       const configDir = join(tempHome, ".mthds");
       mkdirSync(configDir, { recursive: true });
-      writeFileSync(
-        join(configDir, "config"),
-        "MTHDS_AUTO_UPGRADE=0\n",
-        "utf-8"
-      );
+      writeFileSync(join(configDir, "config"), "MTHDS_AUTO_UPGRADE=0\n", "utf-8");
       vi.stubEnv("MTHDS_AUTO_UPGRADE", "1");
 
       const { loadConfig } = await importConfig();
@@ -353,11 +301,7 @@ describe("config", () => {
     it("getConfigValue returns raw file value for boolean keys", async () => {
       const configDir = join(tempHome, ".mthds");
       mkdirSync(configDir, { recursive: true });
-      writeFileSync(
-        join(configDir, "config"),
-        "MTHDS_AUTO_UPGRADE=1\n",
-        "utf-8"
-      );
+      writeFileSync(join(configDir, "config"), "MTHDS_AUTO_UPGRADE=1\n", "utf-8");
 
       const { getConfigValue } = await importConfig();
       const result = getConfigValue("autoUpgrade");
@@ -418,7 +362,7 @@ describe("config", () => {
       writeFileSync(
         join(configDir, "config"),
         "MTHDS_AUTO_UPGRADE=true\nMTHDS_UPDATE_CHECK=yes\nDISABLE_TELEMETRY=on\n",
-        "utf-8"
+        "utf-8",
       );
       const { loadConfig } = await importConfig();
       const config = loadConfig();

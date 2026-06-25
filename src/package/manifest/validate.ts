@@ -45,11 +45,7 @@ export function collectAllExportedPipes(exports: Exports): string[] {
   return pipes;
 }
 
-function validateExportNode(
-  node: unknown,
-  path: string,
-  errors: string[]
-): void {
+function validateExportNode(node: unknown, path: string, errors: string[]): void {
   if (!node || typeof node !== "object" || Array.isArray(node)) {
     errors.push(`[exports.${path}] must be a table.`);
     return;
@@ -69,9 +65,7 @@ function validateExportNode(
           break;
         }
         if (!SNAKE_CASE_RE.test(pipe)) {
-          errors.push(
-            `[exports.${path}.pipes] "${pipe}" must be snake_case.`
-          );
+          errors.push(`[exports.${path}.pipes] "${pipe}" must be snake_case.`);
         }
       }
     } else {
@@ -97,57 +91,53 @@ export function validateManifest(raw: string): ValidationResult {
   // --- [package] section ---
   const pkg = parsed["package"] as Record<string, unknown> | undefined;
   if (!pkg || typeof pkg !== "object") {
-    errors.push('[package] section is required.');
+    errors.push("[package] section is required.");
     return { valid: false, errors };
   }
 
   // package.address
   if (typeof pkg["address"] !== "string" || !pkg["address"]) {
-    errors.push('[package.address] is required and must be a non-empty string.');
+    errors.push("[package.address] is required and must be a non-empty string.");
   } else {
     const addr = pkg["address"] as string;
     const slashIdx = addr.indexOf("/");
     const hostname = slashIdx > 0 ? addr.slice(0, slashIdx) : addr;
     if (!hostname.includes(".")) {
       errors.push(
-        `[package.address] hostname must contain a dot (got "${hostname}"). Example: github.com/org/repo`
+        `[package.address] hostname must contain a dot (got "${hostname}"). Example: github.com/org/repo`,
       );
     }
   }
 
   // package.version
   if (typeof pkg["version"] !== "string" || !pkg["version"]) {
-    errors.push('[package.version] is required and must be a non-empty string.');
+    errors.push("[package.version] is required and must be a non-empty string.");
   } else if (!SEMVER_RE.test(pkg["version"] as string)) {
-    errors.push(
-      `[package.version] must be valid semver (got "${pkg["version"]}").`
-    );
+    errors.push(`[package.version] must be valid semver (got "${pkg["version"]}").`);
   }
 
   // package.description
   if (typeof pkg["description"] !== "string" || !pkg["description"]) {
-    errors.push(
-      '[package.description] is required and must be a non-empty string.'
-    );
+    errors.push("[package.description] is required and must be a non-empty string.");
   }
 
   // package.display_name (optional)
   if (pkg["display_name"] !== undefined) {
     if (typeof pkg["display_name"] !== "string") {
-      errors.push('[package.display_name] must be a string.');
+      errors.push("[package.display_name] must be a string.");
     } else if ((pkg["display_name"] as string).length > 25) {
-      errors.push('[package.display_name] must be at most 25 characters.');
+      errors.push("[package.display_name] must be at most 25 characters.");
     }
   }
 
   // package.authors (optional)
   if (pkg["authors"] !== undefined) {
     if (!Array.isArray(pkg["authors"])) {
-      errors.push('[package.authors] must be an array of strings.');
+      errors.push("[package.authors] must be an array of strings.");
     } else {
       for (const a of pkg["authors"] as unknown[]) {
         if (typeof a !== "string") {
-          errors.push('[package.authors] must contain only strings.');
+          errors.push("[package.authors] must contain only strings.");
           break;
         }
       }
@@ -157,33 +147,33 @@ export function validateManifest(raw: string): ValidationResult {
   // package.license (optional)
   if (pkg["license"] !== undefined) {
     if (typeof pkg["license"] !== "string") {
-      errors.push('[package.license] must be a string.');
+      errors.push("[package.license] must be a string.");
     }
   }
 
   // package.mthds_version (optional)
   if (pkg["mthds_version"] !== undefined) {
     if (typeof pkg["mthds_version"] !== "string") {
-      errors.push('[package.mthds_version] must be a string.');
+      errors.push("[package.mthds_version] must be a string.");
     }
   }
 
   // package.name (required)
   if (typeof pkg["name"] !== "string" || !pkg["name"]) {
-    errors.push('[package.name] is required and must be a non-empty string.');
+    errors.push("[package.name] is required and must be a non-empty string.");
   } else if (!METHOD_NAME_RE.test(pkg["name"] as string)) {
     errors.push(
-      `[package.name] "${pkg["name"]}" is invalid: must be 2-25 lowercase snake_case chars (letters, digits, underscores), starting with a letter.`
+      `[package.name] "${pkg["name"]}" is invalid: must be 2-25 lowercase snake_case chars (letters, digits, underscores), starting with a letter.`,
     );
   }
 
   // package.main_pipe (optional)
   if (pkg["main_pipe"] !== undefined) {
     if (typeof pkg["main_pipe"] !== "string") {
-      errors.push('[package.main_pipe] must be a string.');
+      errors.push("[package.main_pipe] must be a string.");
     } else if (!isPipeCodeValid(pkg["main_pipe"] as string)) {
       errors.push(
-        `[package.main_pipe] "${pkg["main_pipe"]}" must be a valid snake_case pipe code.`
+        `[package.main_pipe] "${pkg["main_pipe"]}" must be a valid snake_case pipe code.`,
       );
     }
   }
@@ -191,14 +181,16 @@ export function validateManifest(raw: string): ValidationResult {
   // --- [exports] section (required, hierarchical) ---
   const exports = parsed["exports"] as Record<string, unknown> | undefined;
   if (!exports || typeof exports !== "object" || Object.keys(exports).length === 0) {
-    errors.push('[exports] section is required: at least one export domain with pipes must be defined.');
+    errors.push(
+      "[exports] section is required: at least one export domain with pipes must be defined.",
+    );
   } else {
     for (const [domain, node] of Object.entries(exports)) {
       const domainLower = domain.toLowerCase();
       const matchedPrefix = RESERVED_PREFIXES.find((prefix) => domainLower.startsWith(prefix));
       if (matchedPrefix) {
         errors.push(
-          `[exports."${domain}"] domain cannot start with reserved prefix "${matchedPrefix}".`
+          `[exports."${domain}"] domain cannot start with reserved prefix "${matchedPrefix}".`,
         );
       }
       validateExportNode(node, domain, errors);
@@ -206,16 +198,26 @@ export function validateManifest(raw: string): ValidationResult {
   }
 
   // --- main_pipe must be listed in exports ---
-  if (pkg["main_pipe"] && typeof pkg["main_pipe"] === "string" && exports && typeof exports === "object" && Object.keys(exports).length > 0) {
+  if (
+    pkg["main_pipe"] &&
+    typeof pkg["main_pipe"] === "string" &&
+    exports &&
+    typeof exports === "object" &&
+    Object.keys(exports).length > 0
+  ) {
     const allPipes = collectAllExportedPipes(exports as Exports);
     if (!allPipes.includes(pkg["main_pipe"] as string)) {
-      errors.push(`[package.main_pipe] "${pkg["main_pipe"]}" must be listed in one of the [exports] domains.`);
+      errors.push(
+        `[package.main_pipe] "${pkg["main_pipe"]}" must be listed in one of the [exports] domains.`,
+      );
     }
   }
 
   // --- [dependencies] section — not allowed ---
   if (parsed["dependencies"] !== undefined) {
-    errors.push('[dependencies] section is not supported. Dependencies have been removed from the MTHDS standard.');
+    errors.push(
+      "[dependencies] section is not supported. Dependencies have been removed from the MTHDS standard.",
+    );
   }
 
   if (errors.length > 0) {
@@ -231,7 +233,9 @@ export function validateManifest(raw: string): ValidationResult {
     ...(pkg["display_name"] !== undefined ? { display_name: pkg["display_name"] as string } : {}),
     ...(pkg["authors"] !== undefined ? { authors: pkg["authors"] as string[] } : {}),
     ...(pkg["license"] !== undefined ? { license: pkg["license"] as string } : {}),
-    ...(pkg["mthds_version"] !== undefined ? { mthds_version: pkg["mthds_version"] as string } : {}),
+    ...(pkg["mthds_version"] !== undefined
+      ? { mthds_version: pkg["mthds_version"] as string }
+      : {}),
     ...(pkg["main_pipe"] !== undefined ? { main_pipe: pkg["main_pipe"] as string } : {}),
   };
 

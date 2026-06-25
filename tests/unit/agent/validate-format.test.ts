@@ -17,7 +17,10 @@ function makeRunner(report: ValidationResult): {
   return { runner, validate };
 }
 
-const VALID_WITH_MD: ValidationResult = { is_valid: true, rendered_markdown: "# Validation passed\n\nall good" } as ValidationResult;
+const VALID_WITH_MD: ValidationResult = {
+  is_valid: true,
+  rendered_markdown: "# Validation passed\n\nall good",
+} as ValidationResult;
 const VALID_NO_MD: ValidationResult = { is_valid: true };
 const INVALID_WITH_MD: ValidationResult = {
   is_valid: false,
@@ -60,7 +63,7 @@ describe("runProtocolValidate — --format handling", () => {
   it("emits rendered_markdown verbatim to stdout on a valid bundle (markdown)", async () => {
     const { runner } = makeRunner(VALID_WITH_MD);
     await runProtocolValidate(runner, ["x"], false);
-    const written = stdoutSpy.mock.calls.map((c) => String(c[0])).join("");
+    const written = stdoutSpy.mock.calls.map((c: unknown[]) => String(c[0])).join("");
     expect(written).toContain("# Validation passed");
     // It is the verbatim Markdown, not a JSON envelope.
     expect(written).not.toContain('"success"');
@@ -78,7 +81,7 @@ describe("runProtocolValidate — --format handling", () => {
   it("emits the JSON success envelope under --format json", async () => {
     const { runner } = makeRunner(VALID_NO_MD);
     await runProtocolValidate(runner, ["x"], false, undefined, "json");
-    const written = stdoutSpy.mock.calls.map((c) => String(c[0])).join("");
+    const written = stdoutSpy.mock.calls.map((c: unknown[]) => String(c[0])).join("");
     const payload = JSON.parse(written) as { success: boolean; is_valid: boolean };
     expect(payload.success).toBe(true);
     expect(payload.is_valid).toBe(true);
@@ -87,7 +90,7 @@ describe("runProtocolValidate — --format handling", () => {
   it("falls back to the JSON envelope when the server omits rendered_markdown (markdown requested)", async () => {
     const { runner } = makeRunner(VALID_NO_MD);
     await runProtocolValidate(runner, ["x"], false);
-    const written = stdoutSpy.mock.calls.map((c) => String(c[0])).join("");
+    const written = stdoutSpy.mock.calls.map((c: unknown[]) => String(c[0])).join("");
     // No rendered_markdown on the report → never empty: the JSON envelope is emitted.
     const payload = JSON.parse(written) as { success: boolean };
     expect(payload.success).toBe(true);

@@ -42,22 +42,10 @@ import {
   writeRemoteCache,
   clearRemoteCache,
 } from "../update-cache.js";
-import type {
-  CachePayload,
-  BinaryCheckEntry,
-  RemoteCachePayload,
-} from "../update-cache.js";
-import {
-  isSnoozed,
-  writeSnooze,
-  clearSnooze,
-  computeVersionKey,
-} from "../snooze.js";
+import type { CachePayload, BinaryCheckEntry, RemoteCachePayload } from "../update-cache.js";
+import { isSnoozed, writeSnooze, clearSnooze, computeVersionKey } from "../snooze.js";
 import { checkPluginVersion, detectHost } from "../plugin-version.js";
-import {
-  fetchLatestMthdsAgentNpm,
-  fetchLatestPluginMarketplace,
-} from "../remote-version.js";
+import { fetchLatestMthdsAgentNpm, fetchLatestPluginMarketplace } from "../remote-version.js";
 
 const require = createRequire(import.meta.url);
 const pkg = require("../../../package.json") as { version: string };
@@ -71,18 +59,14 @@ export interface UpdateCheckOptions {
 
 // ── Main ───────────────────────────────────────────────────────────
 
-export async function agentUpdateCheck(
-  options: UpdateCheckOptions
-): Promise<void> {
+export async function agentUpdateCheck(options: UpdateCheckOptions): Promise<void> {
   // Let errors propagate to non-zero exit so the preamble's
   // MTHDS_UPDATE_CHECK_FAILED branch can detect real failures.
   // The preamble handles non-zero exit gracefully (warns + proceeds).
   await agentUpdateCheckInner(options);
 }
 
-async function agentUpdateCheckInner(
-  options: UpdateCheckOptions
-): Promise<void> {
+async function agentUpdateCheckInner(options: UpdateCheckOptions): Promise<void> {
   // 1. Check if update-check is disabled
   const cfg = loadConfig();
   if (!cfg.updateCheck) {
@@ -114,9 +98,7 @@ async function agentUpdateCheckInner(
     if (aggregate !== "UP_TO_DATE") {
       const versionKey = computeVersionKey(payload);
       if (!isSnoozed(versionKey)) {
-        process.stdout.write(
-          "UPGRADE_AVAILABLE " + JSON.stringify(payload) + "\n"
-        );
+        process.stdout.write("UPGRADE_AVAILABLE " + JSON.stringify(payload) + "\n");
       }
     }
     // JUST_UPGRADED carries the informational versions already — no UP_TO_DATE
@@ -174,9 +156,7 @@ async function agentUpdateCheckInner(
         emitSnoozedSentinel();
         return;
       }
-      process.stdout.write(
-        "UPGRADE_AVAILABLE " + JSON.stringify(freshPayload) + "\n"
-      );
+      process.stdout.write("UPGRADE_AVAILABLE " + JSON.stringify(freshPayload) + "\n");
       return;
     }
 
@@ -204,9 +184,7 @@ async function agentUpdateCheckInner(
       emitSnoozedSentinel();
       return;
     }
-    process.stdout.write(
-      "UPGRADE_AVAILABLE " + JSON.stringify(freshPayload) + "\n"
-    );
+    process.stdout.write("UPGRADE_AVAILABLE " + JSON.stringify(freshPayload) + "\n");
     return;
   }
 
@@ -224,9 +202,7 @@ async function agentUpdateCheckInner(
       // can tell a quiet-by-choice run apart from a broken env-check.
       emitSnoozedSentinel();
     } else {
-      process.stdout.write(
-        "UPGRADE_AVAILABLE " + JSON.stringify(payload) + "\n"
-      );
+      process.stdout.write("UPGRADE_AVAILABLE " + JSON.stringify(payload) + "\n");
     }
   } else {
     emitUpToDate(payload);
@@ -267,7 +243,7 @@ async function runFreshChecks(runner: string): Promise<CachePayload> {
     }
   } catch (err) {
     process.stderr.write(
-      `Warning: plugin version check failed (${err instanceof Error ? err.message : String(err)}). Skipping plugin check.\n`
+      `Warning: plugin version check failed (${err instanceof Error ? err.message : String(err)}). Skipping plugin check.\n`,
     );
   }
 
@@ -278,7 +254,7 @@ async function runFreshChecks(runner: string): Promise<CachePayload> {
     await applyRemoteOverlay(payload);
   } catch (err) {
     process.stderr.write(
-      `Warning: remote upstream check failed (${err instanceof Error ? err.message : String(err)}). Skipping upstream overlay.\n`
+      `Warning: remote upstream check failed (${err instanceof Error ? err.message : String(err)}). Skipping upstream overlay.\n`,
     );
   }
 
@@ -306,9 +282,7 @@ async function getOrRefreshPayload(runner: string): Promise<CachePayload> {
   return payload;
 }
 
-function payloadVersions(
-  payload: CachePayload
-): Record<string, string | null> {
+function payloadVersions(payload: CachePayload): Record<string, string | null> {
   const result: Record<string, string | null> = {
     mthds_agent: payload.mthds_agent.v,
     plxt: payload.plxt.v,

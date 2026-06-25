@@ -15,9 +15,18 @@ export interface PackageDependency {
 import { parseMethodsToml } from "./manifest/parser.js";
 import { MANIFEST_FILENAME } from "./discovery.js";
 import { getCachedPackagePath, isCached, storeInCache } from "./package-cache.js";
-import { parseConstraint, parseVersion, selectMinimumVersionForMultipleConstraints, versionSatisfies } from "./semver.js";
-import { addressToCloneUrl, cloneAtVersion, listRemoteVersionTags, resolveVersionFromTags } from "./vcs-resolver.js";
-import type { VCSFetchError, VersionResolutionError, PackageCacheError } from "./exceptions.js";
+import {
+  parseConstraint,
+  parseVersion,
+  selectMinimumVersionForMultipleConstraints,
+  versionSatisfies,
+} from "./semver.js";
+import {
+  addressToCloneUrl,
+  cloneAtVersion,
+  listRemoteVersionTags,
+  resolveVersionFromTags,
+} from "./vcs-resolver.js";
 
 export interface ResolvedDependency {
   readonly alias: string;
@@ -99,7 +108,14 @@ function resolveLocalDependency(
   const mthdsFiles = collectMthdsFiles(depDir);
   const exportedPipeCodes = determineExportedPipes(depManifest);
 
-  return { alias, address: dep.address, manifest: depManifest, packageRoot: depDir, mthdsFiles, exportedPipeCodes };
+  return {
+    alias,
+    address: dep.address,
+    manifest: depManifest,
+    packageRoot: depDir,
+    mthdsFiles,
+    exportedPipeCodes,
+  };
 }
 
 async function resolveRemoteDependency(
@@ -146,12 +162,23 @@ async function resolveRemoteDependency(
   }
 }
 
-function buildResolvedFromDir(alias: string, address: string, directory: string): ResolvedDependency {
+function buildResolvedFromDir(
+  alias: string,
+  address: string,
+  directory: string,
+): ResolvedDependency {
   const depManifest = findManifestInDir(directory);
   const mthdsFiles = collectMthdsFiles(directory);
   const exportedPipeCodes = determineExportedPipes(depManifest);
 
-  return { alias, address, manifest: depManifest, packageRoot: directory, mthdsFiles, exportedPipeCodes };
+  return {
+    alias,
+    address,
+    manifest: depManifest,
+    packageRoot: directory,
+    mthdsFiles,
+    exportedPipeCodes,
+  };
 }
 
 async function resolveWithMultipleConstraints(
@@ -169,7 +196,9 @@ async function resolveWithMultipleConstraints(
     try {
       tagsCache.set(address, await listRemoteVersionTags(cloneUrl));
     } catch (err) {
-      throw new DependencyResolveError(`Failed to list tags for '${address}': ${(err as Error).message}`);
+      throw new DependencyResolveError(
+        `Failed to list tags for '${address}': ${(err as Error).message}`,
+      );
     }
   }
 
@@ -296,24 +325,37 @@ async function resolveTransitiveTree(
       // Diamond: re-resolve with all constraints
       const overrideUrl = fetchUrlOverrides?.[dep.address];
       const reResolved = await resolveWithMultipleConstraints(
-        dep.address, alias,
+        dep.address,
+        alias,
         constraintsByAddress.get(dep.address)!,
-        tagsCache, cacheRoot, overrideUrl,
+        tagsCache,
+        cacheRoot,
+        overrideUrl,
       );
       resolvedMap.set(dep.address, reResolved);
 
       // Recurse into sub-dependencies of the re-resolved version
-      if (reResolved.manifest && Object.keys((reResolved.manifest as any).dependencies ?? {}).length > 0) {
+      if (
+        reResolved.manifest &&
+        Object.keys((reResolved.manifest as any).dependencies ?? {}).length > 0
+      ) {
         const remoteSubs: Record<string, PackageDependency> = {};
-        for (const [subAlias, sub] of Object.entries((reResolved.manifest as any).dependencies ?? {})) {
+        for (const [subAlias, sub] of Object.entries(
+          (reResolved.manifest as any).dependencies ?? {},
+        )) {
           if ((sub as any).path === undefined) remoteSubs[subAlias] = sub as PackageDependency;
         }
         if (Object.keys(remoteSubs).length > 0) {
           resolutionStack.add(dep.address);
           try {
             await resolveTransitiveTree(
-              remoteSubs, resolutionStack, resolvedMap,
-              constraintsByAddress, tagsCache, cacheRoot, fetchUrlOverrides,
+              remoteSubs,
+              resolutionStack,
+              resolvedMap,
+              constraintsByAddress,
+              tagsCache,
+              cacheRoot,
+              fetchUrlOverrides,
             );
           } finally {
             resolutionStack.delete(dep.address);
@@ -331,9 +373,12 @@ async function resolveTransitiveTree(
 
       if (constraintsByAddress.get(dep.address)!.length > 1) {
         resolvedDep = await resolveWithMultipleConstraints(
-          dep.address, alias,
+          dep.address,
+          alias,
           constraintsByAddress.get(dep.address)!,
-          tagsCache, cacheRoot, overrideUrl,
+          tagsCache,
+          cacheRoot,
+          overrideUrl,
         );
       } else {
         resolvedDep = await resolveRemoteDependency(alias, dep, cacheRoot, overrideUrl);
@@ -342,15 +387,25 @@ async function resolveTransitiveTree(
       resolvedMap.set(dep.address, resolvedDep);
 
       // Recurse into sub-dependencies (remote only)
-      if (resolvedDep.manifest && Object.keys((resolvedDep.manifest as any).dependencies ?? {}).length > 0) {
+      if (
+        resolvedDep.manifest &&
+        Object.keys((resolvedDep.manifest as any).dependencies ?? {}).length > 0
+      ) {
         const remoteSubs: Record<string, PackageDependency> = {};
-        for (const [subAlias, sub] of Object.entries((resolvedDep.manifest as any).dependencies ?? {})) {
+        for (const [subAlias, sub] of Object.entries(
+          (resolvedDep.manifest as any).dependencies ?? {},
+        )) {
           if ((sub as any).path === undefined) remoteSubs[subAlias] = sub as PackageDependency;
         }
         if (Object.keys(remoteSubs).length > 0) {
           await resolveTransitiveTree(
-            remoteSubs, resolutionStack, resolvedMap,
-            constraintsByAddress, tagsCache, cacheRoot, fetchUrlOverrides,
+            remoteSubs,
+            resolutionStack,
+            resolvedMap,
+            constraintsByAddress,
+            tagsCache,
+            cacheRoot,
+            fetchUrlOverrides,
           );
         }
       }
@@ -393,8 +448,13 @@ export async function resolveAllDependencies(
 
   if (Object.keys(remoteDeps).length > 0) {
     await resolveTransitiveTree(
-      remoteDeps, resolutionStack, resolvedMap,
-      constraintsByAddress, tagsCache, cacheRoot, fetchUrlOverrides,
+      remoteDeps,
+      resolutionStack,
+      resolvedMap,
+      constraintsByAddress,
+      tagsCache,
+      cacheRoot,
+      fetchUrlOverrides,
     );
   }
 

@@ -1,11 +1,6 @@
 import type { MTHDSProtocol } from "../protocol/protocol.js";
 import type { StartOptions } from "../protocol/options.js";
-import type {
-  RunRead,
-  RunResultState,
-  RunResults,
-  WaitForResultOptions,
-} from "./api/runs.js";
+import type { RunRead, RunResultState, RunResults, WaitForResultOptions } from "./api/runs.js";
 import type { DictPipeOutput } from "./api/models.js";
 
 // ── Runner type ─────────────────────────────────────────────────────
@@ -20,7 +15,6 @@ export type RunnerType = (typeof Runners)[keyof typeof Runners];
 export const RUNNER_NAMES: RunnerType[] = Object.values(Runners);
 
 // ── Shared enums / literals ─────────────────────────────────────────
-
 
 export type ConceptRepresentationFormat = "json" | "python" | "schema";
 
@@ -118,6 +112,6 @@ export interface Runner extends MTHDSProtocol<DictPipeOutput> {
   waitForResult(runId: string, options?: WaitForResultOptions): Promise<RunResults>;
   startAndWaitForResult(
     options: StartOptions,
-    pollOptions?: WaitForResultOptions
+    pollOptions?: WaitForResultOptions,
   ): Promise<RunResults>;
 }

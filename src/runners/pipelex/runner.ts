@@ -1,12 +1,6 @@
 import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
-import {
-  existsSync,
-  writeFileSync,
-  readFileSync,
-  mkdtempSync,
-  rmSync,
-} from "node:fs";
+import { existsSync, writeFileSync, readFileSync, mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { Runners } from "../types.js";
@@ -36,12 +30,7 @@ import type {
 import { MTHDS_PROTOCOL_VERSION } from "../../protocol/models.js";
 import { conceptRef } from "../../protocol/concept.js";
 import type { DictPipeOutput, DictRunResultExecute } from "../api/models.js";
-import type {
-  RunRead,
-  RunResults,
-  RunResultState,
-  WaitForResultOptions,
-} from "../api/runs.js";
+import type { RunRead, RunResults, RunResultState, WaitForResultOptions } from "../api/runs.js";
 import { BaseRunner } from "../base-runner.js";
 
 const execFileAsync = promisify(execFile);
@@ -88,9 +77,7 @@ export class PipelexRunner extends BaseRunner implements Runner {
     return this.libraryDirs.flatMap((dir) => ["-L", dir]);
   }
 
-  private async exec(
-    args: string[]
-  ): Promise<{ stdout: string; stderr: string }> {
+  private async exec(args: string[]): Promise<{ stdout: string; stderr: string }> {
     return execFileAsync("pipelex", [...args, ...this.libraryArgs()], {
       encoding: "utf-8",
     });
@@ -105,9 +92,7 @@ export class PipelexRunner extends BaseRunner implements Runner {
       const child = spawn("pipelex", [...args, ...this.libraryArgs()], {
         stdio: [inheritStdin ? "inherit" : "ignore", "inherit", "inherit"],
       });
-      child.on("error", (err) =>
-        reject(new Error(`pipelex not found: ${err.message}`))
-      );
+      child.on("error", (err) => reject(new Error(`pipelex not found: ${err.message}`)));
       child.on("close", (code) => {
         if (code === 0) {
           resolve();
@@ -137,7 +122,7 @@ export class PipelexRunner extends BaseRunner implements Runner {
   async health(): Promise<Record<string, unknown>> {
     try {
       const timeout = new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error("pipelex health check timed out after 10s")), 10_000)
+        setTimeout(() => reject(new Error("pipelex health check timed out after 10s")), 10_000),
       );
       await Promise.race([this.exec(["doctor", "-g"]), timeout]);
       return { status: "ok" };
@@ -169,8 +154,17 @@ export class PipelexRunner extends BaseRunner implements Runner {
 
       const { stdout } = await execFileAsync(
         "pipelex-agent",
-        ["inputs", "bundle", bundlePath, "--pipe", request.pipe_code, "-L", tmp, ...this.libraryArgs()],
-        { encoding: "utf-8" }
+        [
+          "inputs",
+          "bundle",
+          bundlePath,
+          "--pipe",
+          request.pipe_code,
+          "-L",
+          tmp,
+          ...this.libraryArgs(),
+        ],
+        { encoding: "utf-8" },
       );
 
       return JSON.parse(stdout) as unknown;
@@ -216,7 +210,7 @@ export class PipelexRunner extends BaseRunner implements Runner {
       if (!existsSync(outPath)) {
         throw new Error(
           `pipelex build output produced no file at ${outPath}.` +
-            (stderr ? ` Output:\n${stderr.trim()}` : "")
+            (stderr ? ` Output:\n${stderr.trim()}` : ""),
         );
       }
       const raw = readFileSync(outPath, "utf-8");
@@ -231,9 +225,7 @@ export class PipelexRunner extends BaseRunner implements Runner {
   }
 
   // pipelex build runner bundle <bundle.mthds> --pipe <pipe_code> -o <file>
-  async buildRunner(
-    request: BuildRunnerRequest
-  ): Promise<BuildRunnerResponse> {
+  async buildRunner(request: BuildRunnerRequest): Promise<BuildRunnerResponse> {
     const tmp = makeTmpDir();
     try {
       const bundlePath = writeMthdsContents(tmp, request.mthds_contents);
@@ -272,13 +264,12 @@ export class PipelexRunner extends BaseRunner implements Runner {
     const { stdout } = await execFileAsync(
       "pipelex-agent",
       ["concept", "--spec", JSON.stringify(request.spec)],
-      { encoding: "utf-8" }
+      { encoding: "utf-8" },
     );
     return {
       success: true,
       concept_code:
-        extractSectionKey(stdout, "concept") ??
-        ((request.spec.concept_code as string) ?? ""),
+        extractSectionKey(stdout, "concept") ?? (request.spec.concept_code as string) ?? "",
       toml: stdout,
     };
   }
@@ -287,20 +278,12 @@ export class PipelexRunner extends BaseRunner implements Runner {
   async pipeSpec(request: PipeSpecRequest): Promise<PipeSpecResponse> {
     const { stdout } = await execFileAsync(
       "pipelex-agent",
-      [
-        "pipe",
-        "--type",
-        request.pipe_type,
-        "--spec",
-        JSON.stringify(request.spec),
-      ],
-      { encoding: "utf-8" }
+      ["pipe", "--type", request.pipe_type, "--spec", JSON.stringify(request.spec)],
+      { encoding: "utf-8" },
     );
     return {
       success: true,
-      pipe_code:
-        extractSectionKey(stdout, "pipe") ??
-        ((request.spec.pipe_code as string) ?? ""),
+      pipe_code: extractSectionKey(stdout, "pipe") ?? (request.spec.pipe_code as string) ?? "",
       pipe_type: request.pipe_type,
       toml: stdout,
     };
@@ -364,11 +347,7 @@ export class PipelexRunner extends BaseRunner implements Runner {
 
       if (options.inputs) {
         const inputsPath = join(tmp, "inputs.json");
-        writeFileSync(
-          inputsPath,
-          JSON.stringify(options.inputs),
-          "utf-8"
-        );
+        writeFileSync(inputsPath, JSON.stringify(options.inputs), "utf-8");
         args.push("--inputs", inputsPath);
       }
 
@@ -399,7 +378,8 @@ export class PipelexRunner extends BaseRunner implements Runner {
         if (conceptRaw && typeof conceptRaw === "object") {
           const conceptObj = conceptRaw as Record<string, unknown>;
           const code = typeof conceptObj["code"] === "string" ? conceptObj["code"] : "";
-          const domainCode = typeof conceptObj["domain_code"] === "string" ? conceptObj["domain_code"] : "";
+          const domainCode =
+            typeof conceptObj["domain_code"] === "string" ? conceptObj["domain_code"] : "";
           // A missing domain_code falls back to the bare code (no leading dot).
           conceptRefStr = domainCode ? conceptRef({ domain_code: domainCode, code }) : code;
         } else {
@@ -426,10 +406,7 @@ export class PipelexRunner extends BaseRunner implements Runner {
   // ── Validation ──────────────────────────────────────────────────
   // pipelex validate bundle <bundle.mthds> [--allow-signatures]
 
-  async validate(
-    mthdsContents: string[],
-    allowSignatures = false
-  ): Promise<ValidationResult> {
+  async validate(mthdsContents: string[], allowSignatures = false): Promise<ValidationResult> {
     const tmp = makeTmpDir();
     try {
       const bundlePath = writeMthdsContents(tmp, mthdsContents);
@@ -440,7 +417,11 @@ export class PipelexRunner extends BaseRunner implements Runner {
       try {
         await this.exec(args);
       } catch (err) {
-        const execError = err as Error & { code?: number | string; stderr?: string; stdout?: string };
+        const execError = err as Error & {
+          code?: number | string;
+          stderr?: string;
+          stdout?: string;
+        };
         const detail = execError.stderr?.trim() || execError.stdout?.trim() || execError.message;
         // The bare `pipelex validate` follows the 0/1/2 exit policy: exit 1 is a
         // produced negative verdict (the bundle is invalid), exit 2+ (or a spawn
@@ -478,7 +459,7 @@ export class PipelexRunner extends BaseRunner implements Runner {
 
   override async startAndWaitForResult(
     options: StartOptions,
-    _pollOptions?: WaitForResultOptions
+    _pollOptions?: WaitForResultOptions,
   ): Promise<RunResults> {
     const response = await this.execute({
       mthds_contents: options.mthds_contents ?? undefined,
@@ -506,10 +487,7 @@ export class PipelexRunner extends BaseRunner implements Runner {
     throw new Error(RUN_LIFECYCLE_UNSUPPORTED);
   }
 
-  async getRunResult(
-    _runId: string,
-    _options?: { signal?: AbortSignal }
-  ): Promise<RunResultState> {
+  async getRunResult(_runId: string, _options?: { signal?: AbortSignal }): Promise<RunResultState> {
     throw new Error(RUN_LIFECYCLE_UNSUPPORTED);
   }
 }

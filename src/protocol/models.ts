@@ -57,12 +57,7 @@ export interface RunResultStart {
 /** Model categories accepted by the protocol's `GET /models?type=` filter. */
 export type ModelCategory = "llm" | "extract" | "img_gen" | "search";
 
-export const MODEL_CATEGORIES: readonly ModelCategory[] = [
-  "llm",
-  "extract",
-  "img_gen",
-  "search",
-];
+export const MODEL_CATEGORIES: readonly ModelCategory[] = ["llm", "extract", "img_gen", "search"];
 
 /** One entry of the model deck (`ModelDeck.models[]`) — base fields + extensions. */
 export interface ModelInfo {

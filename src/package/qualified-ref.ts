@@ -32,14 +32,10 @@ export function parseRef(raw: string): QualifiedRef {
     throw new QualifiedRefError("Qualified reference cannot be empty");
   }
   if (raw.startsWith(".") || raw.endsWith(".")) {
-    throw new QualifiedRefError(
-      `Qualified reference '${raw}' must not start or end with a dot`,
-    );
+    throw new QualifiedRefError(`Qualified reference '${raw}' must not start or end with a dot`);
   }
   if (raw.includes("..")) {
-    throw new QualifiedRefError(
-      `Qualified reference '${raw}' must not contain consecutive dots`,
-    );
+    throw new QualifiedRefError(`Qualified reference '${raw}' must not contain consecutive dots`);
   }
 
   if (!raw.includes(".")) {

@@ -1,11 +1,6 @@
 import { join } from "node:path";
 import { homedir } from "node:os";
-import {
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  writeFileSync,
-} from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { Runners } from "../runners/types.js";
 import type { RunnerType } from "../runners/types.js";
 
@@ -80,16 +75,10 @@ const KEY_ALIASES: Record<string, keyof MthdsConfig> = {
 // ── Boolean key sets ──────────────────────────────────────────────
 
 /** Keys that store boolean values (coerced from "0"/"1" in file/env) */
-const BOOLEAN_KEYS: Set<keyof MthdsConfig> = new Set([
-  "telemetry",
-  "autoUpgrade",
-  "updateCheck",
-]);
+const BOOLEAN_KEYS: Set<keyof MthdsConfig> = new Set(["telemetry", "autoUpgrade", "updateCheck"]);
 
 /** Boolean keys with inverted file semantics (DISABLE_TELEMETRY=1 → false) */
-const INVERTED_BOOLEAN_KEYS: Set<keyof MthdsConfig> = new Set([
-  "telemetry",
-]);
+const INVERTED_BOOLEAN_KEYS: Set<keyof MthdsConfig> = new Set(["telemetry"]);
 
 /** Strings treated as truthy for boolean keys — used in both load and set paths */
 const TRUTHY_STRINGS: ReadonlySet<string> = new Set(["true", "1", "yes", "on"]);
@@ -116,9 +105,7 @@ export function isValidBaseUrl(value: string): boolean {
   return !parsed.search && !parsed.hash;
 }
 
-export function resolveKey(
-  cliKey: string
-): keyof MthdsConfig | undefined {
+export function resolveKey(cliKey: string): keyof MthdsConfig | undefined {
   return KEY_ALIASES[cliKey];
 }
 
@@ -164,10 +151,7 @@ function writeConfigFile(entries: Record<string, string>): void {
 
 // ── Public API ─────────────────────────────────────────────────────
 
-function coerceValue(
-  key: keyof MthdsConfig,
-  raw: string
-): string | boolean {
+function coerceValue(key: keyof MthdsConfig, raw: string): string | boolean {
   if (!BOOLEAN_KEYS.has(key)) return raw;
   const truthy = TRUTHY_STRINGS.has(raw.toLowerCase());
   return INVERTED_BOOLEAN_KEYS.has(key) ? !truthy : truthy;
@@ -176,12 +160,8 @@ function coerceValue(
 function toFileValue(key: keyof MthdsConfig, value: string | boolean): string {
   if (!BOOLEAN_KEYS.has(key)) return String(value);
   const boolVal =
-    typeof value === "boolean"
-      ? value
-      : TRUTHY_STRINGS.has(String(value).toLowerCase());
-  return INVERTED_BOOLEAN_KEYS.has(key)
-    ? (boolVal ? "0" : "1")
-    : (boolVal ? "1" : "0");
+    typeof value === "boolean" ? value : TRUTHY_STRINGS.has(String(value).toLowerCase());
+  return INVERTED_BOOLEAN_KEYS.has(key) ? (boolVal ? "0" : "1") : boolVal ? "1" : "0";
 }
 
 export function loadConfig(): MthdsConfig {
@@ -206,9 +186,7 @@ export function loadConfig(): MthdsConfig {
   return merged as unknown as MthdsConfig;
 }
 
-export function getConfigValue(
-  key: keyof MthdsConfig
-): { value: string; source: ConfigSource } {
+export function getConfigValue(key: keyof MthdsConfig): { value: string; source: ConfigSource } {
   const envName = ENV_NAMES[key];
   const envVal = process.env[envName];
   if (envVal !== undefined) {
@@ -232,10 +210,7 @@ export function getConfigValue(
   return { value: String(defaultVal), source: "default" };
 }
 
-export function setConfigValue(
-  key: keyof MthdsConfig,
-  value: string
-): void {
+export function setConfigValue(key: keyof MthdsConfig, value: string): void {
   const file = readConfigFile();
   const fileKey = FILE_KEYS[key];
   if (BOOLEAN_KEYS.has(key)) {

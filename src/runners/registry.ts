@@ -4,10 +4,7 @@ import type { Runner, RunnerType } from "./types.js";
 import { MthdsApiClient } from "./api/client.js";
 import { PipelexRunner } from "./pipelex/runner.js";
 
-export function createRunner(
-  type?: RunnerType,
-  libraryDirs?: string[]
-): Runner {
+export function createRunner(type?: RunnerType, libraryDirs?: string[]): Runner {
   const config = loadConfig();
   const runnerType = type ?? config.runner;
 

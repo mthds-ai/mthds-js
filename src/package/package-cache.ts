@@ -14,11 +14,7 @@ export function getDefaultCacheRoot(): string {
  * Compute the cache path for a package version.
  * Includes path traversal protection.
  */
-export function getCachedPackagePath(
-  address: string,
-  version: string,
-  cacheRoot?: string,
-): string {
+export function getCachedPackagePath(address: string, version: string, cacheRoot?: string): string {
   const root = resolve(cacheRoot ?? getDefaultCacheRoot());
   const resolved = resolve(root, address, version);
   if (!resolved.startsWith(root + sep)) {
@@ -33,11 +29,7 @@ export function getCachedPackagePath(
  * Check whether a package version exists in the cache.
  * A directory is considered cached if it exists and is non-empty.
  */
-export function isCached(
-  address: string,
-  version: string,
-  cacheRoot?: string,
-): boolean {
+export function isCached(address: string, version: string, cacheRoot?: string): boolean {
   const pkgPath = getCachedPackagePath(address, version, cacheRoot);
   if (!existsSync(pkgPath)) return false;
   try {
@@ -102,11 +94,7 @@ export function storeInCache(
  * Remove a cached package version.
  * Returns true if the directory existed and was removed.
  */
-export function removeCachedPackage(
-  address: string,
-  version: string,
-  cacheRoot?: string,
-): boolean {
+export function removeCachedPackage(address: string, version: string, cacheRoot?: string): boolean {
   const pkgPath = getCachedPackagePath(address, version, cacheRoot);
   if (!existsSync(pkgPath)) return false;
   try {

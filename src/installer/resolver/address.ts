@@ -22,14 +22,14 @@ export function parseAddress(input: string): ParsedAddress {
 
   if (segments.length < 2) {
     throw new Error(
-      `Invalid address "${input}": expected at least org/repo (e.g. pipelex/cookbook).`
+      `Invalid address "${input}": expected at least org/repo (e.g. pipelex/cookbook).`,
     );
   }
 
   for (const seg of segments) {
     if (!VALID_SEGMENT.test(seg)) {
       throw new Error(
-        `Invalid address segment "${seg}": only alphanumeric, dot, dash, and underscore are allowed.`
+        `Invalid address segment "${seg}": only alphanumeric, dot, dash, and underscore are allowed.`,
       );
     }
   }

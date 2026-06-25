@@ -23,7 +23,14 @@
   "scripts": {
     "build": "tsc",
     "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "typecheck": "tsc --noEmit",
+    "typecheck:test": "tsc -p tsconfig.test.json --noEmit",
+    "lint": "eslint src/ tests/",
+    "format": "prettier --write \"src/**/*.ts\" \"tests/**/*.ts\" \"*.ts\"",
+    "format:check": "prettier --check \"src/**/*.ts\" \"tests/**/*.ts\" \"*.ts\"",
     "depcruise": "depcruise --config .dependency-cruiser.cjs src",
+    "check": "npm run lint && npm run format:check && npm run typecheck && npm run typecheck:test && npm run build && npm run depcruise && npm test",
     "example": "npx tsx examples/call_api.ts",
     "prepare": "tsc"
   },
@@ -44,11 +51,17 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
+    "@eslint/js": "^9.39.4",
     "@types/node": "^22.12.0",
     "@types/semver": "^7.7.1",
+    "@vitest/coverage-v8": "^4.1.9",
     "dependency-cruiser": "^17.4.3",
+    "eslint": "^9.39.4",
+    "globals": "^16.5.0",
+    "prettier": "^3.8.4",
     "tsx": "^4.19.0",
     "typescript": "^5.7.3",
+    "typescript-eslint": "^8.62.0",
     "vitest": "^4.0.18"
   }
 }

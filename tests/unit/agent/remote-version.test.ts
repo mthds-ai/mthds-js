@@ -94,7 +94,7 @@ describe("remote-version", () => {
       vi.useFakeTimers();
       try {
         let abortedSignal: AbortSignal | null = null;
-        fetchSpy!.mockImplementation((_url, init) => {
+        fetchSpy!.mockImplementation((_url: string | URL | Request, init?: RequestInit) => {
           abortedSignal = (init as RequestInit | undefined)?.signal ?? null;
           return new Promise((_resolve, reject) => {
             abortedSignal?.addEventListener("abort", () => {
@@ -152,9 +152,7 @@ describe("remote-version", () => {
     });
 
     it("returns null when metadata.version is not a string", async () => {
-      fetchSpy!.mockResolvedValueOnce(
-        makeResponse({ metadata: { version: { tag: "0.11.3" } } }),
-      );
+      fetchSpy!.mockResolvedValueOnce(makeResponse({ metadata: { version: { tag: "0.11.3" } } }));
       expect(await fetchLatestPluginMarketplace()).toBeNull();
     });
 

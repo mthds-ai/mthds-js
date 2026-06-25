@@ -78,9 +78,7 @@ function entryIsOurs(entry: unknown): boolean {
   const cmds = (entry as HookEntry).hooks;
   if (!Array.isArray(cmds)) return false;
   return cmds.some(
-    (h) =>
-      typeof h?.command === "string" &&
-      LEGACY_MARKERS.some((m) => h.command!.includes(m)),
+    (h) => typeof h?.command === "string" && LEGACY_MARKERS.some((m) => h.command!.includes(m)),
   );
 }
 
@@ -135,7 +133,12 @@ export function inspectLegacyCodexHook(): LegacyHookInspection {
     return { hooks_file: file, exists: false, has_legacy_entry: false };
   }
   if (read.parseError !== undefined) {
-    return { hooks_file: file, exists: true, has_legacy_entry: false, parse_error: read.parseError };
+    return {
+      hooks_file: file,
+      exists: true,
+      has_legacy_entry: false,
+      parse_error: read.parseError,
+    };
   }
   return { hooks_file: file, exists: true, has_legacy_entry: hasLegacyEntry(read.parsed!) };
 }
@@ -174,7 +177,11 @@ export function removeLegacyCodexHook(): LegacyHookRemoval {
   try {
     writeAtomic(file, JSON.stringify(parsed, null, 2) + "\n");
   } catch (err) {
-    return { hooks_file: file, status: "error", error: `Failed to write ${file}: ${(err as Error).message}` };
+    return {
+      hooks_file: file,
+      status: "error",
+      error: `Failed to write ${file}: ${(err as Error).message}`,
+    };
   }
   return { hooks_file: file, status: "removed" };
 }

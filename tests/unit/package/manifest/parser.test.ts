@@ -1,5 +1,8 @@
 import { describe, it, expect } from "vitest";
-import { parseMethodsToml, serializeManifestToToml } from "../../../../src/package/manifest/parser.js";
+import {
+  parseMethodsToml,
+  serializeManifestToToml,
+} from "../../../../src/package/manifest/parser.js";
 import { ManifestParseError, ManifestValidationError } from "../../../../src/package/exceptions.js";
 
 // ---------------------------------------------------------------------------
@@ -126,7 +129,9 @@ describe("parseMethodsToml — invalid", () => {
   });
 
   it("throws ManifestValidationError for missing [package]", () => {
-    expect(() => parseMethodsToml("[exports.legal]\npipes = []\n")).toThrow(ManifestValidationError);
+    expect(() => parseMethodsToml("[exports.legal]\npipes = []\n")).toThrow(
+      ManifestValidationError,
+    );
   });
 
   it("throws ManifestValidationError for missing address", () => {

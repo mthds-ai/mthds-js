@@ -10,10 +10,14 @@ vi.mock("node:fs", () => ({
 
 // Capture what agentSuccess / agentError receive
 let capturedResult: Record<string, unknown> | undefined;
-let capturedError: { message: string; errorType: string; extras?: Record<string, unknown> } | undefined;
+let capturedError:
+  | { message: string; errorType: string; extras?: Record<string, unknown> }
+  | undefined;
 
 vi.mock("../../../src/agent/output.js", async () => {
-  const actual = await vi.importActual<typeof import("../../../src/agent/output.js")>("../../../src/agent/output.js");
+  const actual = await vi.importActual<typeof import("../../../src/agent/output.js")>(
+    "../../../src/agent/output.js",
+  );
   return {
     ...actual,
     agentSuccess: vi.fn((result: Record<string, unknown>) => {
@@ -114,7 +118,9 @@ describe("agentPackageInit", () => {
     expect(capturedResult).toBeDefined();
     expect(capturedResult!.success).toBe(true);
     expect(capturedResult!.path).toBeDefined();
-    expect((capturedResult!.manifest as Record<string, unknown>).address).toBe("github.com/acme/tools");
+    expect((capturedResult!.manifest as Record<string, unknown>).address).toBe(
+      "github.com/acme/tools",
+    );
   });
 
   it("minimal init JSON has exactly the expected keys", async () => {
@@ -135,7 +141,7 @@ describe("agentPackageInit", () => {
     expect(keys).toContain("description");
     expect(keys).toContain("authors");
     expect(keys).toContain("exports");
-    expect(keys).toContain("mthds_version");  // always set by init
+    expect(keys).toContain("mthds_version"); // always set by init
 
     // Optional fields NOT provided should NOT appear
     expect(keys).not.toContain("name");
@@ -233,7 +239,7 @@ describe("agentPackageInit", () => {
     await agentPackageInit({ ...baseOpts, directory: "/tmp/my-project" });
 
     expect(capturedResult!.path).toMatch(/^\/tmp\/my-project/);
-    expect((capturedResult!.path as string)).toContain("METHODS.toml");
+    expect(capturedResult!.path as string).toContain("METHODS.toml");
   });
 
   // ── Overwrite / force ─────────────────────────────────────────────
@@ -250,9 +256,9 @@ describe("agentPackageInit", () => {
   it("errors when file exists without --force, with actionable hint", async () => {
     mockedExistsSync.mockReturnValue(true);
 
-    await expect(
-      agentPackageInit({ ...baseOpts, force: false }),
-    ).rejects.toThrow("agentError called");
+    await expect(agentPackageInit({ ...baseOpts, force: false })).rejects.toThrow(
+      "agentError called",
+    );
 
     expect(capturedError!.message).toContain("already exists");
     expect(capturedError!.extras?.hint).toContain("--force");
@@ -286,9 +292,9 @@ describe("agentPackageInit", () => {
   // ── Validation errors with specific hints ─────────────────────────
 
   it("errors on invalid address with actionable hint", async () => {
-    await expect(
-      agentPackageInit({ ...baseOpts, address: "not-valid" }),
-    ).rejects.toThrow("agentError called");
+    await expect(agentPackageInit({ ...baseOpts, address: "not-valid" })).rejects.toThrow(
+      "agentError called",
+    );
 
     expect(capturedError!.errorType).toBe("PackageError");
     expect(capturedError!.message).toContain("Invalid package address");
@@ -297,45 +303,45 @@ describe("agentPackageInit", () => {
   });
 
   it("errors on invalid version with actionable hint", async () => {
-    await expect(
-      agentPackageInit({ ...baseOpts, version: "abc" }),
-    ).rejects.toThrow("agentError called");
+    await expect(agentPackageInit({ ...baseOpts, version: "abc" })).rejects.toThrow(
+      "agentError called",
+    );
 
     expect(capturedError!.message).toContain("Invalid version");
     expect(capturedError!.extras?.hint).toContain("semver");
   });
 
   it("errors on empty description with actionable hint", async () => {
-    await expect(
-      agentPackageInit({ ...baseOpts, description: "  " }),
-    ).rejects.toThrow("agentError called");
+    await expect(agentPackageInit({ ...baseOpts, description: "  " })).rejects.toThrow(
+      "agentError called",
+    );
 
     expect(capturedError!.message).toContain("Description is required");
     expect(capturedError!.extras?.hint).toContain("--description");
   });
 
   it("errors on invalid name with actionable hint", async () => {
-    await expect(
-      agentPackageInit({ ...baseOpts, name: "INVALID NAME!" }),
-    ).rejects.toThrow("agentError called");
+    await expect(agentPackageInit({ ...baseOpts, name: "INVALID NAME!" })).rejects.toThrow(
+      "agentError called",
+    );
 
     expect(capturedError!.message).toContain("Invalid method name");
     expect(capturedError!.extras?.hint).toContain("--name");
   });
 
   it("errors on empty displayName with actionable hint", async () => {
-    await expect(
-      agentPackageInit({ ...baseOpts, displayName: "   " }),
-    ).rejects.toThrow("agentError called");
+    await expect(agentPackageInit({ ...baseOpts, displayName: "   " })).rejects.toThrow(
+      "agentError called",
+    );
 
     expect(capturedError!.message).toContain("Display name must not be empty");
     expect(capturedError!.extras?.hint).toContain("--display-name");
   });
 
   it("errors on displayName exceeding 128 chars with hint", async () => {
-    await expect(
-      agentPackageInit({ ...baseOpts, displayName: "x".repeat(129) }),
-    ).rejects.toThrow("agentError called");
+    await expect(agentPackageInit({ ...baseOpts, displayName: "x".repeat(129) })).rejects.toThrow(
+      "agentError called",
+    );
 
     expect(capturedError!.message).toContain("must not exceed 128 characters");
     expect(capturedError!.extras?.hint).toContain("128 characters");
@@ -351,9 +357,9 @@ describe("agentPackageInit", () => {
   });
 
   it("errors on invalid mainPipe with actionable hint", async () => {
-    await expect(
-      agentPackageInit({ ...baseOpts, mainPipe: "Not-Valid" }),
-    ).rejects.toThrow("agentError called");
+    await expect(agentPackageInit({ ...baseOpts, mainPipe: "Not-Valid" })).rejects.toThrow(
+      "agentError called",
+    );
 
     expect(capturedError!.message).toContain("Invalid main_pipe");
     expect(capturedError!.extras?.hint).toContain("snake_case");
@@ -429,7 +435,7 @@ describe("agentPackageList", () => {
     await agentPackageList({});
 
     expect(typeof capturedResult!.path).toBe("string");
-    expect((capturedResult!.path as string)).toMatch(/METHODS\.toml$/);
+    expect(capturedResult!.path as string).toMatch(/METHODS\.toml$/);
   });
 
   it("resolves path with directory option", async () => {
@@ -438,7 +444,7 @@ describe("agentPackageList", () => {
 
     await agentPackageList({ directory: "/tmp/custom-dir" });
 
-    expect((capturedResult!.path as string)).toMatch(/^\/tmp\/custom-dir/);
+    expect(capturedResult!.path as string).toMatch(/^\/tmp\/custom-dir/);
   });
 
   // ── Rich TOML ─────────────────────────────────────────────────────
@@ -543,7 +549,7 @@ describe("agentPackageValidate", () => {
 
     await agentPackageValidate({});
 
-    expect((capturedResult!.path as string)).toMatch(/METHODS\.toml$/);
+    expect(capturedResult!.path as string).toMatch(/METHODS\.toml$/);
   });
 
   it("resolves path with directory option", async () => {
@@ -552,7 +558,7 @@ describe("agentPackageValidate", () => {
 
     await agentPackageValidate({ directory: "/tmp/validate-dir" });
 
-    expect((capturedResult!.path as string)).toMatch(/^\/tmp\/validate-dir/);
+    expect(capturedResult!.path as string).toMatch(/^\/tmp\/validate-dir/);
   });
 
   it("returns all fields from rich manifest", async () => {

@@ -60,7 +60,7 @@ export class PipelineExecuteTimeoutError extends PipelineRequestError {
         "Start the run and poll for its result instead: " +
         "`start()` then `waitForResult(runId)` (SDK), " +
         "or `mthds-agent run start …` then `mthds-agent run poll <pipeline_run_id>` (CLI).",
-      options
+      options,
     );
     this.name = "PipelineExecuteTimeoutError";
     this.elapsedMs = elapsedMs;

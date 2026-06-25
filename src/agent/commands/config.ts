@@ -3,33 +3,24 @@
  */
 
 import { agentSuccess, agentError, AGENT_ERROR_DOMAINS } from "../output.js";
-import { VALID_KEYS,
+import {
+  VALID_KEYS,
   resolveKey,
   getConfigValue,
   setConfigValue,
-  listConfig, isValidBaseUrl } from "../../config/config.js";
+  listConfig,
+  isValidBaseUrl,
+} from "../../config/config.js";
 import { RUNNER_NAMES } from "../../runners/types.js";
 import type { RunnerType } from "../../runners/types.js";
 
-function isValidUrl(s: string): boolean {
-  try {
-    new URL(s);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-export async function agentConfigSet(
-  cliKey: string,
-  value: string
-): Promise<void> {
+export async function agentConfigSet(cliKey: string, value: string): Promise<void> {
   const configKey = resolveKey(cliKey);
   if (!configKey) {
     agentError(
       `Unknown config key: ${cliKey}. Valid keys: ${VALID_KEYS.join(", ")}`,
       "ConfigError",
-      { error_domain: AGENT_ERROR_DOMAINS.CONFIG }
+      { error_domain: AGENT_ERROR_DOMAINS.CONFIG },
     );
   }
 
@@ -37,7 +28,7 @@ export async function agentConfigSet(
     agentError(
       `Invalid runner: ${value}. Valid runners: ${RUNNER_NAMES.join(", ")}`,
       "ConfigError",
-      { error_domain: AGENT_ERROR_DOMAINS.CONFIG }
+      { error_domain: AGENT_ERROR_DOMAINS.CONFIG },
     );
   }
 
@@ -57,7 +48,7 @@ export async function agentConfigGet(cliKey: string): Promise<void> {
     agentError(
       `Unknown config key: ${cliKey}. Valid keys: ${VALID_KEYS.join(", ")}`,
       "ConfigError",
-      { error_domain: AGENT_ERROR_DOMAINS.CONFIG }
+      { error_domain: AGENT_ERROR_DOMAINS.CONFIG },
     );
   }
 

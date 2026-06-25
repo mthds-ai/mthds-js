@@ -1,5 +1,4 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import type { VersionCheckResult } from "../../../src/installer/runtime/version-check.js";
 import type { CachePayload, CacheResult } from "../../../src/agent/update-cache.js";
 import { BINARY_RECOVERY } from "../../../src/agent/binaries.js";
 
@@ -64,7 +63,9 @@ vi.mock("../../../src/agent/plugin-version.js", async (importOriginal) => {
     // Default: pretend we're in Claude Code so the plugin check is reached.
     // Tests that need the "no host" path can re-mock this.
     detectHost: vi.fn((): "claude" | "codex" | null => "claude"),
-    checkPluginVersion: vi.fn((): import("../../../src/agent/update-cache.js").BinaryCheckEntry | null => null),
+    checkPluginVersion: vi.fn(
+      (): import("../../../src/agent/update-cache.js").BinaryCheckEntry | null => null,
+    ),
   };
 });
 
@@ -85,7 +86,7 @@ import {
   clearRemoteCache,
 } from "../../../src/agent/update-cache.js";
 import type { RemoteCachePayload } from "../../../src/agent/update-cache.js";
-import { isSnoozed, writeSnooze, clearSnooze, computeVersionKey } from "../../../src/agent/snooze.js";
+import { isSnoozed, writeSnooze, clearSnooze } from "../../../src/agent/snooze.js";
 import { agentSuccess } from "../../../src/agent/output.js";
 import { checkPluginVersion, MIN_PLUGIN_VERSION } from "../../../src/agent/plugin-version.js";
 import {
@@ -180,9 +181,7 @@ describe("update-check", () => {
     // Fresh checks called (runner=api → only plxt is checked, not pipelex-agent).
     expect(checkBinaryVersion).toHaveBeenCalledTimes(1);
     // Re-cached with fresh data so the next snooze-key comparison sees current state.
-    expect(writeCache).toHaveBeenCalledWith(
-      expect.objectContaining({ aggregate: "UP_TO_DATE" })
-    );
+    expect(writeCache).toHaveBeenCalledWith(expect.objectContaining({ aggregate: "UP_TO_DATE" }));
   });
 
   // ---------------------------------------------------------------------------
@@ -207,7 +206,7 @@ describe("update-check", () => {
     expect(stdoutOutput).toContain("UPGRADE_AVAILABLE");
     expect(stdoutOutput).not.toMatch(/^UP_TO_DATE /m);
     expect(writeCache).toHaveBeenCalledWith(
-      expect.objectContaining({ aggregate: "UPGRADE_AVAILABLE" })
+      expect.objectContaining({ aggregate: "UPGRADE_AVAILABLE" }),
     );
     // Fresh check runs (binary spawn) — the cache-UP_TO_DATE branch always
     // re-verifies installed versions now, so manual upgrades aren't reported
@@ -235,7 +234,7 @@ describe("update-check", () => {
     // run notices.
     expect(stdoutOutput).toBe("UP_TO_DATE update-check=snoozed\n");
     expect(writeCache).toHaveBeenCalledWith(
-      expect.objectContaining({ aggregate: "UPGRADE_AVAILABLE" })
+      expect.objectContaining({ aggregate: "UPGRADE_AVAILABLE" }),
     );
   });
 
@@ -269,7 +268,9 @@ describe("update-check", () => {
     vi.mocked(readCache).mockReturnValue({ aggregate: "UPGRADE_AVAILABLE", payload: stalePayload });
     vi.mocked(computeAggregate).mockReturnValue("UPGRADE_AVAILABLE");
     vi.mocked(checkBinaryVersion).mockReturnValue({
-      status: "outdated", installed_version: "0.3.1", version_constraint: PLXT_CONSTRAINT,
+      status: "outdated",
+      installed_version: "0.3.1",
+      version_constraint: PLXT_CONSTRAINT,
     });
 
     await agentUpdateCheck({});
@@ -288,7 +289,9 @@ describe("update-check", () => {
     vi.mocked(readCache).mockReturnValue({ aggregate: "UPGRADE_AVAILABLE", payload: stalePayload });
     vi.mocked(computeAggregate).mockReturnValue("UP_TO_DATE");
     vi.mocked(checkBinaryVersion).mockReturnValue({
-      status: "ok", installed_version: "0.3.2", version_constraint: PLXT_CONSTRAINT,
+      status: "ok",
+      installed_version: "0.3.2",
+      version_constraint: PLXT_CONSTRAINT,
     });
 
     await agentUpdateCheck({});
@@ -296,9 +299,7 @@ describe("update-check", () => {
     // UP_TO_DATE line so the preamble can distinguish this from a broken run.
     expect(stdoutOutput).toContain("UP_TO_DATE");
     expect(stdoutOutput).not.toContain("UPGRADE_AVAILABLE");
-    expect(writeCache).toHaveBeenCalledWith(
-      expect.objectContaining({ aggregate: "UP_TO_DATE" })
-    );
+    expect(writeCache).toHaveBeenCalledWith(expect.objectContaining({ aggregate: "UP_TO_DATE" }));
   });
 
   // ---------------------------------------------------------------------------
@@ -321,8 +322,11 @@ describe("update-check", () => {
   it("outputs UPGRADE_AVAILABLE when plxt is outdated (runner=api)", async () => {
     vi.mocked(readCache).mockReturnValue(null);
     vi.mocked(computeAggregate).mockReturnValue("UPGRADE_AVAILABLE");
-    vi.mocked(checkBinaryVersion)
-      .mockReturnValueOnce({ status: "outdated", installed_version: "0.3.1", version_constraint: PLXT_CONSTRAINT });
+    vi.mocked(checkBinaryVersion).mockReturnValueOnce({
+      status: "outdated",
+      installed_version: "0.3.1",
+      version_constraint: PLXT_CONSTRAINT,
+    });
 
     await agentUpdateCheck({});
     expect(stdoutOutput).toContain("UPGRADE_AVAILABLE");
@@ -358,9 +362,7 @@ describe("update-check", () => {
 
     await agentUpdateCheck({ snooze: true });
     expect(writeSnooze).toHaveBeenCalled();
-    expect(agentSuccess).toHaveBeenCalledWith(
-      expect.objectContaining({ snoozed: true })
-    );
+    expect(agentSuccess).toHaveBeenCalledWith(expect.objectContaining({ snoozed: true }));
   });
 
   // ---------------------------------------------------------------------------
@@ -396,7 +398,9 @@ describe("update-check", () => {
     vi.mocked(readAndClearUpgradeMarker).mockReturnValue({ pipelex_agent: "0.21.0" });
     vi.mocked(computeAggregate).mockReturnValue("UPGRADE_AVAILABLE");
     vi.mocked(checkPluginVersion).mockReturnValue({
-      s: "outdated", v: "0.1.0", r: MIN_PLUGIN_VERSION,
+      s: "outdated",
+      v: "0.1.0",
+      r: MIN_PLUGIN_VERSION,
     });
 
     await agentUpdateCheck({});
@@ -411,8 +415,11 @@ describe("update-check", () => {
   it("outputs UPGRADE_AVAILABLE when a binary is missing", async () => {
     vi.mocked(readCache).mockReturnValue(null);
     vi.mocked(computeAggregate).mockReturnValue("UPGRADE_AVAILABLE");
-    vi.mocked(checkBinaryVersion)
-      .mockReturnValueOnce({ status: "missing", installed_version: null, version_constraint: PLXT_CONSTRAINT });
+    vi.mocked(checkBinaryVersion).mockReturnValueOnce({
+      status: "missing",
+      installed_version: null,
+      version_constraint: PLXT_CONSTRAINT,
+    });
 
     await agentUpdateCheck({});
     expect(stdoutOutput).toContain("UPGRADE_AVAILABLE");
@@ -471,7 +478,9 @@ describe("update-check", () => {
     vi.mocked(readCache).mockReturnValue(null);
     vi.mocked(computeAggregate).mockReturnValue("UPGRADE_AVAILABLE");
     vi.mocked(checkPluginVersion).mockReturnValue({
-      s: "outdated", v: "0.6.2", r: MIN_PLUGIN_VERSION,
+      s: "outdated",
+      v: "0.6.2",
+      r: MIN_PLUGIN_VERSION,
     });
 
     await agentUpdateCheck({});
@@ -508,7 +517,7 @@ describe("update-check", () => {
     expect(writeCache).toHaveBeenCalledWith(
       expect.not.objectContaining({
         payload: expect.objectContaining({ plugin: expect.anything() }),
-      })
+      }),
     );
   });
 
@@ -519,7 +528,7 @@ describe("update-check", () => {
     it("emits in key=value form with installed versions", async () => {
       vi.mocked(loadConfig).mockReturnValue({
         runner: "pipelex" as const,
-        apiUrl: "",
+        baseUrl: "",
         apiKey: "",
         telemetry: true,
         autoUpgrade: false,
@@ -575,7 +584,7 @@ describe("update-check", () => {
       // Cache still writes so a future non-snoozed run reads the
       // UPGRADE_AVAILABLE state.
       expect(writeCache).toHaveBeenCalledWith(
-        expect.objectContaining({ aggregate: "UPGRADE_AVAILABLE" })
+        expect.objectContaining({ aggregate: "UPGRADE_AVAILABLE" }),
       );
     });
   });
@@ -597,9 +606,7 @@ describe("update-check", () => {
 
       await agentUpdateCheck({});
 
-      const upgradeLine = stdoutOutput
-        .split("\n")
-        .find((l) => l.startsWith("UPGRADE_AVAILABLE "));
+      const upgradeLine = stdoutOutput.split("\n").find((l) => l.startsWith("UPGRADE_AVAILABLE "));
       expect(upgradeLine).toBeDefined();
       const json = JSON.parse(upgradeLine!.replace("UPGRADE_AVAILABLE ", ""));
       expect(json.mthds_agent).toEqual({
@@ -620,9 +627,7 @@ describe("update-check", () => {
 
       await agentUpdateCheck({});
 
-      const upgradeLine = stdoutOutput
-        .split("\n")
-        .find((l) => l.startsWith("UPGRADE_AVAILABLE "));
+      const upgradeLine = stdoutOutput.split("\n").find((l) => l.startsWith("UPGRADE_AVAILABLE "));
       expect(upgradeLine).toBeDefined();
       const json = JSON.parse(upgradeLine!.replace("UPGRADE_AVAILABLE ", ""));
       expect(json.plugin).toEqual({
@@ -647,9 +652,7 @@ describe("update-check", () => {
 
       await agentUpdateCheck({});
 
-      const upgradeLine = stdoutOutput
-        .split("\n")
-        .find((l) => l.startsWith("UPGRADE_AVAILABLE "));
+      const upgradeLine = stdoutOutput.split("\n").find((l) => l.startsWith("UPGRADE_AVAILABLE "));
       const json = JSON.parse(upgradeLine!.replace("UPGRADE_AVAILABLE ", ""));
       // Upstream demands more than the local floor; the r reflects that.
       expect(json.plugin.r).toBe(">=0.12.5");
@@ -669,9 +672,7 @@ describe("update-check", () => {
       vi.mocked(computeAggregate).mockReturnValue("UPGRADE_AVAILABLE");
 
       await agentUpdateCheck({});
-      const upgradeLine = stdoutOutput
-        .split("\n")
-        .find((l) => l.startsWith("UPGRADE_AVAILABLE "));
+      const upgradeLine = stdoutOutput.split("\n").find((l) => l.startsWith("UPGRADE_AVAILABLE "));
       const json = JSON.parse(upgradeLine!.replace("UPGRADE_AVAILABLE ", ""));
       expect(json.plugin.r).toBe(">=0.99.0");
     });
@@ -690,9 +691,7 @@ describe("update-check", () => {
       expect(fetchLatestMthdsAgentNpm).not.toHaveBeenCalled();
       expect(fetchLatestPluginMarketplace).not.toHaveBeenCalled();
       expect(writeRemoteCache).not.toHaveBeenCalled();
-      const upgradeLine = stdoutOutput
-        .split("\n")
-        .find((l) => l.startsWith("UPGRADE_AVAILABLE "));
+      const upgradeLine = stdoutOutput.split("\n").find((l) => l.startsWith("UPGRADE_AVAILABLE "));
       const json = JSON.parse(upgradeLine!.replace("UPGRADE_AVAILABLE ", ""));
       expect(json.plugin.r).toBe(">=0.11.3");
     });
@@ -738,7 +737,7 @@ describe("update-check", () => {
     it("skips remote overlay entirely when updateCheck is disabled", async () => {
       vi.mocked(loadConfig).mockReturnValue({
         runner: "api" as const,
-        apiUrl: "",
+        baseUrl: "",
         apiKey: "",
         telemetry: true,
         autoUpgrade: false,
@@ -760,9 +759,7 @@ describe("update-check", () => {
 
       // The overlay catch emits a one-line warning to stderr; suppress it here
       // since it's the expected outcome of this scenario, not test noise.
-      const stderrSpy = vi
-        .spyOn(process.stderr, "write")
-        .mockImplementation(() => true);
+      const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
       try {
         await agentUpdateCheck({});
       } finally {

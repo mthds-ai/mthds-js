@@ -6,9 +6,14 @@ import {
   collectMthdsFiles,
   determineExportedPipes,
   resolveAllDependencies,
+  type PackageDependency,
 } from "../../../src/package/dependency-resolver.js";
 import { DependencyResolveError } from "../../../src/package/exceptions.js";
 import type { ParsedManifest } from "../../../src/package/manifest/schema.js";
+
+type ParsedManifestWithDependencies = ParsedManifest & {
+  dependencies: Record<string, PackageDependency>;
+};
 
 describe("collectMthdsFiles", () => {
   let tempDir: string;
@@ -58,7 +63,6 @@ describe("determineExportedPipes", () => {
       version: "1.0.0",
       description: "Test",
       authors: [],
-      dependencies: {},
       exports: {},
     };
     expect(determineExportedPipes(manifest)).toBeNull();
@@ -70,7 +74,6 @@ describe("determineExportedPipes", () => {
       version: "1.0.0",
       description: "Test",
       authors: [],
-      dependencies: {},
       exports: {
         legal: { pipes: ["classify", "extract"] },
         scoring: { pipes: ["compute_score"] },
@@ -110,7 +113,7 @@ describe("resolveAllDependencies — local deps", () => {
     );
     writeFileSync(join(depDir, "bundle.mthds"), `domain = "test"\n`);
 
-    const manifest: ParsedManifest = {
+    const manifest: ParsedManifestWithDependencies = {
       address: "github.com/me/pkg",
       version: "1.0.0",
       description: "Root",
@@ -134,7 +137,7 @@ describe("resolveAllDependencies — local deps", () => {
     const pkgRoot = join(tempDir, "root");
     mkdirSync(pkgRoot);
 
-    const manifest: ParsedManifest = {
+    const manifest: ParsedManifestWithDependencies = {
       address: "github.com/me/pkg",
       version: "1.0.0",
       description: "Root",
@@ -159,7 +162,7 @@ describe("resolveAllDependencies — local deps", () => {
     mkdirSync(depDir);
     writeFileSync(join(depDir, "bundle.mthds"), `domain = "test"\n`);
 
-    const manifest: ParsedManifest = {
+    const manifest: ParsedManifestWithDependencies = {
       address: "github.com/me/pkg",
       version: "1.0.0",
       description: "Root",
@@ -181,7 +184,7 @@ describe("resolveAllDependencies — local deps", () => {
     const pkgRoot = join(tempDir, "root");
     mkdirSync(pkgRoot);
 
-    const manifest: ParsedManifest = {
+    const manifest: ParsedManifestWithDependencies = {
       address: "github.com/me/pkg",
       version: "1.0.0",
       description: "Root",

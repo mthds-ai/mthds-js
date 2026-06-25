@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { isDomainCodeValid, isPipeCodeValid, isSnakeCase } from "../../../../src/package/manifest/validation.js";
+import { isDomainCodeValid, isPipeCodeValid } from "../../../../src/package/manifest/validation.js";
 
 describe("isDomainCodeValid", () => {
   it("accepts simple domain", () => {

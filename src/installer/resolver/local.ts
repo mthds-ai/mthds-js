@@ -1,6 +1,11 @@
 import { resolve, join, basename } from "node:path";
 import { readFileSync, readdirSync, statSync } from "node:fs";
-import type { ResolvedRepo, ResolvedMethod, SkippedMethod, MethodsFile } from "../../package/manifest/types.js";
+import type {
+  ResolvedRepo,
+  ResolvedMethod,
+  SkippedMethod,
+  MethodsFile,
+} from "../../package/manifest/types.js";
 import { validateManifest } from "../../package/manifest/validate.js";
 
 function collectMthdFiles(dirPath: string): MethodsFile[] {

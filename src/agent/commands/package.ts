@@ -6,7 +6,12 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { agentSuccess, agentError, AGENT_ERROR_DOMAINS } from "../output.js";
 import { parseMethodsToml, serializeManifestToToml } from "../../package/manifest/parser.js";
-import { isValidAddress, isValidSemver, isValidMethodName, MTHDS_STANDARD_VERSION } from "../../package/manifest/schema.js";
+import {
+  isValidAddress,
+  isValidSemver,
+  isValidMethodName,
+  MTHDS_STANDARD_VERSION,
+} from "../../package/manifest/schema.js";
 import { isPipeCodeValid } from "../../package/manifest/validation.js";
 import { MANIFEST_FILENAME } from "../../package/discovery.js";
 import { ManifestParseError, ManifestValidationError } from "../../package/exceptions.js";
@@ -85,7 +90,10 @@ export async function agentPackageInit(options: AgentPackageInitOptions): Promis
     agentError(
       `Invalid package address '${options.address}'. Must follow hostname/path pattern (e.g. 'github.com/org/repo').`,
       "PackageError",
-      { error_domain: AGENT_ERROR_DOMAINS.PACKAGE, hint: "Provide a valid address in hostname/path format (e.g. 'github.com/org/repo')." },
+      {
+        error_domain: AGENT_ERROR_DOMAINS.PACKAGE,
+        hint: "Provide a valid address in hostname/path format (e.g. 'github.com/org/repo').",
+      },
     );
   }
 
@@ -93,40 +101,47 @@ export async function agentPackageInit(options: AgentPackageInitOptions): Promis
     agentError(
       `Invalid version '${options.version}'. Must be valid semver (e.g. '1.0.0').`,
       "PackageError",
-      { error_domain: AGENT_ERROR_DOMAINS.PACKAGE, hint: "Provide a valid semver version (e.g. '1.0.0', '0.1.0-beta.1')." },
+      {
+        error_domain: AGENT_ERROR_DOMAINS.PACKAGE,
+        hint: "Provide a valid semver version (e.g. '1.0.0', '0.1.0-beta.1').",
+      },
     );
   }
 
   if (!options.description.trim()) {
-    agentError(
-      "Description is required and must be a non-empty string.",
-      "PackageError",
-      { error_domain: AGENT_ERROR_DOMAINS.PACKAGE, hint: "Provide a non-empty --description value." },
-    );
+    agentError("Description is required and must be a non-empty string.", "PackageError", {
+      error_domain: AGENT_ERROR_DOMAINS.PACKAGE,
+      hint: "Provide a non-empty --description value.",
+    });
   }
 
   if (options.name !== undefined && !isValidMethodName(options.name)) {
     agentError(
       `Invalid method name '${options.name}'. Must be 2-25 lowercase snake_case chars (letters, digits, underscores), starting with a letter.`,
       "PackageError",
-      { error_domain: AGENT_ERROR_DOMAINS.PACKAGE, hint: "Provide a valid --name: 2-25 lowercase snake_case chars, starting with a letter (e.g. 'my_tool')." },
+      {
+        error_domain: AGENT_ERROR_DOMAINS.PACKAGE,
+        hint: "Provide a valid --name: 2-25 lowercase snake_case chars, starting with a letter (e.g. 'my_tool').",
+      },
     );
   }
 
   if (options.displayName !== undefined) {
     const dn = options.displayName.trim();
     if (!dn) {
-      agentError(
-        "Display name must not be empty or whitespace when provided.",
-        "PackageError",
-        { error_domain: AGENT_ERROR_DOMAINS.PACKAGE, hint: "Provide a non-empty --display-name value, or omit the flag." },
-      );
+      agentError("Display name must not be empty or whitespace when provided.", "PackageError", {
+        error_domain: AGENT_ERROR_DOMAINS.PACKAGE,
+        hint: "Provide a non-empty --display-name value, or omit the flag.",
+      });
     }
     if (dn.length > 128) {
       agentError(
         `Display name must not exceed 128 characters (got ${dn.length}).`,
         "PackageError",
-        { error_domain: AGENT_ERROR_DOMAINS.PACKAGE, hint: "Shorten the --display-name to 128 characters or fewer." },
+        {
+          error_domain: AGENT_ERROR_DOMAINS.PACKAGE,
+          hint: "Shorten the --display-name to 128 characters or fewer.",
+        },
       );
     }
   }
@@ -135,7 +150,10 @@ export async function agentPackageInit(options: AgentPackageInitOptions): Promis
     agentError(
       `Invalid main_pipe '${options.mainPipe}'. Must be a valid snake_case pipe code.`,
       "PackageError",
-      { error_domain: AGENT_ERROR_DOMAINS.PACKAGE, hint: "Provide a valid --main-pipe in snake_case (e.g. 'extract_data')." },
+      {
+        error_domain: AGENT_ERROR_DOMAINS.PACKAGE,
+        hint: "Provide a valid --main-pipe in snake_case (e.g. 'extract_data').",
+      },
     );
   }
 
@@ -143,12 +161,18 @@ export async function agentPackageInit(options: AgentPackageInitOptions): Promis
     agentError(
       `${MANIFEST_FILENAME} already exists at ${manifestPath}. Use --force to overwrite.`,
       "PackageError",
-      { error_domain: AGENT_ERROR_DOMAINS.PACKAGE, hint: "Add --force to overwrite the existing METHODS.toml." },
+      {
+        error_domain: AGENT_ERROR_DOMAINS.PACKAGE,
+        hint: "Add --force to overwrite the existing METHODS.toml.",
+      },
     );
   }
 
   const authors = options.authors
-    ? options.authors.split(",").map((a) => a.trim()).filter(Boolean)
+    ? options.authors
+        .split(",")
+        .map((a) => a.trim())
+        .filter(Boolean)
     : [];
 
   const manifest: ParsedManifest = {
@@ -168,11 +192,9 @@ export async function agentPackageInit(options: AgentPackageInitOptions): Promis
   try {
     writeFileSync(manifestPath, tomlContent, "utf-8");
   } catch (err) {
-    agentError(
-      `Failed to write ${MANIFEST_FILENAME}: ${(err as Error).message}`,
-      "PackageError",
-      { error_domain: AGENT_ERROR_DOMAINS.IO },
-    );
+    agentError(`Failed to write ${MANIFEST_FILENAME}: ${(err as Error).message}`, "PackageError", {
+      error_domain: AGENT_ERROR_DOMAINS.IO,
+    });
   }
 
   agentSuccess({
@@ -190,7 +212,10 @@ export interface AgentPackageListOptions {
 
 export async function agentPackageList(options: AgentPackageListOptions): Promise<void> {
   const manifestPath = resolveManifestPath(options.directory);
-  const manifest = readManifest(manifestPath, `No ${MANIFEST_FILENAME} found at ${manifestPath}. Run 'mthds-agent package init' first.`);
+  const manifest = readManifest(
+    manifestPath,
+    `No ${MANIFEST_FILENAME} found at ${manifestPath}. Run 'mthds-agent package init' first.`,
+  );
 
   agentSuccess({
     success: true,

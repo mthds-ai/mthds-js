@@ -68,9 +68,7 @@ depcruise:
 	@echo "$(GREEN)✓ protocol/ boundary intact$(NC)"
 
 check:
-	$(MAKE) build
-	$(MAKE) depcruise
-	$(MAKE) test
+	@npm run check
 	@echo "$(GREEN)✓ All checks passed$(NC)"
 
 clean:

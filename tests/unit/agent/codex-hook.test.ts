@@ -128,15 +128,14 @@ describe("buildPathCandidates", () => {
   });
 
   it("on POSIX yields one candidate per PATH dir, no extension applied", () => {
-    expect(
-      buildPathCandidates("plxt", "/usr/local/bin:/usr/bin", "linux", undefined)
-    ).toEqual(["/usr/local/bin/plxt", "/usr/bin/plxt"]);
+    expect(buildPathCandidates("plxt", "/usr/local/bin:/usr/bin", "linux", undefined)).toEqual([
+      "/usr/local/bin/plxt",
+      "/usr/bin/plxt",
+    ]);
   });
 
   it("on POSIX ignores PATHEXT even when set", () => {
-    expect(
-      buildPathCandidates("plxt", "/bin", "darwin", ".EXE;.CMD")
-    ).toEqual(["/bin/plxt"]);
+    expect(buildPathCandidates("plxt", "/bin", "darwin", ".EXE;.CMD")).toEqual(["/bin/plxt"]);
   });
 
   it("on POSIX skips empty PATH segments", () => {
@@ -147,18 +146,11 @@ describe("buildPathCandidates", () => {
   });
 
   it("on POSIX handles a directory with a trailing separator", () => {
-    expect(buildPathCandidates("plxt", "/a/", "linux", undefined)).toEqual([
-      "/a/plxt",
-    ]);
+    expect(buildPathCandidates("plxt", "/a/", "linux", undefined)).toEqual(["/a/plxt"]);
   });
 
   it("on Windows applies each PATHEXT extension and excludes the bare name", () => {
-    const candidates = buildPathCandidates(
-      "plxt",
-      "C:\\bin;D:\\tools",
-      "win32",
-      ".COM;.EXE;.CMD"
-    );
+    const candidates = buildPathCandidates("plxt", "C:\\bin;D:\\tools", "win32", ".COM;.EXE;.CMD");
     expect(candidates).toEqual([
       "C:\\bin\\plxt.COM",
       "C:\\bin\\plxt.EXE",
@@ -171,9 +163,7 @@ describe("buildPathCandidates", () => {
   });
 
   it("on Windows falls back to a sensible PATHEXT default when unset", () => {
-    expect(
-      buildPathCandidates("plxt", "C:\\bin", "win32", undefined)
-    ).toEqual([
+    expect(buildPathCandidates("plxt", "C:\\bin", "win32", undefined)).toEqual([
       "C:\\bin\\plxt.COM",
       "C:\\bin\\plxt.EXE",
       "C:\\bin\\plxt.BAT",
@@ -182,9 +172,9 @@ describe("buildPathCandidates", () => {
   });
 
   it("on Windows treats a directory with a trailing backslash without doubling the separator", () => {
-    expect(
-      buildPathCandidates("plxt", "C:\\bin\\", "win32", ".EXE")
-    ).toEqual(["C:\\bin\\plxt.EXE"]);
+    expect(buildPathCandidates("plxt", "C:\\bin\\", "win32", ".EXE")).toEqual([
+      "C:\\bin\\plxt.EXE",
+    ]);
   });
 });
 
@@ -221,7 +211,7 @@ describe("commandOnPath", () => {
       process.env.PATH = scratch;
 
       expect(commandOnPath("plxt")).toBe(false);
-    }
+    },
   );
 
   it.skipIf(isWindows)("returns true when the file is marked executable", () => {
@@ -290,8 +280,7 @@ function makeDeps(overrides: {
   return { deps, calls, pipelexCalls, emitted };
 }
 
-const PAYLOAD = (envelope: string) =>
-  JSON.stringify({ tool_input: { command: envelope } });
+const PAYLOAD = (envelope: string) => JSON.stringify({ tool_input: { command: envelope } });
 
 describe("runCodexHook", () => {
   it("silently passes on empty stdin", async () => {
@@ -375,9 +364,7 @@ describe("runCodexHook", () => {
   });
 
   it("blocks on fmt failure when lint passed", async () => {
-    const plxtResults = new Map([
-      ["fmt a.mthds", { exitCode: 1, stderr: "fmt boom" }],
-    ]);
+    const plxtResults = new Map([["fmt a.mthds", { exitCode: 1, stderr: "fmt boom" }]]);
     const { deps, emitted } = makeDeps({
       stdin: PAYLOAD("*** Update File: a.mthds"),
       files: new Set(["a.mthds"]),
@@ -414,7 +401,7 @@ describe("runCodexHook", () => {
 describe("parseAgentErrorEnvelope", () => {
   it("parses the JSON error envelope into an object", () => {
     const env = parseAgentErrorEnvelope(
-      errorEnvelope({ is_valid: false, error_domain: "input", message: "bad" })
+      errorEnvelope({ is_valid: false, error_domain: "input", message: "bad" }),
     );
     expect(env?.error_domain).toBe("input");
     expect(env?.is_valid).toBe(false);
@@ -439,8 +426,11 @@ describe("formatValidationReason", () => {
   it("formats the message + validation_errors list", () => {
     const reason = formatValidationReason(
       "x.mthds",
-      { error: true, message: "Invalid", validation_errors: [{ category: "pipe_validation", message: "bad ref", pipe_code: "p" }] },
-      "fallback"
+      {
+        message: "Invalid",
+        validation_errors: [{ category: "pipe_validation", message: "bad ref", pipe_code: "p" }],
+      },
+      "fallback",
     );
     expect(reason).toContain("Invalid");
     expect(reason).toContain("[pipe_validation] bad ref");
@@ -450,22 +440,29 @@ describe("formatValidationReason", () => {
   it("does not crash when validation_errors is a non-array (malformed / version-skewed envelope)", () => {
     const reason = formatValidationReason(
       "x.mthds",
-      { error: true, message: "Invalid", validation_errors: { not: "an array" } as never },
-      "fallback"
+      { message: "Invalid", validation_errors: { not: "an array" } as never },
+      "fallback",
     );
     expect(reason).toBe("Validation failed for x.mthds:\n\nInvalid");
   });
 
   it("does not crash on a non-string message (version-skewed envelope) — falls back", () => {
-    const reason = formatValidationReason("x.mthds", { error: true, message: 42 as never }, "fallback");
+    const reason = formatValidationReason("x.mthds", { message: 42 as never }, "fallback");
     expect(reason).toBe("Validation failed for x.mthds:\n\nfallback");
   });
 
   it("does not crash on null / non-object items in validation_errors", () => {
     const reason = formatValidationReason(
       "x.mthds",
-      { error: true, message: "Invalid", validation_errors: [null, "nope", { category: "pipe_validation", message: "real" }] as never },
-      "fallback"
+      {
+        message: "Invalid",
+        validation_errors: [
+          null,
+          "nope",
+          { category: "pipe_validation", message: "real" },
+        ] as never,
+      },
+      "fallback",
     );
     expect(reason).toContain("[pipe_validation] real");
     expect(reason).not.toContain("nope");
@@ -536,7 +533,11 @@ describe("classifyStage3Result", () => {
       error_domain: "input",
       message: "Validation error(s) in the bundle",
       validation_errors: [
-        { category: "pipe_validation", message: "Missing required field 'source'", pipe_code: "extract_info" },
+        {
+          category: "pipe_validation",
+          message: "Missing required field 'source'",
+          pipe_code: "extract_info",
+        },
       ],
     });
     const out = classifyStage3Result("bundles/x.mthds", { exitCode: 1, stderr });
@@ -644,7 +645,11 @@ describe("runCodexHook — Stage 3", () => {
       error_domain: "input",
       message: "Validation error(s) in the bundle",
       validation_errors: [
-        { category: "pipe_validation", message: "Missing required field 'source'", pipe_code: "extract_info" },
+        {
+          category: "pipe_validation",
+          message: "Missing required field 'source'",
+          pipe_code: "extract_info",
+        },
       ],
     });
     const { deps, emitted } = makeDeps({
@@ -697,7 +702,9 @@ describe("runCodexHook — Stage 3", () => {
     expect(parsed.hookSpecificOutput.hookEventName).toBe("PostToolUse");
     expect(parsed.hookSpecificOutput.additionalContext).toContain("config domain");
     expect(parsed.hookSpecificOutput.additionalContext).toContain("do not edit the file");
-    expect(parsed.hookSpecificOutput.additionalContext).toContain("Telemetry config missing required field");
+    expect(parsed.hookSpecificOutput.additionalContext).toContain(
+      "Telemetry config missing required field",
+    );
     expect(parsed.hookSpecificOutput.additionalContext).toContain("a.mthds");
   });
 

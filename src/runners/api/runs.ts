@@ -143,7 +143,7 @@ export const DEFAULT_WAIT_TIMEOUT_MS = 1_200_000; // 20 min — matches the runn
 /** A single result lookup — the primitive the poll loop drives. */
 export type FetchResultOnce = (
   runId: string,
-  options?: { signal?: AbortSignal }
+  options?: { signal?: AbortSignal },
 ) => Promise<RunResultState>;
 
 /**
@@ -159,7 +159,7 @@ export type FetchResultOnce = (
 export async function pollUntilResult(
   fetchOnce: FetchResultOnce,
   runId: string,
-  options: WaitForResultOptions = {}
+  options: WaitForResultOptions = {},
 ): Promise<RunResults> {
   const intervalMs = options.intervalMs ?? DEFAULT_POLL_INTERVAL_MS;
   const timeoutMs = options.timeoutMs ?? DEFAULT_WAIT_TIMEOUT_MS;
@@ -177,7 +177,7 @@ export async function pollUntilResult(
       throw new RunTimeoutError(
         `Run ${runId} did not reach a terminal state within ${timeoutMs}ms.`,
         runId,
-        timeoutMs
+        timeoutMs,
       );
     }
 

@@ -1,22 +1,16 @@
 import * as p from "@clack/prompts";
 import { printLogo } from "./index.js";
-import { VALID_KEYS,
+import {
+  VALID_KEYS,
   resolveKey,
   getConfigValue,
   setConfigValue,
-  listConfig, isValidBaseUrl } from "../../config/config.js";
+  listConfig,
+  isValidBaseUrl,
+} from "../../config/config.js";
 import { RUNNER_NAMES } from "../../runners/types.js";
 import type { RunnerType } from "../../runners/types.js";
 import { maskApiKey } from "./utils.js";
-
-function isValidUrl(s: string): boolean {
-  try {
-    new URL(s);
-    return true;
-  } catch {
-    return false;
-  }
-}
 
 export async function configSet(cliKey: string, value: string): Promise<void> {
   printLogo();
@@ -75,11 +69,7 @@ export async function configList(): Promise<void> {
   const entries = listConfig();
   for (const entry of entries) {
     const sourceLabel =
-      entry.source === "env"
-        ? " (from env)"
-        : entry.source === "default"
-          ? " (default)"
-          : "";
+      entry.source === "env" ? " (from env)" : entry.source === "default" ? " (default)" : "";
     const display = entry.cliKey === "api-key" ? maskApiKey(entry.value) : entry.value;
     p.log.info(`${entry.cliKey} = ${display}${sourceLabel}`);
   }

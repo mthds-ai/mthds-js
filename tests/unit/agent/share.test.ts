@@ -25,7 +25,7 @@ vi.mock("../../../src/cli/commands/share.js", () => ({
 class AgentErrorThrow extends Error {
   constructor(
     public errorType: string,
-    public extras?: Record<string, unknown>
+    public extras?: Record<string, unknown>,
   ) {
     super(errorType);
   }
@@ -33,11 +33,9 @@ class AgentErrorThrow extends Error {
 
 vi.mock("../../../src/agent/output.js", () => ({
   agentSuccess: vi.fn(),
-  agentError: vi.fn(
-    (message: string, errorType: string, extras?: Record<string, unknown>) => {
-      throw new AgentErrorThrow(errorType, { message, ...extras });
-    }
-  ),
+  agentError: vi.fn((message: string, errorType: string, extras?: Record<string, unknown>) => {
+    throw new AgentErrorThrow(errorType, { message, ...extras });
+  }),
   AGENT_ERROR_DOMAINS: {
     ARGUMENT: "argument",
     CONFIG: "config",
@@ -89,6 +87,7 @@ const fakeResolved: ResolvedRepo = {
   methods: [fakeMethod],
   skipped: [],
   source: "github",
+  repoName: "mthds-ai/contract-analysis",
   isPublic: true,
 };
 
@@ -98,31 +97,31 @@ beforeEach(() => {
 
 describe("agentShare", () => {
   it("errors when both address and --local are provided", async () => {
-    await expect(
-      agentShare("org/repo", { local: "/some/path" })
-    ).rejects.toThrow(AgentErrorThrow);
+    await expect(agentShare("org/repo", { local: "/some/path" })).rejects.toThrow(AgentErrorThrow);
 
     expect(mockedAgentError).toHaveBeenCalledWith(
       expect.stringContaining("Cannot use both"),
       "ArgumentError",
-      expect.any(Object)
+      expect.any(Object),
     );
   });
 
   it("errors when neither address nor --local is provided", async () => {
-    await expect(
-      agentShare(undefined, {})
-    ).rejects.toThrow(AgentErrorThrow);
+    await expect(agentShare(undefined, {})).rejects.toThrow(AgentErrorThrow);
 
     expect(mockedAgentError).toHaveBeenCalledWith(
       expect.stringContaining("Provide an address"),
       "ArgumentError",
-      expect.any(Object)
+      expect.any(Object),
     );
   });
 
   it("returns share URLs from GitHub address", async () => {
-    mockedParseAddress.mockReturnValue({ org: "mthds-ai", repo: "contract-analysis", subpath: null });
+    mockedParseAddress.mockReturnValue({
+      org: "mthds-ai",
+      repo: "contract-analysis",
+      subpath: null,
+    });
     mockedResolveFromGitHub.mockResolvedValue(fakeResolved);
 
     await agentShare("mthds-ai/contract-analysis", {});
@@ -131,7 +130,7 @@ describe("agentShare", () => {
       expect.objectContaining({
         methods: [{ displayName: "Contract Analysis", description: "Analyze contracts" }],
         address: "mthds-ai/contract-analysis",
-      })
+      }),
     );
     const successCall = mockedAgentSuccess.mock.calls[0]![0];
     expect(successCall.share_urls).toHaveProperty("x");
@@ -153,7 +152,7 @@ describe("agentShare", () => {
       expect.objectContaining({
         success: true,
         share_urls: expect.any(Object),
-      })
+      }),
     );
   });
 
@@ -172,7 +171,11 @@ describe("agentShare", () => {
         },
       ],
     };
-    mockedParseAddress.mockReturnValue({ org: "mthds-ai", repo: "contract-analysis", subpath: null });
+    mockedParseAddress.mockReturnValue({
+      org: "mthds-ai",
+      repo: "contract-analysis",
+      subpath: null,
+    });
     mockedResolveFromGitHub.mockResolvedValue(multiResolved);
 
     await agentShare("mthds-ai/contract-analysis", { method: "other-method" });
@@ -180,27 +183,35 @@ describe("agentShare", () => {
     expect(mockedAgentSuccess).toHaveBeenCalledWith(
       expect.objectContaining({
         methods: ["other-method"],
-      })
+      }),
     );
   });
 
   it("errors when --method filter does not match", async () => {
-    mockedParseAddress.mockReturnValue({ org: "mthds-ai", repo: "contract-analysis", subpath: null });
+    mockedParseAddress.mockReturnValue({
+      org: "mthds-ai",
+      repo: "contract-analysis",
+      subpath: null,
+    });
     mockedResolveFromGitHub.mockResolvedValue(fakeResolved);
 
     await expect(
-      agentShare("mthds-ai/contract-analysis", { method: "nonexistent" })
+      agentShare("mthds-ai/contract-analysis", { method: "nonexistent" }),
     ).rejects.toThrow(AgentErrorThrow);
 
     expect(mockedAgentError).toHaveBeenCalledWith(
       expect.stringContaining('Method "nonexistent" not found'),
       "ShareError",
-      expect.any(Object)
+      expect.any(Object),
     );
   });
 
   it("filters share_urls to requested platforms only", async () => {
-    mockedParseAddress.mockReturnValue({ org: "mthds-ai", repo: "contract-analysis", subpath: null });
+    mockedParseAddress.mockReturnValue({
+      org: "mthds-ai",
+      repo: "contract-analysis",
+      subpath: null,
+    });
     mockedResolveFromGitHub.mockResolvedValue(fakeResolved);
 
     await agentShare("mthds-ai/contract-analysis", { platform: ["x", "linkedin"] });
@@ -212,7 +223,11 @@ describe("agentShare", () => {
   });
 
   it("returns all platforms when no --platform is specified", async () => {
-    mockedParseAddress.mockReturnValue({ org: "mthds-ai", repo: "contract-analysis", subpath: null });
+    mockedParseAddress.mockReturnValue({
+      org: "mthds-ai",
+      repo: "contract-analysis",
+      subpath: null,
+    });
     mockedResolveFromGitHub.mockResolvedValue(fakeResolved);
 
     await agentShare("mthds-ai/contract-analysis", {});
@@ -223,17 +238,21 @@ describe("agentShare", () => {
   });
 
   it("errors on invalid platform name", async () => {
-    mockedParseAddress.mockReturnValue({ org: "mthds-ai", repo: "contract-analysis", subpath: null });
+    mockedParseAddress.mockReturnValue({
+      org: "mthds-ai",
+      repo: "contract-analysis",
+      subpath: null,
+    });
     mockedResolveFromGitHub.mockResolvedValue(fakeResolved);
 
     await expect(
-      agentShare("mthds-ai/contract-analysis", { platform: ["twitter" as never] })
+      agentShare("mthds-ai/contract-analysis", { platform: ["twitter" as never] }),
     ).rejects.toThrow(AgentErrorThrow);
 
     expect(mockedAgentError).toHaveBeenCalledWith(
       expect.stringContaining('Invalid platform "twitter"'),
       "ArgumentError",
-      expect.any(Object)
+      expect.any(Object),
     );
   });
 });

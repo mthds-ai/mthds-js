@@ -66,7 +66,7 @@ export async function agentBootstrap(options: BootstrapOptions = {}): Promise<vo
       agentError(
         `Could not auto-install uv: ${errorMsg(err)}. Install manually: https://docs.astral.sh/uv/getting-started/installation/`,
         "InstallError",
-        { error_domain: AGENT_ERROR_DOMAINS.INSTALL }
+        { error_domain: AGENT_ERROR_DOMAINS.INSTALL },
       );
       return;
     }
@@ -75,7 +75,7 @@ export async function agentBootstrap(options: BootstrapOptions = {}): Promise<vo
       agentError(
         `uv was installed but is not reachable in PATH. Restart your shell or add the uv bin directory to PATH.`,
         "InstallError",
-        { error_domain: AGENT_ERROR_DOMAINS.INSTALL }
+        { error_domain: AGENT_ERROR_DOMAINS.INSTALL },
       );
       return;
     }
@@ -94,7 +94,7 @@ export async function agentBootstrap(options: BootstrapOptions = {}): Promise<vo
     const recovery = BINARY_RECOVERY[key];
     if (!recovery) {
       process.stderr.write(
-        `Warning: no recovery info for binary "${key}" — skipping. This is a bug.\n`
+        `Warning: no recovery info for binary "${key}" — skipping. This is a bug.\n`,
       );
       continue;
     }
@@ -155,13 +155,13 @@ export async function agentBootstrap(options: BootstrapOptions = {}): Promise<vo
         newVersion = null;
       } else {
         process.stderr.write(
-          `Warning: ${uvPkg} was installed but version ${postCheck.installed_version} still does not meet ${postCheck.version_constraint}.\n`
+          `Warning: ${uvPkg} was installed but version ${postCheck.installed_version} still does not meet ${postCheck.version_constraint}.\n`,
         );
         newVersion = postCheck.installed_version;
       }
     } catch (err) {
       process.stderr.write(
-        `Warning: post-install version check failed for ${uvPkg}: ${errorMsg(err)}.\n`
+        `Warning: post-install version check failed for ${uvPkg}: ${errorMsg(err)}.\n`,
       );
       newVersion = null;
     }
@@ -188,19 +188,17 @@ export async function agentBootstrap(options: BootstrapOptions = {}): Promise<vo
     clearCache();
     clearSnooze();
     process.stdout.write(
-      "BOOTSTRAP_COMPLETE " + JSON.stringify({ installed: installedEntries }) + "\n"
+      "BOOTSTRAP_COMPLETE " + JSON.stringify({ installed: installedEntries }) + "\n",
     );
   } else if (allFailed) {
-    process.stdout.write(
-      "BOOTSTRAP_FAILED " + JSON.stringify({ failed: failedEntries }) + "\n"
-    );
+    process.stdout.write("BOOTSTRAP_FAILED " + JSON.stringify({ failed: failedEntries }) + "\n");
   } else {
     clearCache();
     clearSnooze();
     process.stdout.write(
       "BOOTSTRAP_PARTIAL " +
         JSON.stringify({ installed: installedEntries, failed: failedEntries }) +
-        "\n"
+        "\n",
     );
   }
 
@@ -223,12 +221,12 @@ function emitPluginCheck(): void {
             cmd: pluginUpdateCommand(host),
             host,
           }) +
-          "\n"
+          "\n",
       );
     }
   } catch (err) {
     process.stderr.write(
-      `Warning: plugin version check failed (${err instanceof Error ? err.message : String(err)}). Continuing.\n`
+      `Warning: plugin version check failed (${err instanceof Error ? err.message : String(err)}). Continuing.\n`,
     );
   }
 }

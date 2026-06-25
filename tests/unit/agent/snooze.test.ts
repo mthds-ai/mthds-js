@@ -43,7 +43,7 @@ vi.mock("node:fs", async (importOriginal) => {
       return real.writeFileSync(
         p as Parameters<typeof real.writeFileSync>[0],
         data as Parameters<typeof real.writeFileSync>[1],
-        opts as Parameters<typeof real.writeFileSync>[2]
+        opts as Parameters<typeof real.writeFileSync>[2],
       );
     }),
     mkdirSync: vi.fn((p: unknown, opts?: unknown) => {
@@ -53,7 +53,7 @@ vi.mock("node:fs", async (importOriginal) => {
       }
       return real.mkdirSync(
         p as Parameters<typeof real.mkdirSync>[0],
-        opts as Parameters<typeof real.mkdirSync>[1]
+        opts as Parameters<typeof real.mkdirSync>[1],
       );
     }),
     // Hardened writes go through openSync (for O_NOFOLLOW), so the
@@ -66,7 +66,7 @@ vi.mock("node:fs", async (importOriginal) => {
       return real.openSync(
         p as Parameters<typeof real.openSync>[0],
         flags as Parameters<typeof real.openSync>[1],
-        mode as Parameters<typeof real.openSync>[2]
+        mode as Parameters<typeof real.openSync>[2],
       );
     }),
     unlinkSync: vi.fn((p: unknown) => {
@@ -170,11 +170,7 @@ describe("snooze", () => {
 
     it("reads the fallback when only the fallback file exists", async () => {
       mkdirSync(fallbackDir(), { recursive: true });
-      writeFileSync(
-        fallbackSnoozePath(),
-        "ok:ok:outdated>=0.3.2 2 1711440000000\n",
-        "utf-8"
-      );
+      writeFileSync(fallbackSnoozePath(), "ok:ok:outdated>=0.3.2 2 1711440000000\n", "utf-8");
 
       const { readSnooze } = await importModule();
       const state = readSnooze();
@@ -343,7 +339,7 @@ describe("snooze", () => {
       writeSnooze("K");
 
       const snoozeWarnings = stderrSpy.mock.calls.filter((c) =>
-        String(c[0]).includes("could not write snooze state")
+        String(c[0]).includes("could not write snooze state"),
       );
       expect(snoozeWarnings).toHaveLength(1);
 
@@ -358,7 +354,7 @@ describe("snooze", () => {
       writeSnooze("K");
 
       const snoozeWarnings = stderrSpy.mock.calls.filter((c) =>
-        String(c[0]).includes("could not write snooze state")
+        String(c[0]).includes("could not write snooze state"),
       );
       expect(snoozeWarnings).toHaveLength(0);
 
@@ -378,7 +374,7 @@ describe("snooze", () => {
 
       expect(existsSync(fallbackSnoozePath())).toBe(false);
       const warning = stderrSpy.mock.calls.find((c) =>
-        String(c[0]).includes("could not write snooze state")
+        String(c[0]).includes("could not write snooze state"),
       );
       expect(warning).toBeDefined();
       expect(String(warning![0])).toContain("ENOSPC");
@@ -399,11 +395,7 @@ describe("snooze", () => {
 
     it("returns false when versionKey differs", async () => {
       mkdirSync(stateDir(), { recursive: true });
-      writeFileSync(
-        snoozePath(),
-        `ok:ok:outdated>=0.3.2 1 ${Date.now()}\n`,
-        "utf-8"
-      );
+      writeFileSync(snoozePath(), `ok:ok:outdated>=0.3.2 1 ${Date.now()}\n`, "utf-8");
 
       const { isSnoozed } = await importModule();
       expect(isSnoozed("different:key:here")).toBe(false);
@@ -411,11 +403,7 @@ describe("snooze", () => {
 
     it("returns true within 24h window at level 1", async () => {
       mkdirSync(stateDir(), { recursive: true });
-      writeFileSync(
-        snoozePath(),
-        `ok:ok:outdated>=0.3.2 1 ${Date.now()}\n`,
-        "utf-8"
-      );
+      writeFileSync(snoozePath(), `ok:ok:outdated>=0.3.2 1 ${Date.now()}\n`, "utf-8");
 
       const { isSnoozed } = await importModule();
       expect(isSnoozed("ok:ok:outdated>=0.3.2")).toBe(true);
@@ -424,11 +412,7 @@ describe("snooze", () => {
     it("returns false after 24h at level 1", async () => {
       mkdirSync(stateDir(), { recursive: true });
       const expired = Date.now() - 25 * 60 * 60 * 1000; // 25h ago
-      writeFileSync(
-        snoozePath(),
-        `ok:ok:outdated>=0.3.2 1 ${expired}\n`,
-        "utf-8"
-      );
+      writeFileSync(snoozePath(), `ok:ok:outdated>=0.3.2 1 ${expired}\n`, "utf-8");
 
       const { isSnoozed } = await importModule();
       expect(isSnoozed("ok:ok:outdated>=0.3.2")).toBe(false);
@@ -437,11 +421,7 @@ describe("snooze", () => {
     it("returns true within 48h at level 2", async () => {
       mkdirSync(stateDir(), { recursive: true });
       const recent = Date.now() - 30 * 60 * 60 * 1000; // 30h ago (within 48h)
-      writeFileSync(
-        snoozePath(),
-        `ok:ok:outdated>=0.3.2 2 ${recent}\n`,
-        "utf-8"
-      );
+      writeFileSync(snoozePath(), `ok:ok:outdated>=0.3.2 2 ${recent}\n`, "utf-8");
 
       const { isSnoozed } = await importModule();
       expect(isSnoozed("ok:ok:outdated>=0.3.2")).toBe(true);
@@ -450,11 +430,7 @@ describe("snooze", () => {
     it("returns true within 7d at level 3", async () => {
       mkdirSync(stateDir(), { recursive: true });
       const recent = Date.now() - 3 * 24 * 60 * 60 * 1000; // 3 days ago (within 7d)
-      writeFileSync(
-        snoozePath(),
-        `ok:ok:outdated>=0.3.2 3 ${recent}\n`,
-        "utf-8"
-      );
+      writeFileSync(snoozePath(), `ok:ok:outdated>=0.3.2 3 ${recent}\n`, "utf-8");
 
       const { isSnoozed } = await importModule();
       expect(isSnoozed("ok:ok:outdated>=0.3.2")).toBe(true);
@@ -573,7 +549,7 @@ describe("snooze", () => {
       clearSnooze();
 
       const clearWarnings = stderrSpy.mock.calls.filter((c) =>
-        String(c[0]).includes("could not clear snooze state")
+        String(c[0]).includes("could not clear snooze state"),
       );
       expect(clearWarnings).toHaveLength(1);
 
@@ -587,7 +563,7 @@ describe("snooze", () => {
       clearSnooze();
 
       const clearWarnings = stderrSpy.mock.calls.filter((c) =>
-        String(c[0]).includes("could not clear snooze state")
+        String(c[0]).includes("could not clear snooze state"),
       );
       expect(clearWarnings).toHaveLength(0);
 
@@ -640,16 +616,14 @@ describe("snooze", () => {
     it("writeSnooze refuses an insecure $TMPDIR and reports it in the warning", async () => {
       chmodSync(tempTmp!, 0o777); // world-writable, no sticky bit
       writeFailPredicate = (p) => (p === snoozePath() ? eperm(p) : null);
-      const stderrSpy = vi
-        .spyOn(process.stderr, "write")
-        .mockImplementation(() => true);
+      const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
 
       const { writeSnooze } = await importModule();
       writeSnooze("KEY");
 
       expect(existsSync(fallbackSnoozePath())).toBe(false);
       const warning = stderrSpy.mock.calls.find((c) =>
-        String(c[0]).includes("could not write snooze state")
+        String(c[0]).includes("could not write snooze state"),
       );
       expect(warning).toBeDefined();
       expect(String(warning![0])).toContain("unsafe:insecure-tmp");

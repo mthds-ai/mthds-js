@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from "vitest";
 
 // ── Filesystem mock ──────────────────────────────────────────────────
 //
@@ -18,7 +18,7 @@ interface FakeStat {
 interface FsState {
   files: Map<string, string>;
   dirs: Map<string, string[]>; // dir path -> entries
-  fileStats: Set<string>;      // paths that statSync should return as non-dir
+  fileStats: Set<string>; // paths that statSync should return as non-dir
 }
 
 let fsState: FsState;
@@ -111,14 +111,14 @@ function installPrimaryClaude(version: string, scope = "user"): void {
       plugins: {
         [PLUGIN_KEYS[0]]: [{ scope, version, installPath: "/tmp" }],
       },
-    })
+    }),
   );
 }
 
 function installCodexPlugin(
   plugin: string,
   versions: string[],
-  opts: { manifestVersion?: string; codexHome?: string } = {}
+  opts: { manifestVersion?: string; codexHome?: string } = {},
 ): void {
   // Ensure the cache parent dir registers as "exists" — detectHost requires it.
   const cacheParent = join(opts.codexHome ?? defaultCodexHome(), "plugins", "cache");
@@ -127,10 +127,9 @@ function installCodexPlugin(
   fsState.dirs.set(dir, versions);
   for (const v of versions) {
     fsState.dirs.set(codexVersionDir(plugin, v, opts.codexHome), [".codex-plugin"]);
-    fsState.dirs.set(
-      join(codexVersionDir(plugin, v, opts.codexHome), ".codex-plugin"),
-      ["plugin.json"]
-    );
+    fsState.dirs.set(join(codexVersionDir(plugin, v, opts.codexHome), ".codex-plugin"), [
+      "plugin.json",
+    ]);
     const manifest: Record<string, unknown> = {};
     if (opts.manifestVersion) manifest.version = opts.manifestVersion;
     else if (v !== "local") manifest.version = v;
@@ -233,11 +232,8 @@ describe("pluginUpdateCommand", () => {
   });
 
   it("returns the claude shell command for the claude host", () => {
-    expect(pluginUpdateCommand("claude")).toBe(
-      "claude plugin install mthds@mthds-plugins"
-    );
+    expect(pluginUpdateCommand("claude")).toBe("claude plugin install mthds@mthds-plugins");
   });
-
 });
 
 // ── checkPluginVersion — Claude branch ────────────────────────────
@@ -258,10 +254,7 @@ describe("checkPluginVersion (Claude)", () => {
   });
 
   it("returns missing when plugin key is absent", () => {
-    fsState.files.set(
-      INSTALLED_PLUGINS_PATH,
-      JSON.stringify({ version: 2, plugins: {} })
-    );
+    fsState.files.set(INSTALLED_PLUGINS_PATH, JSON.stringify({ version: 2, plugins: {} }));
     expect(checkPluginVersion("claude")).toEqual({
       s: "missing",
       v: null,
@@ -272,7 +265,7 @@ describe("checkPluginVersion (Claude)", () => {
   it("returns missing when plugin key has empty entries", () => {
     fsState.files.set(
       INSTALLED_PLUGINS_PATH,
-      JSON.stringify({ version: 2, plugins: { [PLUGIN_KEYS[0]]: [] } })
+      JSON.stringify({ version: 2, plugins: { [PLUGIN_KEYS[0]]: [] } }),
     );
     expect(checkPluginVersion("claude")).toEqual({
       s: "missing",
@@ -285,9 +278,7 @@ describe("checkPluginVersion (Claude)", () => {
     fsState.files.set(INSTALLED_PLUGINS_PATH, "not valid json{{{");
     const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
     expect(checkPluginVersion("claude")).toBeNull();
-    expect(stderrSpy).toHaveBeenCalledWith(
-      expect.stringContaining("contains invalid JSON")
-    );
+    expect(stderrSpy).toHaveBeenCalledWith(expect.stringContaining("contains invalid JSON"));
     stderrSpy.mockRestore();
   });
 
@@ -307,7 +298,7 @@ describe("checkPluginVersion (Claude)", () => {
             { scope: "user", version: FLOOR_OK, installPath: "/tmp" },
           ],
         },
-      })
+      }),
     );
     expect(checkPluginVersion("claude")).toEqual({ s: "ok", v: FLOOR_OK });
   });
@@ -320,7 +311,7 @@ describe("checkPluginVersion (Claude)", () => {
         plugins: {
           [PLUGIN_KEYS[1]]: [{ scope: "user", version: "0.6.0", installPath: "/tmp" }],
         },
-      })
+      }),
     );
     expect(checkPluginVersion("claude")).toEqual({
       s: "outdated",
@@ -338,7 +329,7 @@ describe("checkPluginVersion (Claude)", () => {
           [PLUGIN_KEYS[0]]: [{ scope: "user", version: FLOOR_OK, installPath: "/tmp" }],
           [PLUGIN_KEYS[1]]: [{ scope: "user", version: "0.1.0", installPath: "/tmp" }],
         },
-      })
+      }),
     );
     expect(checkPluginVersion("claude")).toEqual({ s: "ok", v: FLOOR_OK });
   });
@@ -392,14 +383,8 @@ describe("checkPluginVersion (Codex)", () => {
   it("ignores dotfile entries when picking a version", () => {
     fsState.dirs.set(codexPluginDir("mthds"), [".DS_Store", FLOOR_OK]);
     fsState.dirs.set(codexVersionDir("mthds", FLOOR_OK), [".codex-plugin"]);
-    fsState.dirs.set(
-      join(codexVersionDir("mthds", FLOOR_OK), ".codex-plugin"),
-      ["plugin.json"]
-    );
-    fsState.files.set(
-      codexManifestPath("mthds", FLOOR_OK),
-      JSON.stringify({ version: FLOOR_OK })
-    );
+    fsState.dirs.set(join(codexVersionDir("mthds", FLOOR_OK), ".codex-plugin"), ["plugin.json"]);
+    fsState.files.set(codexManifestPath("mthds", FLOOR_OK), JSON.stringify({ version: FLOOR_OK }));
     expect(checkPluginVersion("codex")).toEqual({ s: "ok", v: FLOOR_OK });
   });
 
@@ -470,14 +455,15 @@ describe("readCodexPluginVersion", () => {
     // We can't set fsState entries — we need readdirSync to throw EACCES.
     // Override the mock directly for this test.
     const fs = await import("node:fs");
-    const original = vi.mocked(fs.readdirSync).getMockImplementation();
-    vi.mocked(fs.readdirSync).mockImplementation((p: unknown): string[] => {
+    const readdirMock = vi.mocked(fs.readdirSync) as unknown as Mock<(p: string) => string[]>;
+    const original = readdirMock.getMockImplementation();
+    readdirMock.mockImplementation((p: string): string[] => {
       if (String(p).includes(join("plugins", "cache", "mthds-plugins", "mthds"))) {
         const err = new Error(`EACCES: ${String(p)}`) as NodeJS.ErrnoException;
         err.code = "EACCES";
         throw err;
       }
-      if (original) return original(p as Parameters<typeof fs.readdirSync>[0]) as string[];
+      if (original) return original(p);
       const err = new Error(`ENOENT: ${String(p)}`) as NodeJS.ErrnoException;
       err.code = "ENOENT";
       throw err;
@@ -486,7 +472,7 @@ describe("readCodexPluginVersion", () => {
     const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
     expect(readCodexPluginVersion()).toEqual({ kind: "null" });
     expect(stderrSpy).toHaveBeenCalledWith(
-      expect.stringContaining("could not read Codex plugin dir")
+      expect.stringContaining("could not read Codex plugin dir"),
     );
     stderrSpy.mockRestore();
   });

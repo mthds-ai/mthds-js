@@ -89,6 +89,7 @@ const RUNS = "runs";
 const DEFAULT_REQUEST_TIMEOUT_MS = 1_200_000; // 20 min — matches the runner's blocking execute ceiling.
 const POLL_REQUEST_TIMEOUT_MS = 30_000; // single status/result GETs; the hosted gateway caps responses at ~30s.
 const DEFAULT_DEGRADED_RETRY_SECONDS = 5; // matches the platform's `_DEGRADE_RETRY_AFTER_SECONDS`.
+const VALIDATE_MARKDOWN_RENDER_FORMAT = "markdown";
 
 /**
  * `VersionInfo.implementation` of the bare open-source runner (no run store).
@@ -458,10 +459,10 @@ export class MthdsApiClient extends BaseRunner implements Runner {
    * `source: null`). The server 422s a length mismatch; this client sends the
    * arrays verbatim and surfaces that as an `ApiResponseError`.
    *
-   * `render` (optional) is the opt-in Pipelex-API presentation hint — a list of
-   * view-format tokens (e.g. `["markdown"]`). When set, the 200 body gains a
-   * `rendered_markdown` field on both verdict arms; unknown tokens are server-side
-   * lenient-ignored (never a 422). Omit it for the lean structured-only response.
+   * `render` is the Pipelex-API presentation hint — a list of view-format tokens.
+   * This client always asks for Markdown so both valid results and produced
+   * validation-error verdicts carry `rendered_markdown`; callers may add more
+   * tokens. Unknown tokens are server-side lenient-ignored (never a 422).
    */
   async validate(
     mthdsContents: string[],
@@ -476,9 +477,7 @@ export class MthdsApiClient extends BaseRunner implements Runner {
     if (mthdsSources !== undefined) {
       body.mthds_sources = mthdsSources;
     }
-    if (render !== undefined && render.length > 0) {
-      body.render = render;
-    }
+    body.render = withValidateMarkdownRender(render);
     const res = await this.requestRaw("POST", this.url("validate"), { body });
     if (res.status < 200 || res.status >= 300) {
       this.throwApiResponseError("POST", "validate", res);
@@ -756,6 +755,12 @@ function buildExtensions(extra: Record<string, unknown> | null | undefined): Rec
     );
   }
   return { ...extra };
+}
+
+function withValidateMarkdownRender(render: string[] | undefined): string[] {
+  const formats = new Set(render ?? []);
+  formats.add(VALIDATE_MARKDOWN_RENDER_FORMAT);
+  return [...formats];
 }
 
 // The hosted gateway caps synchronous requests at 30s. A failure at/after this

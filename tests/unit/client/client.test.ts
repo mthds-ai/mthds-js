@@ -445,6 +445,7 @@ describe("MthdsApiClient.validate", () => {
     expect(JSON.parse((init as RequestInit).body as string)).toEqual({
       mthds_contents: ["domain = 'x'"],
       allow_signatures: true,
+      render: ["markdown"],
     });
   });
 
@@ -533,6 +534,7 @@ describe("MthdsApiClient.validate", () => {
       mthds_contents: ["domain = 'x'", "domain = 'y'"],
       allow_signatures: true,
       mthds_sources: ["x.mthds", "y.mthds"],
+      render: ["markdown"],
     });
   });
 
@@ -594,6 +596,7 @@ describe("MthdsApiClient.validateFiles", () => {
       mthds_contents: ["domain = 'x'", "pipe x.greet"],
       allow_signatures: true,
       mthds_sources: ["file:///bundle/main.mthds", "file:///bundle/pipes.mthds"],
+      render: ["markdown"],
     });
   });
 
@@ -608,6 +611,7 @@ describe("MthdsApiClient.validateFiles", () => {
     expect(bodyOf(fetchSpy)).toEqual({
       mthds_contents: ["domain = 'x'", "pipe x.greet"],
       allow_signatures: false,
+      render: ["markdown"],
     });
   });
 
@@ -630,6 +634,7 @@ describe("MthdsApiClient.validateFiles", () => {
         "inline://file-2.mthds",
         "file:///bundle/other.mthds",
       ],
+      render: ["markdown"],
     });
   });
 
@@ -709,7 +714,7 @@ describe("MthdsApiClient.validate render extra", () => {
     return JSON.parse(init.body ?? "{}") as Record<string, unknown>;
   }
 
-  it("sends render in the request body when asked", async () => {
+  it("sends markdown render in the request body when asked", async () => {
     const client = makeClient();
     const fetchSpy = vi
       .spyOn(globalThis, "fetch")
@@ -718,21 +723,30 @@ describe("MthdsApiClient.validate render extra", () => {
     expect(bodyOf(fetchSpy).render).toEqual(["markdown"]);
   });
 
-  it("omits render when none is requested (lean structured-only body)", async () => {
+  it("requests markdown render when none is requested", async () => {
     const client = makeClient();
     const fetchSpy = vi
       .spyOn(globalThis, "fetch")
-      .mockResolvedValue(jsonResponse(200, { is_valid: true }));
+      .mockResolvedValue(jsonResponse(200, { is_valid: true, rendered_markdown: "# Validation passed" }));
     await client.validate(["domain = 'x'"], false);
-    expect("render" in bodyOf(fetchSpy)).toBe(false);
+    expect(bodyOf(fetchSpy).render).toEqual(["markdown"]);
   });
 
-  it("omits render when given an empty list", async () => {
+  it("requests markdown render when given an empty list", async () => {
     const client = makeClient();
     const fetchSpy = vi
       .spyOn(globalThis, "fetch")
-      .mockResolvedValue(jsonResponse(200, { is_valid: true }));
+      .mockResolvedValue(jsonResponse(200, { is_valid: true, rendered_markdown: "# Validation passed" }));
     await client.validate(["domain = 'x'"], false, undefined, []);
-    expect("render" in bodyOf(fetchSpy)).toBe(false);
+    expect(bodyOf(fetchSpy).render).toEqual(["markdown"]);
+  });
+
+  it("keeps caller render tokens while adding markdown", async () => {
+    const client = makeClient();
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(jsonResponse(200, { is_valid: true, rendered_markdown: "# Validation passed" }));
+    await client.validate(["domain = 'x'"], false, undefined, ["html"]);
+    expect(bodyOf(fetchSpy).render).toEqual(["html", "markdown"]);
   });
 });

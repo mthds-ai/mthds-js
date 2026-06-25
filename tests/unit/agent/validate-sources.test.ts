@@ -24,12 +24,11 @@ function makeRunner(
 const VALID_REPORT: ValidationResult = { is_valid: true };
 
 describe("runProtocolValidate — mthds_sources threading", () => {
-  let _stdoutSpy: ReturnType<typeof vi.spyOn>;
   let stderrSpy: ReturnType<typeof vi.spyOn>;
   let exitSpy: ReturnType<typeof vi.spyOn>;
 
   beforeEach(() => {
-    _stdoutSpy = vi.spyOn(process.stdout, "write").mockReturnValue(true);
+    vi.spyOn(process.stdout, "write").mockReturnValue(true);
     stderrSpy = vi.spyOn(process.stderr, "write").mockReturnValue(true);
     // agentError ends in process.exit(1); throw a sentinel so the test can catch it.
     exitSpy = vi.spyOn(process, "exit").mockImplementation((() => {

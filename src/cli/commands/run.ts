@@ -70,7 +70,7 @@ async function dispatchRun(runner: Runner, options: StartOptions, cli: RunOption
   }
 }
 
-export async function runMethod(name: string, options: RunOptions): Promise<void> {
+export async function runMethod(_name: string, options: RunOptions): Promise<void> {
   printLogo();
   p.intro("mthds run method");
 

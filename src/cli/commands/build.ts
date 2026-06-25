@@ -13,7 +13,7 @@ interface WithRunner {
 // ── mthds build runner method <name> ─────────────────────────────────
 
 export async function buildRunnerMethod(
-  name: string,
+  _name: string,
   options: { pipe?: string; output?: string } & WithRunner,
 ): Promise<void> {
   printLogo();
@@ -116,7 +116,7 @@ export async function buildRunnerPipe(
 // ── mthds build inputs method <name> ─────────────────────────────────
 
 export async function buildInputsMethod(
-  name: string,
+  _name: string,
   options: { pipe?: string } & WithRunner,
 ): Promise<void> {
   printLogo();
@@ -207,7 +207,7 @@ export async function buildInputsPipe(
 // ── mthds build output method <name> ─────────────────────────────────
 
 export async function buildOutputMethod(
-  name: string,
+  _name: string,
   options: { pipe?: string; format?: string } & WithRunner,
 ): Promise<void> {
   printLogo();

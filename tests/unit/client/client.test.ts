@@ -284,7 +284,7 @@ describe("MthdsApiClient.execute gateway 30s timeout", () => {
     expect(err).toBeInstanceOf(PipelineExecuteTimeoutError);
     const e = err as PipelineExecuteTimeoutError;
     expect(e.message).toContain("30s");
-    expect(e.message).toContain("run start");
+    expect(e.message).toContain("durable run API");
     expect(e.elapsedMs).toBe(31_000);
   });
 

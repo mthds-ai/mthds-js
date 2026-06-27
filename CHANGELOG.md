@@ -1,5 +1,16 @@
 # Changelog
 
+## [v0.14.0] - 2026-06-27
+
+### Removed — durable run-lifecycle pulled out of `mthds-js`
+
+The durable run-lifecycle (poll a run by id) is a hosted-API extension, not part of the MTHDS Protocol. It now lives in the Pipelex runtime SDK (`@pipelex/sdk` / `pipelex-agent`) and has been removed from `mthds-js`. This is a breaking change to the public SDK surface.
+
+- **SDK surface removed:** `MthdsApiClient.getRunStatus` / `getRunResult` / `waitForResult` / `startAndWaitForResult` and the `private` lifecycle plumbing (the `/v1/version` handshake feature-detection, the blocking-execute fallback). The `Runner` interface drops those four lifecycle members; `MthdsApiClient` and `PipelexRunner` no longer extend a shared `BaseRunner` (the `runners/base-runner.ts` composites and the `runners/api/runs.ts` lifecycle types + `pollUntilResult` loop are deleted).
+- **Exceptions removed:** `RunFailedError`, `RunTimeoutError`, `RunLifecycleUnavailableError` are gone from the public barrel. `PipelineExecuteTimeoutError` and `RunStillRunningError` stay (transport/202-degrade errors), reworded to point at the durable run API now provided by `@pipelex/sdk` / `pipelex-agent`.
+- **Types removed from the barrel:** `RunStatus`, `RunPublic`, `RunRead`, `RunResults`, `RunResultState`, `WaitForResultOptions`, and the `isTerminalRunStatus` / `isSuccessRunStatus` helpers. The protocol surface (`execute` / `start` / `validate` / `models` / `version`), the build helpers, the Pipelex-rich `validate` (`PipelexValidationResult`), and `DryRunStatus` are unchanged.
+- **CLIs:** `mthds run` (API runner) now executes via the blocking `POST /v1/execute` instead of the durable start+poll. The durable `mthds-agent --runner api run` subcommands `run status`, `run result`, `run poll`, and the durable `run pipe` / `run bundle` were removed (`run start` — the protocol `POST /v1/start` — and the `run method` stub are kept). These removed agent commands are slated to return on a `pipelex-agent` bin over `@pipelex/sdk`.
+
 ## [v0.13.0] - 2026-06-27
 
 ### Added

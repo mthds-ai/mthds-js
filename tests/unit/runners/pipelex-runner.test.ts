@@ -398,27 +398,6 @@ describe("PipelexRunner", () => {
     });
   });
 
-  // The API runner polls a durable run; the pipelex runner has no run id, so its
-  // `startAndWaitForResult` override just runs `execute` blocking and adapts the
-  // result into the hosted `RunResults` shape (pipe_output, no main_stuff).
-  describe("startAndWaitForResult", () => {
-    it("delegates to execute and returns a RunResults with pipe_output (no main_stuff)", async () => {
-      mockSpawnExit(0);
-      mockedExistsSync.mockReturnValue(true);
-      mockedReadFileSync.mockReturnValue(JSON.stringify({ root: {}, aliases: {} }));
-
-      const result = await runner.startAndWaitForResult({
-        mthds_contents: ["bundle content"],
-      });
-
-      expect(result.main_stuff).toBeNull();
-      expect(result.graph_spec).toBeNull();
-      expect(result.pipe_output).toMatchObject({
-        working_memory: { root: {}, aliases: {} },
-      });
-    });
-  });
-
   describe("validate — 0/1/2 exit-code policy", () => {
     it("returns the valid arm when the CLI exits 0", async () => {
       execFileAsync.mockResolvedValue({ stdout: "OK", stderr: "" });

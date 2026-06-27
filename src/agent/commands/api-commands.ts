@@ -20,7 +20,7 @@ import type { Runner } from "../../runners/types.js";
 import type { StartOptions } from "../../protocol/options.js";
 import type { ModelCategory } from "../../protocol/models.js";
 import { MODEL_CATEGORIES } from "../../protocol/models.js";
-import { ApiResponseError, RunFailedError, RunTimeoutError } from "../../runners/api/exceptions.js";
+import { ApiResponseError } from "../../runners/api/exceptions.js";
 
 /**
  * Register all API-runner commands on the program.
@@ -349,87 +349,11 @@ export function registerApiRunnerCommands(program: Command, makeRunner: () => Ru
       });
     });
 
-  const runAction = async (
-    target: string | undefined,
-    options: {
-      pipe?: string;
-      inputs?: string;
-      content?: string;
-      inputsJson?: string;
-      dryRun?: boolean;
-      mockInputs?: boolean;
-    },
-  ): Promise<void> => {
-    if (options.dryRun || options.mockInputs) {
-      agentError(
-        "--dry-run and --mock-inputs are not yet supported via the API runner.",
-        "UnsupportedError",
-        { error_domain: AGENT_ERROR_DOMAINS.RUNNER },
-      );
-    }
-    const runner = safeCreateRunner(makeRunner);
-    const mthdsContent = resolveContentForRun(target, options);
-    const pipeCode = resolvePipeCode(mthdsContent, options.pipe);
-
-    let inputs: Record<string, unknown> | undefined;
-    if (options.inputsJson) {
-      inputs = parseJsonOrError(options.inputsJson, "--inputs-json");
-    } else if (options.inputs) {
-      const raw = readFileOrError(options.inputs);
-      inputs = parseJsonOrError(raw, "inputs file");
-    }
-
-    try {
-      const result = await runner.startAndWaitForResult({
-        mthds_contents: [mthdsContent],
-        pipe_code: pipeCode,
-        inputs,
-      });
-      agentSuccess({
-        state: "completed",
-        pipeline_run_id: result.pipeline_run_id,
-        main_stuff: result.main_stuff ?? result.pipe_output ?? null,
-        graph_spec: result.graph_spec ?? null,
-      });
-    } catch (err) {
-      agentError((err as Error).message, "RunnerError", {
-        error_domain: AGENT_ERROR_DOMAINS.RUNNER,
-      });
-    }
-  };
-
-  runGroup
-    .command("pipe")
-    .argument("[target]", "Bundle file (.mthds) or directory")
-    .option("--pipe <code>", "Pipe code to run")
-    .option("-i, --inputs <file>", "Path to JSON inputs file")
-    .option("--content <mthds>", "Bundle content as a string")
-    .option("--inputs-json <json>", "Inputs as a JSON string")
-    .option("--dry-run", "Validate without executing")
-    .option("--mock-inputs", "Use mock inputs for dry run")
-    .description("Run a pipe from a bundle file, directory, or content")
-    .allowUnknownOption()
-    .allowExcessArguments(true)
-    .exitOverride()
-    .action(runAction);
-
-  runGroup
-    .command("bundle")
-    .argument("[target]", "Bundle file (.mthds) or directory")
-    .option("--pipe <code>", "Pipe code to run")
-    .option("-i, --inputs <file>", "Path to JSON inputs file")
-    .option("--content <mthds>", "Bundle content as a string")
-    .option("--inputs-json <json>", "Inputs as a JSON string")
-    .description("Run a bundle file or content")
-    .allowUnknownOption()
-    .allowExcessArguments(true)
-    .exitOverride()
-    .action(runAction);
-
   // ── run start ──
-  // Submit a run and return its id immediately. All run state lives behind the
-  // returned `pipeline_run_id` (DB + Temporal), so an agent can submit here,
-  // disconnect, and later resume with `run status` / `run result` / `run poll`.
+  // Submit a run and return its id immediately (the protocol `POST /v1/start`).
+  // The returned `pipeline_run_id` is authoritative; how completion is later
+  // delivered is implementation-defined. The durable poll-by-id lifecycle now
+  // lives in `@pipelex/sdk` / `pipelex-agent`.
 
   runGroup
     .command("start")
@@ -475,141 +399,6 @@ export function registerApiRunnerCommands(program: Command, makeRunner: () => Ru
           agentError((err as Error).message, "RunnerError", {
             error_domain: AGENT_ERROR_DOMAINS.RUNNER,
           });
-        }
-      },
-    );
-
-  // ── run status ──
-
-  runGroup
-    .command("status")
-    .argument("<pipeline_run_id>", "Run id")
-    .description("Fetch a run's current status by id (self-healing)")
-    .allowUnknownOption()
-    .allowExcessArguments(true)
-    .exitOverride()
-    .action(async (runId: string): Promise<void> => {
-      const runner = safeCreateRunner(makeRunner);
-      try {
-        const run = await runner.getRunStatus(runId);
-        agentSuccess({ ...run });
-      } catch (err) {
-        agentError((err as Error).message, "RunnerError", {
-          error_domain: AGENT_ERROR_DOMAINS.RUNNER,
-        });
-      }
-    });
-
-  // ── run result ──
-  // Single-shot result lookup: 202 → still running, 200 → result, 409 → failed.
-
-  runGroup
-    .command("result")
-    .argument("<pipeline_run_id>", "Run id")
-    .description("Fetch a run's result by id, once (does not wait)")
-    .allowUnknownOption()
-    .allowExcessArguments(true)
-    .exitOverride()
-    .action(async (runId: string): Promise<void> => {
-      const runner = safeCreateRunner(makeRunner);
-      let state;
-      try {
-        state = await runner.getRunResult(runId);
-      } catch (err) {
-        agentError((err as Error).message, "RunnerError", {
-          error_domain: AGENT_ERROR_DOMAINS.RUNNER,
-        });
-        return;
-      }
-      switch (state.state) {
-        case "running":
-          agentSuccess({
-            state: "running",
-            pipeline_run_id: state.pipeline_run_id,
-            retry_after_seconds: state.retry_after_seconds,
-            hint: `Run is still in progress. Poll with: mthds-agent run poll ${runId}`,
-          });
-          break;
-        case "completed":
-          agentSuccess({
-            state: "completed",
-            pipeline_run_id: state.pipeline_run_id,
-            main_stuff: state.result.main_stuff ?? null,
-            graph_spec: state.result.graph_spec ?? null,
-          });
-          break;
-        case "failed":
-          agentError(state.message, "RunFailedError", {
-            error_domain: AGENT_ERROR_DOMAINS.PIPELINE,
-            retryable: false,
-          });
-          break;
-      }
-    });
-
-  // ── run poll ──
-  // Block until the run reaches a terminal state. Ctrl-C (or any SIGINT) stops
-  // waiting WITHOUT cancelling the run — the run keeps executing server-side
-  // and can be resumed by id.
-
-  runGroup
-    .command("poll")
-    .argument("<pipeline_run_id>", "Run id")
-    .option("--interval <seconds>", "Base poll interval in seconds (default 2)")
-    .option("--timeout <seconds>", "Max seconds to wait before giving up (default 1200)")
-    .description("Poll a run to completion, then return its result")
-    .allowUnknownOption()
-    .allowExcessArguments(true)
-    .exitOverride()
-    .action(
-      async (runId: string, options: { interval?: string; timeout?: string }): Promise<void> => {
-        const runner = safeCreateRunner(makeRunner);
-        const intervalMs = parsePositiveSeconds(options.interval, "--interval");
-        const timeoutMs = parsePositiveSeconds(options.timeout, "--timeout");
-
-        const controller = new AbortController();
-        const onSigint = (): void => controller.abort();
-        process.once("SIGINT", onSigint);
-
-        try {
-          const result = await runner.waitForResult(runId, {
-            intervalMs,
-            timeoutMs,
-            signal: controller.signal,
-          });
-          agentSuccess({
-            state: "completed",
-            pipeline_run_id: runId,
-            main_stuff: result.main_stuff ?? null,
-            graph_spec: result.graph_spec ?? null,
-          });
-        } catch (err) {
-          if (controller.signal.aborted) {
-            // Walk-away: not an error. Report the run as still resumable by id.
-            agentSuccess({
-              state: "running",
-              pipeline_run_id: runId,
-              resumable: true,
-              hint: `Stopped waiting; the run continues. Resume with: mthds-agent run poll ${runId}`,
-            });
-          } else if (err instanceof RunFailedError) {
-            agentError(err.message, "RunFailedError", {
-              error_domain: AGENT_ERROR_DOMAINS.PIPELINE,
-              retryable: false,
-            });
-          } else if (err instanceof RunTimeoutError) {
-            agentError(err.message, "RunTimeoutError", {
-              error_domain: AGENT_ERROR_DOMAINS.RUNNER,
-              retryable: true,
-              hint: `The run is still executing. Resume with: mthds-agent run poll ${runId}`,
-            });
-          } else {
-            agentError((err as Error).message, "RunnerError", {
-              error_domain: AGENT_ERROR_DOMAINS.RUNNER,
-            });
-          }
-        } finally {
-          process.removeListener("SIGINT", onSigint);
         }
       },
     );
@@ -726,7 +515,7 @@ function resolveContentForRun(
     }
     // TODO: refactor to return { bundleContent, resolvedInputsPath } instead of mutating
     // the caller's options object. This side-effect coupling is fragile — if the call
-    // order in runAction changes, auto-discovery silently breaks with no compile-time signal.
+    // order in resolveStartOptions changes, auto-discovery silently breaks with no compile-time signal.
     if (!options.inputs && !options.inputsJson) {
       const inputsCandidate = join(target, "inputs.json");
       if (existsSync(inputsCandidate)) {
@@ -824,18 +613,6 @@ function parseMultiplicity(raw: string | undefined): boolean | number | undefine
     { error_domain: AGENT_ERROR_DOMAINS.ARGUMENT },
   );
   throw new Error("unreachable");
-}
-
-function parsePositiveSeconds(raw: string | undefined, label: string): number | undefined {
-  if (raw === undefined) return undefined;
-  const seconds = Number(raw);
-  if (!Number.isFinite(seconds) || seconds <= 0) {
-    agentError(`${label} must be a positive number of seconds.`, "ArgumentError", {
-      error_domain: AGENT_ERROR_DOMAINS.ARGUMENT,
-    });
-    throw new Error("unreachable");
-  }
-  return seconds * 1000;
 }
 
 /** Parse the `--type` model-category filter, erroring on unknown values. */

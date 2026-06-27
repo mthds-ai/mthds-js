@@ -205,7 +205,7 @@ const client = new MthdsApiClient({
 });
 ```
 
-The bare open-source runner has no run store, so the durable run-lifecycle methods (`getRunStatus`/`getRunResult`/`waitForResult`) throw a clear `RunLifecycleUnavailableError` against it — use `execute` (blocking) or `start` instead (completion delivery is implementation-defined — see your runner's API documentation). The `GET /v1/version` handshake tells the SDK which deployment it is talking to.
+Use `execute` (blocking) or `start` (completion delivery is implementation-defined — see your runner's API documentation). The durable run-lifecycle (poll a run by id) is not part of this client — it lives in the Pipelex runtime SDK (`@pipelex/sdk` / `pipelex-agent`).
 
 > Note: the bare-runner blocking path returns the runner's native `pipe_output`, whereas the Pipelex Hosted API durable path returns `main_stuff` + `graph_spec`. Cross-shape normalization is a v1 TODO.
 
@@ -225,7 +225,7 @@ const client = new MthdsApiClient();
 
 ### Methods
 
-The client implements the MTHDS Protocol plus the hosted run-lifecycle extension:
+The client implements the MTHDS Protocol plus the Pipelex build extensions. (The durable run-lifecycle — poll a run by id — lives in `@pipelex/sdk` / `pipelex-agent`, not here.)
 
 | Method | Route | Description |
 |--------|-------|-------------|
@@ -234,9 +234,6 @@ The client implements the MTHDS Protocol plus the hosted run-lifecycle extension
 | `validate(mthdsContents, allowSignatures?, mthdsSources?)` | `POST /v1/validate` | Parse, validate, and dry-run a bundle — returns a typed `PipelexValidationResult` discriminated on `is_valid`; an invalid bundle is a produced verdict (`is_valid: false` with `validation_errors`), not a throw. Only a no-verdict non-2xx (malformed request, auth, server fault) throws `ApiResponseError`. `mthdsSources` (optional, parallel to `mthdsContents`) names each submitted file so cross-file diagnostics resolve the owning file |
 | `models(category?)` | `GET /v1/models` | The model deck the runner routes to |
 | `version()` | `GET /v1/version` | Protocol + implementation versions (the feature-detection handshake) |
-| `getRunStatus(runId)` | `GET /v1/runs/{id}/status` | Hosted extension — self-healing status read |
-| `getRunResult(runId)` | `GET /v1/runs/{id}/results` | Hosted extension — single-shot result lookup |
-| `waitForResult(runId, options?)` | — | Hosted extension — poll to a terminal state |
 
 ### Run options
 
@@ -250,7 +247,7 @@ The client implements the MTHDS Protocol plus the hosted run-lifecycle extension
 | `dynamic_output_concept_ref` | `string` | Dynamic output concept reference |
 | `extra` | `Record<string, unknown>` | Server-specific extension args, forwarded verbatim into the request body (e.g. a stored-method id) |
 
-Either `pipe_code` or `mthds_contents` must be provided (or a server-specific extension arg via `extra`). Anything beyond the protocol's basic args is server-specific and rides the generic `extra` option, merged into the request body — the server you call defines and handles its own extension args (a client-supplied run id, where a server supports one, is such an extension; the request side never names it). `startAndWaitForResult()` runs the whole start + poll lifecycle in one call.
+Either `pipe_code` or `mthds_contents` must be provided (or a server-specific extension arg via `extra`). Anything beyond the protocol's basic args is server-specific and rides the generic `extra` option, merged into the request body — the server you call defines and handles its own extension args (a client-supplied run id, where a server supports one, is such an extension; the request side never names it).
 
 ## Telemetry
 

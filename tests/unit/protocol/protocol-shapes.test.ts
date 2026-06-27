@@ -1,12 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MthdsApiClient } from "../../../src/runners/api/client.js";
-import { BaseRunner } from "../../../src/runners/base-runner.js";
 import type { DictRunResultExecute } from "../../../src/runners/api/models.js";
 
 /**
  * New-behavior coverage for the protocol ⊥ runners structural split (plan 04b):
- * the run-response split (`RunResultExecute<T>` ⊥ `RunResultStart`), the
- * slimmed extension-open discovery models, and the D-B composite merge.
+ * the run-response split (`RunResultExecute<T>` ⊥ `RunResultStart`) and the
+ * slimmed extension-open discovery models.
  */
 
 const BASE_URL = "http://localhost:8081";
@@ -131,19 +130,5 @@ describe("slimmed discovery models, extension-open (T3)", () => {
     const info = await client.version();
     expect(info.protocol_version).toBe("0.6.0");
     expect(info.implementation).toBeUndefined();
-  });
-});
-
-describe("D-B composite merge (MthdsApiClient IS the api runner)", () => {
-  it("inherits waitForResult from BaseRunner (no duplicate on the client)", () => {
-    // The composite resolves to BaseRunner's single implementation — the client
-    // does not redefine it, so the wait/poll behavior can never drift.
-    expect(MthdsApiClient.prototype.waitForResult).toBe(BaseRunner.prototype.waitForResult);
-  });
-
-  it("overrides startAndWaitForResult (bare-runner blocking-execute fallback)", () => {
-    expect(MthdsApiClient.prototype.startAndWaitForResult).not.toBe(
-      BaseRunner.prototype.startAndWaitForResult,
-    );
   });
 });

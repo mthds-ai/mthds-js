@@ -21,20 +21,17 @@ src/protocol/                 PURE — the MTHDS Protocol mirror (imports nothin
   working_memory.ts           WorkingMemoryAbstract<TStuff>
   exceptions.ts               PipelineRequestError (protocol-level base)
 src/runners/api/
-  client.ts                   MthdsApiClient — IS the api runner: extends BaseRunner implements Runner
-  runs.ts                     run-lifecycle TYPES + the pollUntilResult loop (RunStatus/RunRead/RunResults/…)
+  client.ts                   MthdsApiClient — IS the api runner: implements Runner (protocol + build extensions)
   models.ts                   DictStuff/DictWorkingMemory/DictPipeOutput + DictRunResultExecute (default binding);
                               PipelexValidationResult (PipelexValidationReport | PipelexInvalidReport) +
                               ValidatedPipeEntry/DryRunStatus + ValidationErrorItem/Category
                               (typed Pipelex-API narrowing of the protocol's ValidationResult union)
   exceptions.ts               ApiResponseError (+ validationErrors), ApiUnreachableError, ClientAuthenticationError,
-                              RunFailedError, RunTimeoutError, RunStillRunningError,
-                              RunLifecycleUnavailableError, PipelineExecuteTimeoutError
+                              RunStillRunningError, PipelineExecuteTimeoutError
 src/runners/pipelex/
   runner.ts                   PipelexRunner (local CLI runner)
 src/runners/
   types.ts                    Runner interface (extends MTHDSProtocol<DictPipeOutput>) + Runners enum + build types
-  base-runner.ts              lifecycle COMPOSITES (waitForResult, startAndWaitForResult)
   registry.ts                 createRunner() factory
 src/index.ts                  public barrel → re-exports protocol/ + runners/
 ```
@@ -64,13 +61,11 @@ Token precedence in the constructor: an explicitly-passed `apiToken` wins over `
 
 ## The API client IS the API runner (D-B)
 
-There is one class, not a client wrapped by a runner. `MthdsApiClient extends BaseRunner implements Runner`:
+There is one class, not a client wrapped by a runner. `MthdsApiClient implements Runner`:
 
-- **`pipelex-app`** instantiates it directly and uses its protocol subset (`start`, `validate`, `version`) plus the run-lifecycle extension (`getRunResult`).
-- **The CLI** gets it via `createRunner('api')`, which wires the config-derived base URL + token, and uses the full `Runner` surface (build extensions, `health`, the lifecycle composites).
+- **`pipelex-app`** instantiates it directly and uses its protocol subset (`execute`, `start`, `validate`, `version`).
+- **The CLI** gets it via `createRunner('api')`, which wires the config-derived base URL + token, and uses the full `Runner` surface (protocol + build extensions + `health`).
 
-The lifecycle composites (`waitForResult`, `startAndWaitForResult`) come from `BaseRunner` so they can never drift between runtimes. `MthdsApiClient` overrides `startAndWaitForResult` only to add the bare-runner blocking-execute fallback: a `/v1/version` handshake decides whether the server serves the durable run lifecycle; a bare `pipelex-api` runner (no run store) 404s `/v1/runs/*`, which surfaces as `RunLifecycleUnavailableError`.
+## Run lifecycle lives in `@pipelex/sdk`, not here
 
-## Run lifecycle is NOT the protocol
-
-`getRunStatus`/`getRunResult`/`waitForResult` and the `runs.ts` models are a hosted-API extension, not part of `MTHDSProtocol`. They live under `runners/api/`, served only by a deployment that includes the platform block. See [`run-lifecycle.md`](./run-lifecycle.md).
+The durable run-lifecycle (poll a run by id) is a hosted-API extension, not part of `MTHDSProtocol`, and no longer ships in `mthds-js` — it now lives in the Pipelex runtime SDK (`@pipelex/sdk` / `pipelex-agent`). `mthds-js` keeps the protocol `start` (`POST /v1/start`); how completion is later delivered is implementation-defined. See [`run-lifecycle.md`](./run-lifecycle.md).

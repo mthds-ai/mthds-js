@@ -1,11 +1,12 @@
 /**
  * Public SDK barrel — re-exports the MTHDS Protocol surface (`protocol/`) and
- * the API runner + run-lifecycle extension (`runners/api/`).
+ * the API runner (`runners/api/`).
  *
  * Structural split (protocol ⊥ runners) parity with `mthds-python`:
  *   - `mthds/client/*` is gone. The protocol interface + wire models live in
- *     `protocol/`; the API client/runner, lifecycle polling, and Dict-serialized
- *     concretes live in `runners/api/`.
+ *     `protocol/`; the API client/runner and the Dict-serialized concretes live
+ *     in `runners/api/`. The durable run-lifecycle (poll-by-id) lives in the
+ *     Pipelex runtime SDK (`@pipelex/sdk`), not here.
  *   - The single run response `RunResult` is split into `RunResultExecute<T>`
  *     (execute — has `pipe_output`) and `RunResultStart` (start — id only).
  *
@@ -28,22 +29,8 @@ export {
   ApiUnreachableError,
   ClientAuthenticationError,
   PipelineExecuteTimeoutError,
-  RunFailedError,
-  RunTimeoutError,
   RunStillRunningError,
-  RunLifecycleUnavailableError,
 } from "./runners/api/exceptions.js";
-
-// ── Run lifecycle (runners/api — hosted extension, NOT protocol) ──────
-export { isTerminalRunStatus, isSuccessRunStatus } from "./runners/api/runs.js";
-export type {
-  RunStatus,
-  RunPublic,
-  RunRead,
-  RunResults,
-  RunResultState,
-  WaitForResultOptions,
-} from "./runners/api/runs.js";
 
 // ── Dict-serialized concretes + Pipelex-API validate types (runners/api) ──
 export type {

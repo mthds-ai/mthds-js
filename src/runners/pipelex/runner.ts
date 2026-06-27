@@ -30,8 +30,6 @@ import type {
 import { MTHDS_PROTOCOL_VERSION } from "../../protocol/models.js";
 import { conceptRef } from "../../protocol/concept.js";
 import type { DictPipeOutput, DictRunResultExecute } from "../api/models.js";
-import type { RunRead, RunResults, RunResultState, WaitForResultOptions } from "../api/runs.js";
-import { BaseRunner } from "../base-runner.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -64,12 +62,11 @@ function writeMthdsContents(tmp: string, contents: string[]): string {
   return bundlePath;
 }
 
-export class PipelexRunner extends BaseRunner implements Runner {
+export class PipelexRunner implements Runner {
   readonly type: RunnerType = Runners.PIPELEX;
   private readonly libraryDirs: string[];
 
   constructor(libraryDirs?: string[]) {
-    super();
     this.libraryDirs = libraryDirs ?? [];
   }
 
@@ -323,10 +320,9 @@ export class PipelexRunner extends BaseRunner implements Runner {
 
   // ── Method execution ────────────────────────────────────────────
   // pipelex run <target> [--pipe code] [--inputs file] [--output-dir dir]
-  // Local, blocking, in-process — there is no durable run to poll by id, so
-  // `execute` / `startAndWaitForResult` run through here and the async
-  // primitives (start / getRunStatus / getRunResult / waitForResult) are
-  // unsupported.
+  // Local, blocking, in-process — methods run through `execute`. There is no
+  // durable run to poll by id; the async `start` primitive is unsupported (use
+  // the API runner for that).
 
   async execute(options: RunOptions): Promise<DictRunResultExecute> {
     const tmp = makeTmpDir();
@@ -451,49 +447,18 @@ export class PipelexRunner extends BaseRunner implements Runner {
     }
   }
 
-  // ── Run lifecycle ──────────────────────────────────────────────────
-  // The local pipelex CLI runs methods in-process; there is no durable run
-  // to poll by id, so the async primitives belong to the Pipelex Hosted API (use
-  // --runner api). `startAndWaitForResult` is supported — it runs the CLI
-  // blocking and returns the result directly.
-
-  override async startAndWaitForResult(
-    options: StartOptions,
-    _pollOptions?: WaitForResultOptions,
-  ): Promise<RunResults> {
-    const response = await this.execute({
-      mthds_contents: options.mthds_contents ?? undefined,
-      pipe_code: options.pipe_code ?? undefined,
-      inputs: options.inputs ?? undefined,
-      output_name: options.output_name ?? undefined,
-      output_multiplicity: options.output_multiplicity ?? undefined,
-      dynamic_output_concept_ref: options.dynamic_output_concept_ref ?? undefined,
-    });
-    const pipeOutput = response.pipe_output as DictPipeOutput | null | undefined;
-    return {
-      pipeline_run_id: response.pipeline_run_id,
-      main_stuff: null,
-      // The local CLI blocking `pipe_output` carries no graph artifact.
-      graph_spec: null,
-      pipe_output: (pipeOutput as Record<string, unknown> | null | undefined) ?? null,
-    };
-  }
+  // ── Async start (protocol primitive, unsupported locally) ──────────
+  // The local pipelex CLI runs methods in-process and blocking via `execute`;
+  // there is no durable run to start and poll by id, so the protocol's async
+  // `start` primitive belongs to the Pipelex Hosted API (use --runner api).
 
   async start(_options: StartOptions): Promise<never> {
-    throw new Error(RUN_LIFECYCLE_UNSUPPORTED);
-  }
-
-  async getRunStatus(_runId: string): Promise<RunRead> {
-    throw new Error(RUN_LIFECYCLE_UNSUPPORTED);
-  }
-
-  async getRunResult(_runId: string, _options?: { signal?: AbortSignal }): Promise<RunResultState> {
-    throw new Error(RUN_LIFECYCLE_UNSUPPORTED);
+    throw new Error(ASYNC_START_UNSUPPORTED);
   }
 }
 
-const RUN_LIFECYCLE_UNSUPPORTED =
-  "Run lifecycle (start/status/result/poll) is not supported by the pipelex CLI runner. Use the API runner instead (--runner api).";
+const ASYNC_START_UNSUPPORTED =
+  "Async start is not supported by the pipelex CLI runner — it runs methods in-process and blocking. Use `execute` (e.g. `mthds run`), or the API runner for durable start (--runner api).";
 
 /**
  * Normalize the local CLI's models output into the protocol `ModelDeck`.

@@ -29,13 +29,13 @@ function withInputs(options: StartOptions, inputsFile?: string): StartOptions {
 }
 
 /**
- * Run through the MTHDS Protocol primitives, dispatched on the runner:
- *  - pipelex runner → `execute` (local, blocking, in-process — streams logs).
- *  - API runner     → `startAndWaitForResult` (durable start, then poll to result).
+ * Run through the MTHDS Protocol `execute` primitive (blocking), dispatched on
+ * the runner:
+ *  - pipelex runner → local, blocking, in-process — streams logs.
+ *  - API runner     → blocking `POST /v1/execute`.
  *
  * `StartRequest = RunRequest`, so the same options object drives either path.
- * `execute` returns `pipe_output`; `startAndWaitForResult` returns `main_stuff`
- * (with `pipe_output` as the bare-runner fallback) — print whichever is present.
+ * Both return a `DictRunResultExecute` carrying `pipe_output` — print that.
  */
 async function dispatchRun(runner: Runner, options: StartOptions, cli: RunOptions): Promise<void> {
   try {
@@ -47,8 +47,8 @@ async function dispatchRun(runner: Runner, options: StartOptions, cli: RunOption
       result = await runner.execute(options);
     } else {
       const s = p.spinner();
-      s.start("Starting run and waiting for result...");
-      result = await runner.startAndWaitForResult(options);
+      s.start("Executing and waiting for result...");
+      result = await runner.execute(options);
       s.stop("Run completed.");
     }
 
@@ -57,7 +57,7 @@ async function dispatchRun(runner: Runner, options: StartOptions, cli: RunOption
       p.log.success(`Output written to ${cli.output}`);
     }
 
-    const output = ("main_stuff" in result ? result.main_stuff : null) ?? result.pipe_output;
+    const output = result.pipe_output;
     if (cli.prettyPrint !== false && output) {
       p.log.info(JSON.stringify(output, null, 2));
     }

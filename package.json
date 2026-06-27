@@ -1,6 +1,6 @@
 {
   "name": "mthds",
-  "version": "0.12.1",
+  "version": "0.13.0",
   "description": "CLI and SDK for MTHDS — the open standard for executable AI methods. Install, execute, and manage methods.",
   "license": "MIT",
   "repository": {
@@ -14,6 +14,10 @@
     ".": {
       "import": "./dist/index.js",
       "types": "./dist/index.d.ts"
+    },
+    "./protocol": {
+      "import": "./dist/protocol/index.js",
+      "types": "./dist/protocol/index.d.ts"
     }
   },
   "bin": {

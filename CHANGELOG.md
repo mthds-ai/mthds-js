@@ -1,5 +1,15 @@
 # Changelog
 
+## [v0.13.0] - 2026-06-27
+
+### Added
+
+- **`mthds/protocol` subpath export:** The pure MTHDS Protocol surface (interface, wire models, request/options surface, abstract domain shapes, and the protocol-base `PipelineRequestError`) is now published as a dedicated `mthds/protocol` subpath via a new `src/protocol/index.ts` barrel. This lets downstream packages (notably `@pipelex/sdk`) import the protocol wire types without pulling in the runner/CLI surface. The barrel is import-pure (no `runners/`, `cli/`, `agent/`, `config/`), enforced by the existing `dependency-cruiser` `protocol-stays-pure` rule.
+
+### Changed
+
+- **Single-source protocol exports:** The top-level `mthds` barrel (`src/index.ts`) now re-exports the protocol surface wholesale from the `protocol/` barrel (`export * from "./protocol/index.js"`) instead of listing each protocol type itself, so the `.` and `./protocol` entry points cannot drift. Purely additive — the public surface of `mthds` is unchanged.
+
 ## [v0.12.1] - 2026-06-22
 
 ### Changed

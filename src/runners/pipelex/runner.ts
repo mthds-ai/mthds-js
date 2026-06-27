@@ -290,7 +290,7 @@ export class PipelexRunner extends BaseRunner implements Runner {
   }
 
   // pipelex-agent check-model <reference> --type <type> --format json
-  // check-model is a LOCAL CLI capability of this runner only — the MTHDS API
+  // check-model is a LOCAL CLI capability of this runner only — the Pipelex API
   // has no check-model route, so this method is NOT on the shared `Runner`
   // interface. The local runner always forces --format json: pipelex-agent's
   // markdown output is plain text (via print()), which can't satisfy the
@@ -453,7 +453,7 @@ export class PipelexRunner extends BaseRunner implements Runner {
 
   // ── Run lifecycle ──────────────────────────────────────────────────
   // The local pipelex CLI runs methods in-process; there is no durable run
-  // to poll by id, so the async primitives belong to the hosted API (use
+  // to poll by id, so the async primitives belong to the Pipelex Hosted API (use
   // --runner api). `startAndWaitForResult` is supported — it runs the CLI
   // blocking and returns the result directly.
 

@@ -687,7 +687,7 @@ mthds-agent runner setup api --api-key <key> [--base-url <url>]
 
 | Option | Type | Required | Description |
 |---|---|---|---|
-| `--api-key <key>` | string | yes | API key for the MTHDS API |
+| `--api-key <key>` | string | yes | API key for the Pipelex API |
 | `--base-url <url>` | string | no | API base URL — host only, no version prefix (uses the hosted default if omitted) |
 
 **Examples:**
@@ -878,4 +878,3 @@ All arguments are forwarded to `pipelex validate`. Requires the pipelex runner.
 ```bash
 mthds-agent validate bundle ./bundle.mthds --pipe my_pipe
 ```
-

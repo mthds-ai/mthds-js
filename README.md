@@ -124,7 +124,7 @@ To execute a method, you need a **runner**. A runner is the engine that takes a 
 | Runner | Description |
 |--------|-------------|
 | **[Pipelex](https://github.com/Pipelex/pipelex)** (local) | A Python-based runner you install on your machine. Install it with `npx mthds setup runner pipelex`. |
-| **Pipelex API** (remote) | An API server that runs methods remotely. You can self-host it using [pipelex-api](https://github.com/Pipelex/pipelex-api) (open source). A public hosted API at `https://api.pipelex.com` is coming soon. |
+| **Pipelex API** (remote) | An API server that runs methods remotely. You can self-host it using [OSS `pipelex-api`](https://github.com/Pipelex/pipelex-api). The Pipelex Hosted API lives at `https://api.pipelex.com`. |
 
 These are the only runners that exist today. Feel free to create your own runner in a different language!
 
@@ -136,7 +136,7 @@ npx mthds setup runner pipelex
 
 ### Configure the API runner
 
-The local pipelex runner is the default; to use the hosted (or self-hosted) API instead, set up the API runner interactively:
+The local pipelex runner is the default; to use the Pipelex Hosted API or a self-hosted API instead, set up the API runner interactively:
 
 ```bash
 mthds setup runner api
@@ -146,13 +146,13 @@ This prompts for the API base URL and an API key (masked input), and saves them 
 
 There is ONE base URL — the host only, with no version prefix. The SDK composes every endpoint as `{base}/v1/{endpoint}`:
 
-- **`base-url`** — hosted: `https://api.pipelex.com` (the default). Self-hosted: `http://localhost:8081` (a bare [pipelex-api](https://github.com/Pipelex/pipelex-api) runner).
+- **`base-url`** — Pipelex Hosted API: `https://api.pipelex.com` (the default). Self-hosted: `http://localhost:8081` (a bare [OSS `pipelex-api`](https://github.com/Pipelex/pipelex-api) runner).
 
 You can also set values directly:
 
 ```bash
 mthds config set api-key YOUR_KEY
-# Hosted (default):
+# Pipelex Hosted API (default):
 mthds config set base-url https://api.pipelex.com
 # Self-hosted bare runner:
 mthds config set base-url http://localhost:8081
@@ -194,9 +194,9 @@ console.log(result.pipe_output);
 
 The base URL is the host only — every endpoint composes as `{baseUrl}/v1/{endpoint}` (e.g. `https://api.pipelex.com/v1/execute`); `/health` resolves to the origin root.
 
-### Self-hosted API
+### Self-Hosted API
 
-Point the client at your own [pipelex-api](https://github.com/Pipelex/pipelex-api) instance — the same `MTHDSProtocol` surface, same paths:
+Point the client at your own [OSS `pipelex-api`](https://github.com/Pipelex/pipelex-api) instance — the same `MTHDSProtocol` surface, same paths:
 
 ```typescript
 const client = new MthdsApiClient({
@@ -207,7 +207,7 @@ const client = new MthdsApiClient({
 
 The bare open-source runner has no run store, so the durable run-lifecycle methods (`getRunStatus`/`getRunResult`/`waitForResult`) throw a clear `RunLifecycleUnavailableError` against it — use `execute` (blocking) or `start` instead (completion delivery is implementation-defined — see your runner's API documentation). The `GET /v1/version` handshake tells the SDK which deployment it is talking to.
 
-> Note: the bare-runner blocking path returns the runner's native `pipe_output`, whereas the hosted durable path returns `main_stuff` + `graph_spec`. Cross-shape normalization is a v1 TODO.
+> Note: the bare-runner blocking path returns the runner's native `pipe_output`, whereas the Pipelex Hosted API durable path returns `main_stuff` + `graph_spec`. Cross-shape normalization is a v1 TODO.
 
 ### Environment variables
 

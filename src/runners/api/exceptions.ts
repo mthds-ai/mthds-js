@@ -18,7 +18,7 @@ export class ClientAuthenticationError extends Error {
 }
 
 /**
- * Thrown when the MTHDS API host cannot be reached at all (DNS failure,
+ * Thrown when the Pipelex API host cannot be reached at all (DNS failure,
  * connection refused, TLS handshake failure, request timeout). The HTTP
  * exchange never produced a response — distinguish from `ApiResponseError`,
  * which represents a non-2xx response that did come back.
@@ -55,7 +55,7 @@ export class PipelineExecuteTimeoutError extends PipelineRequestError {
   constructor(elapsedMs: number, options?: { cause?: unknown }) {
     const seconds = Math.round(elapsedMs / 1000);
     super(
-      `The hosted MTHDS API times out synchronous requests after ~30s — this run took ${seconds}s. ` +
+      `The Pipelex Hosted API times out synchronous requests after ~30s — this run took ${seconds}s. ` +
         "The blocking execute path can't run methods longer than 30s behind the gateway. " +
         "Start the run and poll for its result instead: " +
         "`start()` then `waitForResult(runId)` (SDK), " +
@@ -138,7 +138,7 @@ export class RunStillRunningError extends PipelineRequestError {
  * Run polling is a hosted-API extension, not part of the MTHDS Protocol: the
  * open-source `pipelex-api` runner executes methods but has no run store, so
  * it 404s those routes; only a deployment that includes the platform block
- * (the hosted MTHDS API) serves status/results. Distinguished from a genuine
+ * (the Pipelex Hosted API) serves status/results. Distinguished from a genuine
  * run-not-found 404, which carries the server's structured error envelope.
  */
 export class RunLifecycleUnavailableError extends PipelineRequestError {

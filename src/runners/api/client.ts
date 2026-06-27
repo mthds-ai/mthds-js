@@ -80,9 +80,9 @@ interface RawResponse {
 export const DEFAULT_API_BASE_URL = "https://api.pipelex.com";
 
 // The SDK composes every endpoint from one origin (MTHDS_API_URL): `{base}/v1/{endpoint}`.
-// The same paths are served by the hosted MTHDS API (api.pipelex.com) and by a bare
-// pipelex-api runner (localhost:8081) — the protocol surface is identical; only the
-// hosted extensions (e.g. run polling) differ, detectable via GET /v1/version.
+// The same paths are served by the Pipelex Hosted API (api.pipelex.com) and by a bare
+// OSS pipelex-api runner (localhost:8081) — the protocol surface is identical; only
+// the hosted extensions (e.g. run polling) differ, detectable via GET /v1/version.
 const API_PREFIX = "v1";
 const RUNS = "runs";
 
@@ -112,8 +112,8 @@ const BARE_RUNNER_IMPLEMENTATION = "pipelex-api";
  *   against any MTHDS-compliant runner, hosted or bare.
  * - **run lifecycle** (`getRunStatus` / `getRunResult` / `waitForResult`) — the
  *   durable polling extension that survives long runs and lets a caller resume by
- *   id. Served only by a deployment that includes the platform block (the hosted
- *   MTHDS API); a bare `pipelex-api` runner 404s those routes, which the lifecycle
+ *   id. Served only by a deployment that includes the platform block (the Pipelex
+ *   Hosted API); a bare `pipelex-api` runner 404s those routes, which the lifecycle
  *   methods translate into a clear `RunLifecycleUnavailableError`.
  */
 export class MthdsApiClient extends BaseRunner implements Runner {
@@ -216,7 +216,7 @@ export class MthdsApiClient extends BaseRunner implements Runner {
       // Our timeout aborts the controller with a "TimeoutError" DOMException.
       const code = extractNetworkErrorCode(err);
       throw new ApiUnreachableError(
-        `Could not reach MTHDS API at ${this.baseUrl} (${code ?? "network error"})`,
+        `Could not reach Pipelex API at ${this.baseUrl} (${code ?? "network error"})`,
         this.baseUrl,
         code,
         { cause: err },

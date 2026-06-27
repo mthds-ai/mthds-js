@@ -10,7 +10,7 @@
  *   --runner=pipelex (default): all runner-aware commands are forwarded
  *     verbatim to pipelex-agent as passthrough.
  *   --runner=api: runner-aware commands are registered with full arg parsing
- *     and call the MTHDS API.
+ *     and call the Pipelex API.
  */
 
 import { Command, CommanderError, Option } from "commander";
@@ -364,7 +364,7 @@ runnerSetup
 runnerSetup
   .command("api")
   .description("Set up the API runner")
-  .requiredOption("--api-key <key>", "API key for the MTHDS API")
+  .requiredOption("--api-key <key>", "API key for the Pipelex API")
   .option(
     "--base-url <url>",
     "API base URL — host only, no version prefix (optional, uses the hosted default if omitted)",

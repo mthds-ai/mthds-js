@@ -651,7 +651,7 @@ export function registerApiRunnerCommands(program: Command, makeRunner: () => Ru
     .exitOverride()
     .action(async () => {
       agentError(
-        "check-model is not available on the API runner — the MTHDS API has no check-model route. It is a local capability of the pipelex runner: re-run with --runner pipelex. To list what the API can route to, use: mthds-agent models",
+        "check-model is not available on the API runner — the Pipelex API has no check-model route. It is a local capability of the pipelex runner: re-run with --runner pipelex. To list what the API can route to, use: mthds-agent models",
         "UnsupportedError",
         { error_domain: AGENT_ERROR_DOMAINS.RUNNER },
       );

@@ -1,6 +1,6 @@
 # Run lifecycle (durable, poll-by-id)
 
-Real method runs take minutes to hours. The gateway in front of the hosted MTHDS API has a hard ~30s response ceiling, so a synchronous "submit and wait for the answer in one HTTP call" is structurally impossible. mthds-js submits a run, then polls a self-healing endpoint by bare `pipeline_run_id` until the run reaches a terminal state.
+Real method runs take minutes to hours. The gateway in front of the Pipelex Hosted API has a hard ~30s response ceiling, so a synchronous "submit and wait for the answer in one HTTP call" is structurally impossible. mthds-js submits a run, then polls a self-healing endpoint by bare `pipeline_run_id` until the run reaches a terminal state.
 
 Because every bit of run state lives behind the `pipeline_run_id` (DynamoDB for the immutable facts, Temporal for the live execution state), a caller — including an AI agent — can submit a run, drop the connection, and reconnect hours later with only the `pipeline_run_id` to get the true outcome.
 

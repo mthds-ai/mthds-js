@@ -1,5 +1,10 @@
 # Changelog
 
+## [v0.13.1] - 2026-06-28
+
+### Changed
+- **Minimum Node.js raised to `>=22`:** Bumped `engines.node` from `>=18` to `>=22`. Node 18 reached end-of-life in April 2025 and Node 20 in April 2026, so 22 is the lowest LTS line still in maintenance (until April 2027). CI now provisions Node 22 in `publish.yml` and `quality-checks.yml` to match. `engines` is advisory — npm only warns on a mismatched runtime unless the consumer sets `engine-strict` — so this won't hard-break existing installs.
+
 ## [v0.13.0] - 2026-06-28
 
 This minor both exposes the pure protocol surface as a subpath (additive) and pulls the durable run-lifecycle out of `mthds-js` (breaking). They ship in one release: `0.13.0` was never published, so the run-lifecycle removal lands in the same minor as the subpath export instead of minting a separate `0.14.0`.

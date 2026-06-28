@@ -1,0 +1,7 @@
+{
+  // Pin the editor to THIS repo's TypeScript (node_modules/typescript@5.x) so VS Code's
+  // IntelliSense matches `make check` (same tsc). Clears phantom @types/node / ts(2591).
+  // Note: the current key is "js/ts.tsdk.path"; "typescript.tsdk" is deprecated.
+  "js/ts.tsdk.path": "node_modules/typescript/lib",
+  "js/ts.tsdk.promptToUseWorkspaceVersion": true
+}

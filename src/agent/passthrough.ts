@@ -12,7 +12,7 @@ import { uvToolInstallSync } from "../installer/runtime/installer.js";
 export function passthrough(
   bin: string,
   args: string[],
-  options?: { autoInstall?: boolean; skipVersionCheck?: boolean }
+  options?: { autoInstall?: boolean; skipVersionCheck?: boolean },
 ): void {
   const recovery = BINARY_RECOVERY[bin];
 
@@ -34,48 +34,36 @@ export function passthrough(
             uvToolInstallSync(recovery.uv_package, recovery.version_constraint);
           } catch (err) {
             const msg = err instanceof Error ? err.message : String(err);
-            agentError(
-              `Failed to auto-install ${bin}: ${msg}`,
-              "InstallError",
-              {
-                error_domain: AGENT_ERROR_DOMAINS.INSTALL,
-                hint: `Install manually: ${buildInstallCommand(recovery)}`,
-                recovery,
-              }
-            );
+            agentError(`Failed to auto-install ${bin}: ${msg}`, "InstallError", {
+              error_domain: AGENT_ERROR_DOMAINS.INSTALL,
+              hint: `Install manually: ${buildInstallCommand(recovery)}`,
+              recovery,
+            });
           }
           // Verify install succeeded and version constraint is satisfied
           {
             const postCheck = checkBinaryVersion(recovery);
             if (postCheck.status === "missing") {
-              agentError(
-                `${bin} was installed but is not reachable in PATH.`,
-                "InstallError",
-                {
-                  error_domain: AGENT_ERROR_DOMAINS.INSTALL,
-                  hint: "You may need to restart your shell or add the install directory to your PATH.",
-                  recovery,
-                }
-              );
+              agentError(`${bin} was installed but is not reachable in PATH.`, "InstallError", {
+                error_domain: AGENT_ERROR_DOMAINS.INSTALL,
+                hint: "You may need to restart your shell or add the install directory to your PATH.",
+                recovery,
+              });
             } else if (postCheck.status !== "ok") {
               process.stderr.write(
                 JSON.stringify({
                   warning: true,
                   message: `Install of ${bin} may not have taken effect (status: ${postCheck.status}, installed: ${postCheck.installed_version}, needs: ${recovery.version_constraint}).`,
-                }) + "\n"
+                }) + "\n",
               );
             }
           }
         } else {
-          agentError(
-            `${bin} is not installed. Install it to continue.`,
-            "BinaryNotFoundError",
-            {
-              error_domain: AGENT_ERROR_DOMAINS.BINARY,
-              hint: `Install: ${buildInstallCommand(recovery)}`,
-              recovery,
-            }
-          );
+          agentError(`${bin} is not installed. Install it to continue.`, "BinaryNotFoundError", {
+            error_domain: AGENT_ERROR_DOMAINS.BINARY,
+            hint: `Install: ${buildInstallCommand(recovery)}`,
+            recovery,
+          });
         }
         break;
 
@@ -92,7 +80,7 @@ export function passthrough(
                 error_domain: AGENT_ERROR_DOMAINS.INSTALL,
                 hint: `Upgrade manually: ${buildInstallCommand(recovery)}`,
                 recovery,
-              }
+              },
             );
           }
           // Verify upgrade actually satisfied the constraint
@@ -103,7 +91,7 @@ export function passthrough(
                 JSON.stringify({
                   warning: true,
                   message: `Upgrade of ${bin} may not have taken effect (status: ${recheck.status}, installed: ${recheck.installed_version}, needs: ${recovery.version_constraint}).`,
-                }) + "\n"
+                }) + "\n",
               );
             }
           }
@@ -115,7 +103,7 @@ export function passthrough(
               error_domain: AGENT_ERROR_DOMAINS.INSTALL,
               hint: `Upgrade: ${buildInstallCommand(recovery)}`,
               recovery,
-            }
+            },
           );
         }
         break;
@@ -127,7 +115,7 @@ export function passthrough(
             warning: true,
             message: `Could not parse version for ${bin}. Proceeding anyway.`,
             version_constraint: check.version_constraint,
-          }) + "\n"
+          }) + "\n",
         );
         break;
     }
@@ -149,14 +137,12 @@ export function passthrough(
           error_domain: AGENT_ERROR_DOMAINS.BINARY,
           hint,
           recovery,
-        }
+        },
       );
     }
-    agentError(
-      `Failed to spawn ${bin}: ${result.error.message}`,
-      "BinarySpawnError",
-      { error_domain: AGENT_ERROR_DOMAINS.BINARY }
-    );
+    agentError(`Failed to spawn ${bin}: ${result.error.message}`, "BinarySpawnError", {
+      error_domain: AGENT_ERROR_DOMAINS.BINARY,
+    });
   }
 
   process.exit(result.status ?? 1);

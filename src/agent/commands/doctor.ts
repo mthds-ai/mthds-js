@@ -94,7 +94,9 @@ function formatDoctorMarkdown(
           ? "unparseable"
           : "outdated";
     const path = dep.path ?? "—";
-    lines.push(`| ${escapeCell(dep.binary)} | ${escapeCell(version)} | ${status} | ${escapeCell(path)} |`);
+    lines.push(
+      `| ${escapeCell(dep.binary)} | ${escapeCell(version)} | ${status} | ${escapeCell(path)} |`,
+    );
   }
   lines.push("");
 
@@ -104,7 +106,9 @@ function formatDoctorMarkdown(
   lines.push("| Key | Value | Source |");
   lines.push("| --- | ----- | ------ |");
   for (const entry of config) {
-    lines.push(`| ${escapeCell(entry.key)} | ${escapeCell(entry.value)} | ${escapeCell(entry.source)} |`);
+    lines.push(
+      `| ${escapeCell(entry.key)} | ${escapeCell(entry.value)} | ${escapeCell(entry.source)} |`,
+    );
   }
   lines.push("");
 
@@ -112,7 +116,9 @@ function formatDoctorMarkdown(
   lines.push("## Codex");
   lines.push("");
   if (!codex.exists) {
-    lines.push(`- No ~/.codex/config.toml found. Run \`mthds-agent codex apply-config\` to create one.`);
+    lines.push(
+      `- No ~/.codex/config.toml found. Run \`mthds-agent codex apply-config\` to create one.`,
+    );
   } else if (codex.parse_error) {
     lines.push(`- [ERROR] Could not parse ${codex.config_file}: ${codex.parse_error}`);
   } else {
@@ -120,7 +126,9 @@ function formatDoctorMarkdown(
       const keys = codex.needs_changes
         .map((change) => `[${change.table}] ${change.key} = ${change.value}`)
         .join(", ");
-      lines.push(`- [WARN] Required config not set (${keys}). Run \`mthds-agent codex apply-config\`.`);
+      lines.push(
+        `- [WARN] Required config not set (${keys}). Run \`mthds-agent codex apply-config\`.`,
+      );
     } else {
       lines.push(`- Required config: ok`);
     }
@@ -172,9 +180,8 @@ export async function agentDoctor(format: OutputFormat = OutputFormat.MARKDOWN):
   let apiKeyConfigured = false;
 
   for (const entry of rawConfig) {
-    const displayValue = entry.cliKey === "api-key"
-      ? (entry.value ? "configured" : "not set")
-      : entry.value;
+    const displayValue =
+      entry.cliKey === "api-key" ? (entry.value ? "configured" : "not set") : entry.value;
     configEntries.push({
       key: entry.cliKey,
       value: displayValue,

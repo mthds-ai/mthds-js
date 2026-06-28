@@ -157,7 +157,7 @@ describe("agentDoctor", () => {
       version_constraint: PX_CONSTRAINT,
     });
     mockedListConfig.mockReturnValue([
-      { cliKey: "runner", envKey: "MTHDS_RUNNER", value: "pipelex", source: "default" },
+      { key: "runner", cliKey: "runner", value: "pipelex", source: "default" },
     ]);
 
     await agentDoctor(OutputFormat.JSON);
@@ -180,7 +180,7 @@ describe("agentDoctor", () => {
       version_constraint: PX_CONSTRAINT,
     });
     mockedListConfig.mockReturnValue([
-      { cliKey: "runner", envKey: "MTHDS_RUNNER", value: "api", source: "default" },
+      { key: "runner", cliKey: "runner", value: "api", source: "default" },
     ]);
 
     await agentDoctor(OutputFormat.JSON);
@@ -200,8 +200,8 @@ describe("agentDoctor", () => {
     });
     mockedExecFileSync.mockReturnValue(Buffer.from("/usr/local/bin/pipelex"));
     mockedListConfig.mockReturnValue([
-      { cliKey: "runner", envKey: "MTHDS_RUNNER", value: "api", source: "default" },
-      { cliKey: "api-key", envKey: "MTHDS_API_KEY", value: "", source: "default" },
+      { key: "runner", cliKey: "runner", value: "api", source: "default" },
+      { key: "apiKey", cliKey: "api-key", value: "", source: "default" },
     ]);
 
     await agentDoctor(OutputFormat.JSON);
@@ -242,7 +242,7 @@ describe("agentDoctor", () => {
     });
     mockedExecFileSync.mockReturnValue(Buffer.from("/usr/local/bin/pipelex"));
     mockedListConfig.mockReturnValue([
-      { cliKey: "runner", envKey: "MTHDS_RUNNER", value: "pipelex", source: "config file" },
+      { key: "runner", cliKey: "runner", value: "pipelex", source: "file" },
     ]);
 
     const writeSpy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
@@ -295,7 +295,12 @@ describe("agentDoctor", () => {
       exists: true,
       needs_changes: [{ table: "sandbox_workspace_write", key: "network_access", value: "true" }],
       conflicts: [],
-      warnings: [{ code: "CODEX_HOOKS_DISABLED", message: "[features] codex_hooks is explicitly set to false" }],
+      warnings: [
+        {
+          code: "CODEX_HOOKS_DISABLED",
+          message: "[features] codex_hooks is explicitly set to false",
+        },
+      ],
     });
 
     await agentDoctor(OutputFormat.JSON);
@@ -325,7 +330,9 @@ describe("agentDoctor", () => {
       exists: true,
       needs_changes: [{ table: "sandbox_workspace_write", key: "network_access", value: "true" }],
       conflicts: [],
-      warnings: [{ code: "CODEX_HOOKS_DISABLED", message: "[features] hooks is explicitly set to false" }],
+      warnings: [
+        { code: "CODEX_HOOKS_DISABLED", message: "[features] hooks is explicitly set to false" },
+      ],
     });
 
     await agentDoctor(OutputFormat.JSON);
@@ -374,9 +381,7 @@ describe("agentDoctor", () => {
       config_file: "/tmp/.codex/config.toml",
       exists: true,
       needs_changes: [],
-      conflicts: [
-        { table: "features", key: "plugin_hooks", current: "false", required: "true" },
-      ],
+      conflicts: [{ table: "features", key: "plugin_hooks", current: "false", required: "true" }],
       warnings: [],
     });
 

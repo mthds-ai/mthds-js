@@ -38,9 +38,8 @@ src/
 │   └── exceptions.ts               # PipelineRequestError (protocol base)
 ├── runners/                        # Runner implementations
 │   ├── types.ts                    # Runner interface + request/response types
-│   ├── base-runner.ts              # lifecycle composites (waitForResult, startAndWaitForResult)
 │   ├── registry.ts                 # createRunner() factory
-│   ├── api/                        # MthdsApiClient (IS the api runner) + run lifecycle + Dict models + errors
+│   ├── api/                        # MthdsApiClient (IS the api runner) + Dict models + errors
 │   └── pipelex/runner.ts           # Pipelex CLI runner
 ├── config/
 │   └── config.ts                   # ~/.mthds/config handling

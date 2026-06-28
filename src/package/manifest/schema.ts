@@ -72,28 +72,34 @@ export function isValidMethodName(name: string): boolean {
 }
 
 /** Raw [package] section in METHODS.toml */
-export const PackageSectionSchema = z.object({
-  name: z.string().optional(),
-  address: z.string(),
-  version: z.string(),
-  description: z.string(),
-  display_name: z.string().optional(),
-  authors: z.array(z.string()).optional(),
-  license: z.string().optional(),
-  mthds_version: z.string().optional(),
-  main_pipe: z.string().optional(),
-}).strict();
+export const PackageSectionSchema = z
+  .object({
+    name: z.string().optional(),
+    address: z.string(),
+    version: z.string(),
+    description: z.string(),
+    display_name: z.string().optional(),
+    authors: z.array(z.string()).optional(),
+    license: z.string().optional(),
+    mthds_version: z.string().optional(),
+    main_pipe: z.string().optional(),
+  })
+  .strict();
 
 /** Flattened domain exports (after walkExportsTable) */
-export const DomainExportsSchema = z.object({
-  pipes: z.array(z.string()),
-}).strict();
+export const DomainExportsSchema = z
+  .object({
+    pipes: z.array(z.string()),
+  })
+  .strict();
 
 /** Top-level METHODS.toml structure */
-export const MethodsTomlSchema = z.object({
-  package: PackageSectionSchema,
-  exports: z.record(z.string(), z.unknown()).optional(),
-}).strict();
+export const MethodsTomlSchema = z
+  .object({
+    package: PackageSectionSchema,
+    exports: z.record(z.string(), z.unknown()).optional(),
+  })
+  .strict();
 
 // ---------------------------------------------------------------------------
 // Types

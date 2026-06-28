@@ -8,7 +8,7 @@
 import type { ConceptAbstract } from "./concept.js";
 
 /** Marker base for a stuff's content payload (mirrors python `StuffContentAbstract`). */
-// eslint-disable-next-line @typescript-eslint/no-empty-interface
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
 export interface StuffContentAbstract {}
 
 export interface StuffAbstract<

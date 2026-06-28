@@ -19,7 +19,11 @@ vi.mock("../../../../src/config/config.js", () => ({
   getTelemetrySource: vi.fn().mockReturnValue("default"),
 }));
 
-import { trackPublish, trackInstall, shutdown } from "../../../../src/installer/telemetry/posthog.js";
+import {
+  trackPublish,
+  trackInstall,
+  shutdown,
+} from "../../../../src/installer/telemetry/posthog.js";
 import type { InstallEvent } from "../../../../src/installer/telemetry/posthog.js";
 
 beforeEach(() => {
@@ -61,7 +65,7 @@ describe("trackPublish", () => {
           exports: { pipes: { analyze: {} } },
           manifest_raw: "[package]\nname = 'contract-analysis'",
         }),
-      })
+      }),
     );
   });
 
@@ -81,7 +85,7 @@ describe("trackInstall", () => {
     expect(mockCapture).toHaveBeenCalledWith(
       expect.objectContaining({
         event: "method_install",
-      })
+      }),
     );
   });
 });

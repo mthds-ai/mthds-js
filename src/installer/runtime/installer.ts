@@ -80,7 +80,7 @@ async function installPipelexViaUv(): Promise<void> {
     const msg = error instanceof Error ? error.message : String(error);
     throw new Error(
       `Could not install pipelex: ${msg}\n` +
-        `Install manually: uv tool install --upgrade "${recovery.uv_package}${recovery.version_constraint}"`
+        `Install manually: uv tool install --upgrade "${recovery.uv_package}${recovery.version_constraint}"`,
     );
   }
 
@@ -88,7 +88,7 @@ async function installPipelexViaUv(): Promise<void> {
     spinner.fail("pipelex was installed but is not reachable");
     throw new Error(
       "pipelex was installed but is not found in PATH.\n" +
-        "You may need to restart your shell or add the install directory to your PATH."
+        "You may need to restart your shell or add the install directory to your PATH.",
     );
   }
 
@@ -108,7 +108,7 @@ export function requireUv(): string {
     const errno = (err as NodeJS.ErrnoException).code;
     if (errno === "ENOENT") {
       throw new Error(
-        "uv is required but not found in PATH. Install it: https://docs.astral.sh/uv/getting-started/installation/"
+        "uv is required but not found in PATH. Install it: https://docs.astral.sh/uv/getting-started/installation/",
       );
     }
     const msg = err instanceof Error ? err.message : String(err);
@@ -123,10 +123,7 @@ export function requireUv(): string {
  * @param pkg - PyPI package name (e.g. "pipelex")
  * @param versionConstraint - Optional semver range appended to the package spec (e.g. ">=0.22.0").
  */
-export function uvToolInstallSync(
-  pkg: string,
-  versionConstraint?: string
-): void {
+export function uvToolInstallSync(pkg: string, versionConstraint?: string): void {
   const uv = requireUv();
   const spec = versionConstraint ? `${pkg}${versionConstraint}` : pkg;
   try {

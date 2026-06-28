@@ -1,12 +1,6 @@
 import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
-import {
-  existsSync,
-  writeFileSync,
-  readFileSync,
-  mkdtempSync,
-  rmSync,
-} from "node:fs";
+import { existsSync, writeFileSync, readFileSync, mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { Runners } from "../types.js";
@@ -36,13 +30,6 @@ import type {
 import { MTHDS_PROTOCOL_VERSION } from "../../protocol/models.js";
 import { conceptRef } from "../../protocol/concept.js";
 import type { DictPipeOutput, DictRunResultExecute } from "../api/models.js";
-import type {
-  RunRead,
-  RunResults,
-  RunResultState,
-  WaitForResultOptions,
-} from "../api/runs.js";
-import { BaseRunner } from "../base-runner.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -75,12 +62,11 @@ function writeMthdsContents(tmp: string, contents: string[]): string {
   return bundlePath;
 }
 
-export class PipelexRunner extends BaseRunner implements Runner {
+export class PipelexRunner implements Runner {
   readonly type: RunnerType = Runners.PIPELEX;
   private readonly libraryDirs: string[];
 
   constructor(libraryDirs?: string[]) {
-    super();
     this.libraryDirs = libraryDirs ?? [];
   }
 
@@ -88,9 +74,7 @@ export class PipelexRunner extends BaseRunner implements Runner {
     return this.libraryDirs.flatMap((dir) => ["-L", dir]);
   }
 
-  private async exec(
-    args: string[]
-  ): Promise<{ stdout: string; stderr: string }> {
+  private async exec(args: string[]): Promise<{ stdout: string; stderr: string }> {
     return execFileAsync("pipelex", [...args, ...this.libraryArgs()], {
       encoding: "utf-8",
     });
@@ -105,9 +89,7 @@ export class PipelexRunner extends BaseRunner implements Runner {
       const child = spawn("pipelex", [...args, ...this.libraryArgs()], {
         stdio: [inheritStdin ? "inherit" : "ignore", "inherit", "inherit"],
       });
-      child.on("error", (err) =>
-        reject(new Error(`pipelex not found: ${err.message}`))
-      );
+      child.on("error", (err) => reject(new Error(`pipelex not found: ${err.message}`)));
       child.on("close", (code) => {
         if (code === 0) {
           resolve();
@@ -137,7 +119,7 @@ export class PipelexRunner extends BaseRunner implements Runner {
   async health(): Promise<Record<string, unknown>> {
     try {
       const timeout = new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error("pipelex health check timed out after 10s")), 10_000)
+        setTimeout(() => reject(new Error("pipelex health check timed out after 10s")), 10_000),
       );
       await Promise.race([this.exec(["doctor", "-g"]), timeout]);
       return { status: "ok" };
@@ -169,8 +151,17 @@ export class PipelexRunner extends BaseRunner implements Runner {
 
       const { stdout } = await execFileAsync(
         "pipelex-agent",
-        ["inputs", "bundle", bundlePath, "--pipe", request.pipe_code, "-L", tmp, ...this.libraryArgs()],
-        { encoding: "utf-8" }
+        [
+          "inputs",
+          "bundle",
+          bundlePath,
+          "--pipe",
+          request.pipe_code,
+          "-L",
+          tmp,
+          ...this.libraryArgs(),
+        ],
+        { encoding: "utf-8" },
       );
 
       return JSON.parse(stdout) as unknown;
@@ -216,7 +207,7 @@ export class PipelexRunner extends BaseRunner implements Runner {
       if (!existsSync(outPath)) {
         throw new Error(
           `pipelex build output produced no file at ${outPath}.` +
-            (stderr ? ` Output:\n${stderr.trim()}` : "")
+            (stderr ? ` Output:\n${stderr.trim()}` : ""),
         );
       }
       const raw = readFileSync(outPath, "utf-8");
@@ -231,9 +222,7 @@ export class PipelexRunner extends BaseRunner implements Runner {
   }
 
   // pipelex build runner bundle <bundle.mthds> --pipe <pipe_code> -o <file>
-  async buildRunner(
-    request: BuildRunnerRequest
-  ): Promise<BuildRunnerResponse> {
+  async buildRunner(request: BuildRunnerRequest): Promise<BuildRunnerResponse> {
     const tmp = makeTmpDir();
     try {
       const bundlePath = writeMthdsContents(tmp, request.mthds_contents);
@@ -272,13 +261,12 @@ export class PipelexRunner extends BaseRunner implements Runner {
     const { stdout } = await execFileAsync(
       "pipelex-agent",
       ["concept", "--spec", JSON.stringify(request.spec)],
-      { encoding: "utf-8" }
+      { encoding: "utf-8" },
     );
     return {
       success: true,
       concept_code:
-        extractSectionKey(stdout, "concept") ??
-        ((request.spec.concept_code as string) ?? ""),
+        extractSectionKey(stdout, "concept") ?? (request.spec.concept_code as string) ?? "",
       toml: stdout,
     };
   }
@@ -287,27 +275,19 @@ export class PipelexRunner extends BaseRunner implements Runner {
   async pipeSpec(request: PipeSpecRequest): Promise<PipeSpecResponse> {
     const { stdout } = await execFileAsync(
       "pipelex-agent",
-      [
-        "pipe",
-        "--type",
-        request.pipe_type,
-        "--spec",
-        JSON.stringify(request.spec),
-      ],
-      { encoding: "utf-8" }
+      ["pipe", "--type", request.pipe_type, "--spec", JSON.stringify(request.spec)],
+      { encoding: "utf-8" },
     );
     return {
       success: true,
-      pipe_code:
-        extractSectionKey(stdout, "pipe") ??
-        ((request.spec.pipe_code as string) ?? ""),
+      pipe_code: extractSectionKey(stdout, "pipe") ?? (request.spec.pipe_code as string) ?? "",
       pipe_type: request.pipe_type,
       toml: stdout,
     };
   }
 
   // pipelex-agent check-model <reference> --type <type> --format json
-  // check-model is a LOCAL CLI capability of this runner only — the MTHDS API
+  // check-model is a LOCAL CLI capability of this runner only — the Pipelex API
   // has no check-model route, so this method is NOT on the shared `Runner`
   // interface. The local runner always forces --format json: pipelex-agent's
   // markdown output is plain text (via print()), which can't satisfy the
@@ -340,10 +320,9 @@ export class PipelexRunner extends BaseRunner implements Runner {
 
   // ── Method execution ────────────────────────────────────────────
   // pipelex run <target> [--pipe code] [--inputs file] [--output-dir dir]
-  // Local, blocking, in-process — there is no durable run to poll by id, so
-  // `execute` / `startAndWaitForResult` run through here and the async
-  // primitives (start / getRunStatus / getRunResult / waitForResult) are
-  // unsupported.
+  // Local, blocking, in-process — methods run through `execute`. There is no
+  // durable run to poll by id; the async `start` primitive is unsupported (use
+  // the API runner for that).
 
   async execute(options: RunOptions): Promise<DictRunResultExecute> {
     const tmp = makeTmpDir();
@@ -364,11 +343,7 @@ export class PipelexRunner extends BaseRunner implements Runner {
 
       if (options.inputs) {
         const inputsPath = join(tmp, "inputs.json");
-        writeFileSync(
-          inputsPath,
-          JSON.stringify(options.inputs),
-          "utf-8"
-        );
+        writeFileSync(inputsPath, JSON.stringify(options.inputs), "utf-8");
         args.push("--inputs", inputsPath);
       }
 
@@ -399,7 +374,8 @@ export class PipelexRunner extends BaseRunner implements Runner {
         if (conceptRaw && typeof conceptRaw === "object") {
           const conceptObj = conceptRaw as Record<string, unknown>;
           const code = typeof conceptObj["code"] === "string" ? conceptObj["code"] : "";
-          const domainCode = typeof conceptObj["domain_code"] === "string" ? conceptObj["domain_code"] : "";
+          const domainCode =
+            typeof conceptObj["domain_code"] === "string" ? conceptObj["domain_code"] : "";
           // A missing domain_code falls back to the bare code (no leading dot).
           conceptRefStr = domainCode ? conceptRef({ domain_code: domainCode, code }) : code;
         } else {
@@ -426,10 +402,7 @@ export class PipelexRunner extends BaseRunner implements Runner {
   // ── Validation ──────────────────────────────────────────────────
   // pipelex validate bundle <bundle.mthds> [--allow-signatures]
 
-  async validate(
-    mthdsContents: string[],
-    allowSignatures = false
-  ): Promise<ValidationResult> {
+  async validate(mthdsContents: string[], allowSignatures = false): Promise<ValidationResult> {
     const tmp = makeTmpDir();
     try {
       const bundlePath = writeMthdsContents(tmp, mthdsContents);
@@ -440,7 +413,11 @@ export class PipelexRunner extends BaseRunner implements Runner {
       try {
         await this.exec(args);
       } catch (err) {
-        const execError = err as Error & { code?: number | string; stderr?: string; stdout?: string };
+        const execError = err as Error & {
+          code?: number | string;
+          stderr?: string;
+          stdout?: string;
+        };
         const detail = execError.stderr?.trim() || execError.stdout?.trim() || execError.message;
         // The bare `pipelex validate` follows the 0/1/2 exit policy: exit 1 is a
         // produced negative verdict (the bundle is invalid), exit 2+ (or a spawn
@@ -470,52 +447,18 @@ export class PipelexRunner extends BaseRunner implements Runner {
     }
   }
 
-  // ── Run lifecycle ──────────────────────────────────────────────────
-  // The local pipelex CLI runs methods in-process; there is no durable run
-  // to poll by id, so the async primitives belong to the hosted API (use
-  // --runner api). `startAndWaitForResult` is supported — it runs the CLI
-  // blocking and returns the result directly.
-
-  override async startAndWaitForResult(
-    options: StartOptions,
-    _pollOptions?: WaitForResultOptions
-  ): Promise<RunResults> {
-    const response = await this.execute({
-      mthds_contents: options.mthds_contents ?? undefined,
-      pipe_code: options.pipe_code ?? undefined,
-      inputs: options.inputs ?? undefined,
-      output_name: options.output_name ?? undefined,
-      output_multiplicity: options.output_multiplicity ?? undefined,
-      dynamic_output_concept_ref: options.dynamic_output_concept_ref ?? undefined,
-    });
-    const pipeOutput = response.pipe_output as DictPipeOutput | null | undefined;
-    return {
-      pipeline_run_id: response.pipeline_run_id,
-      main_stuff: null,
-      // The local CLI blocking `pipe_output` carries no graph artifact.
-      graph_spec: null,
-      pipe_output: (pipeOutput as Record<string, unknown> | null | undefined) ?? null,
-    };
-  }
+  // ── Async start (protocol primitive, unsupported locally) ──────────
+  // The local pipelex CLI runs methods in-process and blocking via `execute`;
+  // there is no durable run to start and poll by id, so the protocol's async
+  // `start` primitive belongs to the Pipelex Hosted API (use --runner api).
 
   async start(_options: StartOptions): Promise<never> {
-    throw new Error(RUN_LIFECYCLE_UNSUPPORTED);
-  }
-
-  async getRunStatus(_runId: string): Promise<RunRead> {
-    throw new Error(RUN_LIFECYCLE_UNSUPPORTED);
-  }
-
-  async getRunResult(
-    _runId: string,
-    _options?: { signal?: AbortSignal }
-  ): Promise<RunResultState> {
-    throw new Error(RUN_LIFECYCLE_UNSUPPORTED);
+    throw new Error(ASYNC_START_UNSUPPORTED);
   }
 }
 
-const RUN_LIFECYCLE_UNSUPPORTED =
-  "Run lifecycle (start/status/result/poll) is not supported by the pipelex CLI runner. Use the API runner instead (--runner api).";
+const ASYNC_START_UNSUPPORTED =
+  "Async start is not supported by the pipelex CLI runner — it runs methods in-process and blocking. Use `execute` (e.g. `mthds run`), or the API runner for durable start (--runner api).";
 
 /**
  * Normalize the local CLI's models output into the protocol `ModelDeck`.

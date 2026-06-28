@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect } from "vitest";
 import { addressToCloneUrl, resolveVersionFromTags } from "../../../src/package/vcs-resolver.js";
 import { VersionResolutionError } from "../../../src/package/exceptions.js";
 import { parseVersion } from "../../../src/package/semver.js";

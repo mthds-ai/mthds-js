@@ -1,5 +1,4 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import type { VersionCheckResult } from "../../../src/installer/runtime/version-check.js";
 import { BINARY_RECOVERY } from "../../../src/agent/binaries.js";
 
 const PX_CONSTRAINT = BINARY_RECOVERY["pipelex"].version_constraint;
@@ -315,7 +314,7 @@ describe("agentUpgrade", () => {
     expect(agentError).toHaveBeenCalledWith(
       expect.stringContaining("uv is required"),
       "InstallError",
-      expect.objectContaining({ error_domain: "install" })
+      expect.objectContaining({ error_domain: "install" }),
     );
     // Verify execution halted — no downstream calls after fatal error
     expect(loadConfig).not.toHaveBeenCalled();

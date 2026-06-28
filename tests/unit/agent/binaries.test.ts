@@ -35,15 +35,12 @@ describe("BINARY_RECOVERY registry", () => {
     "auto_installable",
   ];
 
-  it.each(Object.keys(BINARY_RECOVERY))(
-    "%s has all required fields",
-    (key) => {
-      const entry = BINARY_RECOVERY[key];
-      for (const field of requiredFields) {
-        expect(entry, `${key} missing field '${field}'`).toHaveProperty(field);
-      }
-    },
-  );
+  it.each(Object.keys(BINARY_RECOVERY))("%s has all required fields", (key) => {
+    const entry = BINARY_RECOVERY[key];
+    for (const field of requiredFields) {
+      expect(entry, `${key} missing field '${field}'`).toHaveProperty(field);
+    }
+  });
 
   it.each(Object.entries(BINARY_RECOVERY))(
     "%s version_extract matches '<binary> X.Y.Z' output",

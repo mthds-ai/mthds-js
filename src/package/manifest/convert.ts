@@ -18,7 +18,11 @@ export function parsedManifestToLegacy(parsed: ParsedManifest): MethodsManifest 
       let current: Record<string, ExportNode | string[] | undefined> = root;
       for (let idx = 0; idx < segments.length - 1; idx++) {
         const segment = segments[idx]!;
-        if (!(segment in current) || typeof current[segment] !== "object" || Array.isArray(current[segment])) {
+        if (
+          !(segment in current) ||
+          typeof current[segment] !== "object" ||
+          Array.isArray(current[segment])
+        ) {
           current[segment] = {};
         }
         current = current[segment] as Record<string, ExportNode | string[] | undefined>;
@@ -68,9 +72,13 @@ export function legacyToParsedManifest(legacy: MethodsManifest): ParsedManifest 
     authors: legacy.package.authors ?? [],
     exports,
     name: legacy.package.name,
-    ...(legacy.package.display_name !== undefined ? { displayName: legacy.package.display_name } : {}),
+    ...(legacy.package.display_name !== undefined
+      ? { displayName: legacy.package.display_name }
+      : {}),
     ...(legacy.package.license !== undefined ? { license: legacy.package.license } : {}),
-    ...(legacy.package.mthds_version !== undefined ? { mthdsVersion: legacy.package.mthds_version } : {}),
+    ...(legacy.package.mthds_version !== undefined
+      ? { mthdsVersion: legacy.package.mthds_version }
+      : {}),
     ...(legacy.package.main_pipe !== undefined ? { mainPipe: legacy.package.main_pipe } : {}),
   };
 }

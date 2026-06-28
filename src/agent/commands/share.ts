@@ -21,22 +21,18 @@ interface AgentShareOptions {
 
 export async function agentShare(
   address: string | undefined,
-  options: AgentShareOptions
+  options: AgentShareOptions,
 ): Promise<void> {
   if (address && options.local) {
-    agentError(
-      "Cannot use both an address and --local at the same time.",
-      "ArgumentError",
-      { error_domain: AGENT_ERROR_DOMAINS.ARGUMENT }
-    );
+    agentError("Cannot use both an address and --local at the same time.", "ArgumentError", {
+      error_domain: AGENT_ERROR_DOMAINS.ARGUMENT,
+    });
   }
 
   if (!address && !options.local) {
-    agentError(
-      "Provide an address (org/repo) or use --local <path>.",
-      "ArgumentError",
-      { error_domain: AGENT_ERROR_DOMAINS.ARGUMENT }
-    );
+    agentError("Provide an address (org/repo) or use --local <path>.", "ArgumentError", {
+      error_domain: AGENT_ERROR_DOMAINS.ARGUMENT,
+    });
   }
 
   const methodFilter = options.method;
@@ -49,11 +45,9 @@ export async function agentShare(
     try {
       resolved = resolveFromLocal(options.local);
     } catch (err) {
-      agentError(
-        `Failed to resolve local methods: ${(err as Error).message}`,
-        "ShareError",
-        { error_domain: AGENT_ERROR_DOMAINS.INSTALL }
-      );
+      agentError(`Failed to resolve local methods: ${(err as Error).message}`, "ShareError", {
+        error_domain: AGENT_ERROR_DOMAINS.INSTALL,
+      });
     }
     if (resolved.methods.length > 0) {
       const addr = resolved.methods[0]!.manifest.package.address;
@@ -72,11 +66,9 @@ export async function agentShare(
     try {
       resolved = await resolveFromGitHub(parsed);
     } catch (err) {
-      agentError(
-        `Failed to resolve methods: ${(err as Error).message}`,
-        "ShareError",
-        { error_domain: AGENT_ERROR_DOMAINS.INSTALL }
-      );
+      agentError(`Failed to resolve methods: ${(err as Error).message}`, "ShareError", {
+        error_domain: AGENT_ERROR_DOMAINS.INSTALL,
+      });
     }
     orgRepo = `${parsed.org}/${parsed.repo}`;
   } else {
@@ -93,7 +85,7 @@ export async function agentShare(
       agentError(
         `Method "${methodFilter}" not found. Available methods: ${available || "(none)"}`,
         "ShareError",
-        { error_domain: AGENT_ERROR_DOMAINS.INSTALL }
+        { error_domain: AGENT_ERROR_DOMAINS.INSTALL },
       );
     }
     resolved = { ...resolved, methods: [match] };
@@ -112,7 +104,7 @@ export async function agentShare(
       agentError(
         `Invalid platform "${p}". Valid platforms: ${VALID_PLATFORMS.join(", ")}`,
         "ArgumentError",
-        { error_domain: AGENT_ERROR_DOMAINS.ARGUMENT }
+        { error_domain: AGENT_ERROR_DOMAINS.ARGUMENT },
       );
     }
   }

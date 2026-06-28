@@ -1,4 +1,3 @@
-import { BaseRunner } from "../base-runner.js";
 import { Runners } from "../types.js";
 import type {
   Runner,
@@ -20,27 +19,32 @@ import type {
   VersionInfo,
 } from "../../protocol/models.js";
 import type {
-  DictPipeOutput,
   DictRunResultExecute,
   PipelexValidationResult,
   ValidationErrorItem,
 } from "./models.js";
-import type {
-  RunRead,
-  RunResults,
-  RunResultState,
-  RunStatus,
-  WaitForResultOptions,
-} from "./runs.js";
 import {
   ApiResponseError,
   ApiUnreachableError,
   PipelineExecuteTimeoutError,
   PipelineRequestError,
-  RunLifecycleUnavailableError,
   RunStillRunningError,
 } from "./exceptions.js";
 import { isValidBaseUrl } from "../../config/config.js";
+
+export interface MthdsFile {
+  /** File contents to validate. */
+  content: string;
+  /** Optional provenance URI threaded into validation diagnostics. */
+  uri?: string;
+}
+
+export interface ValidateFilesOptions {
+  /** Whether unresolved pipe signatures are accepted as pending instead of invalid. */
+  allowSignatures?: boolean;
+  /** Optional validate presentation hints, e.g. ["markdown"]. */
+  render?: string[];
+}
 
 interface MthdsApiClientOptions {
   /** API token (Bearer). Falls back to `MTHDS_API_KEY`. Optional for anonymous bare runners. */
@@ -66,53 +70,39 @@ interface RawResponse {
 export const DEFAULT_API_BASE_URL = "https://api.pipelex.com";
 
 // The SDK composes every endpoint from one origin (MTHDS_API_URL): `{base}/v1/{endpoint}`.
-// The same paths are served by the hosted MTHDS API (api.pipelex.com) and by a bare
-// pipelex-api runner (localhost:8081) — the protocol surface is identical; only the
-// hosted extensions (e.g. run polling) differ, detectable via GET /v1/version.
+// The same paths are served by the Pipelex Hosted API (api.pipelex.com) and by a bare
+// OSS pipelex-api runner (localhost:8081) — the protocol surface is identical.
 const API_PREFIX = "v1";
-const RUNS = "runs";
 
 const DEFAULT_REQUEST_TIMEOUT_MS = 1_200_000; // 20 min — matches the runner's blocking execute ceiling.
-const POLL_REQUEST_TIMEOUT_MS = 30_000; // single status/result GETs; the hosted gateway caps responses at ~30s.
-const DEFAULT_DEGRADED_RETRY_SECONDS = 5; // matches the platform's `_DEGRADE_RETRY_AFTER_SECONDS`.
-
-/**
- * `VersionInfo.implementation` of the bare open-source runner (no run store).
- * Anything else — the hosted `pipelex-hosted` first — is assumed to serve the
- * durable run-lifecycle extension; a wrong guess still fails with the clear
- * `RunLifecycleUnavailableError` on the first poll.
- */
-const BARE_RUNNER_IMPLEMENTATION = "pipelex-api";
+const POLL_REQUEST_TIMEOUT_MS = 30_000; // single GETs (models/version/start); the hosted gateway caps responses at ~30s.
+const VALIDATE_MARKDOWN_RENDER_FORMAT = "markdown";
 
 /**
  * Client for any MTHDS runner — and THE API runner (parity D8). One class,
  * two consumers: `pipelex-app` instantiates it directly as a protocol client,
- * the CLI gets it via `createRunner()` as a full `Runner`. `extends BaseRunner
- * implements Runner` so it carries the protocol surface, the Pipelex build
- * extensions, and the lifecycle composites (`waitForResult` /
- * `startAndWaitForResult`, inherited from `BaseRunner`).
+ * the CLI gets it via `createRunner()` as a full `Runner`. It carries the
+ * protocol surface plus the Pipelex build extensions.
  *
  * One base URL (`MTHDS_API_URL`); every endpoint is `<base>/v1/<endpoint>`:
  * - **protocol** (`execute` / `start` / `validate` / `models` / `version`) — works
  *   against any MTHDS-compliant runner, hosted or bare.
- * - **run lifecycle** (`getRunStatus` / `getRunResult` / `waitForResult`) — the
- *   durable polling extension that survives long runs and lets a caller resume by
- *   id. Served only by a deployment that includes the platform block (the hosted
- *   MTHDS API); a bare `pipelex-api` runner 404s those routes, which the lifecycle
- *   methods translate into a clear `RunLifecycleUnavailableError`.
+ * - **build extensions** (`/v1/build/*`) — the Pipelex API's spec-to-TOML / runner
+ *   / inputs / output helpers.
+ *
+ * The durable run-lifecycle (poll a run by id: `getRunStatus` / `getRunResult` /
+ * `waitForResult` / `startAndWaitForResult`) is NOT part of this client — it now
+ * lives in the Pipelex runtime SDK (`@pipelex/sdk` / `pipelex-agent`).
  */
-export class MthdsApiClient extends BaseRunner implements Runner {
+export class MthdsApiClient implements Runner {
   readonly type: RunnerType = Runners.API;
 
   private readonly apiToken: string | undefined;
   private readonly baseUrl: string;
   /** Origin root derived from the base URL — `/health` lives here, not under `/v1`. */
   private readonly originUrl: string;
-  /** Cached `/v1/version` handshake outcome — whether the durable lifecycle is served. */
-  private lifecycleAvailable: boolean | undefined;
 
   constructor(options: MthdsApiClientOptions = {}) {
-    super();
     this.apiToken = options.apiToken ?? process.env.MTHDS_API_KEY;
     const normalizedBaseUrl = (
       options.baseUrl ??
@@ -129,7 +119,7 @@ export class MthdsApiClient extends BaseRunner implements Runner {
       throw new PipelineRequestError(
         `Invalid API base URL "${normalizedBaseUrl}": must be host-only ` +
           `(http/https, no path, query, fragment, or credentials). Endpoints ` +
-          `compose as {base}/v1/{endpoint}.`
+          `compose as {base}/v1/{endpoint}.`,
       );
     }
     this.baseUrl = normalizedBaseUrl;
@@ -148,7 +138,7 @@ export class MthdsApiClient extends BaseRunner implements Runner {
   /**
    * Issue one HTTP request and return the raw status/headers/body. Wraps
    * DNS/connect/TLS/timeout failures as `ApiUnreachableError`; a caller-driven
-   * abort (Ctrl-C / agent walk-away) propagates as-is so the poll loop can stop
+   * abort (Ctrl-C / agent walk-away) propagates as-is so a caller can stop
    * cleanly. Non-2xx interpretation is left to the caller. `url` is a fully
    * resolved absolute URL.
    */
@@ -159,7 +149,7 @@ export class MthdsApiClient extends BaseRunner implements Runner {
       body?: unknown;
       timeoutMs?: number;
       signal?: AbortSignal;
-    } = {}
+    } = {},
   ): Promise<RawResponse> {
     const headers: Record<string, string> = { Accept: "application/json" };
     if (this.apiToken) {
@@ -174,7 +164,7 @@ export class MthdsApiClient extends BaseRunner implements Runner {
     const controller = new AbortController();
     const timer = setTimeout(
       () => controller.abort(new DOMException("Request timed out.", "TimeoutError")),
-      timeoutMs
+      timeoutMs,
     );
     const userSignal = options.signal;
     const onUserAbort = (): void => controller.abort(userSignal?.reason);
@@ -192,19 +182,18 @@ export class MthdsApiClient extends BaseRunner implements Runner {
         signal: controller.signal,
       });
     } catch (err) {
-      // A caller-initiated abort (not our timeout) propagates untouched so
-      // `waitForResult` callers can distinguish "I stopped waiting" from a
-      // network failure.
+      // A caller-initiated abort (not our timeout) propagates untouched so a
+      // caller can distinguish "I stopped waiting" from a network failure.
       if (userSignal?.aborted) throw err;
       // undici (Node fetch) wraps DNS/connect/TLS failures as
       // `TypeError("fetch failed")` with the system error attached as `cause`.
       // Our timeout aborts the controller with a "TimeoutError" DOMException.
       const code = extractNetworkErrorCode(err);
       throw new ApiUnreachableError(
-        `Could not reach MTHDS API at ${this.baseUrl} (${code ?? "network error"})`,
+        `Could not reach Pipelex API at ${this.baseUrl} (${code ?? "network error"})`,
         this.baseUrl,
         code,
-        { cause: err }
+        { cause: err },
       );
     } finally {
       clearTimeout(timer);
@@ -225,11 +214,7 @@ export class MthdsApiClient extends BaseRunner implements Runner {
    * non-2xx response. Used by the build extensions and `health` — surfaces
    * that don't need the protocol's structured error taxonomy.
    */
-  private async requestJson<T>(
-    method: "GET" | "POST",
-    url: string,
-    body?: unknown
-  ): Promise<T> {
+  private async requestJson<T>(method: "GET" | "POST", url: string, body?: unknown): Promise<T> {
     const headers: Record<string, string> = { Accept: "application/json" };
     if (this.apiToken) {
       headers["Authorization"] = `Bearer ${this.apiToken}`;
@@ -244,9 +229,7 @@ export class MthdsApiClient extends BaseRunner implements Runner {
     });
     if (!res.ok) {
       const text = await res.text().catch(() => "");
-      throw new Error(
-        `API ${method} ${url} failed (${res.status}): ${text || res.statusText}`
-      );
+      throw new Error(`API ${method} ${url} failed (${res.status}): ${text || res.statusText}`);
     }
     return res.json() as Promise<T>;
   }
@@ -255,11 +238,7 @@ export class MthdsApiClient extends BaseRunner implements Runner {
     return this.requestJson("POST", this.url(path), body);
   }
 
-  private throwApiResponseError(
-    method: "GET" | "POST",
-    endpoint: string,
-    res: RawResponse
-  ): never {
+  private throwApiResponseError(method: "GET" | "POST", endpoint: string, res: RawResponse): never {
     const { errorType, serverMessage, validationErrors } = parseErrorBody(res.body);
     throw new ApiResponseError(
       `API ${method} /${API_PREFIX}/${endpoint} failed (${res.status}): ${serverMessage ?? (res.body || res.statusText)}`,
@@ -269,24 +248,7 @@ export class MthdsApiClient extends BaseRunner implements Runner {
       res.body,
       errorType,
       serverMessage,
-      validationErrors
-    );
-  }
-
-  /**
-   * Translate a "route absent" 404 (a bare pipelex-api with no platform block)
-   * into a clear `RunLifecycleUnavailableError`. The platform's own 404s (run
-   * not found / cross-org) carry a structured error envelope (a `code` field)
-   * and are left for normal handling.
-   */
-  private throwIfLifecycleUnavailable(res: RawResponse, url: string): void {
-    if (res.status !== 404) return;
-    if (!isMissingRoute404(res.body)) return;
-    throw new RunLifecycleUnavailableError(
-      `The durable run lifecycle is not available: ${url} returned 404. Run polling is a ` +
-        `hosted-API extension (/${API_PREFIX}/${RUNS}/*), not part of the MTHDS Protocol; ` +
-        "MTHDS_API_URL points at a bare runner that does not serve it.",
-      this.baseUrl
+      validationErrors,
     );
   }
 
@@ -310,10 +272,11 @@ export class MthdsApiClient extends BaseRunner implements Runner {
     }
     throw new RunStillRunningError(
       `execute() was accepted asynchronously (202): run ${runId || "<unknown>"} is still ` +
-        "running server-side. Poll its results (hosted) or use start().",
+        "running server-side. Resume by id via the durable run API " +
+        "(`@pipelex/sdk` / `pipelex-agent`), or use start().",
       runId,
       parseRetryAfter(res.headers),
-      res.headers.get("location")
+      res.headers.get("location"),
     );
   }
 
@@ -331,9 +294,8 @@ export class MthdsApiClient extends BaseRunner implements Runner {
    * `POST /v1/execute`.
    *
    * Behind the hosted gateway, synchronous requests terminate at ~30s; a run
-   * that exceeds that surfaces as `PipelineExecuteTimeoutError` pointing at the
-   * durable start+poll path. Throws `RunStillRunningError` on the protocol's
-   * optional 202 degrade.
+   * that exceeds that surfaces as `PipelineExecuteTimeoutError`. Throws
+   * `RunStillRunningError` on the protocol's optional 202 degrade.
    */
   async execute(options: RunOptions): Promise<DictRunResultExecute> {
     const extensions = buildExtensions(options.extra);
@@ -343,7 +305,7 @@ export class MthdsApiClient extends BaseRunner implements Runner {
       Object.keys(extensions).length === 0
     ) {
       throw new PipelineRequestError(
-        "Either pipe_code, mthds_contents or a server-specific extension arg (extra) must be provided to execute()."
+        "Either pipe_code, mthds_contents or a server-specific extension arg (extra) must be provided to execute().",
       );
     }
 
@@ -371,7 +333,7 @@ export class MthdsApiClient extends BaseRunner implements Runner {
       if (err instanceof RunStillRunningError) throw err;
       // The hosted gateway terminates synchronous requests at ~30s. A run that
       // exceeds that comes back as a gateway 503/504 (or a client abort) —
-      // translate it into a clear, actionable error pointing at start+poll.
+      // translate it into a clear, actionable error.
       const elapsedMs = Date.now() - startedAt;
       if (isGatewayTimeout(err, elapsedMs)) {
         throw new PipelineExecuteTimeoutError(elapsedMs, { cause: err });
@@ -386,8 +348,9 @@ export class MthdsApiClient extends BaseRunner implements Runner {
    * Server-specific extension args ride `options.extra` and merge into the
    * request body — the server you call defines and handles them (including a
    * client-supplied run id where a server supports one). The returned
-   * `pipeline_run_id` is always authoritative; on a hosted deployment it is
-   * durable — poll `getRunStatus` / `getRunResult`.
+   * `pipeline_run_id` is always authoritative. How completion is later delivered
+   * (durable polling, callbacks) is implementation-defined and outside this
+   * client — the durable run-lifecycle lives in `@pipelex/sdk` / `pipelex-agent`.
    */
   async start(options: StartOptions): Promise<RunResultStart> {
     const extensions = buildExtensions(options.extra);
@@ -397,7 +360,7 @@ export class MthdsApiClient extends BaseRunner implements Runner {
       Object.keys(extensions).length === 0
     ) {
       throw new PipelineRequestError(
-        "Either pipe_code, mthds_contents or a server-specific extension arg (extra) must be provided to start()."
+        "Either pipe_code, mthds_contents or a server-specific extension arg (extra) must be provided to start().",
       );
     }
 
@@ -417,10 +380,6 @@ export class MthdsApiClient extends BaseRunner implements Runner {
       body: request,
       timeoutMs: POLL_REQUEST_TIMEOUT_MS,
     });
-    // A bare runner with no run store 404s here just as it does on the result
-    // routes — surface the same clear `RunLifecycleUnavailableError` (and let
-    // `startAndWaitForResult` fall back to the blocking `execute`).
-    this.throwIfLifecycleUnavailable(res, url);
     if (res.status < 200 || res.status >= 300) {
       this.throwApiResponseError("POST", "start", res);
     }
@@ -444,16 +403,16 @@ export class MthdsApiClient extends BaseRunner implements Runner {
    * `source: null`). The server 422s a length mismatch; this client sends the
    * arrays verbatim and surfaces that as an `ApiResponseError`.
    *
-   * `render` (optional) is the opt-in Pipelex-API presentation hint — a list of
-   * view-format tokens (e.g. `["markdown"]`). When set, the 200 body gains a
-   * `rendered_markdown` field on both verdict arms; unknown tokens are server-side
-   * lenient-ignored (never a 422). Omit it for the lean structured-only response.
+   * `render` is the Pipelex-API presentation hint — a list of view-format tokens.
+   * This client always asks for Markdown so both valid results and produced
+   * validation-error verdicts carry `rendered_markdown`; callers may add more
+   * tokens. Unknown tokens are server-side lenient-ignored (never a 422).
    */
   async validate(
     mthdsContents: string[],
     allowSignatures = false,
     mthdsSources?: string[],
-    render?: string[]
+    render?: string[],
   ): Promise<PipelexValidationResult> {
     const body: Record<string, unknown> = {
       mthds_contents: mthdsContents,
@@ -462,9 +421,7 @@ export class MthdsApiClient extends BaseRunner implements Runner {
     if (mthdsSources !== undefined) {
       body.mthds_sources = mthdsSources;
     }
-    if (render !== undefined && render.length > 0) {
-      body.render = render;
-    }
+    body.render = withValidateMarkdownRender(render);
     const res = await this.requestRaw("POST", this.url("validate"), { body });
     if (res.status < 200 || res.status >= 300) {
       this.throwApiResponseError("POST", "validate", res);
@@ -472,11 +429,41 @@ export class MthdsApiClient extends BaseRunner implements Runner {
     return JSON.parse(res.body) as PipelexValidationResult;
   }
 
+  /**
+   * Validate paired MTHDS files while preserving URI attribution for diagnostics.
+   *
+   * This adapter intentionally keeps the low-level `validate(...)` payload shape
+   * intact for existing consumers. When any file has a URI, every content gets a
+   * parallel source label; inline labels are deterministic so the server never
+   * sees a length-mismatched `mthds_sources` array.
+   */
+  async validateFiles(
+    files: MthdsFile[],
+    options: ValidateFilesOptions = {},
+  ): Promise<PipelexValidationResult> {
+    if (files.length === 0) {
+      throw new PipelineRequestError(
+        "At least one MTHDS file must be provided to validateFiles().",
+      );
+    }
+
+    const mthdsContents = files.map((file) => file.content);
+    const hasAnyUri = files.some((file) => file.uri !== undefined);
+    const mthdsSources = hasAnyUri
+      ? files.map((file, index) => file.uri ?? `inline://file-${index + 1}.mthds`)
+      : undefined;
+
+    return this.validate(
+      mthdsContents,
+      options.allowSignatures ?? false,
+      mthdsSources,
+      options.render,
+    );
+  }
+
   /** The model deck the runner can route to — `GET /v1/models[?type=]`. */
   async models(category?: ModelCategory): Promise<ModelDeck> {
-    const endpoint = category
-      ? `models?type=${encodeURIComponent(category)}`
-      : "models";
+    const endpoint = category ? `models?type=${encodeURIComponent(category)}` : "models";
     const res = await this.requestRaw("GET", this.url(endpoint), {
       timeoutMs: POLL_REQUEST_TIMEOUT_MS,
     });
@@ -521,172 +508,9 @@ export class MthdsApiClient extends BaseRunner implements Runner {
   async pipeSpec(request: PipeSpecRequest): Promise<PipeSpecResponse> {
     return this.postApi("build/pipe-spec", request);
   }
-
-  // ── Hosted extension: durable run lifecycle (NOT part of the protocol) ──
-
-  /**
-   * Fetch a run's status by bare id — `GET /v1/runs/{pipeline_run_id}/status`.
-   *
-   * Self-healing: a finished-but-unrecorded run resolves to its true terminal
-   * status on read. `degraded: true` means Temporal was unreachable and
-   * `status` is the last-known value; `retry_after_seconds` carries the
-   * server's backoff hint when present. Throws `RunLifecycleUnavailableError`
-   * when the lifecycle routes are absent (a bare runner).
-   */
-  async getRunStatus(runId: string, options: { signal?: AbortSignal } = {}): Promise<RunRead> {
-    const endpoint = `${RUNS}/${encodeURIComponent(runId)}/status`;
-    const url = this.url(endpoint);
-    const res = await this.requestRaw("GET", url, {
-      timeoutMs: POLL_REQUEST_TIMEOUT_MS,
-      signal: options.signal,
-    });
-    this.throwIfLifecycleUnavailable(res, url);
-    if (res.status < 200 || res.status >= 300) {
-      this.throwApiResponseError("GET", endpoint, res);
-    }
-    const run = JSON.parse(res.body) as RunRead;
-    const retryAfter = parseRetryAfter(res.headers);
-    return retryAfter !== null ? { ...run, retry_after_seconds: retryAfter } : run;
-  }
-
-  /**
-   * Single-shot result lookup — `GET /v1/runs/{pipeline_run_id}/results`.
-   * Maps the server's poll semantics to a discriminated union:
-   * - HTTP 202 → `running` (with the `Retry-After` hint)
-   * - HTTP 200 → `completed` (with the result artifacts)
-   * - HTTP 409 → `failed` (terminal non-`COMPLETED`)
-   * - HTTP 503 → `running` (Temporal degraded — retry, never fail a poller)
-   *
-   * Throws `RunLifecycleUnavailableError` when the lifecycle routes are absent
-   * (a bare runner).
-   */
-  async getRunResult(runId: string, options: { signal?: AbortSignal } = {}): Promise<RunResultState> {
-    const endpoint = `${RUNS}/${encodeURIComponent(runId)}/results`;
-    const url = this.url(endpoint);
-    const res = await this.requestRaw("GET", url, {
-      timeoutMs: POLL_REQUEST_TIMEOUT_MS,
-      signal: options.signal,
-    });
-
-    if (res.status === 202 || res.status === 503) {
-      return {
-        state: "running",
-        pipeline_run_id: runId,
-        retry_after_seconds: parseRetryAfter(res.headers) ?? DEFAULT_DEGRADED_RETRY_SECONDS,
-      };
-    }
-    if (res.status === 409) {
-      const { serverMessage } = parseErrorBody(res.body);
-      const message = serverMessage ?? "Run finished without a result.";
-      return {
-        state: "failed",
-        pipeline_run_id: runId,
-        status: extractRunStatusFromMessage(message),
-        message,
-      };
-    }
-    this.throwIfLifecycleUnavailable(res, url);
-    if (res.status < 200 || res.status >= 300) {
-      this.throwApiResponseError("GET", endpoint, res);
-    }
-    const result = JSON.parse(res.body) as RunResults;
-    return { state: "completed", pipeline_run_id: runId, result };
-  }
-
-  /**
-   * Whether the configured server serves the durable run lifecycle, decided
-   * via the `GET /v1/version` handshake (master D2) and cached for the
-   * client's lifetime. A bare `pipelex-api` runner has no run store; anything
-   * else is assumed hosted. When the handshake itself fails, assume hosted
-   * (the SDK default) and let the start call surface the real error.
-   */
-  private async supportsRunLifecycle(): Promise<boolean> {
-    if (this.lifecycleAvailable === undefined) {
-      try {
-        const info = await this.version();
-        const impl = info.implementation;
-        this.lifecycleAvailable = !(typeof impl === "string" && impl === BARE_RUNNER_IMPLEMENTATION);
-      } catch {
-        this.lifecycleAvailable = true;
-      }
-    }
-    return this.lifecycleAvailable;
-  }
-
-  /**
-   * Start a run and wait for its result.
-   *
-   * - **Hosted** (per the `/v1/version` handshake): durable start + poll (the
-   *   `BaseRunner` composite), the path that survives the gateway's ~30s
-   *   synchronous ceiling.
-   * - **Bare runner** (no run store): the blocking `POST /v1/execute`, which
-   *   has no gateway cap off-platform and returns the native `pipe_output`.
-   */
-  override async startAndWaitForResult(
-    options: StartOptions,
-    pollOptions?: WaitForResultOptions
-  ): Promise<RunResults> {
-    if (await this.supportsRunLifecycle()) {
-      // A runner can look hosted yet lack the durable routes — `implementation`
-      // is an extension field, so a compliant bare runner that omits it is
-      // misdetected here. Such a runner raises `RunLifecycleUnavailableError`
-      // from `start()`, BEFORE any run is created, so falling back to the
-      // blocking path cannot double-run. Cache the negative so later calls skip
-      // the durable attempt.
-      let ack: RunResultStart;
-      try {
-        ack = await this.start(options);
-      } catch (err) {
-        if (!(err instanceof RunLifecycleUnavailableError)) throw err;
-        this.lifecycleAvailable = false;
-        return this.executeBlocking(options);
-      }
-      return this.waitForResult(ack.pipeline_run_id, pollOptions);
-    }
-
-    return this.executeBlocking(options);
-  }
-
-  /**
-   * Blocking `POST /v1/execute` adapted onto `RunResults` — the bare-runner
-   * path. Forwards every protocol field PLUS the `extra` extension passthrough:
-   * an extension-only call (`{ extra }` with no pipe_code/bundle) or a vendor
-   * selector riding `extra` must survive this path, not just the durable one.
-   */
-  private async executeBlocking(options: StartOptions): Promise<RunResults> {
-    const response = await this.execute({
-      pipe_code: options.pipe_code ?? undefined,
-      mthds_contents: options.mthds_contents ?? undefined,
-      inputs: options.inputs ?? undefined,
-      output_name: options.output_name ?? undefined,
-      output_multiplicity: options.output_multiplicity ?? undefined,
-      dynamic_output_concept_ref: options.dynamic_output_concept_ref ?? undefined,
-      extra: options.extra ?? undefined,
-    });
-    return mapRunResultToRunResults(response);
-  }
 }
 
 // ── Module helpers ────────────────────────────────────────────────────
-
-/**
- * Map the protocol's blocking `POST /v1/execute` response onto the lifecycle's
- * `RunResults`. The bare-runner path returns `pipe_output` (native runner
- * shape); `main_stuff` is a hosted-durable artifact and stays null here.
- * Consumers read `main_stuff ?? pipe_output` (the documented hosted/bare
- * output-shape difference).
- */
-function mapRunResultToRunResults(response: DictRunResultExecute): RunResults {
-  const pipeOutput = response.pipe_output as DictPipeOutput | null | undefined;
-  return {
-    pipeline_run_id: response.pipeline_run_id,
-    main_stuff: null,
-    // The bare-runner blocking `pipe_output` carries no graph artifact; the
-    // hosted graph_spec rides the durable `/v1/runs/{id}/results` payload.
-    graph_spec: null,
-    pipe_output: (pipeOutput as Record<string, unknown> | null | undefined) ?? null,
-  };
-}
 
 // The protocol's own request fields — `extra` is for extension args only.
 const PROTOCOL_REQUEST_KEYS: ReadonlySet<string> = new Set([
@@ -703,15 +527,23 @@ const PROTOCOL_REQUEST_KEYS: ReadonlySet<string> = new Set([
  * request body as top-level properties; protocol args must be passed as named
  * options, never smuggled through `extra`.
  */
-function buildExtensions(extra: Record<string, unknown> | null | undefined): Record<string, unknown> {
+function buildExtensions(
+  extra: Record<string, unknown> | null | undefined,
+): Record<string, unknown> {
   if (!extra) return {};
   const overlap = Object.keys(extra).filter((key) => PROTOCOL_REQUEST_KEYS.has(key));
   if (overlap.length > 0) {
     throw new PipelineRequestError(
-      `extra carries protocol args [${overlap.sort().join(", ")}] — pass them as named options instead.`
+      `extra carries protocol args [${overlap.sort().join(", ")}] — pass them as named options instead.`,
     );
   }
   return { ...extra };
+}
+
+function withValidateMarkdownRender(render: string[] | undefined): string[] {
+  const formats = new Set(render ?? []);
+  formats.add(VALIDATE_MARKDOWN_RENDER_FORMAT);
+  return [...formats];
 }
 
 // The hosted gateway caps synchronous requests at 30s. A failure at/after this
@@ -741,54 +573,12 @@ function extractNetworkErrorCode(err: unknown): string | undefined {
   return undefined;
 }
 
-/**
- * Whether a 404 is an unmatched-route 404 (no platform deployed) rather than
- * the platform's structured run-not-found 404. The platform wraps its 404s in
- * a structured envelope with a stable `code`; a bare runner returns
- * Starlette's default `{"detail": "Not Found"}` (no `code`).
- */
-function isMissingRoute404(body: string): boolean {
-  if (!body) return true;
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(body);
-  } catch {
-    return true;
-  }
-  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return true;
-  return !("code" in parsed);
-}
-
 /** Parse the `Retry-After` header (seconds form, which the platform uses). */
 function parseRetryAfter(headers: Headers): number | null {
   const raw = headers.get("retry-after");
   if (!raw) return null;
   const seconds = Number(raw);
   return Number.isFinite(seconds) && seconds >= 0 ? seconds : null;
-}
-
-const KNOWN_RUN_STATUSES: readonly RunStatus[] = [
-  "PENDING",
-  "STARTED",
-  "RUNNING",
-  "COMPLETED",
-  "FAILED",
-  "CANCELLED",
-  "TERMINATED",
-  "TIMED_OUT",
-];
-
-/**
- * The 409 detail reads "Run finished with status FAILED; no result available".
- * Pull the status word out; default to FAILED if the shape ever changes.
- */
-function extractRunStatusFromMessage(message: string): RunStatus {
-  const match = message.match(/status\s+([A-Z_]+)/);
-  const candidate = match?.[1];
-  if (candidate && (KNOWN_RUN_STATUSES as readonly string[]).includes(candidate)) {
-    return candidate as RunStatus;
-  }
-  return "FAILED";
 }
 
 /**

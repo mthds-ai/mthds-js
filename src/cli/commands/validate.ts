@@ -15,14 +15,12 @@ interface ValidateOptions {
 async function validateWithPipelexPassthrough(
   introLabel: string,
   fallbackMsg: string,
-  options: ValidateOptions
+  options: ValidateOptions,
 ): Promise<void> {
   printLogo();
   p.intro(introLabel);
 
-  const libraryDirs = options.libraryDir?.length
-    ? options.libraryDir
-    : undefined;
+  const libraryDirs = options.libraryDir?.length ? options.libraryDir : undefined;
   const runner = createRunner(options.runner, libraryDirs);
 
   if (isPipelexRunner(runner)) {
@@ -43,38 +41,27 @@ async function validateWithPipelexPassthrough(
   process.exit(1);
 }
 
-export async function validateMethod(
-  target: string,
-  options: ValidateOptions
-): Promise<void> {
+export async function validateMethod(_target: string, options: ValidateOptions): Promise<void> {
   return validateWithPipelexPassthrough(
     "mthds validate method",
-    "Method target is not yet supported for the API runner. Use 'mthds validate pipe <target>' instead.\nYou can also specify a different runner with --runner <name>, or change the default with 'mthds set-default runner <name>'.",
-    options
+    "Method target is not yet supported for the API runner. Use 'mthds validate pipe <target>' instead.\nYou can also specify a different runner with --runner <name>, or change the default with 'mthds runner set-default <name>'.",
+    options,
   );
 }
 
-export async function validateBundle(
-  target: string,
-  options: ValidateOptions
-): Promise<void> {
+export async function validateBundle(_target: string, options: ValidateOptions): Promise<void> {
   return validateWithPipelexPassthrough(
     "mthds validate bundle",
-    "Bundle target is only supported with the pipelex runner.\nYou can specify a different runner with --runner <name>, or change the default with 'mthds set-default runner <name>'.",
-    options
+    "Bundle target is only supported with the pipelex runner.\nYou can specify a different runner with --runner <name>, or change the default with 'mthds runner set-default <name>'.",
+    options,
   );
 }
 
-export async function validatePipe(
-  target: string,
-  options: ValidateOptions
-): Promise<void> {
+export async function validatePipe(target: string, options: ValidateOptions): Promise<void> {
   printLogo();
   p.intro("mthds validate pipe");
 
-  const libraryDirs = options.libraryDir?.length
-    ? options.libraryDir
-    : undefined;
+  const libraryDirs = options.libraryDir?.length ? options.libraryDir : undefined;
   const runner = createRunner(options.runner, libraryDirs);
 
   if (isPipelexRunner(runner)) {
@@ -99,9 +86,7 @@ export async function validatePipe(
   const bundlePath = options.bundle ?? (target.endsWith(".mthds") ? target : undefined);
 
   if (!bundlePath) {
-    p.log.error(
-      "Provide a .mthds bundle file to validate (positional or --bundle)."
-    );
+    p.log.error("Provide a .mthds bundle file to validate (positional or --bundle).");
     p.outro("");
     process.exit(1);
   }

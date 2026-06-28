@@ -5,7 +5,11 @@ import { printLogo } from "../index.js";
 import { serializeManifestToToml } from "../../../package/manifest/parser.js";
 import { MANIFEST_FILENAME } from "../../../package/discovery.js";
 import type { ParsedManifest } from "../../../package/manifest/schema.js";
-import { isValidAddress, isValidSemver, MTHDS_STANDARD_VERSION } from "../../../package/manifest/schema.js";
+import {
+  isValidAddress,
+  isValidSemver,
+  MTHDS_STANDARD_VERSION,
+} from "../../../package/manifest/schema.js";
 
 export async function packageInit(options: { directory?: string }): Promise<void> {
   printLogo();
@@ -27,11 +31,15 @@ export async function packageInit(options: { directory?: string }): Promise<void
     message: "Package address (e.g. github.com/org/repo)",
     validate: (val) => {
       if (!val) return "Address is required";
-      if (!isValidAddress(val)) return "Must follow hostname/path pattern (e.g. github.com/org/repo)";
+      if (!isValidAddress(val))
+        return "Must follow hostname/path pattern (e.g. github.com/org/repo)";
       return undefined;
     },
   });
-  if (p.isCancel(address)) { p.outro("Cancelled."); return; }
+  if (p.isCancel(address)) {
+    p.outro("Cancelled.");
+    return;
+  }
 
   const version = await p.text({
     message: "Version",
@@ -42,7 +50,10 @@ export async function packageInit(options: { directory?: string }): Promise<void
       return undefined;
     },
   });
-  if (p.isCancel(version)) { p.outro("Cancelled."); return; }
+  if (p.isCancel(version)) {
+    p.outro("Cancelled.");
+    return;
+  }
 
   const description = await p.text({
     message: "Description",
@@ -51,13 +62,19 @@ export async function packageInit(options: { directory?: string }): Promise<void
       return undefined;
     },
   });
-  if (p.isCancel(description)) { p.outro("Cancelled."); return; }
+  if (p.isCancel(description)) {
+    p.outro("Cancelled.");
+    return;
+  }
 
   const authorInput = await p.text({
     message: "Author(s) (comma-separated, or leave empty)",
     initialValue: "",
   });
-  if (p.isCancel(authorInput)) { p.outro("Cancelled."); return; }
+  if (p.isCancel(authorInput)) {
+    p.outro("Cancelled.");
+    return;
+  }
 
   const license = await p.text({
     message: "License (e.g. MIT, or leave empty)",
@@ -67,10 +84,16 @@ export async function packageInit(options: { directory?: string }): Promise<void
       return undefined;
     },
   });
-  if (p.isCancel(license)) { p.outro("Cancelled."); return; }
+  if (p.isCancel(license)) {
+    p.outro("Cancelled.");
+    return;
+  }
 
   const authors = authorInput
-    ? authorInput.split(",").map((a) => a.trim()).filter(Boolean)
+    ? authorInput
+        .split(",")
+        .map((a) => a.trim())
+        .filter(Boolean)
     : [];
 
   const manifest: ParsedManifest = {

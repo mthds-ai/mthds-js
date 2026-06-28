@@ -1,11 +1,4 @@
 import type { MTHDSProtocol } from "../protocol/protocol.js";
-import type { StartOptions } from "../protocol/options.js";
-import type {
-  RunRead,
-  RunResultState,
-  RunResults,
-  WaitForResultOptions,
-} from "./api/runs.js";
 import type { DictPipeOutput } from "./api/models.js";
 
 // ── Runner type ─────────────────────────────────────────────────────
@@ -20,7 +13,6 @@ export type RunnerType = (typeof Runners)[keyof typeof Runners];
 export const RUNNER_NAMES: RunnerType[] = Object.values(Runners);
 
 // ── Shared enums / literals ─────────────────────────────────────────
-
 
 export type ConceptRepresentationFormat = "json" | "python" | "schema";
 
@@ -92,10 +84,8 @@ export interface CheckModelResponse {
 // ── Runner interface ────────────────────────────────────────────────
 // Every runtime (API, local pipelex CLI, …) implements the MTHDS Protocol
 // (execute / start / validate / models / version) plus the Pipelex build
-// extensions and the durable run-lifecycle FEATURE (hosted-API extension —
-// explicitly NOT part of the protocol). The two lifecycle composites
-// (`waitForResult`, `startAndWaitForResult`) are provided once by `BaseRunner`
-// over the primitives, so concrete runners only implement the primitives.
+// extensions. The durable run-lifecycle (poll a run by id) is NOT part of this
+// interface — it now lives in the Pipelex runtime SDK (`@pipelex/sdk`).
 
 export interface Runner extends MTHDSProtocol<DictPipeOutput> {
   readonly type: RunnerType;
@@ -109,15 +99,4 @@ export interface Runner extends MTHDSProtocol<DictPipeOutput> {
   buildRunner(request: BuildRunnerRequest): Promise<BuildRunnerResponse>;
   concept(request: ConceptRequest): Promise<ConceptResponse>;
   pipeSpec(request: PipeSpecRequest): Promise<PipeSpecResponse>;
-
-  // Run lifecycle (hosted extension, `/v1/runs/*` — NOT protocol)
-  // Primitives:
-  getRunStatus(runId: string): Promise<RunRead>;
-  getRunResult(runId: string, options?: { signal?: AbortSignal }): Promise<RunResultState>;
-  // Composites (provided by BaseRunner):
-  waitForResult(runId: string, options?: WaitForResultOptions): Promise<RunResults>;
-  startAndWaitForResult(
-    options: StartOptions,
-    pollOptions?: WaitForResultOptions
-  ): Promise<RunResults>;
 }

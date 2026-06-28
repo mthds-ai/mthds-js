@@ -65,9 +65,7 @@ let warnedAboutSnoozeClear = false;
  * Changes whenever any binary's status or constraint changes.
  */
 export function computeVersionKey(payload: CachePayload): string {
-  const parts = [
-    payload.mthds_agent.s + (payload.mthds_agent.r ?? ""),
-  ];
+  const parts = [payload.mthds_agent.s + (payload.mthds_agent.r ?? "")];
   if (payload.pipelex_agent) {
     parts.push(payload.pipelex_agent.s + (payload.pipelex_agent.r ?? ""));
   }
@@ -131,9 +129,7 @@ function readSnoozeAt(path: string): SnoozeReadAttempt | null {
  */
 export function readSnooze(): SnoozeState | null {
   const primary = readSnoozeAt(PRIMARY_SNOOZE_PATH);
-  const fallback = ensureFallbackDir(false).usable
-    ? readSnoozeAt(FALLBACK_SNOOZE_PATH)
-    : null;
+  const fallback = ensureFallbackDir(false).usable ? readSnoozeAt(FALLBACK_SNOOZE_PATH) : null;
   if (!primary) return fallback?.state ?? null;
   if (!fallback) return primary.state;
   return fallback.mtimeMs > primary.mtimeMs ? fallback.state : primary.state;
@@ -146,16 +142,10 @@ export function readSnooze(): SnoozeState | null {
  */
 export function writeSnooze(versionKey: string): void {
   const existing = readSnooze();
-  const level =
-    existing && existing.versionKey === versionKey ? existing.level + 1 : 1;
+  const level = existing && existing.versionKey === versionKey ? existing.level + 1 : 1;
   const content = `${versionKey} ${level} ${Date.now()}\n`;
 
-  const res = writeWithFallback(
-    STATE_DIR,
-    PRIMARY_SNOOZE_PATH,
-    FALLBACK_SNOOZE_PATH,
-    content,
-  );
+  const res = writeWithFallback(STATE_DIR, PRIMARY_SNOOZE_PATH, FALLBACK_SNOOZE_PATH, content);
   if (res.ok) return;
   emitSnoozeWriteWarning(res.code, res.fallbackCode);
 }
@@ -167,7 +157,7 @@ function emitSnoozeWriteWarning(primaryCode?: string, fallbackCode?: string): vo
     ? `primary=${primaryCode ?? "?"}, fallback=${fallbackCode}`
     : (primaryCode ?? "?");
   process.stderr.write(
-    `Warning: could not write snooze state (${detail}). The upgrade prompt may re-appear next time.\n`
+    `Warning: could not write snooze state (${detail}). The upgrade prompt may re-appear next time.\n`,
   );
 }
 
@@ -204,7 +194,7 @@ export function clearSnooze(): void {
   if (blocked && !warnedAboutSnoozeClear) {
     warnedAboutSnoozeClear = true;
     process.stderr.write(
-      `Warning: could not clear snooze state. The upgrade prompt may stay suppressed until the TTL expires.\n`
+      `Warning: could not clear snooze state. The upgrade prompt may stay suppressed until the TTL expires.\n`,
     );
   }
 }

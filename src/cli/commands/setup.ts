@@ -5,7 +5,12 @@ import { isPipelexInstalled } from "../../installer/runtime/check.js";
 import { ensureRuntime } from "../../installer/runtime/installer.js";
 import { shutdown } from "../../installer/telemetry/posthog.js";
 import { printLogo } from "./index.js";
-import { DEFAULT_BASE_URL, getConfigValue, isValidBaseUrl, setConfigValue } from "../../config/config.js";
+import {
+  DEFAULT_BASE_URL,
+  getConfigValue,
+  isValidBaseUrl,
+  setConfigValue,
+} from "../../config/config.js";
 import { Runners, RUNNER_NAMES } from "../../runners/types.js";
 import { maskApiKey } from "./utils.js";
 
@@ -14,8 +19,7 @@ const execFileAsync = promisify(execFile);
 // ── mthds runner setup <name> ───────────────────────────────────────
 
 async function initApi(): Promise<void> {
-  const { value: currentBaseUrl, source: baseUrlSource } =
-    getConfigValue("baseUrl");
+  const { value: currentBaseUrl, source: baseUrlSource } = getConfigValue("baseUrl");
   const { value: currentKey } = getConfigValue("apiKey");
 
   const validateUrl = (val: string | undefined): string | undefined => {
@@ -27,8 +31,7 @@ async function initApi(): Promise<void> {
   };
 
   const baseUrl = await p.text({
-    message:
-      "API base URL (host only, e.g. https://api.pipelex.com or http://localhost:8081)",
+    message: "API base URL (host only, e.g. https://api.pipelex.com or http://localhost:8081)",
     placeholder: currentBaseUrl,
     initialValue: baseUrlSource !== "default" ? currentBaseUrl : "",
     validate: validateUrl,
@@ -68,7 +71,7 @@ async function initPipelex(): Promise<void> {
 
     if (!isPipelexInstalled()) {
       p.log.error(
-        "pipelex was installed but is not reachable. Make sure the uv tools bin directory is in your PATH."
+        "pipelex was installed but is not reachable. Make sure the uv tools bin directory is in your PATH.",
       );
       process.exit(1);
     }
@@ -82,9 +85,7 @@ async function initPipelex(): Promise<void> {
     const child = spawn("pipelex", ["init"], {
       stdio: "inherit",
     });
-    child.on("error", (err) =>
-      reject(new Error(`pipelex not found: ${err.message}`))
-    );
+    child.on("error", (err) => reject(new Error(`pipelex not found: ${err.message}`)));
     child.on("close", (code) => {
       if (code === 0) {
         resolve();
@@ -123,7 +124,7 @@ export async function setupRunner(name: string): Promise<void> {
   printLogo();
   p.intro("mthds runner setup");
 
-  if (!RUNNER_NAMES.includes(name as typeof RUNNER_NAMES[number])) {
+  if (!RUNNER_NAMES.includes(name as (typeof RUNNER_NAMES)[number])) {
     p.log.error(`Unknown runner: ${name}`);
     p.log.info(`Available runners: ${RUNNER_NAMES.join(", ")}`);
     p.outro("");
@@ -151,7 +152,7 @@ export async function setDefaultRunner(name: string): Promise<void> {
   printLogo();
   p.intro("mthds runner set-default");
 
-  if (!RUNNER_NAMES.includes(name as typeof RUNNER_NAMES[number])) {
+  if (!RUNNER_NAMES.includes(name as (typeof RUNNER_NAMES)[number])) {
     p.log.error(`Unknown runner: ${name}`);
     p.log.info(`Available runners: ${RUNNER_NAMES.join(", ")}`);
     p.outro("");
@@ -188,7 +189,8 @@ export async function runnerStatus(): Promise<void> {
   p.intro("mthds runner status");
 
   const { value: defaultRunner, source: runnerSource } = getConfigValue("runner");
-  const sourceLabel = runnerSource === "env" ? " (from env)" : runnerSource === "default" ? " (default)" : "";
+  const sourceLabel =
+    runnerSource === "env" ? " (from env)" : runnerSource === "default" ? " (default)" : "";
   p.log.info(`Default runner: ${defaultRunner}${sourceLabel}`);
 
   // API runner

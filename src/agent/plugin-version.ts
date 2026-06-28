@@ -22,10 +22,7 @@ import type { BinaryCheckEntry } from "./update-cache.js";
 export const MIN_PLUGIN_VERSION = ">=0.14.1";
 
 /** Keys in installed_plugins.json for the mthds plugin (prod and dev targets). */
-export const PLUGIN_KEYS = [
-  "mthds@mthds-plugins",
-  "mthds-dev@mthds-plugins",
-] as const;
+export const PLUGIN_KEYS = ["mthds@mthds-plugins", "mthds-dev@mthds-plugins"] as const;
 
 /** Codex marketplace + plugin names searched under $CODEX_HOME/plugins/cache. */
 const CODEX_MARKETPLACE = "mthds-plugins";
@@ -39,7 +36,7 @@ export const INSTALLED_PLUGINS_PATH = join(
   homedir(),
   ".claude",
   "plugins",
-  "installed_plugins.json"
+  "installed_plugins.json",
 );
 
 // ── Types ──────────────────────────────────────────────────────────
@@ -139,7 +136,7 @@ function readClaudePluginVersion():
     const code = (err as NodeJS.ErrnoException).code;
     if (code === "ENOENT") return { kind: "null" };
     process.stderr.write(
-      `Warning: could not read ${INSTALLED_PLUGINS_PATH} (${code ?? String(err)}). Plugin version check skipped.\n`
+      `Warning: could not read ${INSTALLED_PLUGINS_PATH} (${code ?? String(err)}). Plugin version check skipped.\n`,
     );
     return { kind: "null" };
   }
@@ -153,7 +150,7 @@ function readClaudePluginVersion():
     parsed = raw as InstalledPluginsFile;
   } catch {
     process.stderr.write(
-      `Warning: ${INSTALLED_PLUGINS_PATH} contains invalid JSON. Plugin version check skipped.\n`
+      `Warning: ${INSTALLED_PLUGINS_PATH} contains invalid JSON. Plugin version check skipped.\n`,
     );
     return { kind: "null" };
   }
@@ -213,7 +210,7 @@ export function readCodexPluginVersion():
       if (code !== "ENOENT" && code !== "ENOTDIR") {
         sawReadError = true;
         process.stderr.write(
-          `Warning: could not read Codex plugin dir ${pluginDir} (${code ?? String(err)}). Plugin version check skipped.\n`
+          `Warning: could not read Codex plugin dir ${pluginDir} (${code ?? String(err)}). Plugin version check skipped.\n`,
         );
       }
       continue;
@@ -295,8 +292,7 @@ export function readCodexPluginVersion():
  * null — there is no "no host" return value here.
  */
 export function checkPluginVersion(host: PluginHost): BinaryCheckEntry | null {
-  const result =
-    host === "codex" ? readCodexPluginVersion() : readClaudePluginVersion();
+  const result = host === "codex" ? readCodexPluginVersion() : readClaudePluginVersion();
 
   if (result.kind === "null") return null;
   if (result.kind === "missing") {

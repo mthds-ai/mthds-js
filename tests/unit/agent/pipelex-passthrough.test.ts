@@ -64,11 +64,7 @@ describe("extractArgsForPipelexAgent", () => {
       "bundle",
       "foo.mthds",
     ]);
-    expect(extractArgsForPipelexAgent()).toEqual([
-      "validate",
-      "bundle",
-      "foo.mthds",
-    ]);
+    expect(extractArgsForPipelexAgent()).toEqual(["validate", "bundle", "foo.mthds"]);
   });
 
   it("preserves subcommand args that look like values for stripped flags", () => {

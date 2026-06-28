@@ -67,9 +67,7 @@ describe("login", () => {
   });
 
   it("installs pipelex if not found", async () => {
-    mockedIsPipelexInstalled
-      .mockReturnValueOnce(false)
-      .mockReturnValueOnce(true);
+    mockedIsPipelexInstalled.mockReturnValueOnce(false).mockReturnValueOnce(true);
 
     mockedEnsureRuntime.mockResolvedValue();
 

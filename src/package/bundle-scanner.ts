@@ -10,9 +10,7 @@ import type { DomainExports } from "./manifest/schema.js";
  * - domainMainPipes: mapping domain -> main_pipe code
  * - errors: list of human-readable error strings
  */
-export function scanBundlesForDomainInfo(
-  mthdsFiles: string[],
-): {
+export function scanBundlesForDomainInfo(mthdsFiles: string[]): {
   domainPipes: Map<string, Set<string>>;
   domainMainPipes: Map<string, string>;
   errors: string[];
@@ -60,7 +58,9 @@ export function scanBundlesForDomainInfo(
       if (!existingMain || existingMain === mainPipe) {
         domainMainPipes.set(domain, mainPipe);
       } else {
-        errors.push(`${filePath}: conflicting main_pipe for domain '${domain}': '${existingMain}' vs '${mainPipe}' (keeping '${existingMain}')`);
+        errors.push(
+          `${filePath}: conflicting main_pipe for domain '${domain}': '${existingMain}' vs '${mainPipe}' (keeping '${existingMain}')`,
+        );
       }
     }
   }

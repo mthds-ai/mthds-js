@@ -39,15 +39,15 @@ function execGit(args: string[], timeoutMs: number): Promise<string> {
  * List remote git tags that are valid semver versions.
  * Runs `git ls-remote --tags <url>` and parses the output.
  */
-export async function listRemoteVersionTags(
-  cloneUrl: string,
-): Promise<Array<[SemVer, string]>> {
+export async function listRemoteVersionTags(cloneUrl: string): Promise<Array<[SemVer, string]>> {
   let stdout: string;
   try {
     stdout = await execGit(["ls-remote", "--tags", cloneUrl], 60_000);
   } catch (err) {
     if (err instanceof VCSFetchError) throw err;
-    throw new VCSFetchError(`Failed to list remote tags from '${cloneUrl}': ${(err as Error).message}`);
+    throw new VCSFetchError(
+      `Failed to list remote tags from '${cloneUrl}': ${(err as Error).message}`,
+    );
   }
 
   const versionTags: Array<[SemVer, string]> = [];

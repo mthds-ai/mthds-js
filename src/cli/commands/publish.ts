@@ -50,7 +50,9 @@ export async function publishMethod(options: {
       process.exit(1);
     }
 
-    s.message(`Resolving methods from ${parsed.org}/${parsed.repo}${parsed.subpath ? `/${parsed.subpath}` : ""}...`);
+    s.message(
+      `Resolving methods from ${parsed.org}/${parsed.repo}${parsed.subpath ? `/${parsed.subpath}` : ""}...`,
+    );
     try {
       resolved = await resolveFromGitHub(parsed);
     } catch (err) {
@@ -74,7 +76,7 @@ export async function publishMethod(options: {
     if (!match) {
       const available = resolved.methods.map((m) => m.name).join(", ");
       p.log.error(
-        `Method "${methodFilter}" not found. Available methods: ${available || "(none)"}`
+        `Method "${methodFilter}" not found. Available methods: ${available || "(none)"}`,
       );
       p.outro("");
       process.exit(1);
@@ -88,7 +90,7 @@ export async function publishMethod(options: {
   const totalCount = validCount + skippedCount;
 
   p.log.info(
-    `${chalk.bold("Methods found:")} ${totalCount} total, ${chalk.green(`${validCount} valid`)}, ${skippedCount > 0 ? chalk.yellow(`${skippedCount} skipped`) : `${skippedCount} skipped`}`
+    `${chalk.bold("Methods found:")} ${totalCount} total, ${chalk.green(`${validCount} valid`)}, ${skippedCount > 0 ? chalk.yellow(`${skippedCount} skipped`) : `${skippedCount} skipped`}`,
   );
 
   for (const method of resolved.methods) {
@@ -99,7 +101,7 @@ export async function publishMethod(options: {
         `${chalk.bold(method.name)} — ${m.display_name ?? m.address} v${m.version}`,
         `  ${m.description}`,
         `  ${fileCount} .mthds file${fileCount !== 1 ? "s" : ""}`,
-      ].join("\n")
+      ].join("\n"),
     );
   }
 
@@ -142,7 +144,11 @@ export async function publishMethod(options: {
           p.outro("Done");
           return;
         }
-        p.log.warning(chalk.yellow("No methods selected. Use space to toggle selection, then press enter to confirm."));
+        p.log.warning(
+          chalk.yellow(
+            "No methods selected. Use space to toggle selection, then press enter to confirm.",
+          ),
+        );
         continue;
       }
       selected = result;

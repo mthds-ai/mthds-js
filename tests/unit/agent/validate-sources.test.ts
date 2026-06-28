@@ -9,7 +9,10 @@ import type { ValidationResult } from "../../../src/protocol/models.js";
 // and the structured failure envelope must forward that source to agent
 // consumers. The guard is duck-typed on `.type`, so a stub runner suffices.
 
-function makeRunner(type: "api" | "pipelex", report: ValidationResult): {
+function makeRunner(
+  type: "api" | "pipelex",
+  report: ValidationResult,
+): {
   runner: Runner;
   validate: ReturnType<typeof vi.fn>;
 } {
@@ -21,12 +24,11 @@ function makeRunner(type: "api" | "pipelex", report: ValidationResult): {
 const VALID_REPORT: ValidationResult = { is_valid: true };
 
 describe("runProtocolValidate — mthds_sources threading", () => {
-  let stdoutSpy: ReturnType<typeof vi.spyOn>;
   let stderrSpy: ReturnType<typeof vi.spyOn>;
   let exitSpy: ReturnType<typeof vi.spyOn>;
 
   beforeEach(() => {
-    stdoutSpy = vi.spyOn(process.stdout, "write").mockReturnValue(true);
+    vi.spyOn(process.stdout, "write").mockReturnValue(true);
     stderrSpy = vi.spyOn(process.stderr, "write").mockReturnValue(true);
     // agentError ends in process.exit(1); throw a sentinel so the test can catch it.
     exitSpy = vi.spyOn(process, "exit").mockImplementation((() => {
@@ -70,9 +72,9 @@ describe("runProtocolValidate — mthds_sources threading", () => {
     };
     const { runner } = makeRunner("api", invalid);
 
-    await expect(
-      runProtocolValidate(runner, ["broken"], false, ["bundle.mthds"])
-    ).rejects.toThrow("__exit__");
+    await expect(runProtocolValidate(runner, ["broken"], false, ["bundle.mthds"])).rejects.toThrow(
+      "__exit__",
+    );
 
     expect(exitSpy).toHaveBeenCalledWith(1);
     // The first stderr write is the real ValidateBundleError envelope (mocking

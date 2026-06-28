@@ -72,7 +72,9 @@ export async function installMethod(options: {
       process.exit(1);
     }
 
-    s.message(`Resolving methods from ${parsed.org}/${parsed.repo}${parsed.subpath ? `/${parsed.subpath}` : ""}...`);
+    s.message(
+      `Resolving methods from ${parsed.org}/${parsed.repo}${parsed.subpath ? `/${parsed.subpath}` : ""}...`,
+    );
     try {
       resolved = await resolveFromGitHub(parsed);
     } catch (err) {
@@ -96,7 +98,7 @@ export async function installMethod(options: {
     if (!match) {
       const available = resolved.methods.map((method) => method.name).join(", ");
       p.log.error(
-        `Method "${methodFilter}" not found. Available methods: ${available || "(none)"}`
+        `Method "${methodFilter}" not found. Available methods: ${available || "(none)"}`,
       );
       p.outro("");
       process.exit(1);
@@ -112,7 +114,7 @@ export async function installMethod(options: {
   p.log.info(
     [
       `${chalk.bold("Methods found:")} ${totalCount} total, ${chalk.green(`${validCount} valid`)}, ${skippedCount > 0 ? chalk.yellow(`${skippedCount} skipped`) : `${skippedCount} skipped`}`,
-    ].join("\n")
+    ].join("\n"),
   );
 
   // Show valid methods
@@ -124,16 +126,14 @@ export async function installMethod(options: {
         `${chalk.bold(method.name)} — ${pkg.display_name ?? pkg.address} v${pkg.version}`,
         `  ${pkg.description}`,
         `  ${fileCount} .mthds file${fileCount !== 1 ? "s" : ""}`,
-      ].join("\n")
+      ].join("\n"),
     );
   }
 
   // Show skipped methods with errors
   for (const skip of resolved.skipped) {
     const errList = skip.errors.map((errMsg) => `    - ${errMsg}`).join("\n");
-    p.log.warning(
-      `${chalk.bold(skip.dirName)} — skipped:\n${errList}`
-    );
+    p.log.warning(`${chalk.bold(skip.dirName)} — skipped:\n${errList}`);
   }
 
   // If no valid methods, exit
@@ -151,15 +151,13 @@ export async function installMethod(options: {
     runner = createRunner(options.runner);
     await runner.health();
     const ver = await runner.version().catch(() => null);
-    const versionStr = ver
-      ? `${ver.implementation} ${ver.implementation_version}`
-      : "unknown";
+    const versionStr = ver ? `${ver.implementation} ${ver.implementation_version}` : "unknown";
     healthSpinner.stop(`Runner ${chalk.bold(runner.type)} is healthy (${versionStr})`);
   } catch {
     healthSpinner.stop("Runner not available.");
     p.log.warning(
       `No runner configured — skipping pipe validation.\n` +
-      `  Set up a runner with: ${chalk.cyan("npx mthds runner setup pipelex")}`
+        `  Set up a runner with: ${chalk.cyan("npx mthds runner setup pipelex")}`,
     );
     runner = null;
   }
@@ -205,7 +203,6 @@ export async function installMethod(options: {
     }
   }
 
-
   // Step 2: Install location (project-local or global)
   const projectDir = join(process.cwd(), ".mthds", "methods");
   const globalDir = join(homedir(), ".mthds", "methods");
@@ -236,7 +233,7 @@ export async function installMethod(options: {
   installSpinner.start(
     validCount === 1
       ? `Installing "${resolved.methods[0]!.name}"...`
-      : `Installing ${validCount} methods...`
+      : `Installing ${validCount} methods...`,
   );
   let result: InstallFlowResult;
   try {
@@ -251,9 +248,8 @@ export async function installMethod(options: {
 
   for (const method of resolved.methods) {
     const fileCount = method.files.length;
-    const filesMsg = fileCount === 0
-      ? "(manifest only)"
-      : `(${fileCount} .mthds file${fileCount > 1 ? "s" : ""})`;
+    const filesMsg =
+      fileCount === 0 ? "(manifest only)" : `(${fileCount} .mthds file${fileCount > 1 ? "s" : ""})`;
     p.log.success(`${method.name} ${filesMsg}`);
   }
 
@@ -262,7 +258,7 @@ export async function installMethod(options: {
     const rcFile = getShellRcFile();
     p.log.warning(
       `Add ${result.shimDir} to your PATH to use methods as CLI commands:\n` +
-      `  echo 'export PATH="${result.shimDir}:$PATH"' >> ${rcFile} && source ${rcFile}`
+        `  echo 'export PATH="${result.shimDir}:$PATH"' >> ${rcFile} && source ${rcFile}`,
     );
   }
 

@@ -28,11 +28,9 @@ class AgentErrorThrow extends Error {
 }
 
 const successSpy = vi.fn();
-const errorSpy = vi.fn(
-  (message: string, errorType: string, extras?: Record<string, unknown>) => {
-    throw new AgentErrorThrow(errorType, { message, ...extras });
-  },
-);
+const errorSpy = vi.fn((message: string, errorType: string, extras?: Record<string, unknown>) => {
+  throw new AgentErrorThrow(errorType, { message, ...extras });
+});
 
 vi.mock("../../../src/agent/output.js", () => ({
   agentSuccess: (result: Record<string, unknown>) => successSpy(result),
@@ -228,7 +226,7 @@ plugin_hooks = false
     expect(readConfig()).toBe(original);
   });
 
-  it("distinguishes a string \"true\" from the required boolean in the conflict message", async () => {
+  it('distinguishes a string "true" from the required boolean in the conflict message', async () => {
     const original = `[sandbox_workspace_write]
 network_access = "true"
 `;
@@ -318,7 +316,10 @@ plugin_hooks = true
     writeHooks({
       hooks: {
         PostToolUse: [
-          { matcher: "apply_patch", hooks: [{ type: "command", command: HOOK_COMMAND, timeout: 30 }] },
+          {
+            matcher: "apply_patch",
+            hooks: [{ type: "command", command: HOOK_COMMAND, timeout: 30 }],
+          },
         ],
       },
     });
@@ -449,13 +450,17 @@ network_access = true
 [features]
 plugin_hooks = true
 `);
-    const hooksBefore = JSON.stringify({
-      hooks: {
-        PostToolUse: [
-          { matcher: "apply_patch", hooks: [{ type: "command", command: HOOK_COMMAND }] },
-        ],
+    const hooksBefore = JSON.stringify(
+      {
+        hooks: {
+          PostToolUse: [
+            { matcher: "apply_patch", hooks: [{ type: "command", command: HOOK_COMMAND }] },
+          ],
+        },
       },
-    }, null, 2);
+      null,
+      2,
+    );
     mkdirSync(join(scratchHome, ".codex"), { recursive: true });
     writeFileSync(hooksFile(), hooksBefore, "utf8");
 

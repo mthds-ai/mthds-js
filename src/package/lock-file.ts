@@ -148,9 +148,7 @@ export interface ResolvedDepForLock {
   readonly packageRoot: string;
 }
 
-export function generateLockFile(
-  resolvedDeps: ResolvedDepForLock[],
-): LockFile {
+export function generateLockFile(resolvedDeps: ResolvedDepForLock[]): LockFile {
   const packages: Record<string, LockedPackage> = {};
 
   for (const resolved of resolvedDeps) {

@@ -17,22 +17,18 @@ interface AgentPublishOptions {
 
 export async function agentPublish(
   address: string | undefined,
-  options: AgentPublishOptions
+  options: AgentPublishOptions,
 ): Promise<void> {
   if (address && options.local) {
-    agentError(
-      "Cannot use both an address and --local at the same time.",
-      "ArgumentError",
-      { error_domain: AGENT_ERROR_DOMAINS.ARGUMENT }
-    );
+    agentError("Cannot use both an address and --local at the same time.", "ArgumentError", {
+      error_domain: AGENT_ERROR_DOMAINS.ARGUMENT,
+    });
   }
 
   if (!address && !options.local) {
-    agentError(
-      "Provide an address (org/repo) or use --local <path>.",
-      "ArgumentError",
-      { error_domain: AGENT_ERROR_DOMAINS.ARGUMENT }
-    );
+    agentError("Provide an address (org/repo) or use --local <path>.", "ArgumentError", {
+      error_domain: AGENT_ERROR_DOMAINS.ARGUMENT,
+    });
   }
 
   const methodFilter = options.method;
@@ -45,11 +41,9 @@ export async function agentPublish(
     try {
       resolved = resolveFromLocal(options.local);
     } catch (err) {
-      agentError(
-        `Failed to resolve local methods: ${(err as Error).message}`,
-        "PublishError",
-        { error_domain: AGENT_ERROR_DOMAINS.INSTALL }
-      );
+      agentError(`Failed to resolve local methods: ${(err as Error).message}`, "PublishError", {
+        error_domain: AGENT_ERROR_DOMAINS.INSTALL,
+      });
     }
     if (resolved.methods.length > 0) {
       const addr = resolved.methods[0]!.manifest.package.address;
@@ -68,11 +62,9 @@ export async function agentPublish(
     try {
       resolved = await resolveFromGitHub(parsed);
     } catch (err) {
-      agentError(
-        `Failed to resolve methods: ${(err as Error).message}`,
-        "PublishError",
-        { error_domain: AGENT_ERROR_DOMAINS.INSTALL }
-      );
+      agentError(`Failed to resolve methods: ${(err as Error).message}`, "PublishError", {
+        error_domain: AGENT_ERROR_DOMAINS.INSTALL,
+      });
     }
     orgRepo = `${parsed.org}/${parsed.repo}`;
   } else {
@@ -89,7 +81,7 @@ export async function agentPublish(
       agentError(
         `Method "${methodFilter}" not found. Available methods: ${available || "(none)"}`,
         "PublishError",
-        { error_domain: AGENT_ERROR_DOMAINS.INSTALL }
+        { error_domain: AGENT_ERROR_DOMAINS.INSTALL },
       );
     }
     resolved = { ...resolved, methods: [match] };

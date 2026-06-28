@@ -22,22 +22,20 @@ export const AGENT_ERROR_DOMAINS = {
   PACKAGE: "package",
 } as const;
 
-export type AgentErrorDomain =
-  (typeof AGENT_ERROR_DOMAINS)[keyof typeof AGENT_ERROR_DOMAINS];
+export type AgentErrorDomain = (typeof AGENT_ERROR_DOMAINS)[keyof typeof AGENT_ERROR_DOMAINS];
 
 // ── Error hints ──────────────────────────────────────────────────────
 
 export const AGENT_ERROR_HINTS: Record<string, string> = {
-  BinaryNotFoundError:
-    "Make sure the required CLI binary is installed and in your PATH.",
+  BinaryNotFoundError: "Make sure the required CLI binary is installed and in your PATH.",
   ArgumentError: "Check the command arguments and try again.",
   ConfigError: "Run `mthds-agent config list` to see current configuration.",
   RunnerError: "Check that the runner is properly configured.",
   ValidationError: "Check the .mthds bundle for syntax or schema errors.",
-  ValidateBundleError: "The bundle is invalid — see validation_errors for the per-error diagnostics.",
+  ValidateBundleError:
+    "The bundle is invalid — see validation_errors for the per-error diagnostics.",
   InstallError: "Check the address and try again.",
-  PackageError:
-    "Check the METHODS.toml file and try again.",
+  PackageError: "Check the METHODS.toml file and try again.",
 };
 
 // ── Re-export BinaryRecoveryInfo for callers ────────────────────────
@@ -80,7 +78,7 @@ export function agentError(
     is_valid?: boolean;
     /** Structured per-error diagnostics on an invalid-bundle verdict (the `/validate` 200 InvalidReport arm). */
     validation_errors?: unknown[];
-  }
+  },
 ): never {
   const payload: Record<string, unknown> = {
     error: true,

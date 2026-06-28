@@ -56,7 +56,12 @@ program
   .version(pkg.version)
   .description("CLI for the MTHDS open standard")
   .option("--runner <type>", `Runner to use (${RUNNER_NAMES.join(", ")})`)
-  .option("-L, --library-dir <dir>", "Additional library directory (can be repeated)", collect, [] as string[])
+  .option(
+    "-L, --library-dir <dir>",
+    "Additional library directory (can be repeated)",
+    collect,
+    [] as string[],
+  )
   .option("--no-logo", "Suppress the ASCII logo")
   .exitOverride()
   .configureOutput({
@@ -79,10 +84,7 @@ program
   });
 
 // ── mthds run method|pipe ─────────────────────────────────────────────
-const run = program
-  .command("run")
-  .description("Execute a pipeline")
-  .exitOverride();
+const run = program.command("run").description("Execute a pipeline").exitOverride();
 
 run
   .command("method")
@@ -97,7 +99,11 @@ run
   .allowExcessArguments(true)
   .exitOverride()
   .action(async (name: string, options: Record<string, string | boolean | undefined>, cmd: Cmd) => {
-    await runMethod(name, { ...options, runner: getRunner(cmd), libraryDir: getLibraryDirs(cmd) } as Parameters<typeof runMethod>[1]);
+    await runMethod(name, {
+      ...options,
+      runner: getRunner(cmd),
+      libraryDir: getLibraryDirs(cmd),
+    } as Parameters<typeof runMethod>[1]);
   });
 
 run
@@ -112,9 +118,15 @@ run
   .allowUnknownOption()
   .allowExcessArguments(true)
   .exitOverride()
-  .action(async (target: string, options: Record<string, string | boolean | undefined>, cmd: Cmd) => {
-    await runPipe(target, { ...options, runner: getRunner(cmd), libraryDir: getLibraryDirs(cmd) } as Parameters<typeof runPipe>[1]);
-  });
+  .action(
+    async (target: string, options: Record<string, string | boolean | undefined>, cmd: Cmd) => {
+      await runPipe(target, {
+        ...options,
+        runner: getRunner(cmd),
+        libraryDir: getLibraryDirs(cmd),
+      } as Parameters<typeof runPipe>[1]);
+    },
+  );
 
 run
   .command("bundle")
@@ -128,9 +140,15 @@ run
   .allowUnknownOption()
   .allowExcessArguments(true)
   .exitOverride()
-  .action(async (target: string, options: Record<string, string | boolean | undefined>, cmd: Cmd) => {
-    await runBundle(target, { ...options, runner: getRunner(cmd), libraryDir: getLibraryDirs(cmd) } as Parameters<typeof runBundle>[1]);
-  });
+  .action(
+    async (target: string, options: Record<string, string | boolean | undefined>, cmd: Cmd) => {
+      await runBundle(target, {
+        ...options,
+        runner: getRunner(cmd),
+        libraryDir: getLibraryDirs(cmd),
+      } as Parameters<typeof runBundle>[1]);
+    },
+  );
 
 // ── mthds build <subcommand> ────────────────────────────────────────
 const build = program
@@ -153,7 +171,11 @@ buildRunnerCmd
   .allowExcessArguments(true)
   .exitOverride()
   .action(async (name: string, options: { pipe?: string; output?: string }, cmd: Cmd) => {
-    await buildRunnerMethod(name, { ...options, runner: getRunner(cmd), libraryDir: getLibraryDirs(cmd) });
+    await buildRunnerMethod(name, {
+      ...options,
+      runner: getRunner(cmd),
+      libraryDir: getLibraryDirs(cmd),
+    });
   });
 
 buildRunnerCmd
@@ -166,7 +188,11 @@ buildRunnerCmd
   .allowExcessArguments(true)
   .exitOverride()
   .action(async (target: string, options: { pipe?: string; output?: string }, cmd: Cmd) => {
-    await buildRunnerPipe(target, { ...options, runner: getRunner(cmd), libraryDir: getLibraryDirs(cmd) });
+    await buildRunnerPipe(target, {
+      ...options,
+      runner: getRunner(cmd),
+      libraryDir: getLibraryDirs(cmd),
+    });
   });
 
 const buildInputsCmd = build
@@ -183,7 +209,11 @@ buildInputsCmd
   .allowExcessArguments(true)
   .exitOverride()
   .action(async (name: string, options: { pipe?: string }, cmd: Cmd) => {
-    await buildInputsMethod(name, { ...options, runner: getRunner(cmd), libraryDir: getLibraryDirs(cmd) });
+    await buildInputsMethod(name, {
+      ...options,
+      runner: getRunner(cmd),
+      libraryDir: getLibraryDirs(cmd),
+    });
   });
 
 buildInputsCmd
@@ -195,7 +225,11 @@ buildInputsCmd
   .allowExcessArguments(true)
   .exitOverride()
   .action(async (target: string, options: { pipe?: string }, cmd: Cmd) => {
-    await buildInputsPipe(target, { ...options, runner: getRunner(cmd), libraryDir: getLibraryDirs(cmd) });
+    await buildInputsPipe(target, {
+      ...options,
+      runner: getRunner(cmd),
+      libraryDir: getLibraryDirs(cmd),
+    });
   });
 
 const buildOutputCmd = build
@@ -213,7 +247,11 @@ buildOutputCmd
   .allowExcessArguments(true)
   .exitOverride()
   .action(async (name: string, options: { pipe?: string; format?: string }, cmd: Cmd) => {
-    await buildOutputMethod(name, { ...options, runner: getRunner(cmd), libraryDir: getLibraryDirs(cmd) });
+    await buildOutputMethod(name, {
+      ...options,
+      runner: getRunner(cmd),
+      libraryDir: getLibraryDirs(cmd),
+    });
   });
 
 buildOutputCmd
@@ -226,7 +264,11 @@ buildOutputCmd
   .allowExcessArguments(true)
   .exitOverride()
   .action(async (target: string, options: { pipe?: string; format?: string }, cmd: Cmd) => {
-    await buildOutputPipe(target, { ...options, runner: getRunner(cmd), libraryDir: getLibraryDirs(cmd) });
+    await buildOutputPipe(target, {
+      ...options,
+      runner: getRunner(cmd),
+      libraryDir: getLibraryDirs(cmd),
+    });
   });
 
 // ── mthds validate method|pipe ────────────────────────────────────────
@@ -244,7 +286,11 @@ validate
   .allowExcessArguments(true)
   .exitOverride()
   .action(async (target: string, options: { pipe?: string }, cmd: Cmd) => {
-    await validateMethod(target, { ...options, runner: getRunner(cmd), libraryDir: getLibraryDirs(cmd) });
+    await validateMethod(target, {
+      ...options,
+      runner: getRunner(cmd),
+      libraryDir: getLibraryDirs(cmd),
+    });
   });
 
 validate
@@ -257,7 +303,11 @@ validate
   .allowExcessArguments(true)
   .exitOverride()
   .action(async (target: string, options: { pipe?: string; bundle?: string }, cmd: Cmd) => {
-    await validatePipe(target, { ...options, runner: getRunner(cmd), libraryDir: getLibraryDirs(cmd) });
+    await validatePipe(target, {
+      ...options,
+      runner: getRunner(cmd),
+      libraryDir: getLibraryDirs(cmd),
+    });
   });
 
 validate
@@ -269,7 +319,11 @@ validate
   .allowExcessArguments(true)
   .exitOverride()
   .action(async (target: string, options: { pipe?: string }, cmd: Cmd) => {
-    await validateBundle(target, { ...options, runner: getRunner(cmd), libraryDir: getLibraryDirs(cmd) });
+    await validateBundle(target, {
+      ...options,
+      runner: getRunner(cmd),
+      libraryDir: getLibraryDirs(cmd),
+    });
   });
 
 // ── mthds install [address] (JS-only) ──────────────────────────────
@@ -281,24 +335,30 @@ program
   .option("--runner <type>", `Runner for validation & mermaid (${RUNNER_NAMES.join(", ")})`)
   .description("Install a method package")
   .exitOverride()
-  .action(async (address: string | undefined, opts: { local?: string; method?: string; runner?: string }, cmd: Cmd) => {
-    if (address && opts.local) {
-      printLogo();
-      p.intro("mthds install");
-      p.log.error("Cannot use both an address and --local at the same time.");
-      p.outro("");
-      process.exit(1);
-    }
-    if (!address && !opts.local) {
-      printLogo();
-      p.intro("mthds install");
-      p.log.error("Provide an address (org/repo) or use --local <path>.");
-      p.outro("");
-      process.exit(1);
-    }
-    const runner = (opts.runner ?? getRunner(cmd)) as RunnerType | undefined;
-    await installMethod({ address, dir: opts.local, method: opts.method, runner });
-  });
+  .action(
+    async (
+      address: string | undefined,
+      opts: { local?: string; method?: string; runner?: string },
+      cmd: Cmd,
+    ) => {
+      if (address && opts.local) {
+        printLogo();
+        p.intro("mthds install");
+        p.log.error("Cannot use both an address and --local at the same time.");
+        p.outro("");
+        process.exit(1);
+      }
+      if (!address && !opts.local) {
+        printLogo();
+        p.intro("mthds install");
+        p.log.error("Provide an address (org/repo) or use --local <path>.");
+        p.outro("");
+        process.exit(1);
+      }
+      const runner = (opts.runner ?? getRunner(cmd)) as RunnerType | undefined;
+      await installMethod({ address, dir: opts.local, method: opts.method, runner });
+    },
+  );
 
 // ── mthds publish [address] ─────────────────────────────────────────
 program
@@ -357,7 +417,10 @@ const config = program.command("config").description("Manage configuration").exi
 
 config
   .command("set")
-  .argument("<key>", "Config key (runner, base-url, api-key, telemetry, auto-upgrade, update-check)")
+  .argument(
+    "<key>",
+    "Config key (runner, base-url, api-key, telemetry, auto-upgrade, update-check)",
+  )
   .argument("<value>", "Value to set")
   .description("Set a config value")
   .exitOverride()
@@ -367,7 +430,10 @@ config
 
 config
   .command("get")
-  .argument("<key>", "Config key (runner, base-url, api-key, telemetry, auto-upgrade, update-check)")
+  .argument(
+    "<key>",
+    "Config key (runner, base-url, api-key, telemetry, auto-upgrade, update-check)",
+  )
   .description("Get a config value")
   .exitOverride()
   .action(async (key: string) => {
@@ -412,7 +478,10 @@ runnerCmd
   });
 
 // ── mthds telemetry enable|disable ──────────────────────────────────
-const telemetry = program.command("telemetry").description("Manage anonymous usage telemetry").exitOverride();
+const telemetry = program
+  .command("telemetry")
+  .description("Manage anonymous usage telemetry")
+  .exitOverride();
 
 telemetry
   .command("enable")
@@ -505,9 +574,7 @@ program.parseAsync(process.argv).catch((err: unknown) => {
     printLogo();
     p.intro("mthds");
 
-    const message = err.message
-      .replace(/^error: /, "")
-      .replace(/^Error: /, "");
+    const message = err.message.replace(/^error: /, "").replace(/^Error: /, "");
 
     p.log.error(message);
     p.log.info("Run mthds --help to see usage.");

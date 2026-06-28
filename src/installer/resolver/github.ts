@@ -1,14 +1,17 @@
 import { execFile, execFileSync } from "node:child_process";
 import { promisify } from "node:util";
-import type { ParsedAddress, ResolvedRepo, ResolvedMethod, SkippedMethod, MethodsFile } from "../../package/manifest/types.js";
+import type {
+  ParsedAddress,
+  ResolvedRepo,
+  ResolvedMethod,
+  SkippedMethod,
+  MethodsFile,
+} from "../../package/manifest/types.js";
 import { validateManifest } from "../../package/manifest/validate.js";
 
 const execFileAsync = promisify(execFile);
 
-type AuthMethod =
-  | { type: "token"; token: string }
-  | { type: "gh" }
-  | { type: "none" };
+type AuthMethod = { type: "token"; token: string } | { type: "gh" } | { type: "none" };
 
 function detectAuth(): AuthMethod {
   const token = process.env["GITHUB_TOKEN"];
@@ -26,10 +29,7 @@ function detectAuth(): AuthMethod {
   return { type: "none" };
 }
 
-async function githubFetch(
-  auth: AuthMethod,
-  apiPath: string
-): Promise<unknown> {
+async function githubFetch(auth: AuthMethod, apiPath: string): Promise<unknown> {
   if (auth.type === "gh") {
     try {
       const { stdout } = await execFileAsync("gh", ["api", apiPath], {
@@ -43,9 +43,13 @@ async function githubFetch(
         throw new Error(`Not found: ${apiPath}.`);
       }
       if (stderr.includes("403") || stderr.includes("rate limit")) {
-        throw new Error(`GitHub API rate limit or permission error for ${apiPath}. Try setting GITHUB_TOKEN.`);
+        throw new Error(
+          `GitHub API rate limit or permission error for ${apiPath}. Try setting GITHUB_TOKEN.`,
+        );
       }
-      throw new Error(`GitHub API error for ${apiPath}: ${stderr.trim() || (err as Error).message}`);
+      throw new Error(
+        `GitHub API error for ${apiPath}: ${stderr.trim() || (err as Error).message}`,
+      );
     }
   }
 
@@ -71,7 +75,7 @@ async function githubFetch(
     }
     if (res.status === 403) {
       throw new Error(
-        `GitHub API rate limit or permission error (403) for ${apiPath}. Try setting GITHUB_TOKEN.`
+        `GitHub API rate limit or permission error (403) for ${apiPath}. Try setting GITHUB_TOKEN.`,
       );
     }
     throw new Error(`GitHub API error ${res.status} for ${apiPath}.`);
@@ -101,11 +105,11 @@ async function fetchFileContent(
   auth: AuthMethod,
   org: string,
   repo: string,
-  path: string
+  path: string,
 ): Promise<string> {
   const data = (await githubFetch(
     auth,
-    `repos/${org}/${repo}/contents/${path}`
+    `repos/${org}/${repo}/contents/${path}`,
   )) as GitHubContentFile;
 
   if (data.content && data.encoding === "base64") {
@@ -133,7 +137,7 @@ async function listMthdFiles(
   auth: AuthMethod,
   org: string,
   repo: string,
-  basePath: string
+  basePath: string,
 ): Promise<string[]> {
   const paths: string[] = [];
   const stack = [basePath];
@@ -142,7 +146,7 @@ async function listMthdFiles(
     const dir = stack.pop()!;
     const data = (await githubFetch(
       auth,
-      `repos/${org}/${repo}/contents/${dir}`
+      `repos/${org}/${repo}/contents/${dir}`,
     )) as GitHubContent[];
 
     if (!Array.isArray(data)) continue;
@@ -165,7 +169,7 @@ async function downloadFilesParallel(
   repo: string,
   filePaths: string[],
   basePath: string,
-  concurrency: number = 5
+  concurrency: number = 5,
 ): Promise<MethodsFile[]> {
   const results: MethodsFile[] = [];
 
@@ -178,7 +182,7 @@ async function downloadFilesParallel(
           ? fp.slice(basePath.length + 1)
           : fp.slice(basePath.length === 0 ? 0 : basePath.length + 1);
         return { relativePath, content };
-      })
+      }),
     );
     results.push(...downloaded);
   }
@@ -191,7 +195,7 @@ async function resolveOneMethod(
   org: string,
   repo: string,
   methodsPath: string,
-  dirName: string
+  dirName: string,
 ): Promise<{ method?: ResolvedMethod; skipped?: SkippedMethod }> {
   const dirPath = `${methodsPath}/${dirName}`;
   const tomlPath = `${dirPath}/METHODS.toml`;
@@ -241,9 +245,7 @@ async function resolveOneMethod(
   };
 }
 
-export async function resolveFromGitHub(
-  parsed: ParsedAddress
-): Promise<ResolvedRepo> {
+export async function resolveFromGitHub(parsed: ParsedAddress): Promise<ResolvedRepo> {
   const auth = detectAuth();
   const { org, repo, subpath } = parsed;
   const methodsPath = subpath ? `${subpath}/methods` : "methods";
@@ -255,7 +257,9 @@ export async function resolveFromGitHub(
   } catch (err) {
     const msg = (err as Error).message;
     if (msg.includes("Not found")) {
-      throw new Error(`Repository "${org}/${repo}" not found on GitHub. Check the address and make sure the repository exists.`);
+      throw new Error(
+        `Repository "${org}/${repo}" not found on GitHub. Check the address and make sure the repository exists.`,
+      );
     }
     throw new Error(`Could not connect to GitHub for "${org}/${repo}": ${msg}`);
   }
@@ -266,17 +270,17 @@ export async function resolveFromGitHub(
   try {
     contents = (await githubFetch(
       auth,
-      `repos/${org}/${repo}/contents/${methodsPath}`
+      `repos/${org}/${repo}/contents/${methodsPath}`,
     )) as GitHubContent[];
   } catch {
     throw new Error(
-      `No methods/ folder found in ${org}/${repo}${subpath ? `/${subpath}` : ""}. Expected a "methods/" directory.`
+      `No methods/ folder found in ${org}/${repo}${subpath ? `/${subpath}` : ""}. Expected a "methods/" directory.`,
     );
   }
 
   if (!Array.isArray(contents)) {
     throw new Error(
-      `No methods/ folder found in ${org}/${repo}${subpath ? `/${subpath}` : ""}. Expected a "methods/" directory.`
+      `No methods/ folder found in ${org}/${repo}${subpath ? `/${subpath}` : ""}. Expected a "methods/" directory.`,
     );
   }
 
@@ -284,7 +288,7 @@ export async function resolveFromGitHub(
 
   if (methodDirs.length === 0) {
     throw new Error(
-      `No methods found in methods/ of ${org}/${repo}${subpath ? `/${subpath}` : ""}.`
+      `No methods found in methods/ of ${org}/${repo}${subpath ? `/${subpath}` : ""}.`,
     );
   }
 
@@ -295,7 +299,7 @@ export async function resolveFromGitHub(
   for (let i = 0; i < methodDirs.length; i += 5) {
     const batch = methodDirs.slice(i, i + 5);
     const results = await Promise.all(
-      batch.map((dirName) => resolveOneMethod(auth, org, repo, methodsPath, dirName))
+      batch.map((dirName) => resolveOneMethod(auth, org, repo, methodsPath, dirName)),
     );
     for (const r of results) {
       if (r.method) methods.push(r.method);

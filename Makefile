@@ -18,34 +18,32 @@ define PRINT_TITLE
 	@echo ""
 endef
 
+define HELP
+Manage $(PACKAGE_NAME) located in $(CURDIR).
+Usage:
+
+make install    - Install dependencies
+make all        - Clean, check, and test
+make check      - Run quality checks, excluding tests
+make test       - Run the test suite
+make dev        - Watch mode: auto rebuild on changes
+
+make build      - Build the project
+make rebuild    - Clean and rebuild
+make clean      - Remove build artifacts
+make run        - Build and run the CLI banner
+make depcruise  - Check architectural boundaries
+
+make pack       - Create tarball for local npx testing
+
+make c          - Shorthand -> check
+make t          - Shorthand -> test
+
+endef
+export HELP
+
 help:
-	@echo "$(BLUE)━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━$(NC)"
-	@echo "$(BLUE)                    mthds — Development Tools$(NC)"
-	@echo "$(BLUE)━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━$(NC)"
-	@echo ""
-	@echo "$(YELLOW)Quick Start:$(NC)"
-	@echo "  $(GREEN)make install$(NC)        Install dependencies"
-	@echo "  $(GREEN)make all$(NC)            Clean + build + test"
-	@echo "  $(GREEN)make check$(NC)          Run quality checks (typecheck + tests)"
-	@echo "  $(GREEN)make test$(NC)           Run the test suite"
-	@echo "  $(GREEN)make dev$(NC)            Watch mode — auto rebuild on changes"
-	@echo ""
-	@echo "$(YELLOW)Development:$(NC)"
-	@echo "  $(GREEN)make build$(NC)          Build the project"
-	@echo "  $(GREEN)make rebuild$(NC)        Clean and rebuild"
-	@echo "  $(GREEN)make clean$(NC)          Remove build artifacts"
-	@echo "  $(GREEN)make run$(NC)            Build and run the CLI (banner)"
-	@echo ""
-	@echo "$(YELLOW)Shorthands:$(NC)"
-	@echo "  $(GREEN)make c$(NC)              Alias for check"
-	@echo "  $(GREEN)make t$(NC)              Alias for test"
-	@echo ""
-	@echo "$(YELLOW)Packaging:$(NC)"
-	@echo "  $(GREEN)make pack$(NC)           Create tarball for local npx testing"
-	@echo ""
-	@echo "$(BLUE)━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━$(NC)"
-	@echo "$(YELLOW)Tip:$(NC) Run $(GREEN)make <command>$(NC) to execute any command above"
-	@echo "$(BLUE)━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━$(NC)"
+	@echo "$$HELP"
 
 install:
 	$(call PRINT_TITLE,"Installing Dependencies")
@@ -68,9 +66,7 @@ depcruise:
 	@echo "$(GREEN)✓ protocol/ boundary intact$(NC)"
 
 check:
-	$(MAKE) build
-	$(MAKE) depcruise
-	$(MAKE) test
+	@npm run check
 	@echo "$(GREEN)✓ All checks passed$(NC)"
 
 clean:
@@ -81,7 +77,7 @@ clean:
 
 rebuild: clean build
 
-all: clean build test
+all: clean check test
 	@echo "$(GREEN)✓ All complete$(NC)"
 
 run: rebuild

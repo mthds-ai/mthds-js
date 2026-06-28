@@ -65,7 +65,7 @@ export async function agentUpgrade(): Promise<void> {
     const recovery = BINARY_RECOVERY[key];
     if (!recovery) {
       process.stderr.write(
-        `Warning: no recovery info for binary "${key}" — skipping upgrade check. This is a bug.\n`
+        `Warning: no recovery info for binary "${key}" — skipping upgrade check. This is a bug.\n`,
       );
       continue;
     }
@@ -124,13 +124,13 @@ export async function agentUpgrade(): Promise<void> {
       } else {
         // "outdated" — install ran but didn't satisfy the constraint
         process.stderr.write(
-          `Warning: ${uvPkg} was installed but version ${postCheck.installed_version} still does not meet ${postCheck.version_constraint}.\n`
+          `Warning: ${uvPkg} was installed but version ${postCheck.installed_version} still does not meet ${postCheck.version_constraint}.\n`,
         );
         newVersion = postCheck.installed_version;
       }
     } catch (err) {
       process.stderr.write(
-        `Warning: post-upgrade version check failed for ${uvPkg}: ${errorMsg(err)}.\n`
+        `Warning: post-upgrade version check failed for ${uvPkg}: ${errorMsg(err)}.\n`,
       );
       newVersion = null;
     }
@@ -160,19 +160,17 @@ export async function agentUpgrade(): Promise<void> {
     clearCache();
     clearSnooze();
     process.stdout.write(
-      "UPGRADE_COMPLETE " + JSON.stringify({ upgraded: upgradedEntries }) + "\n"
+      "UPGRADE_COMPLETE " + JSON.stringify({ upgraded: upgradedEntries }) + "\n",
     );
   } else if (allFailed) {
     // Do NOT clear cache/snooze, do NOT write marker
-    process.stdout.write(
-      "UPGRADE_FAILED " + JSON.stringify({ failed: failedEntries }) + "\n"
-    );
+    process.stdout.write("UPGRADE_FAILED " + JSON.stringify({ failed: failedEntries }) + "\n");
   } else {
     // Partial — do NOT clear cache/snooze, do NOT write marker
     process.stdout.write(
       "UPGRADE_PARTIAL " +
         JSON.stringify({ upgraded: upgradedEntries, failed: failedEntries }) +
-        "\n"
+        "\n",
     );
   }
 }

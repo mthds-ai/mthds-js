@@ -17,22 +17,18 @@ export function generateShim(name: string, installDir: string): void {
 
   const shimPath = join(binDir, name);
   const escapedDir = installDir.replace(/'/g, "'\\''");
-  const shimContent = [
-    "#!/bin/sh",
-    `exec pipelex-agent run pipe "$@" -L '${escapedDir}'`,
-    "",
-  ].join("\n");
+  const shimContent = ["#!/bin/sh", `exec pipelex-agent run pipe "$@" -L '${escapedDir}'`, ""].join(
+    "\n",
+  );
 
   writeFileSync(shimPath, shimContent, { mode: 0o755 });
 
   if (process.platform === "win32") {
     const cmdPath = join(binDir, `${name}.cmd`);
     const cmdEscapedDir = installDir.replace(/%/g, "%%").replace(/"/g, '""');
-    const cmdContent = [
-      "@echo off",
-      `pipelex-agent run pipe %* -L "${cmdEscapedDir}"`,
-      "",
-    ].join("\r\n");
+    const cmdContent = ["@echo off", `pipelex-agent run pipe %* -L "${cmdEscapedDir}"`, ""].join(
+      "\r\n",
+    );
     writeFileSync(cmdPath, cmdContent, "utf-8");
   }
 }
@@ -61,7 +57,9 @@ export function writeMethodFiles(repo: ResolvedRepo, targetDirInput: string): vo
     for (const file of method.files) {
       const filePath = resolve(join(installDir, file.relativePath));
       if (!filePath.startsWith(installDir + sep)) {
-        throw new Error(`Path traversal detected: "${file.relativePath}" escapes install directory.`);
+        throw new Error(
+          `Path traversal detected: "${file.relativePath}" escapes install directory.`,
+        );
       }
       mkdirSync(dirname(filePath), { recursive: true });
       writeFileSync(filePath, file.content, "utf-8");

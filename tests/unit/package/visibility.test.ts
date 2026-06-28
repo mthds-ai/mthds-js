@@ -98,7 +98,11 @@ describe("PackageVisibilityChecker", () => {
   it("rejects cross-package references with unknown alias", () => {
     const manifest = makeManifest();
     const checker = new PackageVisibilityChecker(manifest, [
-      { domain: "legal", mainPipe: null, pipeReferences: [["unknown->scoring.compute", "pipe ref"]] },
+      {
+        domain: "legal",
+        mainPipe: null,
+        pipeReferences: [["unknown->scoring.compute", "pipe ref"]],
+      },
     ]);
     const errors = checker.validateCrossPackageReferences();
     expect(errors).toHaveLength(1);

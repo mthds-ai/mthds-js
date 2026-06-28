@@ -8,9 +8,6 @@ import {
   serializeLockFile,
   generateLockFile,
   verifyLockedPackage,
-  verifyLockFile,
-  HASH_PREFIX,
-  LOCK_FILENAME,
 } from "../../../src/package/lock-file.js";
 import { LockFileError, IntegrityError } from "../../../src/package/exceptions.js";
 
@@ -155,8 +152,16 @@ source = "http://github.com/org/repo"
     it("sorts entries by address", () => {
       const lock = {
         packages: {
-          "github.com/org/z": { version: "1.0.0", hash: `sha256:${"a".repeat(64)}`, source: "https://github.com/org/z" },
-          "github.com/org/a": { version: "2.0.0", hash: `sha256:${"b".repeat(64)}`, source: "https://github.com/org/a" },
+          "github.com/org/z": {
+            version: "1.0.0",
+            hash: `sha256:${"a".repeat(64)}`,
+            source: "https://github.com/org/z",
+          },
+          "github.com/org/a": {
+            version: "2.0.0",
+            hash: `sha256:${"b".repeat(64)}`,
+            source: "https://github.com/org/a",
+          },
         },
       };
       const output = serializeLockFile(lock);
@@ -183,18 +188,20 @@ source = "https://github.com/org/repo"
     it("generates lock entries for remote dependencies", () => {
       writeFileSync(join(tempDir, "file.txt"), "content");
 
-      const resolvedDeps = [{
-        alias: "dep",
-        address: "github.com/org/dep",
-        manifest: {
+      const resolvedDeps = [
+        {
+          alias: "dep",
           address: "github.com/org/dep",
-          version: "1.0.0",
-          description: "Dep",
-          authors: [],
-          exports: {},
+          manifest: {
+            address: "github.com/org/dep",
+            version: "1.0.0",
+            description: "Dep",
+            authors: [],
+            exports: {},
+          },
+          packageRoot: tempDir,
         },
-        packageRoot: tempDir,
-      }];
+      ];
 
       const lock = generateLockFile(resolvedDeps);
       expect(lock.packages["github.com/org/dep"]).toBeDefined();
@@ -204,12 +211,14 @@ source = "https://github.com/org/repo"
     });
 
     it("throws LockFileError for remote dep without manifest", () => {
-      const resolvedDeps = [{
-        alias: "dep",
-        address: "github.com/org/dep",
-        manifest: null,
-        packageRoot: tempDir,
-      }];
+      const resolvedDeps = [
+        {
+          alias: "dep",
+          address: "github.com/org/dep",
+          manifest: null,
+          packageRoot: tempDir,
+        },
+      ];
 
       expect(() => generateLockFile(resolvedDeps)).toThrow(LockFileError);
     });

@@ -5,7 +5,7 @@ const { execFileAsync } = vi.hoisted(() => ({
 }));
 
 vi.mock("node:child_process", () => {
-  const execFileMock: Record<string | symbol, unknown> = vi.fn();
+  const execFileMock = vi.fn() as ReturnType<typeof vi.fn> & Record<string | symbol, unknown>;
   execFileMock[Symbol.for("nodejs.util.promisify.custom")] = execFileAsync;
   return { execFile: execFileMock, spawn: vi.fn() };
 });
@@ -87,10 +87,9 @@ describe("PipelexRunner", () => {
     // non-zero with a cryptic 'Missing option --type' wrapped in execFileAsync's
     // truncated 'Command failed: ...' message.
     it("throws when type is omitted", async () => {
-      await expect(
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        runner.checkModel({ reference: "gpt-4o" } as any)
-      ).rejects.toThrow(/requires `type`/i);
+      await expect(runner.checkModel({ reference: "gpt-4o" } as any)).rejects.toThrow(
+        /requires `type`/i,
+      );
       expect(execFileAsync).not.toHaveBeenCalled();
     });
   });
@@ -260,8 +259,7 @@ describe("PipelexRunner", () => {
 
   describe("buildOutput", () => {
     it("passes -o to a temp file and reads it back", async () => {
-      const outputJson =
-        '{"concept":"native.Text","content":{"type":"object"}}';
+      const outputJson = '{"concept":"native.Text","content":{"type":"object"}}';
       execFileAsync.mockResolvedValue({ stdout: "", stderr: "" });
       mockedExistsSync.mockReturnValue(true);
       mockedReadFileSync.mockReturnValue(outputJson);
@@ -303,8 +301,7 @@ describe("PipelexRunner", () => {
     // Regression: pipelex build output --format python writes Python source code,
     // not JSON. Parsing it would crash. Schema/json formats remain JSON-parsed.
     it("returns raw string for --format python", async () => {
-      const pythonCode =
-        "from pydantic import BaseModel\n\nclass Out(BaseModel):\n    text: str\n";
+      const pythonCode = "from pydantic import BaseModel\n\nclass Out(BaseModel):\n    text: str\n";
       execFileAsync.mockResolvedValue({ stdout: "", stderr: "" });
       mockedExistsSync.mockReturnValue(true);
       mockedReadFileSync.mockReturnValue(pythonCode);
@@ -319,8 +316,7 @@ describe("PipelexRunner", () => {
     });
 
     it("JSON-parses --format schema output", async () => {
-      const schemaJson =
-        '{"$schema":"http://json-schema.org/draft-07/schema#","type":"object"}';
+      const schemaJson = '{"$schema":"http://json-schema.org/draft-07/schema#","type":"object"}';
       execFileAsync.mockResolvedValue({ stdout: "", stderr: "" });
       mockedExistsSync.mockReturnValue(true);
       mockedReadFileSync.mockReturnValue(schemaJson);
@@ -351,7 +347,7 @@ describe("PipelexRunner", () => {
         runner.buildOutput({
           mthds_contents: ["bundle content"],
           pipe_code: "test_pipe",
-        })
+        }),
       ).rejects.toThrow(/native\.Anything/);
       expect(mockedReadFileSync).not.toHaveBeenCalled();
     });
@@ -373,7 +369,7 @@ describe("PipelexRunner", () => {
             },
           },
           aliases: { main_stuff: "main_stuff" },
-        })
+        }),
       );
 
       const result = await runner.execute({ mthds_contents: ["bundle content"] });
@@ -396,32 +392,9 @@ describe("PipelexRunner", () => {
 
     it("throws `pipelex exited with code N` when the CLI fails", async () => {
       mockSpawnExit(1);
-      await expect(
-        runner.execute({ mthds_contents: ["bundle content"] })
-      ).rejects.toThrow(/pipelex exited with code 1/);
-    });
-  });
-
-  // The API runner polls a durable run; the pipelex runner has no run id, so its
-  // `startAndWaitForResult` override just runs `execute` blocking and adapts the
-  // result into the hosted `RunResults` shape (pipe_output, no main_stuff).
-  describe("startAndWaitForResult", () => {
-    it("delegates to execute and returns a RunResults with pipe_output (no main_stuff)", async () => {
-      mockSpawnExit(0);
-      mockedExistsSync.mockReturnValue(true);
-      mockedReadFileSync.mockReturnValue(
-        JSON.stringify({ root: {}, aliases: {} })
+      await expect(runner.execute({ mthds_contents: ["bundle content"] })).rejects.toThrow(
+        /pipelex exited with code 1/,
       );
-
-      const result = await runner.startAndWaitForResult({
-        mthds_contents: ["bundle content"],
-      });
-
-      expect(result.main_stuff).toBeNull();
-      expect(result.graph_spec).toBeNull();
-      expect(result.pipe_output).toMatchObject({
-        working_memory: { root: {}, aliases: {} },
-      });
     });
   });
 

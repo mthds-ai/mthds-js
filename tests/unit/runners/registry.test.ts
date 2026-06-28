@@ -74,9 +74,7 @@ describe("createRunner", () => {
   });
 
   it("throws on unknown runner type", () => {
-    expect(() => createRunner("unknown" as never)).toThrow(
-      "Unknown runner type: unknown"
-    );
+    expect(() => createRunner("unknown" as never)).toThrow("Unknown runner type: unknown");
   });
 });
 

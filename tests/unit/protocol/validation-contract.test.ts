@@ -1,7 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type {
-  ValidationResult,
-} from "../../../src/protocol/models.js";
+import type { ValidationResult } from "../../../src/protocol/models.js";
 import type {
   PipelexValidationResult,
   ValidationErrorCategory,

@@ -71,7 +71,7 @@ describe("generateShim", () => {
   });
 
   it("prevents shell injection via single-quoted installDir", () => {
-    const maliciousDir = '/path/to/$(whoami)/methods';
+    const maliciousDir = "/path/to/$(whoami)/methods";
     generateShim("safe-method", maliciousDir);
 
     const shimPath = join(tempHome, ".mthds", "bin", "safe-method");

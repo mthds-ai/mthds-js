@@ -10,7 +10,7 @@
  *   --runner=pipelex (default): all runner-aware commands are forwarded
  *     verbatim to pipelex-agent as passthrough.
  *   --runner=api: runner-aware commands are registered with full arg parsing
- *     and call the MTHDS API.
+ *     and call the Pipelex API.
  */
 
 import { Command, CommanderError, Option } from "commander";
@@ -34,7 +34,11 @@ import { agentShare } from "./agent/commands/share.js";
 import { checkBinaryVersion } from "./installer/runtime/version-check.js";
 import { uvToolInstallSync } from "./installer/runtime/installer.js";
 import { BINARY_RECOVERY, buildInstallCommand } from "./agent/binaries.js";
-import { agentPackageInit, agentPackageList, agentPackageValidate } from "./agent/commands/package.js";
+import {
+  agentPackageInit,
+  agentPackageList,
+  agentPackageValidate,
+} from "./agent/commands/package.js";
 import { createRunner } from "./runners/registry.js";
 import { Runners, RUNNER_NAMES } from "./runners/types.js";
 import type { RunnerType, Runner } from "./runners/types.js";
@@ -53,14 +57,22 @@ function resolveRunnerTypeFromArgv(): RunnerType {
   const argv = process.argv;
   let raw: string | undefined;
   for (let idx = 0; idx < argv.length; idx++) {
-    if (argv[idx] === "--runner" && argv[idx + 1]) { raw = argv[idx + 1]; break; }
+    if (argv[idx] === "--runner" && argv[idx + 1]) {
+      raw = argv[idx + 1];
+      break;
+    }
     const eqMatch = argv[idx]?.match(/^--runner=(.+)$/);
-    if (eqMatch) { raw = eqMatch[1]; break; }
+    if (eqMatch) {
+      raw = eqMatch[1];
+      break;
+    }
   }
   if (!raw) {
     // Fall back to config default
     try {
-      const configModule = require("./config/config.js") as { loadConfig: () => { runner?: string } };
+      const configModule = require("./config/config.js") as {
+        loadConfig: () => { runner?: string };
+      };
       const cfg = configModule.loadConfig();
       if (cfg.runner) raw = cfg.runner;
     } catch {
@@ -72,7 +84,7 @@ function resolveRunnerTypeFromArgv(): RunnerType {
   agentError(
     `Unknown runner: "${raw}". Valid values: ${RUNNER_NAMES.join(", ")}`,
     "ArgumentError",
-    { error_domain: AGENT_ERROR_DOMAINS.ARGUMENT }
+    { error_domain: AGENT_ERROR_DOMAINS.ARGUMENT },
   );
   throw new Error("unreachable");
 }
@@ -98,7 +110,12 @@ program
   .name("mthds-agent")
   .version(`mthds-agent ${pkg.version}`, "-V, --version")
   .description("Machine-oriented CLI for AI agents")
-  .option("-L, --library-dir <dir>", "Additional library directory (can be repeated)", collectPath, [] as string[])
+  .option(
+    "-L, --library-dir <dir>",
+    "Additional library directory (can be repeated)",
+    collectPath,
+    [] as string[],
+  )
   .option("--log-level <level>", `Log level (${LOG_LEVELS.join(", ")})`)
   .option("--auto-install", "Automatically install missing binaries before running")
   .option("--runner <type>", "Runner to use (api, pipelex)")
@@ -121,14 +138,19 @@ program
   .option("--no-runner", "Skip Pipelex runner install")
   .description("Install a method package (non-interactive)")
   .exitOverride()
-  .action(async (address: string | undefined, opts: {
-    local?: string;
-    location?: string;
-    method?: string;
-    runner?: boolean;
-  }) => {
-    await agentInstall(address, { ...opts, noRunner: opts.runner === false });
-  });
+  .action(
+    async (
+      address: string | undefined,
+      opts: {
+        local?: string;
+        location?: string;
+        method?: string;
+        runner?: boolean;
+      },
+    ) => {
+      await agentInstall(address, { ...opts, noRunner: opts.runner === false });
+    },
+  );
 
 // ── mthds-agent publish [address] ────────────────────────────────────
 
@@ -139,12 +161,17 @@ program
   .option("--method <name>", "Publish only the specified method (by name)")
   .description("Publish a method package to mthds.sh (telemetry only, no install)")
   .exitOverride()
-  .action(async (address: string | undefined, opts: {
-    local?: string;
-    method?: string;
-  }) => {
-    await agentPublish(address, opts);
-  });
+  .action(
+    async (
+      address: string | undefined,
+      opts: {
+        local?: string;
+        method?: string;
+      },
+    ) => {
+      await agentPublish(address, opts);
+    },
+  );
 
 // ── mthds-agent share [address] ──────────────────────────────────────
 
@@ -153,19 +180,32 @@ program
   .argument("[address]", "GitHub repo (org/repo or https://github.com/org/repo)")
   .option("--local <path>", "Share from a local directory")
   .option("--method <name>", "Share only the specified method (by name)")
-  .option("--platform <name>", "Platform to share on (x, reddit, linkedin). Can be repeated.", collectPlatform, [] as string[])
+  .option(
+    "--platform <name>",
+    "Platform to share on (x, reddit, linkedin). Can be repeated.",
+    collectPlatform,
+    [] as string[],
+  )
   .description("Get social media share URLs for a method package")
   .exitOverride()
-  .action(async (address: string | undefined, opts: {
-    local?: string;
-    method?: string;
-    platform?: string[];
-  }) => {
-    await agentShare(address, {
-      ...opts,
-      platform: opts.platform && opts.platform.length > 0 ? opts.platform as import("./cli/commands/share.js").SharePlatform[] : undefined,
-    });
-  });
+  .action(
+    async (
+      address: string | undefined,
+      opts: {
+        local?: string;
+        method?: string;
+        platform?: string[];
+      },
+    ) => {
+      await agentShare(address, {
+        ...opts,
+        platform:
+          opts.platform && opts.platform.length > 0
+            ? (opts.platform as import("./cli/commands/share.js").SharePlatform[])
+            : undefined,
+      });
+    },
+  );
 
 // ── mthds-agent config set|get|list ──────────────────────────────────
 
@@ -173,7 +213,10 @@ const config = program.command("config").description("Manage configuration").exi
 
 config
   .command("set")
-  .argument("<key>", "Config key (runner, base-url, api-key, telemetry, auto-upgrade, update-check)")
+  .argument(
+    "<key>",
+    "Config key (runner, base-url, api-key, telemetry, auto-upgrade, update-check)",
+  )
   .argument("<value>", "Value to set")
   .description("Set a config value")
   .exitOverride()
@@ -183,7 +226,10 @@ config
 
 config
   .command("get")
-  .argument("<key>", "Config key (runner, base-url, api-key, telemetry, auto-upgrade, update-check)")
+  .argument(
+    "<key>",
+    "Config key (runner, base-url, api-key, telemetry, auto-upgrade, update-check)",
+  )
   .description("Get a config value")
   .exitOverride()
   .action(async (key: string) => {
@@ -219,20 +265,22 @@ packageCmd
   .option("-C, --package-dir <path>", "Package directory (defaults to current directory)")
   .description("Initialize a new METHODS.toml")
   .exitOverride()
-  .action(async (opts: {
-    address: string;
-    version: string;
-    description: string;
-    authors?: string;
-    license?: string;
-    name?: string;
-    displayName?: string;
-    mainPipe?: string;
-    force?: boolean;
-    packageDir?: string;
-  }) => {
-    await agentPackageInit({ ...opts, directory: opts.packageDir });
-  });
+  .action(
+    async (opts: {
+      address: string;
+      version: string;
+      description: string;
+      authors?: string;
+      license?: string;
+      name?: string;
+      displayName?: string;
+      mainPipe?: string;
+      force?: boolean;
+      packageDir?: string;
+    }) => {
+      await agentPackageInit({ ...opts, directory: opts.packageDir });
+    },
+  );
 
 packageCmd
   .command("list")
@@ -259,10 +307,7 @@ const runnerCmd = program
   .description("Manage runner configuration")
   .exitOverride();
 
-const runnerSetup = runnerCmd
-  .command("setup")
-  .description("Set up a runner")
-  .exitOverride();
+const runnerSetup = runnerCmd.command("setup").description("Set up a runner").exitOverride();
 
 runnerSetup
   .command("pipelex")
@@ -273,7 +318,11 @@ runnerSetup
     const check = checkBinaryVersion(recovery);
 
     if (check.status === "ok") {
-      agentSuccess({ success: true, already_installed: true, message: "pipelex is already installed and up to date" });
+      agentSuccess({
+        success: true,
+        already_installed: true,
+        message: "pipelex is already installed and up to date",
+      });
       return;
     }
 
@@ -290,12 +339,14 @@ runnerSetup
 
     const postCheck = checkBinaryVersion(recovery);
     if (postCheck.status !== "ok") {
-      const detail = postCheck.status === "missing"
-        ? "pipelex was installed but is not reachable in PATH."
-        : `pipelex was ${action === "upgrade" ? "upgraded" : "installed"} but version check failed (status: ${postCheck.status}, installed: ${postCheck.installed_version}, needs: ${recovery.version_constraint}).`;
-      const hint = postCheck.status === "missing"
-        ? "Restart your shell or add the install directory to your PATH."
-        : `${action === "upgrade" ? "Upgrade" : "Install"} manually: ${buildInstallCommand(recovery)}`;
+      const detail =
+        postCheck.status === "missing"
+          ? "pipelex was installed but is not reachable in PATH."
+          : `pipelex was ${action === "upgrade" ? "upgraded" : "installed"} but version check failed (status: ${postCheck.status}, installed: ${postCheck.installed_version}, needs: ${recovery.version_constraint}).`;
+      const hint =
+        postCheck.status === "missing"
+          ? "Restart your shell or add the install directory to your PATH."
+          : `${action === "upgrade" ? "Upgrade" : "Install"} manually: ${buildInstallCommand(recovery)}`;
       agentError(detail, "InstallError", {
         error_domain: AGENT_ERROR_DOMAINS.INSTALL,
         hint,
@@ -304,7 +355,8 @@ runnerSetup
     agentSuccess({
       success: true,
       already_installed: action === "upgrade",
-      message: action === "upgrade" ? "pipelex upgraded successfully" : "pipelex installed successfully",
+      message:
+        action === "upgrade" ? "pipelex upgraded successfully" : "pipelex installed successfully",
       installed_version: postCheck.installed_version,
     });
   });
@@ -312,23 +364,18 @@ runnerSetup
 runnerSetup
   .command("api")
   .description("Set up the API runner")
-  .requiredOption("--api-key <key>", "API key for the MTHDS API")
+  .requiredOption("--api-key <key>", "API key for the Pipelex API")
   .option(
     "--base-url <url>",
-    "API base URL — host only, no version prefix (optional, uses the hosted default if omitted)"
+    "API base URL — host only, no version prefix (optional, uses the hosted default if omitted)",
   )
   .exitOverride()
-  .action(
-    async (options: {
-      apiKey: string;
-      baseUrl?: string;
-    }) => {
-      if (options.baseUrl) {
-        await agentConfigSet("base-url", options.baseUrl);
-      }
-      await agentConfigSet("api-key", options.apiKey);
+  .action(async (options: { apiKey: string; baseUrl?: string }) => {
+    if (options.baseUrl) {
+      await agentConfigSet("base-url", options.baseUrl);
     }
-  );
+    await agentConfigSet("api-key", options.apiKey);
+  });
 
 // ── mthds-agent plxt <cmd> [args...] ─────────────────────────────────
 
@@ -339,7 +386,11 @@ registerPlxtCommands(program, () => getAutoInstall(program));
 program
   .command("doctor")
   .description("Check binary dependencies, configuration, and overall health")
-  .addOption(new Option("--format <format>", "Output format").choices(["markdown", "json"]).default("markdown"))
+  .addOption(
+    new Option("--format <format>", "Output format")
+      .choices(["markdown", "json"])
+      .default("markdown"),
+  )
   .exitOverride()
   .action(async (options: { format?: string }) => {
     const fmt = options.format === "json" ? OutputFormat.JSON : OutputFormat.MARKDOWN;
@@ -396,7 +447,9 @@ codex
 
 codex
   .command("apply-config")
-  .description("Configure ~/.codex/ for the mthds plugin: enable sandbox network + plugin hooks, drop any obsolete hook entry")
+  .description(
+    "Configure ~/.codex/ for the mthds plugin: enable sandbox network + plugin hooks, drop any obsolete hook entry",
+  )
   .option("--check", "Exit non-zero if anything would change (no writes)")
   .option("--dry-run", "Print proposed diff and exit without modifying the file")
   .exitOverride()
@@ -429,7 +482,7 @@ program.action((_opts: unknown, cmd: Command) => {
       agentError(
         `Unknown command: ${cmd.args[0]}. Run mthds-agent --help for usage.`,
         "ArgumentError",
-        { error_domain: AGENT_ERROR_DOMAINS.ARGUMENT }
+        { error_domain: AGENT_ERROR_DOMAINS.ARGUMENT },
       );
     }
     return;

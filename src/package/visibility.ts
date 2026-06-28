@@ -1,7 +1,12 @@
 import type { BundleMetadata } from "./bundle-metadata.js";
 import type { ParsedManifest } from "./manifest/schema.js";
 import { RESERVED_DOMAINS, isReservedDomainPath } from "./manifest/schema.js";
-import { parsePipeRef, hasCrossPackagePrefix, splitCrossPackageRef, isLocalTo } from "./qualified-ref.js";
+import {
+  parsePipeRef,
+  hasCrossPackagePrefix,
+  splitCrossPackageRef,
+  isLocalTo,
+} from "./qualified-ref.js";
 import { QualifiedRefError } from "./exceptions.js";
 
 export interface VisibilityError {

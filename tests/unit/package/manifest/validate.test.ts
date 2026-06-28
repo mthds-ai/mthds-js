@@ -1,5 +1,8 @@
 import { describe, it, expect } from "vitest";
-import { validateManifest, collectAllExportedPipes } from "../../../../src/package/manifest/validate.js";
+import {
+  validateManifest,
+  collectAllExportedPipes,
+} from "../../../../src/package/manifest/validate.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -175,9 +178,7 @@ describe("validateManifest — invalid", () => {
   it("rejects missing [package] section", () => {
     const r = validateManifest("[exports]\n");
     expect(r.valid).toBe(false);
-    expect(r.errors).toContainEqual(
-      expect.stringContaining("[package] section is required")
-    );
+    expect(r.errors).toContainEqual(expect.stringContaining("[package] section is required"));
   });
 
   it("rejects missing address", () => {
@@ -189,9 +190,7 @@ description = "Test."
 `;
     const r = validateManifest(raw);
     expect(r.valid).toBe(false);
-    expect(r.errors).toContainEqual(
-      expect.stringContaining("[package.address]")
-    );
+    expect(r.errors).toContainEqual(expect.stringContaining("[package.address]"));
   });
 
   it("rejects missing version", () => {
@@ -203,9 +202,7 @@ description = "Test."
 `;
     const r = validateManifest(raw);
     expect(r.valid).toBe(false);
-    expect(r.errors).toContainEqual(
-      expect.stringContaining("[package.version]")
-    );
+    expect(r.errors).toContainEqual(expect.stringContaining("[package.version]"));
   });
 
   it("rejects missing description", () => {
@@ -217,9 +214,7 @@ version = "1.0.0"
 `;
     const r = validateManifest(raw);
     expect(r.valid).toBe(false);
-    expect(r.errors).toContainEqual(
-      expect.stringContaining("[package.description]")
-    );
+    expect(r.errors).toContainEqual(expect.stringContaining("[package.description]"));
   });
 
   it("rejects missing name", () => {
@@ -231,9 +226,7 @@ description = "Test."
 `;
     const r = validateManifest(raw);
     expect(r.valid).toBe(false);
-    expect(r.errors).toContainEqual(
-      expect.stringContaining("[package.name]")
-    );
+    expect(r.errors).toContainEqual(expect.stringContaining("[package.name]"));
   });
 
   it("rejects invalid name", () => {
@@ -246,9 +239,7 @@ description = "Test."
 `;
     const r = validateManifest(raw);
     expect(r.valid).toBe(false);
-    expect(r.errors).toContainEqual(
-      expect.stringContaining("[package.name]")
-    );
+    expect(r.errors).toContainEqual(expect.stringContaining("[package.name]"));
   });
 
   it("rejects address without hostname dot", () => {
@@ -261,9 +252,7 @@ description = "Test."
 `;
     const r = validateManifest(raw);
     expect(r.valid).toBe(false);
-    expect(r.errors).toContainEqual(
-      expect.stringContaining("hostname must contain a dot")
-    );
+    expect(r.errors).toContainEqual(expect.stringContaining("hostname must contain a dot"));
   });
 
   it("rejects invalid semver version", () => {
@@ -276,9 +265,7 @@ description = "Test."
 `;
     const r = validateManifest(raw);
     expect(r.valid).toBe(false);
-    expect(r.errors).toContainEqual(
-      expect.stringContaining("valid semver")
-    );
+    expect(r.errors).toContainEqual(expect.stringContaining("valid semver"));
   });
 
   it("rejects empty description", () => {
@@ -291,9 +278,7 @@ description = ""
 `;
     const r = validateManifest(raw);
     expect(r.valid).toBe(false);
-    expect(r.errors).toContainEqual(
-      expect.stringContaining("[package.description]")
-    );
+    expect(r.errors).toContainEqual(expect.stringContaining("[package.description]"));
   });
 
   it("rejects display_name over 25 chars", () => {
@@ -308,9 +293,7 @@ display_name = "${longName}"
 `;
     const r = validateManifest(raw);
     expect(r.valid).toBe(false);
-    expect(r.errors).toContainEqual(
-      expect.stringContaining("at most 25 characters")
-    );
+    expect(r.errors).toContainEqual(expect.stringContaining("at most 25 characters"));
   });
 
   it("rejects authors that is not an array", () => {
@@ -324,9 +307,7 @@ authors = "single-string"
 `;
     const r = validateManifest(raw);
     expect(r.valid).toBe(false);
-    expect(r.errors).toContainEqual(
-      expect.stringContaining("[package.authors] must be an array")
-    );
+    expect(r.errors).toContainEqual(expect.stringContaining("[package.authors] must be an array"));
   });
 
   it("rejects license that is not a string", () => {
@@ -340,9 +321,7 @@ license = 42
 `;
     const r = validateManifest(raw);
     expect(r.valid).toBe(false);
-    expect(r.errors).toContainEqual(
-      expect.stringContaining("[package.license] must be a string")
-    );
+    expect(r.errors).toContainEqual(expect.stringContaining("[package.license] must be a string"));
   });
 
   it("rejects reserved export prefix (native)", () => {
@@ -352,9 +331,7 @@ pipes = ["do_thing"]
 `);
     const r = validateManifest(raw);
     expect(r.valid).toBe(false);
-    expect(r.errors).toContainEqual(
-      expect.stringContaining('reserved prefix "native"')
-    );
+    expect(r.errors).toContainEqual(expect.stringContaining('reserved prefix "native"'));
   });
 
   it("rejects reserved export prefix (mthds)", () => {
@@ -364,9 +341,7 @@ pipes = ["do_thing"]
 `);
     const r = validateManifest(raw);
     expect(r.valid).toBe(false);
-    expect(r.errors).toContainEqual(
-      expect.stringContaining('reserved prefix "mthds"')
-    );
+    expect(r.errors).toContainEqual(expect.stringContaining('reserved prefix "mthds"'));
   });
 
   it("rejects reserved export prefix (pipelex)", () => {
@@ -376,9 +351,7 @@ pipes = ["do_thing"]
 `);
     const r = validateManifest(raw);
     expect(r.valid).toBe(false);
-    expect(r.errors).toContainEqual(
-      expect.stringContaining('reserved prefix "pipelex"')
-    );
+    expect(r.errors).toContainEqual(expect.stringContaining('reserved prefix "pipelex"'));
   });
 
   it("rejects non-snake_case pipe name in exports", () => {
@@ -388,9 +361,7 @@ pipes = ["BadName"]
 `);
     const r = validateManifest(raw);
     expect(r.valid).toBe(false);
-    expect(r.errors).toContainEqual(
-      expect.stringContaining('"BadName" must be snake_case')
-    );
+    expect(r.errors).toContainEqual(expect.stringContaining('"BadName" must be snake_case'));
   });
 
   it("rejects any dependencies section with generic error", () => {
@@ -403,17 +374,13 @@ dep = { address = "github.com/a/b", version = "1.0.0" }
 `);
     const r = validateManifest(raw);
     expect(r.valid).toBe(false);
-    expect(r.errors).toContainEqual(
-      expect.stringContaining("not supported")
-    );
+    expect(r.errors).toContainEqual(expect.stringContaining("not supported"));
   });
 
   it("rejects malformed TOML", () => {
     const r = validateManifest("this is [[ not valid toml");
     expect(r.valid).toBe(false);
-    expect(r.errors).toContainEqual(
-      expect.stringContaining("TOML parse error")
-    );
+    expect(r.errors).toContainEqual(expect.stringContaining("TOML parse error"));
   });
 
   it("collects multiple errors at once", () => {
@@ -439,9 +406,7 @@ description = "Test."
 `;
     const r = validateManifest(raw);
     expect(r.valid).toBe(false);
-    expect(r.errors).toContainEqual(
-      expect.stringContaining("[exports] section is required")
-    );
+    expect(r.errors).toContainEqual(expect.stringContaining("[exports] section is required"));
   });
 
   it("rejects main_pipe not in exports", () => {
@@ -459,7 +424,7 @@ pipes = ["classify_document"]
     const r = validateManifest(raw);
     expect(r.valid).toBe(false);
     expect(r.errors).toContainEqual(
-      expect.stringContaining('[package.main_pipe] "nonexistent_pipe" must be listed')
+      expect.stringContaining('[package.main_pipe] "nonexistent_pipe" must be listed'),
     );
   });
 });

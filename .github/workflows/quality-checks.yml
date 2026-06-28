@@ -1,4 +1,4 @@
-# Runs `make check` (build + tests) on every PR. Its status check is required
+# Runs `make all` (checks + tests) on every PR. Its status check is required
 # by the branch-protection ruleset before anything can merge into main.
 name: Quality Checks
 
@@ -25,5 +25,5 @@ jobs:
       - name: Install dependencies
         run: make install
 
-      - name: Run quality checks
-        run: make check
+      - name: Run quality checks and tests
+        run: make all

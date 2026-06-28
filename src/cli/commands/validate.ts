@@ -44,7 +44,7 @@ async function validateWithPipelexPassthrough(
 export async function validateMethod(_target: string, options: ValidateOptions): Promise<void> {
   return validateWithPipelexPassthrough(
     "mthds validate method",
-    "Method target is not yet supported for the API runner. Use 'mthds validate pipe <target>' instead.\nYou can also specify a different runner with --runner <name>, or change the default with 'mthds set-default runner <name>'.",
+    "Method target is not yet supported for the API runner. Use 'mthds validate pipe <target>' instead.\nYou can also specify a different runner with --runner <name>, or change the default with 'mthds runner set-default <name>'.",
     options,
   );
 }
@@ -52,7 +52,7 @@ export async function validateMethod(_target: string, options: ValidateOptions):
 export async function validateBundle(_target: string, options: ValidateOptions): Promise<void> {
   return validateWithPipelexPassthrough(
     "mthds validate bundle",
-    "Bundle target is only supported with the pipelex runner.\nYou can specify a different runner with --runner <name>, or change the default with 'mthds set-default runner <name>'.",
+    "Bundle target is only supported with the pipelex runner.\nYou can specify a different runner with --runner <name>, or change the default with 'mthds runner set-default <name>'.",
     options,
   );
 }

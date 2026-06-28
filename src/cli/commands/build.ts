@@ -36,7 +36,7 @@ export async function buildRunnerMethod(
   }
 
   p.log.error(
-    "Method target is not yet supported for the API runner. Use 'mthds build runner pipe <target>' instead.\nYou can also specify a different runner with --runner <name>, or change the default with 'mthds set-default runner <name>'.",
+    "Method target is not yet supported for the API runner. Use 'mthds build runner pipe <target>' instead.\nYou can also specify a different runner with --runner <name>, or change the default with 'mthds runner set-default <name>'.",
   );
   p.outro("");
   process.exit(1);
@@ -139,7 +139,7 @@ export async function buildInputsMethod(
   }
 
   p.log.error(
-    "Method target is not yet supported for the API runner. Use 'mthds build inputs pipe <target>' instead.\nYou can also specify a different runner with --runner <name>, or change the default with 'mthds set-default runner <name>'.",
+    "Method target is not yet supported for the API runner. Use 'mthds build inputs pipe <target>' instead.\nYou can also specify a different runner with --runner <name>, or change the default with 'mthds runner set-default <name>'.",
   );
   p.outro("");
   process.exit(1);
@@ -230,7 +230,7 @@ export async function buildOutputMethod(
   }
 
   p.log.error(
-    "Method target is not yet supported for the API runner. Use 'mthds build output pipe <target>' instead.\nYou can also specify a different runner with --runner <name>, or change the default with 'mthds set-default runner <name>'.",
+    "Method target is not yet supported for the API runner. Use 'mthds build output pipe <target>' instead.\nYou can also specify a different runner with --runner <name>, or change the default with 'mthds runner set-default <name>'.",
   );
   p.outro("");
   process.exit(1);

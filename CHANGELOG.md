@@ -1,6 +1,16 @@
 # Changelog
 
-## [v0.14.0] - 2026-06-27
+## [v0.13.0] - 2026-06-28
+
+This minor both exposes the pure protocol surface as a subpath (additive) and pulls the durable run-lifecycle out of `mthds-js` (breaking). They ship in one release: `0.13.0` was never published, so the run-lifecycle removal lands in the same minor as the subpath export instead of minting a separate `0.14.0`.
+
+### Added — `mthds/protocol` subpath export
+
+- **`mthds/protocol` subpath export:** The pure MTHDS Protocol surface (interface, wire models, request/options surface, abstract domain shapes, and the protocol-base `PipelineRequestError`) is now published as a dedicated `mthds/protocol` subpath via a new `src/protocol/index.ts` barrel. This lets downstream packages (notably `@pipelex/sdk`) import the protocol wire types without pulling in the runner/CLI surface. The barrel is import-pure (no `runners/`, `cli/`, `agent/`, `config/`), enforced by the existing `dependency-cruiser` `protocol-stays-pure` rule.
+
+### Changed
+
+- **Single-source protocol exports:** The top-level `mthds` barrel (`src/index.ts`) now re-exports the protocol surface wholesale from the `protocol/` barrel (`export * from "./protocol/index.js"`) instead of listing each protocol type itself, so the `.` and `./protocol` entry points cannot drift. This re-export change is itself additive — it doesn't alter the public surface of `mthds` (the removal below does).
 
 ### Removed — durable run-lifecycle pulled out of `mthds-js`
 
@@ -10,16 +20,6 @@ The durable run-lifecycle (poll a run by id) is a hosted-API extension, not part
 - **Exceptions removed:** `RunFailedError`, `RunTimeoutError`, `RunLifecycleUnavailableError` are gone from the public barrel. `PipelineExecuteTimeoutError` and `RunStillRunningError` stay (transport/202-degrade errors), reworded to point at the durable run API now provided by `@pipelex/sdk` / `pipelex-agent`.
 - **Types removed from the barrel:** `RunStatus`, `RunPublic`, `RunRead`, `RunResults`, `RunResultState`, `WaitForResultOptions`, and the `isTerminalRunStatus` / `isSuccessRunStatus` helpers. The protocol surface (`execute` / `start` / `validate` / `models` / `version`), the build helpers, the Pipelex-rich `validate` (`PipelexValidationResult`), and `DryRunStatus` are unchanged.
 - **CLIs:** `mthds run` (API runner) now executes via the blocking `POST /v1/execute` instead of the durable start+poll. The durable `mthds-agent --runner api run` subcommands `run status`, `run result`, `run poll`, and the durable `run pipe` / `run bundle` were removed (`run start` — the protocol `POST /v1/start` — and the `run method` stub are kept). These removed agent commands are slated to return on a `pipelex-agent` bin over `@pipelex/sdk`.
-
-## [v0.13.0] - 2026-06-27
-
-### Added
-
-- **`mthds/protocol` subpath export:** The pure MTHDS Protocol surface (interface, wire models, request/options surface, abstract domain shapes, and the protocol-base `PipelineRequestError`) is now published as a dedicated `mthds/protocol` subpath via a new `src/protocol/index.ts` barrel. This lets downstream packages (notably `@pipelex/sdk`) import the protocol wire types without pulling in the runner/CLI surface. The barrel is import-pure (no `runners/`, `cli/`, `agent/`, `config/`), enforced by the existing `dependency-cruiser` `protocol-stays-pure` rule.
-
-### Changed
-
-- **Single-source protocol exports:** The top-level `mthds` barrel (`src/index.ts`) now re-exports the protocol surface wholesale from the `protocol/` barrel (`export * from "./protocol/index.js"`) instead of listing each protocol type itself, so the `.` and `./protocol` entry points cannot drift. Purely additive — the public surface of `mthds` is unchanged.
 
 ## [v0.12.1] - 2026-06-22
 

@@ -18,6 +18,10 @@
     "./protocol": {
       "import": "./dist/protocol/index.js",
       "types": "./dist/protocol/index.d.ts"
+    },
+    "./errors": {
+      "import": "./dist/errors.js",
+      "types": "./dist/errors.d.ts"
     }
   },
   "bin": {

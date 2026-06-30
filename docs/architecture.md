@@ -60,6 +60,8 @@ The top-level barrel can't be imported from a client bundle: re-exporting `Mthds
 
 So `mthds/errors` re-exports only the exception classes — `ApiResponseError`, `ApiUnreachableError`, `ClientAuthenticationError`, `PipelineExecuteTimeoutError`, `RunStillRunningError`, and the protocol base `PipelineRequestError`. Its graph is `protocol/exceptions` (zero imports) plus `runners/api/exceptions` (whose only runtime import is `protocol/exceptions`), so it carries no `node:fs` and survives a browser/client bundler. Client-reachable code imports error classes from here; server code that needs the client keeps importing `MthdsApiClient` from `mthds`. The two error sets cannot drift — both re-export from the same source modules.
 
+See [errors.md](./errors.md) for the full taxonomy — each class's fields, when it is thrown, the inheritance tree, and how to classify an error in client code.
+
 ## Design decisions
 
 ### The protocol interface is generic
@@ -109,5 +111,6 @@ There is one class, not a client wrapped by a runner. `MthdsApiClient implements
 
 ## See also
 
+- [errors.md](./errors.md) — the full exception taxonomy (`mthds/errors`): each class, its fields, when it is thrown, and client-side classification.
 - [run-lifecycle.md](./run-lifecycle.md) — the `execute` / `start` run model these types back.
 - [api-runner.md](./api-runner.md) — pointing the client at a hosted or self-hosted runner.

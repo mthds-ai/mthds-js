@@ -98,3 +98,4 @@ const result = await client.startAndWaitForResult({
 - [`@pipelex/sdk`](https://github.com/Pipelex/pipelex-sdk-js) — the Pipelex runtime SDK that provides the durable run-lifecycle (poll-by-id) and the `pipelex-agent` CLI.
 - [api-runner.md](./api-runner.md) — pointing `mthds-js` at a hosted or self-hosted runner, and the timeout/run-store differences between them.
 - [architecture.md](./architecture.md) — the `RunResultExecute` / `RunResultStart` types and why the run response is split.
+- [errors.md](./errors.md) — `PipelineExecuteTimeoutError` and `RunStillRunningError` (the `202` degrade) in full, with the rest of the exception taxonomy.

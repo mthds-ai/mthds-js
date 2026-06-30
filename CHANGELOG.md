@@ -1,5 +1,15 @@
 # Changelog
 
+## [v0.15.0] - 2026-06-30
+
+### Changed — `MthdsApiClient.validate()` returns the standard's neutral verdict (breaking)
+
+The Pipelex-API narrowing of the `/v1/validate` verdict is removed from `mthds`; the standard's client now returns the standard's neutral verdict. This is the MTHDS/Pipelex brand boundary applied to the validate surface — the Pipelex-branded narrowing belongs to the runtime SDK (`@pipelex/sdk`), not the standard package.
+
+- **`MthdsApiClient.validate()` / `validateFiles()` now return the protocol's neutral `ValidationResult`** (`ValidationReport | InvalidValidationReport`) instead of `PipelexValidationResult`. The valid arm exposes only the `is_valid: true` discriminant (server-added structural artifacts — `bundle_blueprint`, `graph_spec`, `validated_pipes`, … — ride the extension index signature, preserved but untyped); the invalid arm exposes the standard `validation_errors[]` (`category` + `message`), `pending_signatures`, `is_runnable`, `message`. The wire is unchanged — only the static type narrows.
+- **Removed from the public barrel:** `PipelexValidationReport`, `PipelexInvalidReport`, `PipelexValidationResult`, and the narrowing-only supporting types `ValidatedPipeEntry` and `DryRunStatus`. A consumer that wants the typed structural artifacts (or the closed-vocabulary `validation_errors[]` / the opt-in `rendered_markdown`) uses `@pipelex/sdk`'s `PipelexApiClient` / `PipelexValidationResult`.
+- **Kept:** the neutral `Dict*` concretes (`DictStuff`, `DictWorkingMemory`, `DictPipeOutput`, `DictRunResultExecute`) and `ValidationErrorItem` / `ValidationErrorCategory` — the latter still type the **build routes'** `422` problem bodies (`ApiResponseError.validationErrors`). They are neutrally named, so no brand violation.
+
 ## [v0.14.0] - 2026-06-30
 
 ### Added

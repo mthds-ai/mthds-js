@@ -469,7 +469,7 @@ describe("MthdsApiClient.validate", () => {
     expect(body.allow_signatures).toBe(false);
   });
 
-  it("returns the typed PipelexValidationReport fields on a valid 200", async () => {
+  it("returns the neutral valid verdict on a 200, preserving server extension fields", async () => {
     const client = makeClient();
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
       jsonResponse(200, {
@@ -487,10 +487,15 @@ describe("MthdsApiClient.validate", () => {
     const report = await client.validate(["domain = 'x'"]);
     expect(report.is_valid).toBe(true);
     if (report.is_valid === false) throw new Error("expected a valid report");
-    expect(report.validated_pipes[0]).toEqual({ pipe_ref: "x.greet", status: "SUCCESS" });
-    expect(report.pending_signatures).toEqual([]);
-    expect(report.is_runnable).toBe(true);
-    expect(report.graph_spec).toBeNull();
+    // `validate()` returns the protocol's neutral `ValidationResult`; the structural
+    // artifacts ride the extension index signature (typed `unknown` here, typed in
+    // `@pipelex/sdk`'s `PipelexValidationReport`) but are preserved verbatim.
+    expect(report).toMatchObject({
+      validated_pipes: [{ pipe_ref: "x.greet", status: "SUCCESS" }],
+      pending_signatures: [],
+      is_runnable: true,
+      graph_spec: null,
+    });
   });
 
   it("returns the InvalidReport arm (200, is_valid: false) for an invalid bundle — not a throw", async () => {
@@ -530,7 +535,9 @@ describe("MthdsApiClient.validate", () => {
       source: "broken.mthds",
     });
     expect(report.validation_errors[1]!.category).toBe("pipe_factory");
-    expect(report.validation_errors[1]!.missing_concept_code).toBe("demo.Missing");
+    // `missing_concept_code` rides the wire but is not on the neutral `ValidationError`
+    // (it is typed on the SDK's `ValidationErrorItem`) — assert its preservation.
+    expect(report.validation_errors[1]).toMatchObject({ missing_concept_code: "demo.Missing" });
   });
 
   it("sends mthds_sources parallel to mthds_contents when provided", async () => {

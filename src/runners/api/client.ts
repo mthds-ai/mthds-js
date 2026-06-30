@@ -16,13 +16,10 @@ import type {
   ModelCategory,
   ModelDeck,
   RunResultStart,
+  ValidationResult,
   VersionInfo,
 } from "../../protocol/models.js";
-import type {
-  DictRunResultExecute,
-  PipelexValidationResult,
-  ValidationErrorItem,
-} from "./models.js";
+import type { DictRunResultExecute, ValidationErrorItem } from "./models.js";
 import {
   ApiResponseError,
   ApiUnreachableError,
@@ -390,9 +387,12 @@ export class MthdsApiClient implements Runner {
    * Parse, validate, and dry-run an MTHDS bundle — `POST /v1/validate`.
    *
    * `/validate` is a diagnostic endpoint: every produced verdict rides a **200**,
-   * discriminated on `is_valid`. This returns the `PipelexValidationResult` union
-   * verbatim — `is_valid: true` ⇒ the typed `PipelexValidationReport` (structural
-   * artifacts), `is_valid: false` ⇒ a `PipelexInvalidReport` (`validation_errors[]`).
+   * discriminated on `is_valid`. This returns the protocol's neutral
+   * `ValidationResult` union verbatim — `is_valid: true` ⇒ a `ValidationReport`,
+   * `is_valid: false` ⇒ an `InvalidValidationReport` (`validation_errors[]`). The
+   * Pipelex-API narrowing of both arms (the typed structural artifacts, the
+   * closed-vocabulary `validation_errors[]`) lives in the runtime SDK
+   * (`@pipelex/sdk`'s `PipelexValidationResult`), not in the standard's client.
    * An invalid bundle is NOT thrown — the caller pattern-matches `is_valid`. Only a
    * *no-verdict* condition (a malformed request, an `mthds_sources` length mismatch,
    * auth, a server fault) is non-2xx and surfaces as `ApiResponseError`.
@@ -413,7 +413,7 @@ export class MthdsApiClient implements Runner {
     allowSignatures = false,
     mthdsSources?: string[],
     render?: string[],
-  ): Promise<PipelexValidationResult> {
+  ): Promise<ValidationResult> {
     const body: Record<string, unknown> = {
       mthds_contents: mthdsContents,
       allow_signatures: allowSignatures,
@@ -426,7 +426,7 @@ export class MthdsApiClient implements Runner {
     if (res.status < 200 || res.status >= 300) {
       this.throwApiResponseError("POST", "validate", res);
     }
-    return JSON.parse(res.body) as PipelexValidationResult;
+    return JSON.parse(res.body) as ValidationResult;
   }
 
   /**
@@ -440,7 +440,7 @@ export class MthdsApiClient implements Runner {
   async validateFiles(
     files: MthdsFile[],
     options: ValidateFilesOptions = {},
-  ): Promise<PipelexValidationResult> {
+  ): Promise<ValidationResult> {
     if (files.length === 0) {
       throw new PipelineRequestError(
         "At least one MTHDS file must be provided to validateFiles().",

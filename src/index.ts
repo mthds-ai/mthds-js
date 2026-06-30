@@ -32,17 +32,19 @@ export {
   RunStillRunningError,
 } from "./runners/api/exceptions.js";
 
-// ── Dict-serialized concretes + Pipelex-API validate types (runners/api) ──
+// ── Dict-serialized concretes + build-route validation-error item (runners/api) ──
+//
+// The Pipelex-API `/v1/validate` narrowing (`PipelexValidationResult` and its
+// arms) is NOT exported here — it lives in the runtime SDK (`@pipelex/sdk`).
+// `MthdsApiClient.validate()` returns the protocol's neutral `ValidationResult`
+// (re-exported via the protocol barrel above). `ValidationErrorItem` /
+// `ValidationErrorCategory` remain because they type the build routes' `422`
+// problem bodies (`ApiResponseError.validationErrors`).
 export type {
   DictStuff,
   DictWorkingMemory,
   DictPipeOutput,
   DictRunResultExecute,
-  PipelexValidationReport,
-  PipelexInvalidReport,
-  PipelexValidationResult,
-  ValidatedPipeEntry,
-  DryRunStatus,
   ValidationErrorItem,
   ValidationErrorCategory,
 } from "./runners/api/models.js";

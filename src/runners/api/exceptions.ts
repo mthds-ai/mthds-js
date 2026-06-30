@@ -114,8 +114,9 @@ export class ApiResponseError extends PipelineRequestError {
    * reject an invalid bundle with a 422.
    *
    * `POST /v1/validate` no longer routes content errors here: an invalid bundle is
-   * a produced verdict (a **200** `PipelexInvalidReport` whose `validation_errors[]`
-   * the caller reads off the returned value), not an `ApiResponseError`. This field
+   * a produced verdict (a **200** `ValidationResult` invalid arm whose
+   * `validation_errors[]` the caller reads off the returned value), not an
+   * `ApiResponseError`. This field
    * stays for the build-route 422s and is `undefined` for any error that carries no
    * per-error list (auth, transport, a request-shape 422). A consumer must NOT
    * assume a given `error_type` implies a populated list — fall back to

@@ -17,7 +17,8 @@ import type {
  * `execute`, `start`, `validate`, `models`, `version`. A runner is just a
  * runner: it executes and validates methods, and reports its model deck and
  * version. Run polling is NOT part of the protocol — it is a hosted-API
- * extension carried by `MthdsApiClient` and the `Runner` interface only.
+ * extension that now lives in the Pipelex runtime SDK (`@pipelex/sdk` /
+ * `pipelex-agent`), not in this package.
  *
  * Generic in `PipeOutputT` (mirroring python's `Generic[PipeOutputT]`): the
  * generic is the mechanism that keeps `protocol/` pure — `execute` returns

@@ -25,7 +25,7 @@ src/
 │   ├── validate.ts                 # mthds validate
 │   ├── build.ts                    # mthds build runner|inputs|output
 │   ├── config.ts                   # mthds config set|get|list
-│   ├── setup.ts                    # mthds setup runner
+│   ├── setup.ts                    # mthds runner setup
 │   ├── install.ts                  # mthds install (JS-only)
 │   └── package/stubs.ts            # mthds package <cmd> (stubs)
 ├── protocol/                       # PURE MTHDS Protocol (interface + wire models) — see docs/architecture.md

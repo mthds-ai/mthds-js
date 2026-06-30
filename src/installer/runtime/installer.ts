@@ -58,7 +58,7 @@ export function installUv(): void {
 
 /**
  * Ensure pipelex is installed, using uv tool install with spinner feedback.
- * Used by interactive CLI commands (mthds install, mthds setup, etc.).
+ * Used by interactive CLI commands (mthds install, mthds runner setup, etc.).
  */
 export async function ensureRuntime(): Promise<void> {
   if (!isPipelexInstalled()) {

@@ -55,7 +55,7 @@ mthds config set base-url https://api.pipelex.com
 mthds config set api-key YOUR_KEY
 ```
 
-Or run `mthds setup runner api` for an interactive prompt (base URL + masked key).
+Or run `mthds runner setup api` for an interactive prompt (base URL + masked key).
 
 ### Self-hosted
 

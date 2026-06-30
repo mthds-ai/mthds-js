@@ -51,14 +51,14 @@ The package's entry points differ in what they drag into a bundler's graph:
 | Import | Source | Carries | Bundles where | Use for |
 |---|---|---|---|---|
 | `mthds` | `src/index.ts` | protocol surface + `MthdsApiClient` + error classes | **server/Node** (statically pulls `MthdsApiClient → config/ → node:fs`) | the full SDK |
-| `mthds/protocol` | `src/protocol/index.ts` | the pure protocol surface (types only) | isomorphic | types, with no runner or Node deps |
+| `mthds/protocol` | `src/protocol/index.ts` | the pure protocol surface — types + runtime values (`PipelineRequestError`, `MTHDS_PROTOCOL_VERSION`/`MODEL_CATEGORIES`, `conceptRef`) | isomorphic | the protocol surface, with no runner or Node deps |
 | `mthds/errors` | `src/errors.ts` | the exception classes only | **client-safe** (no `node:fs`) | `instanceof` checks in client code |
 
 ### Why `mthds/errors` exists
 
 The top-level barrel can't be imported from a client bundle: re-exporting `MthdsApiClient` drags `config/ → node:fs` into the graph, which a bundler like Turbopack cannot externalize — even for a consumer that only wanted an error class for an `instanceof` check (a Next.js client component classifying a Server Action rejection is the motivating case).
 
-So `mthds/errors` re-exports only the exception classes — `ApiResponseError`, `ApiUnreachableError`, `ClientAuthenticationError`, `PipelineExecuteTimeoutError`, `RunStillRunningError`, and the protocol base `PipelineRequestError`. Its graph is `protocol/exceptions` (zero imports) plus `runners/api/exceptions` (which imports only `protocol/exceptions`), so it carries no `node:fs` and survives a browser/client bundler. Client-reachable code imports error classes from here; server code that needs the client keeps importing `MthdsApiClient` from `mthds`. The two error sets cannot drift — both re-export from the same source modules.
+So `mthds/errors` re-exports only the exception classes — `ApiResponseError`, `ApiUnreachableError`, `ClientAuthenticationError`, `PipelineExecuteTimeoutError`, `RunStillRunningError`, and the protocol base `PipelineRequestError`. Its graph is `protocol/exceptions` (zero imports) plus `runners/api/exceptions` (whose only runtime import is `protocol/exceptions`), so it carries no `node:fs` and survives a browser/client bundler. Client-reachable code imports error classes from here; server code that needs the client keeps importing `MthdsApiClient` from `mthds`. The two error sets cannot drift — both re-export from the same source modules.
 
 ## Design decisions
 

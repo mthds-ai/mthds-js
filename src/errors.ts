@@ -13,8 +13,8 @@
  *
  * These are the same error classes the top-level barrel exports; the two cannot
  * drift because both re-export from the same source modules. The graph here is
- * `protocol/exceptions` (zero imports) + `runners/api/exceptions` (imports only
- * `protocol/exceptions`), so it stays free of Node built-ins.
+ * `protocol/exceptions` (zero imports) + `runners/api/exceptions` (whose only
+ * runtime import is `protocol/exceptions`), so it stays free of Node built-ins.
  */
 
 // ── Protocol-base error (pure protocol layer — no Node deps) ──

@@ -10,11 +10,7 @@
  * the protocol's `RunResultExecute` carrying a `DictPipeOutput`.
  */
 
-import type {
-  InvalidValidationReport,
-  RunResultExecute,
-  ValidationReport,
-} from "../../protocol/models.js";
+import type { RunResultExecute } from "../../protocol/models.js";
 
 export interface DictStuff {
   concept: string;
@@ -46,92 +42,17 @@ export interface DictPipeOutput {
  */
 export type DictRunResultExecute = RunResultExecute<DictPipeOutput>;
 
-// ── Validate surface (Pipelex-API extensions over the protocol) ──────────
+// ── Build-route validation errors (Pipelex-API layer 2 — `/v1/build/*`) ──
 //
-// `POST /v1/validate` is a diagnostic endpoint: every produced verdict rides a
-// 200, discriminated on `is_valid` (the protocol's `ValidationResult` union).
-// The Pipelex API narrows both arms: the VALID arm is the canonical
-// `PipelexValidationReport` body (mirror of `pipelex/pipeline/validation_report.py`)
-// plus a couple of wire-only extras; the INVALID arm is `PipelexInvalidReport`,
-// carrying a structured `validation_errors[]` list (`ValidationErrorItem[]`) — see
-// below. Non-2xx is reserved for no-verdict conditions (a malformed request, an
-// `mthds_sources` length mismatch, auth, a server fault), surfaced as `ApiResponseError`.
-
-/** Per-pipe dry-run verdict in `validated_pipes[]` — mirror of pipelex's `DryRunStatus`. */
-export type DryRunStatus = "SUCCESS" | "FAILURE" | "SKIPPED";
-
-/** One entry of `PipelexValidationReport.validated_pipes` — `{pipe_ref, status}`. */
-export interface ValidatedPipeEntry {
-  /** Namespaced `pipe_ref` (`domain.code`) — never the bare code. */
-  pipe_ref: string;
-  status: DryRunStatus;
-}
-
-/**
- * Pipelex's `POST /v1/validate` 200 body for a VALID bundle — the canonical
- * `PipelexValidationReport` (typed extension over the protocol's `ValidationReport`,
- * carrying its `is_valid: true` discriminant) plus the route's wire-only extras
- * (`message`, the `mthds_contents` echo). Field names follow the MTHDS brand
- * boundary — blueprints/graphs are language artifacts, so no `pipelex_` prefix
- * inside this envelope.
- *
- * `bundle_blueprint`, `pipe_io_contracts`, and `graph_spec` stay opaque transport
- * (`Record<string, unknown>` / `unknown`): their canonical schemas are owned
- * elsewhere (the runtime's blueprint models; `@pipelex/mthds-ui` owns `GraphSpec`),
- * and the extension casts `graph_spec` to the renderer's type. Inherits the
- * extension index signature, so any further server field is preserved.
- */
-export interface PipelexValidationReport extends ValidationReport {
-  /** The batch's primary blueprint (first declaring `main_pipe`, else first). */
-  bundle_blueprint: Record<string, unknown>;
-  /** Per-pipe input/output contracts, keyed by namespaced `pipe_ref` (`domain.code`). */
-  pipe_io_contracts: Record<string, unknown>;
-  /** Best-effort execution graph of the main pipe; `null` with no `main_pipe` or on degrade. */
-  graph_spec: unknown;
-  /** Per-pipe dry-run sweep outcomes. */
-  validated_pipes: ValidatedPipeEntry[];
-  /** Qualified refs of pipes still declared as `PipeSignature`. */
-  pending_signatures: string[];
-  /** `not pending_signatures` — whether the validated library is complete enough to run. */
-  is_runnable: boolean;
-  /** Route extra: status message. */
-  message: string;
-  /** Route extra: echo of the submitted `mthds_contents`. */
-  mthds_contents?: string[];
-  /**
-   * Opt-in Pipelex-API presentation extra: the server-rendered Markdown view of the
-   * verdict, present only when the request asked for it (`render: ["markdown"]`).
-   * Absent by default. Rendered once server-side by pipelex's shared renderer, so it
-   * matches the local CLI's `--format markdown` output in format/structure.
-   */
-  rendered_markdown?: string;
-}
-
-/**
- * Pipelex's `POST /v1/validate` 200 body for an INVALID bundle — the `is_valid: false`
- * arm of the response union, narrowing the protocol's `InvalidValidationReport` to the
- * closed-vocabulary `ValidationErrorItem[]`. The structural artifacts of the valid arm
- * are absent (they don't exist when load/parse/wiring failed); `validation_errors[]` is
- * non-empty on every invalid verdict (the structured-info invariant — even a parse-level
- * failure carries one source-less `blueprint_validation` residual).
- */
-export interface PipelexInvalidReport extends InvalidValidationReport {
-  /** Structured per-error diagnostics, built by pipelex's one shared builder. */
-  validation_errors: ValidationErrorItem[];
-  /**
-   * Opt-in Pipelex-API presentation extra: the server-rendered Markdown view of the
-   * invalid verdict (`# Validation failed` + the `validation_errors`), present only
-   * when the request asked for it (`render: ["markdown"]`). Absent by default.
-   */
-  rendered_markdown?: string;
-}
-
-/**
- * The Pipelex `POST /v1/validate` 200 response — the discriminated union the
- * `MthdsApiClient.validate` returns, keyed on `is_valid`. Narrows the protocol's
- * `ValidationResult` to Pipelex's typed arms.
- */
-export type PipelexValidationResult = PipelexValidationReport | PipelexInvalidReport;
+// What remains here is the structured error item the BUILD routes' `422`
+// problem bodies carry (`ApiResponseError.validationErrors`) — neutrally named,
+// so no brand violation. `MthdsApiClient.validate()` returns the protocol's
+// neutral `ValidationResult` (its invalid arm exposes only the standard
+// `category` + `message`). The Pipelex-API narrowing of the `/v1/validate`
+// verdict — the typed structural artifacts (`bundle_blueprint`, `graph_spec`,
+// `validated_pipes`, …) and the closed-vocabulary `validation_errors[]` — lives
+// in the runtime SDK (`@pipelex/sdk`'s `PipelexValidationResult`), not in the
+// standard's client.
 
 /**
  * Which validation stage produced a `ValidationErrorItem` — mirror of pipelex's
@@ -148,10 +69,12 @@ export type ValidationErrorCategory =
 /**
  * One structured bundle-validation error — exact mirror of pipelex's
  * `ValidationErrorItem` (the union across the `ValidateBundleError` error-data
- * models). Carried by `PipelexInvalidReport.validation_errors[]` on the **200**
- * invalid arm of `POST /v1/validate` (NOT a 422 — an invalid bundle is a produced
- * verdict). The same typed item also rides the build routes' 422 problem bodies
- * (`ApiResponseError.validationErrors`).
+ * models). In `mthds` it types the build routes' `422` problem bodies
+ * (`ApiResponseError.validationErrors`). The same item also narrows the **200**
+ * invalid `/v1/validate` verdict, but that narrowing (`PipelexInvalidReport`)
+ * lives in the runtime SDK (`@pipelex/sdk`) — `mthds`'s own `validate()` returns
+ * the protocol's neutral `ValidationResult`, whose invalid arm exposes only the
+ * standard `category` + `message`.
  *
  * Only `category` and `message` are always present; the rest are populated per
  * `category` and dropped from the wire when unset (`exclude_none` server-side).

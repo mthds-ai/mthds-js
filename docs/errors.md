@@ -25,7 +25,7 @@ flowchart TD
 
 Arrows point from a class to its subclasses (the `extends` tree). `PipelineRequestError` is the base every API-runner error derives from — so `catch (e) { if (e instanceof PipelineRequestError) … }` catches all of them at once. The one exception is **`ClientAuthenticationError`**, which extends `Error` directly and is therefore *not* a `PipelineRequestError`. A catch-all that means to cover authentication too must check `instanceof Error` (or test `ClientAuthenticationError` separately).
 
-> An **invalid bundle is not an error.** `POST /v1/validate` returns a produced verdict — a `200` `PipelexInvalidReport` whose `validation_errors[]` you read off the returned value. Exceptions here are reserved for *no-verdict* conditions: the request never produced a usable answer (transport failure, a non-2xx response, a synchronous timeout, a 202 degrade). See [architecture.md → "`/validate` is a 200-diagnostic surface"](./architecture.md#validate-is-a-200-diagnostic-surface).
+> An **invalid bundle is not an error.** `POST /v1/validate` returns a produced verdict — the `200` invalid arm of `ValidationResult` whose `validation_errors[]` you read off the returned value. Exceptions here are reserved for *no-verdict* conditions: the request never produced a usable answer (transport failure, a non-2xx response, a synchronous timeout, a 202 degrade). See [architecture.md → "`/validate` is a 200-diagnostic surface"](./architecture.md#validate-is-a-200-diagnostic-surface).
 
 ## What each entry point exports
 
@@ -61,7 +61,7 @@ A non-2xx HTTP response **came back** from the runner. Raised by `MthdsApiClient
 | `validationErrors` | `ValidationErrorItem[] \| undefined` | Structured per-error list — **only** on the **build routes'** (`POST /v1/build/*`) `422` bodies. `undefined` everywhere else. |
 
 Notes:
-- **`validationErrors` is build-route-only.** `POST /v1/validate` no longer routes content errors here — an invalid bundle is the `200` `PipelexInvalidReport` verdict, not an `ApiResponseError`. Do **not** assume a given `errorType` implies a populated `validationErrors`; fall back to `serverMessage` when it is empty.
+- **`validationErrors` is build-route-only.** `POST /v1/validate` no longer routes content errors here — an invalid bundle is the `200` invalid-arm verdict of `ValidationResult`, not an `ApiResponseError`. Do **not** assume a given `errorType` implies a populated `validationErrors`; fall back to `serverMessage` when it is empty.
 - `ValidationErrorItem` (from `mthds` / `src/runners/api/models.ts`) carries `category`, `message`, and per-category optionals (`pipe_code`, `concept_code`, `domain_code`, `source`, `field_path`, `field_name`, `variable_names`, `missing_concept_code`, `declared_concepts`). Only `category` and `message` are always present.
 
 ### `ApiUnreachableError`
@@ -159,7 +159,7 @@ If the importing module is server-only, you can import the same classes from `mt
 
 - **`Module not found: Can't resolve 'fs'` (or `node:fs`) in a client build.** You imported an error class from `mthds` instead of `mthds/errors`. The top-level barrel re-exports `MthdsApiClient`, whose graph reaches `node:fs`; switch the import to `mthds/errors`.
 - **A `ClientAuthenticationError` slips past my `instanceof PipelineRequestError` catch.** Expected — it extends `Error` directly. Check it explicitly, or widen the catch-all to `instanceof Error`.
-- **`err.validationErrors` is `undefined` on a validation failure.** Validation failures from `POST /v1/validate` are not errors — read the `200` `PipelexInvalidReport.validation_errors[]` off the returned value. `ApiResponseError.validationErrors` is populated only for the build routes' `422` bodies.
+- **`err.validationErrors` is `undefined` on a validation failure.** Validation failures from `POST /v1/validate` are not errors — read the `200` invalid arm's `validation_errors[]` off the returned value. `ApiResponseError.validationErrors` is populated only for the build routes' `422` bodies.
 - **`instanceof` fails across a Next.js Server Action boundary.** Errors thrown in a Server Action are serialized to the client and lose their class identity in production (Next.js replaces them with a generic `Error` + digest). Classify those by a stable field you propagate yourself (e.g. an error code in the message or a returned discriminant), not by `instanceof`. `mthds/errors` still earns its keep there: it lets the client module *import the types* for annotations and same-runtime checks without the bundler choking on `node:fs`.
 
 ## See also

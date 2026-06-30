@@ -31,8 +31,8 @@ src/protocol/                 PURE — the MTHDS Protocol mirror (imports nothin
 src/runners/api/
   client.ts                   MthdsApiClient — IS the api runner: implements Runner (protocol + build extensions)
   models.ts                   DictStuff/DictWorkingMemory/DictPipeOutput + DictRunResultExecute (default binding);
-                              PipelexValidationResult (PipelexValidationReport | PipelexInvalidReport) +
-                              ValidatedPipeEntry/DryRunStatus + ValidationErrorItem/Category
+                              ValidationErrorItem/Category (the build routes' 422 error item) — the Pipelex
+                              /v1/validate narrowing (PipelexValidationResult) now lives in @pipelex/sdk
   exceptions.ts               ApiResponseError (+ validationErrors), ApiUnreachableError, ClientAuthenticationError,
                               RunStillRunningError, PipelineExecuteTimeoutError
 src/runners/pipelex/
@@ -81,17 +81,16 @@ Both are **extension-open** (an index signature): anything more an implementatio
 
 `POST /validate` is a diagnostic endpoint: **every produced verdict rides a `200`**, discriminated in the body on the mandatory `is_valid` field. A non-2xx is reserved for *no-verdict* conditions — a malformed request, an `mthds_sources` length mismatch, auth, a server fault — which throw `ApiResponseError`. A consumer pattern-matches `is_valid`; it never branches on a status code or a caught exception body.
 
-The protocol layer models the verdict as `ValidationResult = ValidationReport (is_valid: true) | InvalidValidationReport (is_valid: false)`. The API runner narrows both arms — the Pipelex API fills them with a known body — so consumers (the VS Code extension, `pipelex-app`) don't reach through the index signature:
+The protocol layer models the verdict as `ValidationResult = ValidationReport (is_valid: true) | InvalidValidationReport (is_valid: false)`, and that neutral union is what `MthdsApiClient.validate()` returns — the standard's client speaks the standard's verdict:
 
 | Arm | Discriminant | Carries |
 |---|---|---|
-| `PipelexValidationReport` | `is_valid: true` | `bundle_blueprint`, `pipe_io_contracts`, `graph_spec`, `validated_pipes`, `pending_signatures`, `is_runnable` (+ the route's `message` / `mthds_contents` echo) |
-| `PipelexInvalidReport` | `is_valid: false` | `validation_errors[]` (non-empty on every invalid verdict), `pending_signatures`, `is_runnable: false`, `message` — no structural artifacts |
+| `ValidationReport` | `is_valid: true` | only the discriminant; any structural artifacts the server adds (`bundle_blueprint`, `graph_spec`, `validated_pipes`, …) ride the extension index signature — preserved but untyped |
+| `InvalidValidationReport` | `is_valid: false` | `validation_errors[]` (typed `ValidationError` = `category` + `message`, non-empty on every invalid verdict), `pending_signatures`, `is_runnable: false`, `message` |
 
-- `PipelexValidationResult` = `PipelexValidationReport | PipelexInvalidReport` is the union `MthdsApiClient.validate()` returns.
-- `bundle_blueprint` / `pipe_io_contracts` / `graph_spec` stay **opaque transport** — their canonical schemas are owned by the runtime and `@pipelex/mthds-ui`.
+- **The Pipelex-API narrowing lives in `@pipelex/sdk`, not here.** `PipelexValidationResult` (its `PipelexValidationReport` / `PipelexInvalidReport` arms typing `bundle_blueprint`, `pipe_io_contracts`, `graph_spec`, `validated_pipes`, the closed-vocabulary `validation_errors[]`, and the opt-in `rendered_markdown`) is owned by the runtime SDK. A consumer that wants the typed structural artifacts uses `@pipelex/sdk`'s `PipelexApiClient`; `mthds` keeps to the standard. This is the MTHDS/Pipelex brand boundary: the standard's client returns the standard's neutral verdict.
 - `mthds_sources` (a third, optional, parallel-array arg to `validate()`) names each submitted content so the server threads `blueprint.source` for cross-file diagnostics (an unnamed content yields `source: null`).
-- `ValidationErrorItem` (+ the closed `ValidationErrorCategory`, incl. `dry_run`) is one structured per-error item. It rides the 200 invalid arm on `/validate`, and the **build routes'** `422` problem body parses the same typed item onto `ApiResponseError.validationErrors` (`undefined` for any error with no per-error list).
+- `ValidationErrorItem` (+ the closed `ValidationErrorCategory`, incl. `dry_run`) — the one structured per-error item — stays in `mthds` because the **build routes'** `422` problem body parses it onto `ApiResponseError.validationErrors` (`undefined` for any error with no per-error list). It is neutrally named, so no brand violation; the SDK's `/v1/validate` narrowing reuses the same shape.
 - `VersionInfo.implementation_version` — the one well-known `VersionInfo` extension is typed (still optional) so capability gating reads `version().implementation_version` directly.
 
 ### Token precedence

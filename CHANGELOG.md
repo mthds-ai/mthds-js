@@ -1,5 +1,11 @@
 # Changelog
 
+## [v0.14.0] - 2026-06-30
+
+### Added
+
+- **`mthds/errors` subpath export:** A new client-safe error taxonomy is published as the `mthds/errors` subpath (`src/errors.ts`). It re-exports the SDK's exception classes — `PipelineRequestError`, `ApiResponseError`, `ApiUnreachableError`, `ClientAuthenticationError`, `PipelineExecuteTimeoutError`, and `RunStillRunningError` — from a module whose import graph has no Node-only dependencies. Client/browser bundles (e.g. Next.js / Turbopack) can now `instanceof`-check these errors without statically pulling `MthdsApiClient`'s `config/` → `node:fs` graph, which previously broke client builds. The classes are identical to those on the top-level `mthds` barrel (both re-export from the same source modules, so they cannot drift).
+
 ## [v0.13.1] - 2026-06-28
 
 ### Changed

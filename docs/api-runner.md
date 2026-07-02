@@ -30,7 +30,7 @@ There is a single configuration pair. The base URL is the **host only — no ver
 
 So `execute` hits `<base>/v1/execute`, `validate` hits `<base>/v1/validate`, and so on. `/health` is the exception — it is origin-level, resolving to `<scheme>://<host>/health`, not under `/v1`.
 
-Environment variables take precedence over the config file. The `MthdsApiClient` constructor reads `MTHDS_API_URL` / `MTHDS_API_KEY` as fallbacks, and an explicit `baseUrl` / `apiToken` overrides them — the constructor doesn't read the config file itself; the CLI loads the file and passes the resolved values in. Configuration is stored in `~/.mthds/config` and shared with `mthds-python`.
+Environment variables take precedence over the config file. The `MthdsApiClient` constructor reads `MTHDS_API_URL` / `MTHDS_API_KEY` as fallbacks, and an explicit `baseUrl` / `apiKey` overrides them — the constructor doesn't read the config file itself; the CLI loads the file and passes the resolved values in. Configuration is stored in `~/.mthds/config` and shared with `mthds-python`.
 
 > The base URL must be host-only — `http`/`https`, no path, query, fragment, or credentials. A path-prefixed value such as `…/v1` would compose into a malformed `/v1/v1/…` endpoint, so the client rejects it up front.
 
@@ -91,13 +91,13 @@ import { MthdsApiClient } from "mthds";
 // Hosted
 const hosted = new MthdsApiClient({
   baseUrl: "https://api.pipelex.com",
-  apiToken: "your-api-key",
+  apiKey: "your-api-key",
 });
 
 // Self-hosted (bare runner)
 const selfHosted = new MthdsApiClient({
   baseUrl: "http://localhost:8081",
-  // apiToken optional for an anonymous bare runner
+  // apiKey optional for an anonymous bare runner
 });
 ```
 

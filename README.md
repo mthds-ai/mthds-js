@@ -179,7 +179,7 @@ import { MthdsApiClient } from "mthds";
 
 const client = new MthdsApiClient({
   baseUrl: "https://api.pipelex.com",
-  apiToken: "your-api-key",
+  apiKey: "your-api-key",
 });
 
 const result = await client.execute({
@@ -201,7 +201,7 @@ Point the client at your own [OSS `pipelex-api`](https://github.com/Pipelex/pipe
 ```typescript
 const client = new MthdsApiClient({
   baseUrl: "http://localhost:8081",
-  apiToken: "your-api-key",
+  apiKey: "your-api-key",
 });
 ```
 

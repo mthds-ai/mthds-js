@@ -1,5 +1,11 @@
 # Changelog
 
+## [Unreleased]
+
+### Changed — `MthdsApiClient` constructor option renamed `apiToken` → `apiKey` (breaking)
+
+The `MthdsApiClient` constructor option `apiToken` is renamed to `apiKey`, aligning the option name with the `MTHDS_API_KEY` environment variable it falls back to. Update `new MthdsApiClient({ apiToken })` call sites to `new MthdsApiClient({ apiKey })`. The wire (the `Authorization: Bearer` header) and the env-var fallback are unchanged.
+
 ## [v0.15.0] - 2026-06-30
 
 ### Changed — `MthdsApiClient.validate()` returns the standard's neutral verdict (breaking)

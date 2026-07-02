@@ -13,7 +13,7 @@ const BASE_URL = "http://localhost:8081";
 function makeClient(): MthdsApiClient {
   return new MthdsApiClient({
     baseUrl: BASE_URL,
-    apiToken: "test-token",
+    apiKey: "test-token",
   });
 }
 
@@ -64,7 +64,7 @@ describe("MthdsApiClient constructor", () => {
     const originalUrl = process.env.MTHDS_API_URL;
     delete process.env.MTHDS_API_URL;
     try {
-      const client = new MthdsApiClient({ apiToken: "t" });
+      const client = new MthdsApiClient({ apiKey: "t" });
       const fetchSpy = vi
         .spyOn(globalThis, "fetch")
         .mockResolvedValue(jsonResponse(200, { pipeline_run_id: "x" }));
@@ -108,7 +108,7 @@ describe("MthdsApiClient constructor", () => {
     const originalUrl = process.env.MTHDS_API_URL;
     process.env.MTHDS_API_URL = "http://env-host:9999";
     try {
-      const client = new MthdsApiClient({ apiToken: "t" });
+      const client = new MthdsApiClient({ apiKey: "t" });
       const fetchSpy = vi
         .spyOn(globalThis, "fetch")
         .mockResolvedValue(jsonResponse(200, { pipeline_run_id: "x" }));

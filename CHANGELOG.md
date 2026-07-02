@@ -1,5 +1,22 @@
 # Changelog
 
+## [v0.16.0] - 2026-07-02
+
+### Added
+
+- **Config-dialect conformance fixture:** Added a shared fixture (`tests/fixtures/config-dialect-cases.json`), pinned by the workspace spec (`docs/specs/mthds-config-file.md`), so the TypeScript and Python parsers stay byte-identical. `parseDotenv` and `serializeDotenv` are now exported from `src/config/config.ts` and covered by a new unit suite (`tests/unit/config/config-dialect.test.ts`).
+
+### Changed
+
+- **BREAKING — Renamed `MTHDS_API_URL` to `MTHDS_BASE_URL`:** Aligns all naming layers (`baseUrl` config key, `base-url` CLI flag, `MTHDS_BASE_URL` env/file key) with the Python client. *Migration:* there is no read alias; an existing `MTHDS_API_URL` will be ignored, so re-set it with `mthds config set base-url <url>` and update local environment variables.
+- **BREAKING — Renamed `MthdsApiClient` option `apiToken` to `apiKey`:** Matches the `MTHDS_API_KEY` environment variable it falls back to. *Migration:* update `new MthdsApiClient({ apiToken: "..." })` to `new MthdsApiClient({ apiKey: "..." })`; the `Authorization: Bearer` header behavior is unchanged.
+- **Documentation:** Updated `README.md`, `CLI.md`, and architecture docs for the new `MTHDS_BASE_URL` and `apiKey` naming. Replaced the inline `@pipelex/sdk` example in `docs/run-lifecycle.md` with a link to the SDK's official docs to prevent drift.
+- **Dependencies:** Bumped `axios` (1.18.1), `follow-redirects` (1.16.0), and `form-data` (4.0.6), and added `https-proxy-agent`.
+
+### Fixed
+
+- **Config file permissions:** `~/.mthds/config` is now written with owner-only permissions (`0600`) instead of relying on the default umask (typically world-readable `0644`), which exposed the stored `MTHDS_API_KEY`. `writeConfigFile` now sets the mode on creation and runs `chmodSync` to tighten pre-existing files.
+
 ## [v0.15.0] - 2026-06-30
 
 ### Changed — `MthdsApiClient.validate()` returns the standard's neutral verdict (breaking)

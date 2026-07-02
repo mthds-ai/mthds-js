@@ -11,7 +11,7 @@ import type { DictRunResultExecute } from "../../../src/runners/api/models.js";
 const BASE_URL = "http://localhost:8081";
 
 function makeClient(): MthdsApiClient {
-  return new MthdsApiClient({ baseUrl: BASE_URL, apiToken: "test-token" });
+  return new MthdsApiClient({ baseUrl: BASE_URL, apiKey: "test-token" });
 }
 
 function jsonResponse(

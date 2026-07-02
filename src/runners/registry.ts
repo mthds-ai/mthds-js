@@ -14,7 +14,7 @@ export function createRunner(type?: RunnerType, libraryDirs?: string[]): Runner 
       // resolved config (file + env), so the CLI honors `~/.mthds/config`.
       return new MthdsApiClient({
         baseUrl: config.baseUrl,
-        apiToken: config.apiKey || undefined,
+        apiKey: config.apiKey || undefined,
       });
     case Runners.PIPELEX:
       return new PipelexRunner(libraryDirs);

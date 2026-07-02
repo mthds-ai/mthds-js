@@ -73,17 +73,7 @@ const { pipeline_run_id } = await client.start({
 
 Polling a run by its `pipeline_run_id` until it reaches a terminal state — against a self-healing endpoint that survives restarts — is a **hosted-API feature layered on top of the protocol**, not part of it. It lives in the Pipelex runtime SDK, **[`@pipelex/sdk`](https://github.com/Pipelex/pipelex-sdk-js)** (and the `pipelex-agent` CLI), whose client adds `getRunStatus`, `getRunResult`, `waitForResult`, and `startAndWaitForResult` over the `/v1/runs/*` routes.
 
-Reach for that SDK when you want a durable, resumable handle on a run:
-
-```typescript
-import { PipelexApiClient } from "@pipelex/sdk";
-
-const client = new PipelexApiClient({ baseUrl: "https://api.pipelex.com", apiToken });
-const result = await client.startAndWaitForResult({
-  pipe_code: "long-running-pipeline",
-  inputs: { document: "…" },
-});
-```
+Reach for that SDK when you want a durable, resumable handle on a run — its client takes the `pipeline_run_id` that `start` hands you and polls it to a terminal state. See the [`@pipelex/sdk` docs](https://github.com/Pipelex/pipelex-sdk-js#readme) for usage; those examples live with the SDK, not here.
 
 `mthds-js` stays focused on the protocol surface: `start` hands you the id, and everything after that is the runtime SDK's job.
 

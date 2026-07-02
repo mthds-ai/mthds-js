@@ -160,7 +160,7 @@ mthds config set base-url http://localhost:8081
 
 Configuration is stored in `~/.mthds/config` and shared between mthds-js and mthds-python.
 
-You can also use environment variables (`MTHDS_API_KEY`, `MTHDS_API_URL`) which take precedence over the config file.
+You can also use environment variables (`MTHDS_API_KEY`, `MTHDS_BASE_URL`) which take precedence over the config file.
 
 See the [SDK Usage](#sdk-usage) section below to connect to a Pipelex API instance programmatically.
 
@@ -179,7 +179,7 @@ import { MthdsApiClient } from "mthds";
 
 const client = new MthdsApiClient({
   baseUrl: "https://api.pipelex.com",
-  apiToken: "your-api-key",
+  apiKey: "your-api-key",
 });
 
 const result = await client.execute({
@@ -201,7 +201,7 @@ Point the client at your own [OSS `pipelex-api`](https://github.com/Pipelex/pipe
 ```typescript
 const client = new MthdsApiClient({
   baseUrl: "http://localhost:8081",
-  apiToken: "your-api-key",
+  apiKey: "your-api-key",
 });
 ```
 
@@ -215,11 +215,11 @@ Instead of passing options to the constructor, you can set environment variables
 
 | Variable | Description |
 |----------|-------------|
-| `MTHDS_API_URL` | API base URL — host only, no version prefix (default `https://api.pipelex.com`) |
+| `MTHDS_BASE_URL` | API base URL — host only, no version prefix (default `https://api.pipelex.com`) |
 | `MTHDS_API_KEY` | API authentication token |
 
 ```typescript
-// Reads MTHDS_API_URL and MTHDS_API_KEY from the environment
+// Reads MTHDS_BASE_URL and MTHDS_API_KEY from the environment
 const client = new MthdsApiClient();
 ```
 

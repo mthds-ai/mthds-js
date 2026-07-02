@@ -44,12 +44,12 @@ export interface ValidateFilesOptions {
 }
 
 interface MthdsApiClientOptions {
-  /** API token (Bearer). Falls back to `MTHDS_API_KEY`. Optional for anonymous bare runners. */
-  apiToken?: string;
+  /** API key (Bearer). Falls back to `MTHDS_API_KEY`. Optional for anonymous bare runners. */
+  apiKey?: string;
   /**
    * API base URL — host only, NO version prefix (e.g. `https://api.pipelex.com`
    * or `http://localhost:8081`). Every endpoint composes as
-   * `{baseUrl}/v1/{endpoint}`. Falls back to `MTHDS_API_URL`, then the hosted
+   * `{baseUrl}/v1/{endpoint}`. Falls back to `MTHDS_BASE_URL`, then the hosted
    * default.
    */
   baseUrl?: string;
@@ -66,7 +66,7 @@ interface RawResponse {
 /** Hosted default — the SDK composes every endpoint as `{base}/v1/{endpoint}`. */
 export const DEFAULT_API_BASE_URL = "https://api.pipelex.com";
 
-// The SDK composes every endpoint from one origin (MTHDS_API_URL): `{base}/v1/{endpoint}`.
+// The SDK composes every endpoint from one origin (MTHDS_BASE_URL): `{base}/v1/{endpoint}`.
 // The same paths are served by the Pipelex Hosted API (api.pipelex.com) and by a bare
 // OSS pipelex-api runner (localhost:8081) — the protocol surface is identical.
 const API_PREFIX = "v1";
@@ -81,7 +81,7 @@ const VALIDATE_MARKDOWN_RENDER_FORMAT = "markdown";
  * the CLI gets it via `createRunner()` as a full `Runner`. It carries the
  * protocol surface plus the Pipelex build extensions.
  *
- * One base URL (`MTHDS_API_URL`); every endpoint is `<base>/v1/<endpoint>`:
+ * One base URL (`MTHDS_BASE_URL`); every endpoint is `<base>/v1/<endpoint>`:
  * - **protocol** (`execute` / `start` / `validate` / `models` / `version`) — works
  *   against any MTHDS-compliant runner, hosted or bare.
  * - **build extensions** (`/v1/build/*`) — the Pipelex API's spec-to-TOML / runner
@@ -94,20 +94,20 @@ const VALIDATE_MARKDOWN_RENDER_FORMAT = "markdown";
 export class MthdsApiClient implements Runner {
   readonly type: RunnerType = Runners.API;
 
-  private readonly apiToken: string | undefined;
+  private readonly apiKey: string | undefined;
   private readonly baseUrl: string;
   /** Origin root derived from the base URL — `/health` lives here, not under `/v1`. */
   private readonly originUrl: string;
 
   constructor(options: MthdsApiClientOptions = {}) {
-    this.apiToken = options.apiToken ?? process.env.MTHDS_API_KEY;
+    this.apiKey = options.apiKey ?? process.env.MTHDS_API_KEY;
     const normalizedBaseUrl = (
       options.baseUrl ??
-      process.env.MTHDS_API_URL ??
+      process.env.MTHDS_BASE_URL ??
       DEFAULT_API_BASE_URL
     ).replace(/\/+$/, "");
     // `config set base-url` validates host-only; direct SDK usage and
-    // MTHDS_API_URL reach this constructor and must be held to the same rule,
+    // MTHDS_BASE_URL reach this constructor and must be held to the same rule,
     // or a path-prefixed value (e.g. `.../v1`) composes as `/v1/v1/...` and
     // fails with a misleading endpoint error instead of a clear base-URL one.
     // Trailing slashes are stripped first (leniency the SDK has always had);
@@ -149,8 +149,8 @@ export class MthdsApiClient implements Runner {
     } = {},
   ): Promise<RawResponse> {
     const headers: Record<string, string> = { Accept: "application/json" };
-    if (this.apiToken) {
-      headers["Authorization"] = `Bearer ${this.apiToken}`;
+    if (this.apiKey) {
+      headers["Authorization"] = `Bearer ${this.apiKey}`;
     }
     const hasBody = options.body !== undefined;
     if (hasBody) {
@@ -213,8 +213,8 @@ export class MthdsApiClient implements Runner {
    */
   private async requestJson<T>(method: "GET" | "POST", url: string, body?: unknown): Promise<T> {
     const headers: Record<string, string> = { Accept: "application/json" };
-    if (this.apiToken) {
-      headers["Authorization"] = `Bearer ${this.apiToken}`;
+    if (this.apiKey) {
+      headers["Authorization"] = `Bearer ${this.apiKey}`;
     }
     if (body !== undefined) {
       headers["Content-Type"] = "application/json";

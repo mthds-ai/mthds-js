@@ -95,7 +95,7 @@ The protocol layer models the verdict as `ValidationResult = ValidationReport (i
 
 ### Token precedence
 
-In the constructor, an explicitly-passed `apiToken` wins over `MTHDS_API_KEY` from the environment (`options.apiToken ?? process.env.MTHDS_API_KEY`), so a wrapper — e.g. the VS Code extension's SecretStorage — can override a native env read.
+In the constructor, an explicitly-passed `apiKey` wins over `MTHDS_API_KEY` from the environment (`options.apiKey ?? process.env.MTHDS_API_KEY`), so a wrapper — e.g. the VS Code extension's SecretStorage — can override a native env read.
 
 ### The API client *is* the API runner
 

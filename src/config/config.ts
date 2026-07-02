@@ -1,6 +1,6 @@
 import { join } from "node:path";
 import { homedir } from "node:os";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { Runners } from "../runners/types.js";
 import type { RunnerType } from "../runners/types.js";
 
@@ -31,7 +31,7 @@ const CONFIG_PATH = join(CONFIG_DIR, "config");
 
 /** Map from config key to env var name */
 const ENV_NAMES: Record<keyof MthdsConfig, string> = {
-  baseUrl: "MTHDS_API_URL",
+  baseUrl: "MTHDS_BASE_URL",
   apiKey: "MTHDS_API_KEY",
   runner: "MTHDS_RUNNER",
   telemetry: "DISABLE_TELEMETRY",
@@ -41,7 +41,7 @@ const ENV_NAMES: Record<keyof MthdsConfig, string> = {
 
 /** Map from config key to file key (used in ~/.mthds/config) */
 const FILE_KEYS: Record<keyof MthdsConfig, string> = {
-  baseUrl: "MTHDS_API_URL",
+  baseUrl: "MTHDS_BASE_URL",
   apiKey: "MTHDS_API_KEY",
   runner: "MTHDS_RUNNER",
   telemetry: "DISABLE_TELEMETRY",
@@ -110,8 +110,11 @@ export function resolveKey(cliKey: string): keyof MthdsConfig | undefined {
 }
 
 // ── Dotenv parser / serializer ─────────────────────────────────────
+// The dialect is shared with mthds-python and pinned by docs/specs/mthds-config-file.md
+// (workspace repo). Both functions are exported so the shared conformance fixture
+// (tests/fixtures/config-dialect-cases.json) can exercise them directly.
 
-function parseDotenv(content: string): Record<string, string> {
+export function parseDotenv(content: string): Record<string, string> {
   const result: Record<string, string> = {};
   for (const line of content.split("\n")) {
     const trimmed = line.trim();
@@ -125,7 +128,7 @@ function parseDotenv(content: string): Record<string, string> {
   return result;
 }
 
-function serializeDotenv(entries: Record<string, string>): string {
+export function serializeDotenv(entries: Record<string, string>): string {
   const lines: string[] = [];
   for (const [key, value] of Object.entries(entries)) {
     lines.push(`${key}=${value}`);
@@ -146,7 +149,11 @@ function readConfigFile(): Record<string, string> {
 
 function writeConfigFile(entries: Record<string, string>): void {
   mkdirSync(CONFIG_DIR, { recursive: true });
-  writeFileSync(CONFIG_PATH, serializeDotenv(entries), "utf-8");
+  // The file stores MTHDS_API_KEY — it MUST be owner-only (0600), per the config
+  // file spec. `mode` only applies when the file is created (and is masked by the
+  // umask), so chmod explicitly to also tighten a pre-existing file.
+  writeFileSync(CONFIG_PATH, serializeDotenv(entries), { encoding: "utf-8", mode: 0o600 });
+  chmodSync(CONFIG_PATH, 0o600);
 }
 
 // ── Public API ─────────────────────────────────────────────────────

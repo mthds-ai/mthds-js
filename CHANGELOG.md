@@ -1,5 +1,23 @@
 # Changelog
 
+## [Unreleased]
+
+### Changed — wire key `MTHDS_API_URL` renamed to `MTHDS_BASE_URL` (breaking)
+
+The env var / `~/.mthds/config` file key for the API base URL is renamed from `MTHDS_API_URL` to `MTHDS_BASE_URL`, coordinated with the Python `mthds` client which makes the same change. All three naming layers now align (`baseUrl` config key, `base-url` CLI flag, `MTHDS_BASE_URL` env/file key). There is no read alias: an `MTHDS_API_URL=…` line in an existing `~/.mthds/config` is now an unknown key — ignored on read, preserved on write — so re-set it with `mthds config set base-url <url>`, and update any `MTHDS_API_URL` environment variables.
+
+### Changed — `MthdsApiClient` constructor option renamed `apiToken` → `apiKey` (breaking)
+
+The `MthdsApiClient` constructor option `apiToken` is renamed to `apiKey`, aligning the option name with the `MTHDS_API_KEY` environment variable it falls back to. Update `new MthdsApiClient({ apiToken })` call sites to `new MthdsApiClient({ apiKey })`. The wire (the `Authorization: Bearer` header) and the env-var fallback are unchanged.
+
+### Fixed — `~/.mthds/config` is now written with owner-only permissions (`0600`)
+
+The config file stores `MTHDS_API_KEY` but was written with the default umask (typically world-readable `0644`). `writeConfigFile` now creates the file with mode `0600` and chmods it after every write, which also tightens a pre-existing looser file. This matches the Python client and the config-file spec's permission requirement.
+
+### Added — shared config-dialect conformance fixture
+
+The `~/.mthds/config` dotenv dialect is now pinned by a spec (workspace `docs/specs/mthds-config-file.md`) and a shared case fixture whose canonical copy lives in the `conformance` repo. This package vendors a byte-identical copy (`tests/fixtures/config-dialect-cases.json`, drift-gated by conformance) and runs every case in its own unit suite (`tests/unit/config/config-dialect.test.ts`); `parseDotenv` / `serializeDotenv` are now exported from `src/config/config.ts` so the fixture can exercise them directly. The TypeScript and Python parsers can no longer silently diverge.
+
 ## [v0.15.0] - 2026-06-30
 
 ### Changed — `MthdsApiClient.validate()` returns the standard's neutral verdict (breaking)

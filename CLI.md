@@ -316,7 +316,7 @@ Configuration values are resolved in this order: **environment variables > confi
 | Key | Environment Variable | Default | Description |
 |---|---|---|---|
 | `runner` | `MTHDS_RUNNER` | `api` | Default runner (`api` or `pipelex`) |
-| `base-url` | `MTHDS_API_URL` | `https://api.pipelex.com` | API base URL — host only, no version prefix; endpoints compose as `{base}/v1/{endpoint}` |
+| `base-url` | `MTHDS_BASE_URL` | `https://api.pipelex.com` | API base URL — host only, no version prefix; endpoints compose as `{base}/v1/{endpoint}` |
 | `api-key` | `MTHDS_API_KEY` | (empty) | API authentication key |
 | `telemetry` | `DISABLE_TELEMETRY` | `0` | Set to `1` to disable telemetry |
 

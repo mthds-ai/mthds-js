@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Changed — wire key `MTHDS_API_URL` renamed to `MTHDS_BASE_URL` (breaking)
+
+The env var / `~/.mthds/config` file key for the API base URL is renamed from `MTHDS_API_URL` to `MTHDS_BASE_URL`, coordinated with the Python `mthds` client which makes the same change. All three naming layers now align (`baseUrl` config key, `base-url` CLI flag, `MTHDS_BASE_URL` env/file key). There is no read alias: an `MTHDS_API_URL=…` line in an existing `~/.mthds/config` is now an unknown key — ignored on read, preserved on write — so re-set it with `mthds config set base-url <url>`, and update any `MTHDS_API_URL` environment variables.
+
 ### Changed — `MthdsApiClient` constructor option renamed `apiToken` → `apiKey` (breaking)
 
 The `MthdsApiClient` constructor option `apiToken` is renamed to `apiKey`, aligning the option name with the `MTHDS_API_KEY` environment variable it falls back to. Update `new MthdsApiClient({ apiToken })` call sites to `new MthdsApiClient({ apiKey })`. The wire (the `Authorization: Bearer` header) and the env-var fallback are unchanged.

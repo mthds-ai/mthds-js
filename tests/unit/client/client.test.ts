@@ -61,8 +61,8 @@ afterEach(() => {
 
 describe("MthdsApiClient constructor", () => {
   it("defaults to the hosted base URL when nothing is configured", async () => {
-    const originalUrl = process.env.MTHDS_API_URL;
-    delete process.env.MTHDS_API_URL;
+    const originalUrl = process.env.MTHDS_BASE_URL;
+    delete process.env.MTHDS_BASE_URL;
     try {
       const client = new MthdsApiClient({ apiKey: "t" });
       const fetchSpy = vi
@@ -74,7 +74,7 @@ describe("MthdsApiClient constructor", () => {
         expect.objectContaining({ method: "POST" }),
       );
     } finally {
-      if (originalUrl !== undefined) process.env.MTHDS_API_URL = originalUrl;
+      if (originalUrl !== undefined) process.env.MTHDS_BASE_URL = originalUrl;
     }
   });
 
@@ -104,9 +104,9 @@ describe("MthdsApiClient constructor", () => {
     );
   });
 
-  it("reads MTHDS_API_URL from the environment", async () => {
-    const originalUrl = process.env.MTHDS_API_URL;
-    process.env.MTHDS_API_URL = "http://env-host:9999";
+  it("reads MTHDS_BASE_URL from the environment", async () => {
+    const originalUrl = process.env.MTHDS_BASE_URL;
+    process.env.MTHDS_BASE_URL = "http://env-host:9999";
     try {
       const client = new MthdsApiClient({ apiKey: "t" });
       const fetchSpy = vi
@@ -118,8 +118,8 @@ describe("MthdsApiClient constructor", () => {
         expect.objectContaining({ method: "POST" }),
       );
     } finally {
-      if (originalUrl !== undefined) process.env.MTHDS_API_URL = originalUrl;
-      else delete process.env.MTHDS_API_URL;
+      if (originalUrl !== undefined) process.env.MTHDS_BASE_URL = originalUrl;
+      else delete process.env.MTHDS_BASE_URL;
     }
   });
 });

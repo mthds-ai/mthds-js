@@ -31,7 +31,7 @@ const CONFIG_PATH = join(CONFIG_DIR, "config");
 
 /** Map from config key to env var name */
 const ENV_NAMES: Record<keyof MthdsConfig, string> = {
-  baseUrl: "MTHDS_API_URL",
+  baseUrl: "MTHDS_BASE_URL",
   apiKey: "MTHDS_API_KEY",
   runner: "MTHDS_RUNNER",
   telemetry: "DISABLE_TELEMETRY",
@@ -41,7 +41,7 @@ const ENV_NAMES: Record<keyof MthdsConfig, string> = {
 
 /** Map from config key to file key (used in ~/.mthds/config) */
 const FILE_KEYS: Record<keyof MthdsConfig, string> = {
-  baseUrl: "MTHDS_API_URL",
+  baseUrl: "MTHDS_BASE_URL",
   apiKey: "MTHDS_API_KEY",
   runner: "MTHDS_RUNNER",
   telemetry: "DISABLE_TELEMETRY",

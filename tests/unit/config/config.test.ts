@@ -101,7 +101,7 @@ describe("config", () => {
       mkdirSync(configDir, { recursive: true });
       writeFileSync(
         join(configDir, "config"),
-        "# This is a comment\n\nMTHDS_API_KEY=test-key\n\n# Another comment\nMTHDS_API_URL=http://localhost:8081\n",
+        "# This is a comment\n\nMTHDS_API_KEY=test-key\n\n# Another comment\nMTHDS_BASE_URL=http://localhost:8081\n",
         "utf-8",
       );
 
@@ -114,18 +114,18 @@ describe("config", () => {
     it("reads baseUrl from the config file", async () => {
       const configDir = join(tempHome, ".mthds");
       mkdirSync(configDir, { recursive: true });
-      writeFileSync(join(configDir, "config"), "MTHDS_API_URL=http://localhost:8081\n", "utf-8");
+      writeFileSync(join(configDir, "config"), "MTHDS_BASE_URL=http://localhost:8081\n", "utf-8");
 
       const { loadConfig } = await importConfig();
       const config = loadConfig();
       expect(config.baseUrl).toBe("http://localhost:8081");
     });
 
-    it("env MTHDS_API_URL overrides the file value", async () => {
+    it("env MTHDS_BASE_URL overrides the file value", async () => {
       const configDir = join(tempHome, ".mthds");
       mkdirSync(configDir, { recursive: true });
-      writeFileSync(join(configDir, "config"), "MTHDS_API_URL=http://file-host:8081\n", "utf-8");
-      vi.stubEnv("MTHDS_API_URL", "http://env-host:8081");
+      writeFileSync(join(configDir, "config"), "MTHDS_BASE_URL=http://file-host:8081\n", "utf-8");
+      vi.stubEnv("MTHDS_BASE_URL", "http://env-host:8081");
 
       const { loadConfig } = await importConfig();
       const config = loadConfig();
@@ -156,7 +156,7 @@ describe("config", () => {
     });
 
     it("returns env source when env var is set", async () => {
-      vi.stubEnv("MTHDS_API_URL", "http://env-host:8081");
+      vi.stubEnv("MTHDS_BASE_URL", "http://env-host:8081");
 
       const { getConfigValue } = await importConfig();
       const result = getConfigValue("baseUrl");
@@ -189,12 +189,12 @@ describe("config", () => {
       expect(content).toContain("MTHDS_API_KEY=new-key");
     });
 
-    it("writes baseUrl under the MTHDS_API_URL file key", async () => {
+    it("writes baseUrl under the MTHDS_BASE_URL file key", async () => {
       const { setConfigValue } = await importConfig();
       setConfigValue("baseUrl", "http://localhost:8081");
 
       const content = readFileSync(join(tempHome, ".mthds", "config"), "utf-8");
-      expect(content).toContain("MTHDS_API_URL=http://localhost:8081");
+      expect(content).toContain("MTHDS_BASE_URL=http://localhost:8081");
     });
 
     it("creates config directory if it does not exist", async () => {

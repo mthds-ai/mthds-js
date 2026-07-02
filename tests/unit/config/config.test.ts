@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { mkdtempSync, writeFileSync, readFileSync, mkdirSync } from "node:fs";
+import { mkdtempSync, writeFileSync, readFileSync, mkdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
@@ -225,6 +225,37 @@ describe("config", () => {
       const content = readFileSync(join(tempHome, ".mthds", "config"), "utf-8");
       expect(content).toContain("DISABLE_TELEMETRY=0");
     });
+
+    // POSIX-only: mode bits are not meaningful on Windows.
+    it.skipIf(process.platform === "win32")(
+      "creates the config file with owner-only permissions (0600)",
+      async () => {
+        const { setConfigValue } = await importConfig();
+        setConfigValue("apiKey", "secret-key");
+
+        const mode = statSync(join(tempHome, ".mthds", "config")).mode & 0o777;
+        expect(mode).toBe(0o600);
+      },
+    );
+
+    it.skipIf(process.platform === "win32")(
+      "tightens permissions on a pre-existing config file to 0600",
+      async () => {
+        const configDir = join(tempHome, ".mthds");
+        mkdirSync(configDir, { recursive: true });
+        const configPath = join(configDir, "config");
+        writeFileSync(configPath, "MTHDS_API_KEY=existing-key\n", {
+          encoding: "utf-8",
+          mode: 0o644,
+        });
+
+        const { setConfigValue } = await importConfig();
+        setConfigValue("runner", "pipelex");
+
+        const mode = statSync(configPath).mode & 0o777;
+        expect(mode).toBe(0o600);
+      },
+    );
 
     it("preserves existing values when setting a new one", async () => {
       const configDir = join(tempHome, ".mthds");

@@ -1,5 +1,12 @@
 # Changelog
 
+## [v0.17.0] - 2026-07-06
+
+### Changed
+
+- **`codex apply-config` no longer writes a hooks feature flag.** Since Codex 0.141 the hooks feature is Stable and enabled by default (`[features] hooks`, `default_enabled: true`), so plugin-bundled hooks load with no opt-in — the old `[features] plugin_hooks = true` write only added a deprecated alias key to the user's config. `apply-config` now merges just `[sandbox_workspace_write] network_access = true` (still needed for method runs inside the sandbox; the validation hook itself is offline-safe) and continues to sweep any obsolete `~/.codex/hooks.json` entry. Enabling the hook is now nothing more than trusting it on first run (Codex persists trusted hashes under `[hooks.state]`). Requires Codex 0.141.0+.
+- **`apply-config` / `doctor` hook-disabled warning now covers all three feature keys.** An explicit `false` on the canonical `[features] hooks` or either deprecated alias (`plugin_hooks` / `codex_hooks`) is reported, so a stale disabling key can't silently break the hook.
+
 ## [v0.16.0] - 2026-07-02
 
 ### Added

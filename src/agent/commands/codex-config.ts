@@ -2,20 +2,23 @@
  * mthds-agent codex apply-config — make ~/.codex/ correct for the mthds plugin.
  *
  * Two jobs:
- *  1. Additively merge required keys into ~/.codex/config.toml:
+ *  1. Additively merge the required key into ~/.codex/config.toml:
  *       [sandbox_workspace_write] network_access = true
- *         — Codex's default workspace-write sandbox blocks outbound network for
- *           hook commands; without it any remote fetch hangs/fails.
- *       [features] plugin_hooks = true
- *         — plugin-bundled hooks are opt-in; without it Codex never loads the
- *           mthds validation hook shipped inside the plugin.
+ *         — Codex's default workspace-write sandbox blocks outbound network, so
+ *           method runs (inference calls) fail inside the sandbox without it.
+ *           The validation hook itself is offline-safe and needs no network.
+ *     No `[features]` hook flag is written: since Codex 0.141 the hooks feature
+ *     is Stable and enabled by default (`[features] hooks`, `default_enabled:
+ *     true`), so plugin-bundled hooks load with no opt-in. Writing the old
+ *     `plugin_hooks` alias would only add a deprecated key to the user's config.
  *  2. Remove any obsolete mthds entry left in ~/.codex/hooks.json by the retired
  *     `install-hook` command (see codex.ts) — it would double-fire alongside the
  *     plugin-bundled hook.
  *
  * Warning-only checks (never modified — too high-risk):
- *   - `[features] hooks = false` (or its alias `codex_hooks = false`) disables
- *     hooks entirely; we check both keys defensively.
+ *   - `[features] hooks = false` (or its deprecated aliases `plugin_hooks =
+ *     false` / `codex_hooks = false`) disables hooks entirely; we check all
+ *     three keys defensively.
  *   - `sandbox_mode = "read-only"` — apply_patch can't run, so the hook can't
  *     either.
  *
@@ -49,7 +52,6 @@ interface RequiredSetting {
 
 const REQUIRED_SETTINGS: RequiredSetting[] = [
   { table: "sandbox_workspace_write", key: "network_access", value: true },
-  { table: "features", key: "plugin_hooks", value: true },
 ];
 
 // ── Types ──────────────────────────────────────────────────────────
@@ -214,10 +216,11 @@ function collectWarnings(parsed: TomlTable): CodexConfigWarning[] {
   const features = parsed.features;
   if (features && typeof features === "object" && !Array.isArray(features)) {
     const featuresTable = features as TomlTable;
-    // Check both `hooks` and its alias `codex_hooks` defensively. Either being
-    // explicitly false disables hooks entirely and breaks the mthds hook. When
-    // both are false, name both so neither is silently omitted.
-    const disabledKeys = (["hooks", "codex_hooks"] as const).filter(
+    // Check the canonical `hooks` and its deprecated aliases `plugin_hooks` /
+    // `codex_hooks` defensively. Any one explicitly false disables hooks
+    // entirely and breaks the mthds hook. When several are false, name each so
+    // none is silently omitted.
+    const disabledKeys = (["hooks", "plugin_hooks", "codex_hooks"] as const).filter(
       (key) => featuresTable[key] === false,
     );
     if (disabledKeys.length > 0) {

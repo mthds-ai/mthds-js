@@ -777,3 +777,85 @@ describe("MthdsApiClient.validate render extra", () => {
     expect(bodyOf(fetchSpy).render).toEqual(["html", "markdown"]);
   });
 });
+
+describe("MthdsApiClient.uploadFile", () => {
+  function bodyOf(fetchSpy: ReturnType<typeof vi.spyOn>): Record<string, unknown> {
+    const init = fetchSpy.mock.calls[0]![1] as { body?: string };
+    return JSON.parse(init.body ?? "{}") as Record<string, unknown>;
+  }
+
+  it("POSTs to /v1/upload with filename, data and content_type", async () => {
+    const client = makeClient();
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(
+        jsonResponse(200, { uri: "pipelex-storage://u/assets/x.png", filename: "x.png" }),
+      );
+
+    await client.uploadFile({
+      filename: "x.png",
+      data: "YmFzZTY0",
+      contentType: "image/png",
+    });
+
+    expect(fetchSpy.mock.calls[0]![0]).toBe("http://localhost:8081/v1/upload");
+    expect(bodyOf(fetchSpy)).toEqual({
+      filename: "x.png",
+      data: "YmFzZTY0",
+      content_type: "image/png",
+    });
+  });
+
+  it("returns the pipelex-storage:// URI from the response verbatim", async () => {
+    const client = makeClient();
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      jsonResponse(200, { uri: "pipelex-storage://u/assets/abc.pdf", filename: "abc.pdf" }),
+    );
+
+    const result = await client.uploadFile({ filename: "abc.pdf", data: "ZGF0YQ==" });
+
+    expect(result.uri).toBe("pipelex-storage://u/assets/abc.pdf");
+    expect(result.filename).toBe("abc.pdf");
+  });
+
+  it("omits content_type when not provided", async () => {
+    const client = makeClient();
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(
+        jsonResponse(200, { uri: "pipelex-storage://u/assets/x.bin", filename: "x.bin" }),
+      );
+
+    await client.uploadFile({ filename: "x.bin", data: "AAAA" });
+
+    expect(bodyOf(fetchSpy)).toEqual({ filename: "x.bin", data: "AAAA" });
+  });
+
+  it("raises ApiResponseError on a 401 (unauthenticated)", async () => {
+    const client = makeClient();
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      jsonResponse(401, { detail: "Authentication required" }, {}),
+    );
+
+    await expect(client.uploadFile({ filename: "a.txt", data: "AA" })).rejects.toMatchObject({
+      name: "ApiResponseError",
+      status: 401,
+      serverMessage: "Authentication required",
+    });
+  });
+
+  it("raises ApiResponseError on a 413 (payload too large)", async () => {
+    const client = makeClient();
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      jsonResponse(413, {
+        detail: { error_type: "PayloadTooLarge", message: "Decoded file exceeds 50 MiB limit" },
+      }),
+    );
+
+    await expect(client.uploadFile({ filename: "big.bin", data: "AA" })).rejects.toMatchObject({
+      name: "ApiResponseError",
+      status: 413,
+      errorType: "PayloadTooLarge",
+    });
+  });
+});

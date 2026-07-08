@@ -1,5 +1,11 @@
 # Changelog
 
+## [v0.17.0] - 2026-07-08
+
+### Added
+
+- **`mthds-agent inputs upload <file>`:** New subcommand under the `inputs` group that uploads a local file to pipelex storage and prints the returned `pipelex-storage://` URI. Built for environments where `inputs.json` must reference remote URIs only (e.g. the hosted build sandbox, whose filesystem is ephemeral and whose runner rejects local-path inputs); the uploaded file lands under the caller's `/assets/` prefix. Adds `uploadFile()` to `MthdsApiClient` — kept **off** the shared `Runner` interface because `POST /v1/upload` is non-contract and API-runner-only (a local pipelex runner has no upload route). Auth/size/server failures surface as the same typed `ApiResponseError` as the protocol surface; the content type is guessed from the file extension.
+
 ## [v0.16.0] - 2026-07-02
 
 ### Added

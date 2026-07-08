@@ -43,6 +43,28 @@ export interface ValidateFilesOptions {
   render?: string[];
 }
 
+/**
+ * Request for `uploadFile` — the NON-CONTRACT `POST /v1/upload` convenience.
+ * Not part of the MTHDS Protocol nor the Pipelex build extensions, which is why
+ * it lives on the concrete client, not the shared `Runner` interface.
+ */
+export interface UploadFileRequest {
+  /** Original filename with extension (e.g. `synthetic.png`). */
+  filename: string;
+  /** File content as a base64-encoded string. */
+  data: string;
+  /** Optional MIME type; the server falls back to a provider default when absent. */
+  contentType?: string;
+}
+
+/** Result of `uploadFile` — the `pipelex-storage://` URI pipelex resolves at runtime. */
+export interface UploadFileResult {
+  /** `pipelex-storage://` URI for the uploaded file. */
+  uri: string;
+  /** Original filename echoed back by the server. */
+  filename: string;
+}
+
 interface MthdsApiClientOptions {
   /** API key (Bearer). Falls back to `MTHDS_API_KEY`. Optional for anonymous bare runners. */
   apiKey?: string;
@@ -507,6 +529,34 @@ export class MthdsApiClient implements Runner {
 
   async pipeSpec(request: PipeSpecRequest): Promise<PipeSpecResponse> {
     return this.postApi("build/pipe-spec", request);
+  }
+
+  // ── Storage convenience (NON-CONTRACT — `POST /v1/upload`) ─────────
+
+  /**
+   * Upload a file and get back the `pipelex-storage://` URI pipelex resolves at
+   * runtime — `POST /v1/upload`.
+   *
+   * NON-CONTRACT: not part of the MTHDS Protocol nor the build extensions; a
+   * deployment convenience slated for replacement by the storage redesign. Kept
+   * off the `Runner` interface for that reason (a local pipelex runner has no
+   * upload route). Goes through `requestRaw` + `throwApiResponseError` so an
+   * auth/size/server failure surfaces as the same typed `ApiResponseError` the
+   * protocol surface uses, not a bare `Error`.
+   */
+  async uploadFile(request: UploadFileRequest): Promise<UploadFileResult> {
+    const body: Record<string, unknown> = {
+      filename: request.filename,
+      data: request.data,
+    };
+    if (request.contentType !== undefined) {
+      body.content_type = request.contentType;
+    }
+    const res = await this.requestRaw("POST", this.url("upload"), { body });
+    if (res.status < 200 || res.status >= 300) {
+      this.throwApiResponseError("POST", "upload", res);
+    }
+    return JSON.parse(res.body) as UploadFileResult;
   }
 }
 

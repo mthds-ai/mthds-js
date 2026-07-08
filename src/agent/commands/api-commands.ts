@@ -7,7 +7,7 @@
 
 import { Command, Option } from "commander";
 import { existsSync, readFileSync, statSync } from "node:fs";
-import { join } from "node:path";
+import { basename, extname, join } from "node:path";
 import {
   agentError,
   agentSuccess,
@@ -326,6 +326,44 @@ export function registerApiRunnerCommands(program: Command, makeRunner: () => Ru
       });
     });
 
+  // ── inputs upload ──
+  // Push a local file to pipelex storage and print its `pipelex-storage://` URI.
+  // Used where inputs.json must reference remote URIs only (the hosted build
+  // sandbox): generated files live on an ephemeral, runner-invisible filesystem,
+  // so a local path can never execute on the hosted runner.
+
+  inputsGroup
+    .command("upload")
+    .argument("<file>", "Path to the local file to upload")
+    .description("Upload a file to pipelex storage; prints its pipelex-storage:// URI")
+    .allowUnknownOption()
+    .allowExcessArguments(true)
+    .exitOverride()
+    .action(async (file: string) => {
+      const runner = safeCreateRunner(makeRunner);
+      if (!isApiRunner(runner)) {
+        agentError("'inputs upload' requires the API runner (--runner api).", "RunnerError", {
+          error_domain: AGENT_ERROR_DOMAINS.RUNNER,
+        });
+      }
+      const data = readFileBase64OrError(file);
+      const filename = basename(file);
+      const contentType = guessContentType(filename);
+      try {
+        const result = await runner.uploadFile({ filename, data, contentType });
+        agentSuccess({ success: true, uri: result.uri, filename: result.filename });
+      } catch (err) {
+        if (err instanceof ApiResponseError) {
+          agentError(err.serverMessage ?? err.message, err.errorType ?? "RunnerError", {
+            error_domain: AGENT_ERROR_DOMAINS.RUNNER,
+          });
+        }
+        agentError((err as Error).message, "RunnerError", {
+          error_domain: AGENT_ERROR_DOMAINS.RUNNER,
+        });
+      }
+    });
+
   // ── run ──
 
   const runGroup = program
@@ -480,6 +518,44 @@ function readFileOrError(path: string): string {
     });
     throw err;
   }
+}
+
+/** Read a file as raw bytes and base64-encode it, mapping read failures to an IO agent error. */
+function readFileBase64OrError(path: string): string {
+  try {
+    return readFileSync(path).toString("base64");
+  } catch (err) {
+    agentError(`Cannot read file: ${(err as Error).message}`, "IOError", {
+      error_domain: AGENT_ERROR_DOMAINS.IO,
+    });
+    throw err;
+  }
+}
+
+// Extension → MIME map for uploaded synthetic inputs. Mirrors the /pub skill's
+// table — enough coverage for the file types the inputs-skill generates (images,
+// PDFs, office docs, text). An unknown extension returns undefined; the server
+// then applies a provider default, so this never blocks an upload.
+const CONTENT_TYPE_BY_EXT: Readonly<Record<string, string>> = {
+  png: "image/png",
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  gif: "image/gif",
+  webp: "image/webp",
+  svg: "image/svg+xml",
+  pdf: "application/pdf",
+  txt: "text/plain",
+  md: "text/markdown",
+  csv: "text/csv",
+  json: "application/json",
+  html: "text/html",
+  docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+};
+
+function guessContentType(filename: string): string | undefined {
+  const ext = extname(filename).slice(1).toLowerCase();
+  return CONTENT_TYPE_BY_EXT[ext];
 }
 
 // TODO: resolveContent() doesn't handle directory targets (unlike resolveContentForRun()).

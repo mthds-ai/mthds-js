@@ -30,7 +30,13 @@ describe("detectCodexVersion", () => {
     expect(mockedExecFileSync).toHaveBeenCalledWith(
       "codex",
       ["--version"],
-      expect.objectContaining({ timeout: expect.any(Number) }),
+      // shell only on Windows: npm ships codex as a .cmd shim there, which
+      // Node cannot spawn without a shell (EINVAL) — everywhere else the
+      // direct, shell-free spawn is kept.
+      expect.objectContaining({
+        timeout: expect.any(Number),
+        shell: process.platform === "win32",
+      }),
     );
   });
 

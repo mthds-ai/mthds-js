@@ -61,6 +61,11 @@ export function detectCodexVersion(): string | null {
     rawOutput = execFileSync("codex", ["--version"], {
       stdio: "pipe",
       timeout: 5000,
+      // npm installs the Codex CLI as a `codex.cmd` shim on Windows, which
+      // Node refuses to spawn without a shell (EINVAL) — detection would be
+      // silently bypassed on that platform. Command and args are fixed
+      // strings, so shell interpolation has nothing to escape.
+      shell: process.platform === "win32",
     })
       .toString()
       .trim();

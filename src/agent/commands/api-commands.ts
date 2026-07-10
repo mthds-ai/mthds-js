@@ -483,6 +483,48 @@ export function registerApiRunnerCommands(program: Command, makeRunner: () => Ru
         { error_domain: AGENT_ERROR_DOMAINS.RUNNER },
       );
     });
+
+  // ── codegen ──
+  // codegen is a LOCAL CLI capability (pipelex runner) only for now — the MTHDS
+  // API has no codegen routes yet. Registered here so the API runner errors
+  // cleanly instead of Commander rejecting the args with a generic message.
+
+  const codegenUnsupported = () => {
+    agentError(
+      "codegen is not available on the API runner — the Pipelex API has no codegen routes yet. It is a local capability of the pipelex runner: re-run with --runner pipelex.",
+      "UnsupportedError",
+      { error_domain: AGENT_ERROR_DOMAINS.RUNNER },
+    );
+  };
+
+  const codegenGroup = program
+    .command("codegen")
+    .description(
+      "Project the crate into typed artifacts and check drift offline (pipelex runner only)",
+    )
+    .exitOverride();
+
+  codegenGroup
+    .command("types")
+    .description("Project the crate's concept set into typed artifacts (pipelex runner only)")
+    .argument("[paths...]", "Directories of .mthds bundles to resolve into the closure")
+    .allowUnknownOption()
+    .allowExcessArguments(true)
+    .exitOverride()
+    .action(async () => {
+      codegenUnsupported();
+    });
+
+  codegenGroup
+    .command("check")
+    .description("Verify generated artifacts are current (pipelex runner only)")
+    .argument("[root]", "Directory holding codegen.lock and generated artifacts")
+    .allowUnknownOption()
+    .allowExcessArguments(true)
+    .exitOverride()
+    .action(async () => {
+      codegenUnsupported();
+    });
 }
 
 // ── Helpers ──

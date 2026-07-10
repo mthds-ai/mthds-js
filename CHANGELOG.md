@@ -4,7 +4,7 @@
 
 ### Added
 
-- **`mthds-agent codegen types|check` passthrough stubs (pipelex runner):** the new `pipelex-agent codegen` family is now visible in `mthds-agent --help` and forwards verbatim like the other runner-aware commands. `types` projects the resolved method library into typed artifacts; `check` is the offline drift check. No API-runner arm yet (the codegen routes land with the API-route stretch).
+- **`mthds-agent codegen types|check` passthrough stubs (pipelex runner):** the new `pipelex-agent codegen` family is now visible in `mthds-agent --help` and forwards verbatim like the other runner-aware commands. `types` projects the resolved method library into typed artifacts; `check` is the offline drift check. ⚠ Depends on an unreleased pipelex — no published pipelex ships `codegen` yet, so `PIPELEX_PKG.version_constraint` must be bumped to the pipelex version that ships it, in the same release. On the API runner the commands error cleanly as `UnsupportedError` (the codegen routes land with the API-route stretch).
 
 ## [v0.18.0] - 2026-07-10
 

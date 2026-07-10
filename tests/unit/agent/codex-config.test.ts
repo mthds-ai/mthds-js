@@ -42,6 +42,15 @@ vi.mock("../../../src/agent/output.js", () => ({
   },
 }));
 
+// ── Mock the Codex app version check so tests never spawn `codex` ───
+
+type VersionFinding = { code: string; severity: "warning" | "error"; message: string };
+const assessCodexVersionMock = vi.fn<() => VersionFinding | null>();
+
+vi.mock("../../../src/agent/codex-version.js", () => ({
+  assessCodexVersion: () => assessCodexVersionMock(),
+}));
+
 let agentCodexApplyConfig: (opts?: { check?: boolean; dryRun?: boolean }) => Promise<void>;
 
 const HOOK_COMMAND = "mthds-agent codex hook";
@@ -51,6 +60,8 @@ describe("agentCodexApplyConfig", () => {
     scratchHome = mkdtempSync(join(tmpdir(), "mthds-codex-config-test-"));
     successSpy.mockClear();
     errorSpy.mockClear();
+    assessCodexVersionMock.mockReset();
+    assessCodexVersionMock.mockReturnValue(null);
     vi.resetModules();
     const mod = await import("../../../src/agent/commands/codex-config.js");
     agentCodexApplyConfig = mod.agentCodexApplyConfig;
@@ -82,27 +93,28 @@ describe("agentCodexApplyConfig", () => {
   }
 
   const NETWORK_CHANGE = { table: "sandbox_workspace_write", key: "network_access", value: "true" };
-  const PLUGIN_HOOKS_CHANGE = { table: "features", key: "plugin_hooks", value: "true" };
 
   // ── Apply paths ────────────────────────────────────────────────────
 
-  it("creates config.toml with both required keys when none exists", async () => {
+  it("creates config.toml with the required sandbox network key when none exists", async () => {
     await agentCodexApplyConfig();
 
     expect(errorSpy).not.toHaveBeenCalled();
     expect(successSpy).toHaveBeenCalledWith({
       status: "APPLIED",
       config_file: configFile(),
-      applied: [NETWORK_CHANGE, PLUGIN_HOOKS_CHANGE],
+      applied: [NETWORK_CHANGE],
       legacy_hook: { hooks_file: hooksFile(), status: "absent" },
       warnings: [],
     });
     const parsed = parseToml(readConfig()) as Record<string, Record<string, unknown>>;
     expect(parsed.sandbox_workspace_write.network_access).toBe(true);
-    expect(parsed.features.plugin_hooks).toBe(true);
+    // No [features] hook flag is written — hooks are default-on since Codex
+    // 0.131 and the old plugin_hooks opt-in key was removed in 0.134.
+    expect(parsed.features).toBeUndefined();
   });
 
-  it("inserts plugin_hooks into an existing [features] table and appends [sandbox_workspace_write]", async () => {
+  it("appends [sandbox_workspace_write] and leaves an existing [features] table untouched", async () => {
     writeConfig(`# top comment
 sandbox_mode = "workspace-write"
 
@@ -121,11 +133,12 @@ some_other = true
 
     const parsed = parseToml(raw) as Record<string, Record<string, unknown>>;
     expect(parsed.features.some_other).toBe(true);
-    expect(parsed.features.plugin_hooks).toBe(true);
+    // apply-config no longer writes a hook feature flag.
+    expect(parsed.features.plugin_hooks).toBeUndefined();
     expect(parsed.sandbox_workspace_write.network_access).toBe(true);
   });
 
-  it("inserts network_access into an existing [sandbox_workspace_write] table and appends [features]", async () => {
+  it("inserts network_access into an existing [sandbox_workspace_write] table", async () => {
     writeConfig(`[sandbox_workspace_write]
 writable_roots = ["/tmp"]
 `);
@@ -136,7 +149,8 @@ writable_roots = ["/tmp"]
     const parsed = parseToml(readConfig()) as Record<string, Record<string, unknown>>;
     expect(parsed.sandbox_workspace_write.network_access).toBe(true);
     expect(parsed.sandbox_workspace_write.writable_roots).toEqual(["/tmp"]);
-    expect(parsed.features.plugin_hooks).toBe(true);
+    // No [features] table is created — the hook flag is no longer required.
+    expect(parsed.features).toBeUndefined();
   });
 
   it("treats [[array_of_tables]] headers as section boundaries when inserting", async () => {
@@ -170,12 +184,9 @@ path = "log2"
 
   // ── Idempotence ────────────────────────────────────────────────────
 
-  it("reports ALREADY_OK when both required keys are already set", async () => {
+  it("reports ALREADY_OK when the required key is already set", async () => {
     writeConfig(`[sandbox_workspace_write]
 network_access = true
-
-[features]
-plugin_hooks = true
 `);
 
     await agentCodexApplyConfig();
@@ -215,7 +226,10 @@ network_access = false
     expect(readConfig()).toBe(original);
   });
 
-  it("errors without writing when plugin_hooks is explicitly false", async () => {
+  it("errors without writing when the stale plugin_hooks key is explicitly false", async () => {
+    // plugin_hooks disabled plugin-bundled hooks on Codex ≤ 0.133 and is
+    // ignored since 0.134 — either way the key must be removed by hand, so an
+    // explicit false is a hard error, not a warning that APPLIED would mask.
     const original = `[features]
 plugin_hooks = false
 `;
@@ -223,6 +237,10 @@ plugin_hooks = false
 
     await expect(agentCodexApplyConfig()).rejects.toBeInstanceOf(AgentErrorThrow);
     expect(errorSpy.mock.calls[0][1]).toBe("ConfigError");
+    expect(errorSpy.mock.calls[0][0]).toContain("plugin_hooks = false");
+    expect(errorSpy.mock.calls[0][0]).toContain("ignored by Codex 0.134+");
+    // File untouched — apply-config never overrides an explicit user choice,
+    // and errors before writing anything (not even the network key).
     expect(readConfig()).toBe(original);
   });
 
@@ -240,56 +258,63 @@ network_access = "true"
     expect(readConfig()).toBe(original);
   });
 
+  // ── Hook-disabling keys (hard error, never modify) ─────────────────
+
+  it("errors without writing when [features] hooks is explicitly false", async () => {
+    // An explicit `hooks = false` disables ALL Codex hooks — the mthds hook
+    // cannot load, so reporting APPLIED would be a false success. This is a
+    // conflict-style hard error in every mode; the user must remove the key.
+    const original = `[features]
+hooks = false
+`;
+    writeConfig(original);
+
+    await expect(agentCodexApplyConfig()).rejects.toBeInstanceOf(AgentErrorThrow);
+    expect(errorSpy.mock.calls[0][1]).toBe("ConfigError");
+    expect(errorSpy.mock.calls[0][0]).toContain("hooks = false");
+    expect(errorSpy.mock.calls[0][0]).toContain("disables ALL Codex hooks");
+    expect(readConfig()).toBe(original);
+  });
+
+  it("errors when the deprecated codex_hooks alias is explicitly false", async () => {
+    const original = `[features]
+codex_hooks = false
+`;
+    writeConfig(original);
+
+    await expect(agentCodexApplyConfig()).rejects.toBeInstanceOf(AgentErrorThrow);
+    expect(errorSpy.mock.calls[0][1]).toBe("ConfigError");
+    expect(errorSpy.mock.calls[0][0]).toContain("codex_hooks = false");
+    expect(errorSpy.mock.calls[0][0]).toContain("deprecated alias");
+    expect(readConfig()).toBe(original);
+  });
+
+  it("names every disabled key when hooks and codex_hooks are both false", async () => {
+    // Regression: a first-match implementation named only `hooks`, silently
+    // omitting `codex_hooks` when both were disabled.
+    writeConfig(`[features]
+hooks = false
+codex_hooks = false
+`);
+
+    await expect(agentCodexApplyConfig()).rejects.toBeInstanceOf(AgentErrorThrow);
+    const message = errorSpy.mock.calls[0][0] as string;
+    expect(message).toContain("[features] hooks = false");
+    expect(message).toContain("[features] codex_hooks = false");
+  });
+
+  it("--dry-run also errors on a hook-disabling key", async () => {
+    // The conflict check runs before the mode branches so apply, --check and
+    // --dry-run all give the same verdict for the same config state.
+    writeConfig(`[features]
+hooks = false
+`);
+
+    await expect(agentCodexApplyConfig({ dryRun: true })).rejects.toBeInstanceOf(AgentErrorThrow);
+    expect(errorSpy.mock.calls[0][1]).toBe("ConfigError");
+  });
+
   // ── Warnings (warn-only, never modify) ─────────────────────────────
-
-  it("warns when [features] hooks is explicitly false but still applies the required keys", async () => {
-    writeConfig(`[features]
-hooks = false
-`);
-
-    await agentCodexApplyConfig();
-
-    expect(errorSpy).not.toHaveBeenCalled();
-    const call = lastSuccess();
-    expect(call.status).toBe("APPLIED");
-    const warnings = call.warnings as Array<{ code: string; message: string }>;
-    expect(warnings.some((w) => w.code === "CODEX_HOOKS_DISABLED")).toBe(true);
-
-    const parsed = parseToml(readConfig()) as Record<string, Record<string, unknown>>;
-    // hooks left untouched; plugin_hooks added alongside it.
-    expect(parsed.features.hooks).toBe(false);
-    expect(parsed.features.plugin_hooks).toBe(true);
-  });
-
-  it("warns when [features] codex_hooks is explicitly false", async () => {
-    writeConfig(`[features]
-codex_hooks = false
-`);
-
-    await agentCodexApplyConfig();
-
-    expect(errorSpy).not.toHaveBeenCalled();
-    const warnings = lastSuccess().warnings as Array<{ code: string; message: string }>;
-    const warning = warnings.find((w) => w.code === "CODEX_HOOKS_DISABLED");
-    expect(warning?.message).toContain("[features] codex_hooks is");
-  });
-
-  it("names both keys when [features] hooks and codex_hooks are both false", async () => {
-    // Regression: a first-match ternary named only `hooks`, silently omitting
-    // `codex_hooks` from the warning when both were disabled.
-    writeConfig(`[features]
-hooks = false
-codex_hooks = false
-`);
-
-    await agentCodexApplyConfig();
-
-    expect(errorSpy).not.toHaveBeenCalled();
-    const warnings = lastSuccess().warnings as Array<{ code: string; message: string }>;
-    const warning = warnings.find((w) => w.code === "CODEX_HOOKS_DISABLED");
-    expect(warning?.message).toContain("[features] hooks");
-    expect(warning?.message).toContain("[features] codex_hooks");
-  });
 
   it("warns when sandbox_mode is read-only without modifying it", async () => {
     writeConfig(`sandbox_mode = "read-only"
@@ -304,14 +329,61 @@ codex_hooks = false
     expect(parsed.sandbox_mode).toBe("read-only");
   });
 
+  it("includes a CODEX_VERSION_TOO_OLD warning in the APPLIED payload when Codex is below the floor but hooks-capable", async () => {
+    assessCodexVersionMock.mockReturnValue({
+      code: "CODEX_VERSION_TOO_OLD",
+      severity: "warning",
+      message: "Codex 0.135.0 is older than 0.141.0, the minimum version the mthds plugin supports",
+    });
+
+    await agentCodexApplyConfig();
+
+    expect(errorSpy).not.toHaveBeenCalled();
+    const call = lastSuccess();
+    // Hooks still load on 0.131+ — advisory only, the required key is applied.
+    expect(call.status).toBe("APPLIED");
+    const warnings = call.warnings as Array<{ code: string; message: string }>;
+    const warning = warnings.find((w) => w.code === "CODEX_VERSION_TOO_OLD");
+    expect(warning).toBeDefined();
+    expect(warning!.message).toContain("0.135.0");
+  });
+
+  it("errors in every mode when Codex is too old to load plugin-bundled hooks", async () => {
+    // Below 0.131 the bundled hook cannot load and no key can be written to
+    // fix it — APPLIED/ALREADY_OK would present setup as complete while the
+    // hook never loads, so apply, --check and --dry-run all hard-error.
+    assessCodexVersionMock.mockReturnValue({
+      code: "CODEX_HOOKS_UNAVAILABLE",
+      severity: "error",
+      message: "Codex 0.130.0 cannot load plugin-bundled hooks",
+    });
+
+    await expect(agentCodexApplyConfig()).rejects.toBeInstanceOf(AgentErrorThrow);
+    expect(errorSpy.mock.calls[0][1]).toBe("ConfigError");
+    expect(errorSpy.mock.calls[0][0]).toContain("cannot load plugin-bundled hooks");
+    // Nothing written — not even the required network key.
+    expect(existsSync(configFile())).toBe(false);
+
+    errorSpy.mockClear();
+    await expect(agentCodexApplyConfig({ check: true })).rejects.toBeInstanceOf(AgentErrorThrow);
+    errorSpy.mockClear();
+    await expect(agentCodexApplyConfig({ dryRun: true })).rejects.toBeInstanceOf(AgentErrorThrow);
+  });
+
+  it("emits no version warning when Codex cannot be detected or is recent enough", async () => {
+    // assessCodexVersionMock defaults to null (set in beforeEach) — covers
+    // both the binary-missing and the recent-enough cases.
+    await agentCodexApplyConfig();
+
+    expect(errorSpy).not.toHaveBeenCalled();
+    expect(lastSuccess().warnings).toEqual([]);
+  });
+
   // ── Legacy ~/.codex/hooks.json cleanup ─────────────────────────────
 
   it("removes an obsolete ~/.codex/hooks.json entry left by the retired install-hook", async () => {
     writeConfig(`[sandbox_workspace_write]
 network_access = true
-
-[features]
-plugin_hooks = true
 `);
     writeHooks({
       hooks: {
@@ -335,7 +407,7 @@ plugin_hooks = true
     expect(readFileSync(hooksFile(), "utf8")).not.toContain(HOOK_COMMAND);
   });
 
-  it("errors on a malformed ~/.codex/hooks.json but still writes the required config keys", async () => {
+  it("errors on a malformed ~/.codex/hooks.json but still writes the required config key", async () => {
     mkdirSync(join(scratchHome, ".codex"), { recursive: true });
     writeFileSync(hooksFile(), "not valid json {", "utf8");
 
@@ -348,7 +420,8 @@ plugin_hooks = true
     // config.toml was still written before the hooks.json check ran.
     const parsed = parseToml(readConfig()) as Record<string, Record<string, unknown>>;
     expect(parsed.sandbox_workspace_write.network_access).toBe(true);
-    expect(parsed.features.plugin_hooks).toBe(true);
+    // No [features] hook flag is written.
+    expect(parsed.features).toBeUndefined();
   });
 
   // ── --check mode ───────────────────────────────────────────────────
@@ -362,9 +435,6 @@ plugin_hooks = true
   it("--check exits 0 when config is already OK and no stale hook exists", async () => {
     writeConfig(`[sandbox_workspace_write]
 network_access = true
-
-[features]
-plugin_hooks = true
 `);
 
     await agentCodexApplyConfig({ check: true });
@@ -381,13 +451,37 @@ plugin_hooks = true
     });
   });
 
-  it("--check exits non-zero when a warning is present even if both keys are set", async () => {
+  it("--check exits non-zero when a hook-disabling key is set even if the required key is set", async () => {
     writeConfig(`[sandbox_workspace_write]
 network_access = true
 
 [features]
-plugin_hooks = true
 hooks = false
+`);
+
+    await expect(agentCodexApplyConfig({ check: true })).rejects.toBeInstanceOf(AgentErrorThrow);
+    // The conflict error is specific — not the generic "needs attention".
+    expect(errorSpy.mock.calls[0][0]).toContain("hooks = false");
+  });
+
+  it("--check exits non-zero when a warning is present even if the required key is set", async () => {
+    writeConfig(`sandbox_mode = "read-only"
+
+[sandbox_workspace_write]
+network_access = true
+`);
+
+    await expect(agentCodexApplyConfig({ check: true })).rejects.toBeInstanceOf(AgentErrorThrow);
+  });
+
+  it("--check exits non-zero when the installed Codex is older than the supported floor", async () => {
+    assessCodexVersionMock.mockReturnValue({
+      code: "CODEX_VERSION_TOO_OLD",
+      severity: "warning",
+      message: "Codex 0.135.0 is older than 0.141.0, the minimum version the mthds plugin supports",
+    });
+    writeConfig(`[sandbox_workspace_write]
+network_access = true
 `);
 
     await expect(agentCodexApplyConfig({ check: true })).rejects.toBeInstanceOf(AgentErrorThrow);
@@ -396,9 +490,6 @@ hooks = false
   it("--check exits non-zero when a stale ~/.codex/hooks.json entry is present", async () => {
     writeConfig(`[sandbox_workspace_write]
 network_access = true
-
-[features]
-plugin_hooks = true
 `);
     writeHooks({
       hooks: {
@@ -417,9 +508,6 @@ plugin_hooks = true
     // the apply path which errors on the same state.
     writeConfig(`[sandbox_workspace_write]
 network_access = true
-
-[features]
-plugin_hooks = true
 `);
     mkdirSync(join(scratchHome, ".codex"), { recursive: true });
     writeFileSync(hooksFile(), "not valid json {", "utf8");
@@ -436,7 +524,7 @@ plugin_hooks = true
     expect(successSpy).toHaveBeenCalledWith({
       status: "WOULD_APPLY",
       config_file: configFile(),
-      applied: [NETWORK_CHANGE, PLUGIN_HOOKS_CHANGE],
+      applied: [NETWORK_CHANGE],
       legacy_hook: { hooks_file: hooksFile(), status: "absent" },
       warnings: [],
     });
@@ -446,9 +534,6 @@ plugin_hooks = true
   it("--dry-run flags a stale hook entry as would-remove without touching it", async () => {
     writeConfig(`[sandbox_workspace_write]
 network_access = true
-
-[features]
-plugin_hooks = true
 `);
     const hooksBefore = JSON.stringify(
       {

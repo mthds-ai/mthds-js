@@ -2,12 +2,13 @@
 name: bump-required-versions
 description: >
   Bump the minimum required versions that mthds-agent enforces at runtime — the
-  Claude Code mthds plugin, pipelex (and pipelex-agent, same package), and plxt.
-  Use when the user says "bump required versions", "bump min pipelex version",
-  "bump minimum plxt version", "raise minimum plugin version", "update required
-  versions", "set min pipelex to X.Y.Z", "bump min mthds plugin version", or any
-  variation of changing one or more of these floors. Trigger even when the user
-  names only one of the three targets — this skill handles partial updates.
+  Claude Code mthds plugin, pipelex (and pipelex-agent, same package), plxt, and
+  the Codex app. Use when the user says "bump required versions", "bump min
+  pipelex version", "bump minimum plxt version", "raise minimum plugin version",
+  "bump min codex version", "update required versions", "set min pipelex to
+  X.Y.Z", "bump min mthds plugin version", or any variation of changing one or
+  more of these floors. Trigger even when the user names only one of the
+  targets — this skill handles partial updates.
 ---
 
 # Bump Required Versions
@@ -17,13 +18,15 @@ Updates the minimum version constraints that this `mthds-agent` release enforces
 - The **Claude Code mthds plugin** (when running inside Claude Code) — `MIN_PLUGIN_VERSION` in `src/agent/plugin-version.ts`.
 - The **pipelex** PyPI package (provides both the `pipelex` and `pipelex-agent` binaries) — `PIPELEX_PKG.version_constraint` in `src/agent/binaries.ts`.
 - The **pipelex-tools** PyPI package (provides the `plxt` binary) — `PIPELEX_TOOLS_PKG.version_constraint` in `src/agent/binaries.ts`.
+- The **Codex app** (the `codex` CLI itself, checked best-effort by `codex apply-config` and `doctor`) — `MIN_CODEX_VERSION` in `src/agent/codex-version.ts`.
 
-The constants in those two files are the single source of truth. Tests import the constants directly, so bumping these values does not require test edits — the test suite re-exercises the new floor automatically.
+The constants in those files are the single source of truth. Tests import the constants directly, so bumping these values does not require test edits — the test suite re-exercises the new floor automatically.
 
 ## Why each lives where it lives
 
 - `MIN_PLUGIN_VERSION` enforces the *opposite* direction from the package constraints: the agent checks the **plugin** is recent enough. The plugin's own `min_mthds_version` (in `mthds-plugins/targets/defaults.toml`) enforces the agent is recent enough. Both versions get bumped on coordinated releases — but **this skill only bumps the agent side**. The plugin side has its own skill (`bump-mthds-version` in `mthds-plugins`).
 - The `BINARY_RECOVERY` map keys binaries (`pipelex`, `pipelex-agent`, `plxt`), but each entry spreads a shared `*_PKG` constant. The package constants own the version constraint, so the `pipelex` and `pipelex-agent` binaries cannot drift apart even by accident — there is only one line to edit.
+- `MIN_CODEX_VERSION` is not a `BINARY_RECOVERY` entry because Codex is not uv-installable: detection shells out to `codex --version` and stays silent when the binary is missing. Below the floor the check emits a warning (`CODEX_VERSION_TOO_OLD`); the same module also hard-errors below `CODEX_PLUGIN_HOOKS_MIN` (0.131, where plugin-bundled hooks cannot load at all) — that second constant is a fixed historical boundary of Codex itself and is **never bumped** by this skill. `MIN_CODEX_VERSION` is a bare `X.Y.Z` string, not a `>=` range.
 
 ## Workflow
 
@@ -31,11 +34,12 @@ The constants in those two files are the single source of truth. Tests import th
 
 If the user already specified targets and versions (e.g. "bump pipelex to 0.24.0 and plxt to 0.4.0"), use them.
 
-Otherwise, ask which of the three to bump:
+Otherwise, ask which of the targets to bump:
 
 - **plugin** — the Claude Code mthds plugin floor (`MIN_PLUGIN_VERSION`)
 - **pipelex** — the `pipelex` PyPI package floor (covers both the `pipelex` and `pipelex-agent` binaries)
 - **plxt** — the `pipelex-tools` PyPI package floor (covers the `plxt` binary)
+- **codex** — the Codex app floor (`MIN_CODEX_VERSION`)
 
 Then for each chosen target ask for the new version (semver `X.Y.Z`).
 
@@ -43,6 +47,7 @@ Show the current values first by reading:
 
 - `src/agent/plugin-version.ts` — find `export const MIN_PLUGIN_VERSION = ">=X.Y.Z"`
 - `src/agent/binaries.ts` — find `PIPELEX_PKG` and `PIPELEX_TOOLS_PKG`, each with a `version_constraint: ">=X.Y.Z"` field
+- `src/agent/codex-version.ts` — find `export const MIN_CODEX_VERSION = "X.Y.Z"` (bare version, no `>=`)
 
 ### 2. Sanity-check the requested versions
 
@@ -55,6 +60,7 @@ The constraint format in both files is a npm-semver range: `">=X.Y.Z"` (note the
 - **plugin** → edit the `MIN_PLUGIN_VERSION` constant in `src/agent/plugin-version.ts` (one line).
 - **pipelex** → edit `PIPELEX_PKG.version_constraint` in `src/agent/binaries.ts` (one line). Both `pipelex` and `pipelex-agent` binaries pick this up automatically via the spread.
 - **plxt** → edit `PIPELEX_TOOLS_PKG.version_constraint` in `src/agent/binaries.ts` (one line).
+- **codex** → edit the `MIN_CODEX_VERSION` constant in `src/agent/codex-version.ts` (one line, bare `"X.Y.Z"` — no `>=` prefix).
 
 Each constant lives in its own block at the top of `binaries.ts`; use the constant name and the surrounding `as const;` line to make the Edit unambiguous.
 
@@ -72,6 +78,7 @@ Summarise what changed:
 plugin:        OLD → NEW
 pipelex:       OLD → NEW   (also applied to pipelex-agent)
 plxt:          OLD → NEW
+codex:         OLD → NEW
 ```
 
 Then remind the user to:

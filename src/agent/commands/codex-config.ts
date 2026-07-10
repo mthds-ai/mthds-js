@@ -2,20 +2,35 @@
  * mthds-agent codex apply-config — make ~/.codex/ correct for the mthds plugin.
  *
  * Two jobs:
- *  1. Additively merge required keys into ~/.codex/config.toml:
+ *  1. Additively merge the required key into ~/.codex/config.toml:
  *       [sandbox_workspace_write] network_access = true
- *         — Codex's default workspace-write sandbox blocks outbound network for
- *           hook commands; without it any remote fetch hangs/fails.
- *       [features] plugin_hooks = true
- *         — plugin-bundled hooks are opt-in; without it Codex never loads the
- *           mthds validation hook shipped inside the plugin.
+ *         — Codex's default workspace-write sandbox blocks outbound network, so
+ *           method runs (inference calls) fail inside the sandbox without it.
+ *           The validation hook itself is offline-safe and needs no network.
+ *     No `[features]` hook flag is written. Codex history: the hook engine
+ *     (`[features] hooks`, formerly `codex_hooks`) is Stable and enabled by
+ *     default since 0.124; plugin-bundled hooks loaded behind an opt-in
+ *     `plugin_hooks` flag from 0.126, default-on since 0.131, and the flag was
+ *     removed (ignored) in 0.134 — so there is no longer any key to write.
  *  2. Remove any obsolete mthds entry left in ~/.codex/hooks.json by the retired
  *     `install-hook` command (see codex.ts) — it would double-fire alongside the
  *     plugin-bundled hook.
  *
- * Warning-only checks (never modified — too high-risk):
- *   - `[features] hooks = false` (or its alias `codex_hooks = false`) disables
- *     hooks entirely; we check both keys defensively.
+ * Hard errors (never modified — apply-config never flips an explicit user
+ * choice, and never reports success while the hook cannot load):
+ *   - a required key explicitly set to a conflicting value
+ *   - `[features] hooks = false` (or its deprecated alias `codex_hooks =
+ *     false`) — disables ALL Codex hooks, so the mthds hook cannot load
+ *   - `[features] plugin_hooks = false` — stale key: disabled plugin-bundled
+ *     hooks on Codex ≤ 0.133 and is ignored since 0.134; remove it by hand
+ *   - installed Codex < 0.131 (best-effort `codex --version` detection, see
+ *     codex-version.ts) — plugin-bundled hooks cannot load there and no key
+ *     can be written to fix it; only upgrading Codex helps
+ *
+ * Warning-only checks (never modified):
+ *   - installed Codex ≥ 0.131 but older than MIN_CODEX_VERSION — works, but
+ *     below the tested floor; silent when the binary is missing or
+ *     unparseable.
  *   - `sandbox_mode = "read-only"` — apply_patch can't run, so the hook can't
  *     either.
  *
@@ -34,6 +49,7 @@ import { dirname, join } from "node:path";
 import { homedir } from "node:os";
 import { parse as parseToml } from "smol-toml";
 import { agentError, agentSuccess, AGENT_ERROR_DOMAINS } from "../output.js";
+import { assessCodexVersion } from "../codex-version.js";
 import { inspectLegacyCodexHook, removeLegacyCodexHook } from "./codex.js";
 
 // ── Constants ──────────────────────────────────────────────────────
@@ -49,7 +65,6 @@ interface RequiredSetting {
 
 const REQUIRED_SETTINGS: RequiredSetting[] = [
   { table: "sandbox_workspace_write", key: "network_access", value: true },
-  { table: "features", key: "plugin_hooks", value: true },
 ];
 
 // ── Types ──────────────────────────────────────────────────────────
@@ -207,28 +222,43 @@ function evaluateSettings(parsed: TomlTable): {
   return { changes, conflicts };
 }
 
+/**
+ * Hook-disabling `[features]` keys explicitly set to false, reported as
+ * conflict-style hard errors (checked in every mode, before any write).
+ * `hooks` (and its deprecated alias `codex_hooks`) genuinely disables ALL
+ * Codex hooks. `plugin_hooks` is a stale key: it disabled plugin-bundled
+ * hooks on Codex ≤ 0.133 and is ignored since 0.134 — either way the config
+ * cannot be trusted to load the mthds hook until the user removes it.
+ * apply-config never flips an explicit user choice, so these error instead
+ * of being rewritten.
+ */
+function hookDisableConflicts(parsed: TomlTable): SettingConflict[] {
+  const features = parsed.features;
+  if (!features || typeof features !== "object" || Array.isArray(features)) return [];
+  const featuresTable = features as TomlTable;
+
+  const ADVICE: Record<string, string> = {
+    hooks:
+      "true — or better, remove the key: hooks are enabled by default since Codex 0.124, and an explicit false disables ALL Codex hooks including the mthds validation hook",
+    codex_hooks:
+      "true — or better, remove the key: this deprecated alias of [features] hooks disables ALL Codex hooks including the mthds validation hook",
+    plugin_hooks:
+      "the key removed: it is ignored by Codex 0.134+ and disabled plugin-bundled hooks on older versions",
+  };
+
+  return (["hooks", "codex_hooks", "plugin_hooks"] as const)
+    .filter((key) => featuresTable[key] === false)
+    .map((key) => ({
+      table: "features",
+      key,
+      current: "false",
+      required: ADVICE[key],
+    }));
+}
+
 /** Collect non-fatal warnings about the user's config without modifying it. */
 function collectWarnings(parsed: TomlTable): CodexConfigWarning[] {
   const warnings: CodexConfigWarning[] = [];
-
-  const features = parsed.features;
-  if (features && typeof features === "object" && !Array.isArray(features)) {
-    const featuresTable = features as TomlTable;
-    // Check both `hooks` and its alias `codex_hooks` defensively. Either being
-    // explicitly false disables hooks entirely and breaks the mthds hook. When
-    // both are false, name both so neither is silently omitted.
-    const disabledKeys = (["hooks", "codex_hooks"] as const).filter(
-      (key) => featuresTable[key] === false,
-    );
-    if (disabledKeys.length > 0) {
-      const keyList = disabledKeys.map((key) => `[features] ${key}`).join(" and ");
-      const plural = disabledKeys.length > 1;
-      warnings.push({
-        code: "CODEX_HOOKS_DISABLED",
-        message: `${keyList} ${plural ? "are" : "is"} explicitly set to false; the mthds hook will not load. Remove ${plural ? "these keys" : "this key"} — hooks are enabled by default.`,
-      });
-    }
-  }
 
   if (parsed.sandbox_mode === "read-only") {
     warnings.push({
@@ -332,7 +362,7 @@ export function inspectCodexConfig(): CodexConfigInspection {
     config_file: file,
     exists: true,
     needs_changes: changes,
-    conflicts,
+    conflicts: [...conflicts, ...hookDisableConflicts(parsed)],
     warnings: collectWarnings(parsed),
   };
 }
@@ -375,11 +405,17 @@ export async function agentCodexApplyConfig(options: ApplyConfigOptions = {}): P
     return;
   }
 
-  const { changes, conflicts } = evaluateSettings(parsed);
+  const { changes, conflicts: settingConflicts } = evaluateSettings(parsed);
+  const conflicts = [...settingConflicts, ...hookDisableConflicts(parsed)];
   const warnings = collectWarnings(parsed);
+  const versionFinding = assessCodexVersion();
+  if (versionFinding?.severity === "warning") {
+    warnings.push({ code: versionFinding.code, message: versionFinding.message });
+  }
 
-  // A key explicitly set to a conflicting value is a hard error in every mode:
-  // apply-config never overrides an explicit user choice.
+  // A key explicitly set to a conflicting value — or a hook-disabling key —
+  // is a hard error in every mode: apply-config never overrides an explicit
+  // user choice, and never reports success while the hook cannot load.
   if (conflicts.length > 0) {
     const lines = conflicts.map(
       (conflict) =>
@@ -390,6 +426,17 @@ export async function agentCodexApplyConfig(options: ApplyConfigOptions = {}): P
       "ConfigError",
       { error_domain: AGENT_ERROR_DOMAINS.CONFIG },
     );
+    return;
+  }
+
+  // A Codex too old to load plugin-bundled hooks at all (< 0.131) is a hard
+  // error in every mode for the same reason: there is no key apply-config
+  // could write to fix it, so reporting APPLIED/ALREADY_OK would present a
+  // setup as complete while the mthds hook can never load.
+  if (versionFinding?.severity === "error") {
+    agentError(versionFinding.message, "ConfigError", {
+      error_domain: AGENT_ERROR_DOMAINS.CONFIG,
+    });
     return;
   }
 

@@ -26,7 +26,7 @@ These constants are the single source of truth (the same ones `bump-required-ver
 - **pipelex-tools** PyPI package (provides the `plxt` binary) — `PIPELEX_TOOLS_PKG.version_constraint` in `src/agent/binaries.ts`.
 - **Codex app** (the `codex` CLI itself, checked best-effort by `codex apply-config` and `doctor`) — `MIN_CODEX_VERSION` in `src/agent/codex-version.ts`.
 
-The constraint format for the first three is an npm-semver range string (`">=X.Y.Z"`); the Codex floor is a bare `"X.Y.Z"` version (the check is advisory — a warning, never a block).
+The constraint format for the first three is an npm-semver range string (`">=X.Y.Z"`); the Codex floor is a bare `"X.Y.Z"` version. Its check is two-tiered: a warning below the floor, but a hard error below `CODEX_PLUGIN_HOOKS_MIN` (0.131 — a fixed historical Codex boundary below which plugin-bundled hooks cannot load; it is never bumped).
 
 ## Workflow
 
@@ -51,7 +51,7 @@ Target    Package         Min version   Source
 plugin    (mthds plugin)  >=X.Y.Z       src/agent/plugin-version.ts
 pipelex   pipelex         >=X.Y.Z       src/agent/binaries.ts   (also pipelex-agent)
 plxt      pipelex-tools   >=X.Y.Z       src/agent/binaries.ts
-codex     (Codex app)     X.Y.Z         src/agent/codex-version.ts   (advisory warning)
+codex     (Codex app)     X.Y.Z         src/agent/codex-version.ts   (warning below floor; error below 0.131)
 ```
 
 Note in the report that `pipelex` and `pipelex-agent` share one floor (they ship from the same PyPI package), and that the plugin floor is checked in the opposite direction — the agent requires the plugin to be at least this version.

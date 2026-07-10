@@ -26,7 +26,7 @@ The constants in those files are the single source of truth. Tests import the co
 
 - `MIN_PLUGIN_VERSION` enforces the *opposite* direction from the package constraints: the agent checks the **plugin** is recent enough. The plugin's own `min_mthds_version` (in `mthds-plugins/targets/defaults.toml`) enforces the agent is recent enough. Both versions get bumped on coordinated releases — but **this skill only bumps the agent side**. The plugin side has its own skill (`bump-mthds-version` in `mthds-plugins`).
 - The `BINARY_RECOVERY` map keys binaries (`pipelex`, `pipelex-agent`, `plxt`), but each entry spreads a shared `*_PKG` constant. The package constants own the version constraint, so the `pipelex` and `pipelex-agent` binaries cannot drift apart even by accident — there is only one line to edit.
-- `MIN_CODEX_VERSION` is not a `BINARY_RECOVERY` entry because Codex is not uv-installable and the check is advisory (a warning, never a block): detection shells out to `codex --version` and stays silent when the binary is missing. It is a bare `X.Y.Z` string, not a `>=` range.
+- `MIN_CODEX_VERSION` is not a `BINARY_RECOVERY` entry because Codex is not uv-installable: detection shells out to `codex --version` and stays silent when the binary is missing. Below the floor the check emits a warning (`CODEX_VERSION_TOO_OLD`); the same module also hard-errors below `CODEX_PLUGIN_HOOKS_MIN` (0.131, where plugin-bundled hooks cannot load at all) — that second constant is a fixed historical boundary of Codex itself and is **never bumped** by this skill. `MIN_CODEX_VERSION` is a bare `X.Y.Z` string, not a `>=` range.
 
 ## Workflow
 

@@ -13,8 +13,10 @@
  *            hook loading follows plugin enablement directly
  * `apply-config` writes no hook feature flag (the key it used to write no
  * longer exists), so on a Codex older than the floor the mthds hook can stay
- * silently off. The floor is the version the plugin is tested against; below
- * it we warn rather than hard-error, because 0.131–0.140 setups do work.
+ * silently off. The check is two-tiered: below 0.131 the bundled hook cannot
+ * load at all — that is a hard error (success would be a false positive);
+ * between 0.131 and the tested floor the setup works, so it is only a
+ * warning.
  *
  * Detection shells out to `codex --version` (output like `codex-cli 0.142.5`)
  * and is strictly best-effort: any failure — binary not on PATH, timeout,
@@ -29,8 +31,25 @@ import semver from "semver";
  *  Managed by the bump-required-versions skill alongside the other floors. */
 export const MIN_CODEX_VERSION = "0.141.0";
 
-/** Warning code emitted when the detected Codex is below MIN_CODEX_VERSION. */
+/** Below this version plugin-bundled hooks cannot load at all: they were
+ *  gated behind the `plugin_hooks` opt-in (default-off before 0.131), and
+ *  that key was removed in 0.134 so there is nothing left to write. This is
+ *  a fixed historical boundary of Codex itself — unlike MIN_CODEX_VERSION it
+ *  is never bumped. */
+export const CODEX_PLUGIN_HOOKS_MIN = "0.131.0";
+
+/** Warning code: Codex is below MIN_CODEX_VERSION but hooks still load. */
 export const CODEX_VERSION_TOO_OLD = "CODEX_VERSION_TOO_OLD";
+
+/** Error code: Codex is below CODEX_PLUGIN_HOOKS_MIN — the hook cannot load. */
+export const CODEX_HOOKS_UNAVAILABLE = "CODEX_HOOKS_UNAVAILABLE";
+
+/** Two-tier verdict on the installed Codex version. */
+export interface CodexVersionFinding {
+  code: typeof CODEX_VERSION_TOO_OLD | typeof CODEX_HOOKS_UNAVAILABLE;
+  severity: "warning" | "error";
+  message: string;
+}
 
 /**
  * Detect the installed Codex CLI version. Returns the bare semver string
@@ -56,15 +75,27 @@ export function detectCodexVersion(): string | null {
 }
 
 /**
- * Best-effort minimum-version check. Returns a warning entry (same shape as
- * CodexConfigWarning) when the detected Codex is older than the supported
- * floor, or null when Codex is recent enough or cannot be detected.
+ * Best-effort minimum-version check, two-tiered:
+ *   - below CODEX_PLUGIN_HOOKS_MIN → severity "error": plugin-bundled hooks
+ *     cannot load on that Codex and there is no key apply-config could write
+ *     to fix it — reporting success would be a false positive.
+ *   - below MIN_CODEX_VERSION (but hooks-capable) → severity "warning": the
+ *     setup works but is older than the floor the plugin is tested against.
+ * Returns null when Codex is recent enough or cannot be detected.
  */
-export function codexVersionWarning(): { code: string; message: string } | null {
+export function assessCodexVersion(): CodexVersionFinding | null {
   const detected = detectCodexVersion();
   if (detected === null || !semver.lt(detected, MIN_CODEX_VERSION)) return null;
+  if (semver.lt(detected, CODEX_PLUGIN_HOOKS_MIN)) {
+    return {
+      code: CODEX_HOOKS_UNAVAILABLE,
+      severity: "error",
+      message: `Codex ${detected} cannot load plugin-bundled hooks: they were gated behind the plugin_hooks opt-in flag (default-off before Codex ${CODEX_PLUGIN_HOOKS_MIN}), which was removed in 0.134 and can no longer be written — the mthds validation hook will not load. Upgrade Codex to ${MIN_CODEX_VERSION} or newer, then re-run \`mthds-agent codex apply-config\`.`,
+    };
+  }
   return {
     code: CODEX_VERSION_TOO_OLD,
+    severity: "warning",
     message: `Codex ${detected} is older than ${MIN_CODEX_VERSION}, the minimum version the mthds plugin supports — the bundled validation hook may not load. Upgrade Codex to ${MIN_CODEX_VERSION} or newer.`,
   };
 }

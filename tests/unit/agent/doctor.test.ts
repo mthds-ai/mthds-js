@@ -38,9 +38,9 @@ vi.mock("../../../src/agent/commands/codex.js", () => ({
 }));
 
 // Best-effort Codex app version check — default to "recent enough / undetectable"
-// so the generic tests stay version-agnostic; the dedicated case below overrides.
+// so the generic tests stay version-agnostic; the dedicated cases below override.
 vi.mock("../../../src/agent/codex-version.js", () => ({
-  codexVersionWarning: vi.fn(() => null),
+  assessCodexVersion: vi.fn(() => null),
 }));
 
 // Capture what agentSuccess receives
@@ -386,7 +386,7 @@ describe("agentDoctor", () => {
     expect(capturedResult!.healthy).toBe(true);
   });
 
-  it("surfaces an old Codex app version as a warning without going unhealthy", async () => {
+  it("surfaces a below-floor but hooks-capable Codex as a warning without going unhealthy", async () => {
     mockedCheckBinaryVersion.mockReturnValue({
       status: "ok",
       installed_version: "0.22.0",
@@ -396,9 +396,10 @@ describe("agentDoctor", () => {
     mockedListConfig.mockReturnValue([]);
 
     const codexVersion = await import("../../../src/agent/codex-version.js");
-    vi.mocked(codexVersion.codexVersionWarning).mockReturnValueOnce({
+    vi.mocked(codexVersion.assessCodexVersion).mockReturnValueOnce({
       code: "CODEX_VERSION_TOO_OLD",
-      message: "Codex 0.130.0 is older than 0.141.0, the minimum version the mthds plugin supports",
+      severity: "warning",
+      message: "Codex 0.135.0 is older than 0.141.0, the minimum version the mthds plugin supports",
     });
 
     await agentDoctor(OutputFormat.JSON);
@@ -409,6 +410,31 @@ describe("agentDoctor", () => {
     expect(warning!.severity).toBe("warning");
     // Best-effort advisory only — doctor stays healthy.
     expect(capturedResult!.healthy).toBe(true);
+  });
+
+  it("surfaces a hooks-incapable Codex (< 0.131) as an error and goes unhealthy", async () => {
+    mockedCheckBinaryVersion.mockReturnValue({
+      status: "ok",
+      installed_version: "0.22.0",
+      version_constraint: PX_CONSTRAINT,
+    });
+    mockedExecFileSync.mockReturnValue(Buffer.from("/usr/local/bin/pipelex"));
+    mockedListConfig.mockReturnValue([]);
+
+    const codexVersion = await import("../../../src/agent/codex-version.js");
+    vi.mocked(codexVersion.assessCodexVersion).mockReturnValueOnce({
+      code: "CODEX_HOOKS_UNAVAILABLE",
+      severity: "error",
+      message: "Codex 0.130.0 cannot load plugin-bundled hooks",
+    });
+
+    await agentDoctor(OutputFormat.JSON);
+
+    const issues = capturedResult!.issues as Issue[];
+    const error = issues.find((i) => i.message.includes("cannot load plugin-bundled hooks"));
+    expect(error).toBeDefined();
+    expect(error!.severity).toBe("error");
+    expect(capturedResult!.healthy).toBe(false);
   });
 
   it("reports a Codex config conflict as an error and marks the report unhealthy", async () => {

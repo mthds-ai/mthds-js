@@ -23,11 +23,14 @@
  *     false`) — disables ALL Codex hooks, so the mthds hook cannot load
  *   - `[features] plugin_hooks = false` — stale key: disabled plugin-bundled
  *     hooks on Codex ≤ 0.133 and is ignored since 0.134; remove it by hand
+ *   - installed Codex < 0.131 (best-effort `codex --version` detection, see
+ *     codex-version.ts) — plugin-bundled hooks cannot load there and no key
+ *     can be written to fix it; only upgrading Codex helps
  *
  * Warning-only checks (never modified):
- *   - installed Codex older than MIN_CODEX_VERSION — best-effort
- *     `codex --version` detection (see codex-version.ts); silent when the
- *     binary is missing or unparseable.
+ *   - installed Codex ≥ 0.131 but older than MIN_CODEX_VERSION — works, but
+ *     below the tested floor; silent when the binary is missing or
+ *     unparseable.
  *   - `sandbox_mode = "read-only"` — apply_patch can't run, so the hook can't
  *     either.
  *
@@ -46,7 +49,7 @@ import { dirname, join } from "node:path";
 import { homedir } from "node:os";
 import { parse as parseToml } from "smol-toml";
 import { agentError, agentSuccess, AGENT_ERROR_DOMAINS } from "../output.js";
-import { codexVersionWarning } from "../codex-version.js";
+import { assessCodexVersion } from "../codex-version.js";
 import { inspectLegacyCodexHook, removeLegacyCodexHook } from "./codex.js";
 
 // ── Constants ──────────────────────────────────────────────────────
@@ -405,8 +408,10 @@ export async function agentCodexApplyConfig(options: ApplyConfigOptions = {}): P
   const { changes, conflicts: settingConflicts } = evaluateSettings(parsed);
   const conflicts = [...settingConflicts, ...hookDisableConflicts(parsed)];
   const warnings = collectWarnings(parsed);
-  const versionWarning = codexVersionWarning();
-  if (versionWarning) warnings.push(versionWarning);
+  const versionFinding = assessCodexVersion();
+  if (versionFinding?.severity === "warning") {
+    warnings.push({ code: versionFinding.code, message: versionFinding.message });
+  }
 
   // A key explicitly set to a conflicting value — or a hook-disabling key —
   // is a hard error in every mode: apply-config never overrides an explicit
@@ -421,6 +426,17 @@ export async function agentCodexApplyConfig(options: ApplyConfigOptions = {}): P
       "ConfigError",
       { error_domain: AGENT_ERROR_DOMAINS.CONFIG },
     );
+    return;
+  }
+
+  // A Codex too old to load plugin-bundled hooks at all (< 0.131) is a hard
+  // error in every mode for the same reason: there is no key apply-config
+  // could write to fix it, so reporting APPLIED/ALREADY_OK would present a
+  // setup as complete while the mthds hook can never load.
+  if (versionFinding?.severity === "error") {
+    agentError(versionFinding.message, "ConfigError", {
+      error_domain: AGENT_ERROR_DOMAINS.CONFIG,
+    });
     return;
   }
 

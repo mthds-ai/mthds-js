@@ -14,7 +14,8 @@ Reporter: found while verifying greptile's "Older Codex Hooks Stay Off" thread. 
 The workspace spec (`docs/specs/mthds-agent-cli.md` § `mthds-agent codex apply-config`) was updated in the same change as the code, with the new error trigger and warning rows marked `<!-- unverified -->`. Once mthds v0.18.0 is published to npm (the version the conformance suite installs), add to `conformance/tests/mthds_agent/test_agent_json.py`:
 
 - `[features] hooks = false` in an isolated HOME → apply-config exits non-zero with `error_type: ConfigError`, config file untouched.
-- Optionally: the same state under `--check` and `--dry-run` → same verdict (mode consistency).
+- A stub `codex` binary on PATH printing a version below 0.131 → apply-config exits non-zero (`CODEX_HOOKS_UNAVAILABLE` hard error); printing a version in [0.131, floor) → exit 0 with the `CODEX_VERSION_TOO_OLD` warning and `--check` non-zero.
+- Optionally: the same states under `--check` and `--dry-run` → same verdict (mode consistency).
 
 Then flip the spec's `<!-- unverified -->` markers to `> Verified by:` links per the spec/conformance pairing rules.
 

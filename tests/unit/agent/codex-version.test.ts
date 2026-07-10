@@ -9,9 +9,11 @@ vi.mock("node:child_process", () => ({
 import { execFileSync } from "node:child_process";
 import {
   detectCodexVersion,
-  codexVersionWarning,
+  assessCodexVersion,
   MIN_CODEX_VERSION,
+  CODEX_PLUGIN_HOOKS_MIN,
   CODEX_VERSION_TOO_OLD,
+  CODEX_HOOKS_UNAVAILABLE,
 } from "../../../src/agent/codex-version.js";
 
 const mockedExecFileSync = vi.mocked(execFileSync);
@@ -55,28 +57,41 @@ describe("detectCodexVersion", () => {
   });
 });
 
-describe("codexVersionWarning", () => {
-  it("warns when the detected Codex is older than the supported floor", () => {
+describe("assessCodexVersion", () => {
+  it("errors when the detected Codex cannot load plugin-bundled hooks (< 0.131)", () => {
     mockedExecFileSync.mockReturnValue(Buffer.from("codex-cli 0.130.0"));
 
-    const warning = codexVersionWarning();
-    expect(warning).not.toBeNull();
-    expect(warning!.code).toBe(CODEX_VERSION_TOO_OLD);
-    expect(warning!.message).toContain("0.130.0");
-    expect(warning!.message).toContain(MIN_CODEX_VERSION);
-    expect(warning!.message).toContain("Upgrade Codex");
+    const finding = assessCodexVersion();
+    expect(finding).not.toBeNull();
+    expect(finding!.code).toBe(CODEX_HOOKS_UNAVAILABLE);
+    expect(finding!.severity).toBe("error");
+    expect(finding!.message).toContain("0.130.0");
+    expect(finding!.message).toContain("cannot load plugin-bundled hooks");
+    expect(finding!.message).toContain(MIN_CODEX_VERSION);
+  });
+
+  it("warns when the detected Codex loads hooks but is below the tested floor", () => {
+    mockedExecFileSync.mockReturnValue(Buffer.from(`codex-cli ${CODEX_PLUGIN_HOOKS_MIN}`));
+
+    const finding = assessCodexVersion();
+    expect(finding).not.toBeNull();
+    expect(finding!.code).toBe(CODEX_VERSION_TOO_OLD);
+    expect(finding!.severity).toBe("warning");
+    expect(finding!.message).toContain(CODEX_PLUGIN_HOOKS_MIN);
+    expect(finding!.message).toContain(MIN_CODEX_VERSION);
+    expect(finding!.message).toContain("Upgrade Codex");
   });
 
   it("returns null when the detected Codex meets the floor exactly", () => {
     mockedExecFileSync.mockReturnValue(Buffer.from(`codex-cli ${MIN_CODEX_VERSION}`));
 
-    expect(codexVersionWarning()).toBeNull();
+    expect(assessCodexVersion()).toBeNull();
   });
 
   it("returns null when the detected Codex is newer than the floor", () => {
     mockedExecFileSync.mockReturnValue(Buffer.from("codex-cli 99.0.0"));
 
-    expect(codexVersionWarning()).toBeNull();
+    expect(assessCodexVersion()).toBeNull();
   });
 
   it("returns null when the version cannot be detected", () => {
@@ -84,6 +99,6 @@ describe("codexVersionWarning", () => {
       throw new Error("spawn codex ENOENT");
     });
 
-    expect(codexVersionWarning()).toBeNull();
+    expect(assessCodexVersion()).toBeNull();
   });
 });

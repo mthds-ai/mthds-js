@@ -44,10 +44,11 @@ vi.mock("../../../src/agent/output.js", () => ({
 
 // ── Mock the Codex app version check so tests never spawn `codex` ───
 
-const codexVersionWarningMock = vi.fn<() => { code: string; message: string } | null>();
+type VersionFinding = { code: string; severity: "warning" | "error"; message: string };
+const assessCodexVersionMock = vi.fn<() => VersionFinding | null>();
 
 vi.mock("../../../src/agent/codex-version.js", () => ({
-  codexVersionWarning: () => codexVersionWarningMock(),
+  assessCodexVersion: () => assessCodexVersionMock(),
 }));
 
 let agentCodexApplyConfig: (opts?: { check?: boolean; dryRun?: boolean }) => Promise<void>;
@@ -59,8 +60,8 @@ describe("agentCodexApplyConfig", () => {
     scratchHome = mkdtempSync(join(tmpdir(), "mthds-codex-config-test-"));
     successSpy.mockClear();
     errorSpy.mockClear();
-    codexVersionWarningMock.mockReset();
-    codexVersionWarningMock.mockReturnValue(null);
+    assessCodexVersionMock.mockReset();
+    assessCodexVersionMock.mockReturnValue(null);
     vi.resetModules();
     const mod = await import("../../../src/agent/commands/codex-config.js");
     agentCodexApplyConfig = mod.agentCodexApplyConfig;
@@ -328,26 +329,49 @@ hooks = false
     expect(parsed.sandbox_mode).toBe("read-only");
   });
 
-  it("includes a CODEX_VERSION_TOO_OLD warning in the APPLIED payload when Codex is old", async () => {
-    codexVersionWarningMock.mockReturnValue({
+  it("includes a CODEX_VERSION_TOO_OLD warning in the APPLIED payload when Codex is below the floor but hooks-capable", async () => {
+    assessCodexVersionMock.mockReturnValue({
       code: "CODEX_VERSION_TOO_OLD",
-      message: "Codex 0.130.0 is older than 0.141.0, the minimum version the mthds plugin supports",
+      severity: "warning",
+      message: "Codex 0.135.0 is older than 0.141.0, the minimum version the mthds plugin supports",
     });
 
     await agentCodexApplyConfig();
 
     expect(errorSpy).not.toHaveBeenCalled();
     const call = lastSuccess();
-    // The version check is advisory — the required key is still applied.
+    // Hooks still load on 0.131+ — advisory only, the required key is applied.
     expect(call.status).toBe("APPLIED");
     const warnings = call.warnings as Array<{ code: string; message: string }>;
     const warning = warnings.find((w) => w.code === "CODEX_VERSION_TOO_OLD");
     expect(warning).toBeDefined();
-    expect(warning!.message).toContain("0.130.0");
+    expect(warning!.message).toContain("0.135.0");
+  });
+
+  it("errors in every mode when Codex is too old to load plugin-bundled hooks", async () => {
+    // Below 0.131 the bundled hook cannot load and no key can be written to
+    // fix it — APPLIED/ALREADY_OK would present setup as complete while the
+    // hook never loads, so apply, --check and --dry-run all hard-error.
+    assessCodexVersionMock.mockReturnValue({
+      code: "CODEX_HOOKS_UNAVAILABLE",
+      severity: "error",
+      message: "Codex 0.130.0 cannot load plugin-bundled hooks",
+    });
+
+    await expect(agentCodexApplyConfig()).rejects.toBeInstanceOf(AgentErrorThrow);
+    expect(errorSpy.mock.calls[0][1]).toBe("ConfigError");
+    expect(errorSpy.mock.calls[0][0]).toContain("cannot load plugin-bundled hooks");
+    // Nothing written — not even the required network key.
+    expect(existsSync(configFile())).toBe(false);
+
+    errorSpy.mockClear();
+    await expect(agentCodexApplyConfig({ check: true })).rejects.toBeInstanceOf(AgentErrorThrow);
+    errorSpy.mockClear();
+    await expect(agentCodexApplyConfig({ dryRun: true })).rejects.toBeInstanceOf(AgentErrorThrow);
   });
 
   it("emits no version warning when Codex cannot be detected or is recent enough", async () => {
-    // codexVersionWarningMock defaults to null (set in beforeEach) — covers
+    // assessCodexVersionMock defaults to null (set in beforeEach) — covers
     // both the binary-missing and the recent-enough cases.
     await agentCodexApplyConfig();
 
@@ -451,9 +475,10 @@ network_access = true
   });
 
   it("--check exits non-zero when the installed Codex is older than the supported floor", async () => {
-    codexVersionWarningMock.mockReturnValue({
+    assessCodexVersionMock.mockReturnValue({
       code: "CODEX_VERSION_TOO_OLD",
-      message: "Codex 0.130.0 is older than 0.141.0, the minimum version the mthds plugin supports",
+      severity: "warning",
+      message: "Codex 0.135.0 is older than 0.141.0, the minimum version the mthds plugin supports",
     });
     writeConfig(`[sandbox_workspace_write]
 network_access = true

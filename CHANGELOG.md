@@ -8,14 +8,17 @@
 
 ## [v0.18.0] - 2026-07-10
 
-### Changed
+### Added
+- **Codex version detection** — Added a best-effort minimum-Codex-version check to `apply-config` and `doctor`, detecting the installed version via `codex --version` (with safe handling of the Windows `.cmd` shim).
+- **Claude Code skills** — Updated `bump-required-versions` and `check-min-versions` to read and bump the new `MIN_CODEX_VERSION` floor alongside existing dependencies.
 
-- **`codex apply-config` no longer writes a hooks feature flag.** Since Codex 0.141 the hooks feature is Stable and enabled by default (`[features] hooks`, `default_enabled: true`), so plugin-bundled hooks load with no opt-in — the old `[features] plugin_hooks = true` write only added a deprecated alias key to the user's config. `apply-config` now merges just `[sandbox_workspace_write] network_access = true` (still needed for method runs inside the sandbox; the validation hook itself is offline-safe) and continues to sweep any obsolete `~/.codex/hooks.json` entry. Enabling the hook is now nothing more than trusting it on first run (Codex persists trusted hashes under `[hooks.state]`). Requires Codex 0.141.0+.
-- **`apply-config` / `doctor` hook-disabled warning now covers all three feature keys.** An explicit `false` on the canonical `[features] hooks` or either deprecated alias (`plugin_hooks` / `codex_hooks`) is reported, so a stale disabling key can't silently break the hook.
+### Changed
+- **(Breaking) Hook-disabling keys are now hard errors** — Setting `[features] hooks = false` (or its deprecated alias `codex_hooks = false`) disables ALL Codex hooks, so it now raises a conflict-style `ConfigError` in `apply-config`, `--check`, `--dry-run`, and `doctor`. Previously this was only a warning, which could make setup appear complete while the mthds hook never loaded. The stale `plugin_hooks = false` key is rejected the same way — not as an alias, but as an obsolete leftover: it was an independent opt-in for plugin-bundled hooks that disabled them on Codex ≤ 0.133 and is ignored since 0.134, so it must be removed by hand (`apply-config` never flips an explicit user choice).
+- **Simplified `apply-config`** — The command no longer writes a hooks feature flag (`plugin_hooks = true`), since Codex enables hooks out of the box on every supported version (the opt-in key was removed in Codex 0.134). It now only merges `[sandbox_workspace_write] network_access = true` and sweeps obsolete hook entries.
+- **Two-tiered Codex version validation** — Versions `< 0.131` trigger a hard `CODEX_HOOKS_UNAVAILABLE` error (plugin-bundled hooks cannot load at all), while versions `>= 0.131` but below the supported floor (`0.141.0`) trigger a `CODEX_VERSION_TOO_OLD` warning that fails `--check` but still lets hooks load best-effort.
 
 ### Fixed
-
-- **Published CLI binaries are executable.** The `build` script now sets the executable bit on `dist/cli.js` and `dist/agent-cli.js`, and `prepare` delegates to `build` so the bit is set on every publish path (not only when CI happens to run `build` before `npm publish`).
+- **Executable CLI binaries** — Published CLI binaries are now guaranteed to be executable: the `build` script sets the executable bit on every `bin` entry via a cross-platform Node script (`scripts/set-executable.mjs`), so the build also works on native Windows, and `prepare` now delegates to `build` so the bit is set on every publish path.
 
 ## [v0.17.0] - 2026-07-08
 

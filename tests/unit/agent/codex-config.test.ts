@@ -82,27 +82,27 @@ describe("agentCodexApplyConfig", () => {
   }
 
   const NETWORK_CHANGE = { table: "sandbox_workspace_write", key: "network_access", value: "true" };
-  const PLUGIN_HOOKS_CHANGE = { table: "features", key: "plugin_hooks", value: "true" };
 
   // ── Apply paths ────────────────────────────────────────────────────
 
-  it("creates config.toml with both required keys when none exists", async () => {
+  it("creates config.toml with the required sandbox network key when none exists", async () => {
     await agentCodexApplyConfig();
 
     expect(errorSpy).not.toHaveBeenCalled();
     expect(successSpy).toHaveBeenCalledWith({
       status: "APPLIED",
       config_file: configFile(),
-      applied: [NETWORK_CHANGE, PLUGIN_HOOKS_CHANGE],
+      applied: [NETWORK_CHANGE],
       legacy_hook: { hooks_file: hooksFile(), status: "absent" },
       warnings: [],
     });
     const parsed = parseToml(readConfig()) as Record<string, Record<string, unknown>>;
     expect(parsed.sandbox_workspace_write.network_access).toBe(true);
-    expect(parsed.features.plugin_hooks).toBe(true);
+    // No [features] hook flag is written — hooks are Stable/default-on in Codex 0.141+.
+    expect(parsed.features).toBeUndefined();
   });
 
-  it("inserts plugin_hooks into an existing [features] table and appends [sandbox_workspace_write]", async () => {
+  it("appends [sandbox_workspace_write] and leaves an existing [features] table untouched", async () => {
     writeConfig(`# top comment
 sandbox_mode = "workspace-write"
 
@@ -121,11 +121,12 @@ some_other = true
 
     const parsed = parseToml(raw) as Record<string, Record<string, unknown>>;
     expect(parsed.features.some_other).toBe(true);
-    expect(parsed.features.plugin_hooks).toBe(true);
+    // apply-config no longer writes a hook feature flag.
+    expect(parsed.features.plugin_hooks).toBeUndefined();
     expect(parsed.sandbox_workspace_write.network_access).toBe(true);
   });
 
-  it("inserts network_access into an existing [sandbox_workspace_write] table and appends [features]", async () => {
+  it("inserts network_access into an existing [sandbox_workspace_write] table", async () => {
     writeConfig(`[sandbox_workspace_write]
 writable_roots = ["/tmp"]
 `);
@@ -136,7 +137,8 @@ writable_roots = ["/tmp"]
     const parsed = parseToml(readConfig()) as Record<string, Record<string, unknown>>;
     expect(parsed.sandbox_workspace_write.network_access).toBe(true);
     expect(parsed.sandbox_workspace_write.writable_roots).toEqual(["/tmp"]);
-    expect(parsed.features.plugin_hooks).toBe(true);
+    // No [features] table is created — the hook flag is no longer required.
+    expect(parsed.features).toBeUndefined();
   });
 
   it("treats [[array_of_tables]] headers as section boundaries when inserting", async () => {
@@ -170,12 +172,9 @@ path = "log2"
 
   // ── Idempotence ────────────────────────────────────────────────────
 
-  it("reports ALREADY_OK when both required keys are already set", async () => {
+  it("reports ALREADY_OK when the required key is already set", async () => {
     writeConfig(`[sandbox_workspace_write]
 network_access = true
-
-[features]
-plugin_hooks = true
 `);
 
     await agentCodexApplyConfig();
@@ -215,15 +214,27 @@ network_access = false
     expect(readConfig()).toBe(original);
   });
 
-  it("errors without writing when plugin_hooks is explicitly false", async () => {
-    const original = `[features]
+  it("warns (does not error) when the deprecated plugin_hooks alias is explicitly false", async () => {
+    // plugin_hooks is no longer a required key, so an explicit false is not a
+    // conflict — it is a deprecated alias that still disables the hooks feature,
+    // so it surfaces as a warning while the required network key is applied.
+    writeConfig(`[features]
 plugin_hooks = false
-`;
-    writeConfig(original);
+`);
 
-    await expect(agentCodexApplyConfig()).rejects.toBeInstanceOf(AgentErrorThrow);
-    expect(errorSpy.mock.calls[0][1]).toBe("ConfigError");
-    expect(readConfig()).toBe(original);
+    await agentCodexApplyConfig();
+
+    expect(errorSpy).not.toHaveBeenCalled();
+    const call = lastSuccess();
+    expect(call.status).toBe("APPLIED");
+    const warnings = call.warnings as Array<{ code: string; message: string }>;
+    const warning = warnings.find((w) => w.code === "CODEX_HOOKS_DISABLED");
+    expect(warning?.message).toContain("[features] plugin_hooks is");
+
+    const parsed = parseToml(readConfig()) as Record<string, Record<string, unknown>>;
+    // plugin_hooks left untouched; only the sandbox network key added.
+    expect(parsed.features.plugin_hooks).toBe(false);
+    expect(parsed.sandbox_workspace_write.network_access).toBe(true);
   });
 
   it('distinguishes a string "true" from the required boolean in the conflict message', async () => {
@@ -242,7 +253,7 @@ network_access = "true"
 
   // ── Warnings (warn-only, never modify) ─────────────────────────────
 
-  it("warns when [features] hooks is explicitly false but still applies the required keys", async () => {
+  it("warns when [features] hooks is explicitly false but still applies the required key", async () => {
     writeConfig(`[features]
 hooks = false
 `);
@@ -256,9 +267,10 @@ hooks = false
     expect(warnings.some((w) => w.code === "CODEX_HOOKS_DISABLED")).toBe(true);
 
     const parsed = parseToml(readConfig()) as Record<string, Record<string, unknown>>;
-    // hooks left untouched; plugin_hooks added alongside it.
+    // hooks left untouched; no hook feature flag is written.
     expect(parsed.features.hooks).toBe(false);
-    expect(parsed.features.plugin_hooks).toBe(true);
+    expect(parsed.features.plugin_hooks).toBeUndefined();
+    expect(parsed.sandbox_workspace_write.network_access).toBe(true);
   });
 
   it("warns when [features] codex_hooks is explicitly false", async () => {
@@ -309,9 +321,6 @@ codex_hooks = false
   it("removes an obsolete ~/.codex/hooks.json entry left by the retired install-hook", async () => {
     writeConfig(`[sandbox_workspace_write]
 network_access = true
-
-[features]
-plugin_hooks = true
 `);
     writeHooks({
       hooks: {
@@ -335,7 +344,7 @@ plugin_hooks = true
     expect(readFileSync(hooksFile(), "utf8")).not.toContain(HOOK_COMMAND);
   });
 
-  it("errors on a malformed ~/.codex/hooks.json but still writes the required config keys", async () => {
+  it("errors on a malformed ~/.codex/hooks.json but still writes the required config key", async () => {
     mkdirSync(join(scratchHome, ".codex"), { recursive: true });
     writeFileSync(hooksFile(), "not valid json {", "utf8");
 
@@ -348,7 +357,8 @@ plugin_hooks = true
     // config.toml was still written before the hooks.json check ran.
     const parsed = parseToml(readConfig()) as Record<string, Record<string, unknown>>;
     expect(parsed.sandbox_workspace_write.network_access).toBe(true);
-    expect(parsed.features.plugin_hooks).toBe(true);
+    // No [features] hook flag is written.
+    expect(parsed.features).toBeUndefined();
   });
 
   // ── --check mode ───────────────────────────────────────────────────
@@ -362,9 +372,6 @@ plugin_hooks = true
   it("--check exits 0 when config is already OK and no stale hook exists", async () => {
     writeConfig(`[sandbox_workspace_write]
 network_access = true
-
-[features]
-plugin_hooks = true
 `);
 
     await agentCodexApplyConfig({ check: true });
@@ -381,12 +388,11 @@ plugin_hooks = true
     });
   });
 
-  it("--check exits non-zero when a warning is present even if both keys are set", async () => {
+  it("--check exits non-zero when a warning is present even if the required key is set", async () => {
     writeConfig(`[sandbox_workspace_write]
 network_access = true
 
 [features]
-plugin_hooks = true
 hooks = false
 `);
 
@@ -396,9 +402,6 @@ hooks = false
   it("--check exits non-zero when a stale ~/.codex/hooks.json entry is present", async () => {
     writeConfig(`[sandbox_workspace_write]
 network_access = true
-
-[features]
-plugin_hooks = true
 `);
     writeHooks({
       hooks: {
@@ -417,9 +420,6 @@ plugin_hooks = true
     // the apply path which errors on the same state.
     writeConfig(`[sandbox_workspace_write]
 network_access = true
-
-[features]
-plugin_hooks = true
 `);
     mkdirSync(join(scratchHome, ".codex"), { recursive: true });
     writeFileSync(hooksFile(), "not valid json {", "utf8");
@@ -436,7 +436,7 @@ plugin_hooks = true
     expect(successSpy).toHaveBeenCalledWith({
       status: "WOULD_APPLY",
       config_file: configFile(),
-      applied: [NETWORK_CHANGE, PLUGIN_HOOKS_CHANGE],
+      applied: [NETWORK_CHANGE],
       legacy_hook: { hooks_file: hooksFile(), status: "absent" },
       warnings: [],
     });
@@ -446,9 +446,6 @@ plugin_hooks = true
   it("--dry-run flags a stale hook entry as would-remove without touching it", async () => {
     writeConfig(`[sandbox_workspace_write]
 network_access = true
-
-[features]
-plugin_hooks = true
 `);
     const hooksBefore = JSON.stringify(
       {

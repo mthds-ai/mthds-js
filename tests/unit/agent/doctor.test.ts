@@ -381,7 +381,14 @@ describe("agentDoctor", () => {
       config_file: "/tmp/.codex/config.toml",
       exists: true,
       needs_changes: [],
-      conflicts: [{ table: "features", key: "plugin_hooks", current: "false", required: "true" }],
+      conflicts: [
+        {
+          table: "sandbox_workspace_write",
+          key: "network_access",
+          current: "false",
+          required: "true",
+        },
+      ],
       warnings: [],
     });
 

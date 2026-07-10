@@ -448,7 +448,7 @@ codex
 codex
   .command("apply-config")
   .description(
-    "Configure ~/.codex/ for the mthds plugin: enable sandbox network + plugin hooks, drop any obsolete hook entry",
+    "Configure ~/.codex/ for the mthds plugin: enable sandbox network, drop any obsolete hook entry",
   )
   .option("--check", "Exit non-zero if anything would change (no writes)")
   .option("--dry-run", "Print proposed diff and exit without modifying the file")

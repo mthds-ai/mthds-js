@@ -37,6 +37,12 @@ vi.mock("../../../src/agent/commands/codex.js", () => ({
   })),
 }));
 
+// Best-effort Codex app version check — default to "recent enough / undetectable"
+// so the generic tests stay version-agnostic; the dedicated case below overrides.
+vi.mock("../../../src/agent/codex-version.js", () => ({
+  codexVersionWarning: vi.fn(() => null),
+}));
+
 // Capture what agentSuccess receives
 let capturedResult: Record<string, unknown> | undefined;
 vi.mock("../../../src/agent/output.js", () => ({
@@ -280,7 +286,7 @@ describe("agentDoctor", () => {
     writeSpy.mockRestore();
   });
 
-  it("surfaces Codex config issues when inspectCodexConfig flags them (codex_hooks key)", async () => {
+  it("surfaces a disabled codex_hooks key as a config-conflict error", async () => {
     mockedCheckBinaryVersion.mockReturnValue({
       status: "ok",
       installed_version: "0.22.0",
@@ -294,20 +300,25 @@ describe("agentDoctor", () => {
       config_file: "/tmp/.codex/config.toml",
       exists: true,
       needs_changes: [{ table: "sandbox_workspace_write", key: "network_access", value: "true" }],
-      conflicts: [],
-      warnings: [
+      conflicts: [
         {
-          code: "CODEX_HOOKS_DISABLED",
-          message: "[features] codex_hooks is explicitly set to false",
+          table: "features",
+          key: "codex_hooks",
+          current: "false",
+          required: "true — or better, remove the key",
         },
       ],
+      warnings: [],
     });
 
     await agentDoctor(OutputFormat.JSON);
 
     const issues = capturedResult!.issues as Issue[];
     expect(issues.some((i) => i.message.includes("missing required keys"))).toBe(true);
-    expect(issues.some((i) => i.message.includes("codex_hooks"))).toBe(true);
+    const conflict = issues.find((i) => i.message.includes("codex_hooks"));
+    expect(conflict).toBeDefined();
+    expect(conflict!.severity).toBe("error");
+    expect(capturedResult!.healthy).toBe(false);
 
     const codex = capturedResult!.codex as { needs_changes: unknown };
     expect(codex.needs_changes).toEqual([
@@ -315,7 +326,7 @@ describe("agentDoctor", () => {
     ]);
   });
 
-  it("surfaces Codex config issues when inspectCodexConfig flags them (hooks key)", async () => {
+  it("surfaces a disabled hooks key as a config-conflict error", async () => {
     mockedCheckBinaryVersion.mockReturnValue({
       status: "ok",
       installed_version: "0.22.0",
@@ -329,17 +340,25 @@ describe("agentDoctor", () => {
       config_file: "/tmp/.codex/config.toml",
       exists: true,
       needs_changes: [{ table: "sandbox_workspace_write", key: "network_access", value: "true" }],
-      conflicts: [],
-      warnings: [
-        { code: "CODEX_HOOKS_DISABLED", message: "[features] hooks is explicitly set to false" },
+      conflicts: [
+        {
+          table: "features",
+          key: "hooks",
+          current: "false",
+          required: "true — or better, remove the key",
+        },
       ],
+      warnings: [],
     });
 
     await agentDoctor(OutputFormat.JSON);
 
     const issues = capturedResult!.issues as Issue[];
     expect(issues.some((i) => i.message.includes("missing required keys"))).toBe(true);
-    expect(issues.some((i) => i.message.includes("hooks"))).toBe(true);
+    const conflict = issues.find((i) => i.message.includes("hooks"));
+    expect(conflict).toBeDefined();
+    expect(conflict!.severity).toBe("error");
+    expect(capturedResult!.healthy).toBe(false);
   });
 
   it("surfaces an obsolete ~/.codex/hooks.json entry as a warning", async () => {
@@ -364,6 +383,31 @@ describe("agentDoctor", () => {
     const warning = issues.find((i) => i.message.includes("Obsolete mthds hook entry"));
     expect(warning).toBeDefined();
     expect(warning!.severity).toBe("warning");
+    expect(capturedResult!.healthy).toBe(true);
+  });
+
+  it("surfaces an old Codex app version as a warning without going unhealthy", async () => {
+    mockedCheckBinaryVersion.mockReturnValue({
+      status: "ok",
+      installed_version: "0.22.0",
+      version_constraint: PX_CONSTRAINT,
+    });
+    mockedExecFileSync.mockReturnValue(Buffer.from("/usr/local/bin/pipelex"));
+    mockedListConfig.mockReturnValue([]);
+
+    const codexVersion = await import("../../../src/agent/codex-version.js");
+    vi.mocked(codexVersion.codexVersionWarning).mockReturnValueOnce({
+      code: "CODEX_VERSION_TOO_OLD",
+      message: "Codex 0.130.0 is older than 0.141.0, the minimum version the mthds plugin supports",
+    });
+
+    await agentDoctor(OutputFormat.JSON);
+
+    const issues = capturedResult!.issues as Issue[];
+    const warning = issues.find((i) => i.message.includes("older than"));
+    expect(warning).toBeDefined();
+    expect(warning!.severity).toBe("warning");
+    // Best-effort advisory only — doctor stays healthy.
     expect(capturedResult!.healthy).toBe(true);
   });
 

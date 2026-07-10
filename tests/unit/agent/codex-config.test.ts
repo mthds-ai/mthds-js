@@ -42,6 +42,14 @@ vi.mock("../../../src/agent/output.js", () => ({
   },
 }));
 
+// ── Mock the Codex app version check so tests never spawn `codex` ───
+
+const codexVersionWarningMock = vi.fn<() => { code: string; message: string } | null>();
+
+vi.mock("../../../src/agent/codex-version.js", () => ({
+  codexVersionWarning: () => codexVersionWarningMock(),
+}));
+
 let agentCodexApplyConfig: (opts?: { check?: boolean; dryRun?: boolean }) => Promise<void>;
 
 const HOOK_COMMAND = "mthds-agent codex hook";
@@ -51,6 +59,8 @@ describe("agentCodexApplyConfig", () => {
     scratchHome = mkdtempSync(join(tmpdir(), "mthds-codex-config-test-"));
     successSpy.mockClear();
     errorSpy.mockClear();
+    codexVersionWarningMock.mockReset();
+    codexVersionWarningMock.mockReturnValue(null);
     vi.resetModules();
     const mod = await import("../../../src/agent/commands/codex-config.js");
     agentCodexApplyConfig = mod.agentCodexApplyConfig;
@@ -98,7 +108,8 @@ describe("agentCodexApplyConfig", () => {
     });
     const parsed = parseToml(readConfig()) as Record<string, Record<string, unknown>>;
     expect(parsed.sandbox_workspace_write.network_access).toBe(true);
-    // No [features] hook flag is written — hooks are Stable/default-on in Codex 0.141+.
+    // No [features] hook flag is written — hooks are default-on since Codex
+    // 0.131 and the old plugin_hooks opt-in key was removed in 0.134.
     expect(parsed.features).toBeUndefined();
   });
 
@@ -214,27 +225,22 @@ network_access = false
     expect(readConfig()).toBe(original);
   });
 
-  it("warns (does not error) when the deprecated plugin_hooks alias is explicitly false", async () => {
-    // plugin_hooks is no longer a required key, so an explicit false is not a
-    // conflict — it is a deprecated alias that still disables the hooks feature,
-    // so it surfaces as a warning while the required network key is applied.
-    writeConfig(`[features]
+  it("errors without writing when the stale plugin_hooks key is explicitly false", async () => {
+    // plugin_hooks disabled plugin-bundled hooks on Codex ≤ 0.133 and is
+    // ignored since 0.134 — either way the key must be removed by hand, so an
+    // explicit false is a hard error, not a warning that APPLIED would mask.
+    const original = `[features]
 plugin_hooks = false
-`);
+`;
+    writeConfig(original);
 
-    await agentCodexApplyConfig();
-
-    expect(errorSpy).not.toHaveBeenCalled();
-    const call = lastSuccess();
-    expect(call.status).toBe("APPLIED");
-    const warnings = call.warnings as Array<{ code: string; message: string }>;
-    const warning = warnings.find((w) => w.code === "CODEX_HOOKS_DISABLED");
-    expect(warning?.message).toContain("[features] plugin_hooks is");
-
-    const parsed = parseToml(readConfig()) as Record<string, Record<string, unknown>>;
-    // plugin_hooks left untouched; only the sandbox network key added.
-    expect(parsed.features.plugin_hooks).toBe(false);
-    expect(parsed.sandbox_workspace_write.network_access).toBe(true);
+    await expect(agentCodexApplyConfig()).rejects.toBeInstanceOf(AgentErrorThrow);
+    expect(errorSpy.mock.calls[0][1]).toBe("ConfigError");
+    expect(errorSpy.mock.calls[0][0]).toContain("plugin_hooks = false");
+    expect(errorSpy.mock.calls[0][0]).toContain("ignored by Codex 0.134+");
+    // File untouched — apply-config never overrides an explicit user choice,
+    // and errors before writing anything (not even the network key).
+    expect(readConfig()).toBe(original);
   });
 
   it('distinguishes a string "true" from the required boolean in the conflict message', async () => {
@@ -251,57 +257,63 @@ network_access = "true"
     expect(readConfig()).toBe(original);
   });
 
+  // ── Hook-disabling keys (hard error, never modify) ─────────────────
+
+  it("errors without writing when [features] hooks is explicitly false", async () => {
+    // An explicit `hooks = false` disables ALL Codex hooks — the mthds hook
+    // cannot load, so reporting APPLIED would be a false success. This is a
+    // conflict-style hard error in every mode; the user must remove the key.
+    const original = `[features]
+hooks = false
+`;
+    writeConfig(original);
+
+    await expect(agentCodexApplyConfig()).rejects.toBeInstanceOf(AgentErrorThrow);
+    expect(errorSpy.mock.calls[0][1]).toBe("ConfigError");
+    expect(errorSpy.mock.calls[0][0]).toContain("hooks = false");
+    expect(errorSpy.mock.calls[0][0]).toContain("disables ALL Codex hooks");
+    expect(readConfig()).toBe(original);
+  });
+
+  it("errors when the deprecated codex_hooks alias is explicitly false", async () => {
+    const original = `[features]
+codex_hooks = false
+`;
+    writeConfig(original);
+
+    await expect(agentCodexApplyConfig()).rejects.toBeInstanceOf(AgentErrorThrow);
+    expect(errorSpy.mock.calls[0][1]).toBe("ConfigError");
+    expect(errorSpy.mock.calls[0][0]).toContain("codex_hooks = false");
+    expect(errorSpy.mock.calls[0][0]).toContain("deprecated alias");
+    expect(readConfig()).toBe(original);
+  });
+
+  it("names every disabled key when hooks and codex_hooks are both false", async () => {
+    // Regression: a first-match implementation named only `hooks`, silently
+    // omitting `codex_hooks` when both were disabled.
+    writeConfig(`[features]
+hooks = false
+codex_hooks = false
+`);
+
+    await expect(agentCodexApplyConfig()).rejects.toBeInstanceOf(AgentErrorThrow);
+    const message = errorSpy.mock.calls[0][0] as string;
+    expect(message).toContain("[features] hooks = false");
+    expect(message).toContain("[features] codex_hooks = false");
+  });
+
+  it("--dry-run also errors on a hook-disabling key", async () => {
+    // The conflict check runs before the mode branches so apply, --check and
+    // --dry-run all give the same verdict for the same config state.
+    writeConfig(`[features]
+hooks = false
+`);
+
+    await expect(agentCodexApplyConfig({ dryRun: true })).rejects.toBeInstanceOf(AgentErrorThrow);
+    expect(errorSpy.mock.calls[0][1]).toBe("ConfigError");
+  });
+
   // ── Warnings (warn-only, never modify) ─────────────────────────────
-
-  it("warns when [features] hooks is explicitly false but still applies the required key", async () => {
-    writeConfig(`[features]
-hooks = false
-`);
-
-    await agentCodexApplyConfig();
-
-    expect(errorSpy).not.toHaveBeenCalled();
-    const call = lastSuccess();
-    expect(call.status).toBe("APPLIED");
-    const warnings = call.warnings as Array<{ code: string; message: string }>;
-    expect(warnings.some((w) => w.code === "CODEX_HOOKS_DISABLED")).toBe(true);
-
-    const parsed = parseToml(readConfig()) as Record<string, Record<string, unknown>>;
-    // hooks left untouched; no hook feature flag is written.
-    expect(parsed.features.hooks).toBe(false);
-    expect(parsed.features.plugin_hooks).toBeUndefined();
-    expect(parsed.sandbox_workspace_write.network_access).toBe(true);
-  });
-
-  it("warns when [features] codex_hooks is explicitly false", async () => {
-    writeConfig(`[features]
-codex_hooks = false
-`);
-
-    await agentCodexApplyConfig();
-
-    expect(errorSpy).not.toHaveBeenCalled();
-    const warnings = lastSuccess().warnings as Array<{ code: string; message: string }>;
-    const warning = warnings.find((w) => w.code === "CODEX_HOOKS_DISABLED");
-    expect(warning?.message).toContain("[features] codex_hooks is");
-  });
-
-  it("names both keys when [features] hooks and codex_hooks are both false", async () => {
-    // Regression: a first-match ternary named only `hooks`, silently omitting
-    // `codex_hooks` from the warning when both were disabled.
-    writeConfig(`[features]
-hooks = false
-codex_hooks = false
-`);
-
-    await agentCodexApplyConfig();
-
-    expect(errorSpy).not.toHaveBeenCalled();
-    const warnings = lastSuccess().warnings as Array<{ code: string; message: string }>;
-    const warning = warnings.find((w) => w.code === "CODEX_HOOKS_DISABLED");
-    expect(warning?.message).toContain("[features] hooks");
-    expect(warning?.message).toContain("[features] codex_hooks");
-  });
 
   it("warns when sandbox_mode is read-only without modifying it", async () => {
     writeConfig(`sandbox_mode = "read-only"
@@ -314,6 +326,33 @@ codex_hooks = false
     expect(warnings.some((w) => w.code === "SANDBOX_READ_ONLY")).toBe(true);
     const parsed = parseToml(readConfig()) as Record<string, unknown>;
     expect(parsed.sandbox_mode).toBe("read-only");
+  });
+
+  it("includes a CODEX_VERSION_TOO_OLD warning in the APPLIED payload when Codex is old", async () => {
+    codexVersionWarningMock.mockReturnValue({
+      code: "CODEX_VERSION_TOO_OLD",
+      message: "Codex 0.130.0 is older than 0.141.0, the minimum version the mthds plugin supports",
+    });
+
+    await agentCodexApplyConfig();
+
+    expect(errorSpy).not.toHaveBeenCalled();
+    const call = lastSuccess();
+    // The version check is advisory — the required key is still applied.
+    expect(call.status).toBe("APPLIED");
+    const warnings = call.warnings as Array<{ code: string; message: string }>;
+    const warning = warnings.find((w) => w.code === "CODEX_VERSION_TOO_OLD");
+    expect(warning).toBeDefined();
+    expect(warning!.message).toContain("0.130.0");
+  });
+
+  it("emits no version warning when Codex cannot be detected or is recent enough", async () => {
+    // codexVersionWarningMock defaults to null (set in beforeEach) — covers
+    // both the binary-missing and the recent-enough cases.
+    await agentCodexApplyConfig();
+
+    expect(errorSpy).not.toHaveBeenCalled();
+    expect(lastSuccess().warnings).toEqual([]);
   });
 
   // ── Legacy ~/.codex/hooks.json cleanup ─────────────────────────────
@@ -388,12 +427,36 @@ network_access = true
     });
   });
 
-  it("--check exits non-zero when a warning is present even if the required key is set", async () => {
+  it("--check exits non-zero when a hook-disabling key is set even if the required key is set", async () => {
     writeConfig(`[sandbox_workspace_write]
 network_access = true
 
 [features]
 hooks = false
+`);
+
+    await expect(agentCodexApplyConfig({ check: true })).rejects.toBeInstanceOf(AgentErrorThrow);
+    // The conflict error is specific — not the generic "needs attention".
+    expect(errorSpy.mock.calls[0][0]).toContain("hooks = false");
+  });
+
+  it("--check exits non-zero when a warning is present even if the required key is set", async () => {
+    writeConfig(`sandbox_mode = "read-only"
+
+[sandbox_workspace_write]
+network_access = true
+`);
+
+    await expect(agentCodexApplyConfig({ check: true })).rejects.toBeInstanceOf(AgentErrorThrow);
+  });
+
+  it("--check exits non-zero when the installed Codex is older than the supported floor", async () => {
+    codexVersionWarningMock.mockReturnValue({
+      code: "CODEX_VERSION_TOO_OLD",
+      message: "Codex 0.130.0 is older than 0.141.0, the minimum version the mthds plugin supports",
+    });
+    writeConfig(`[sandbox_workspace_write]
+network_access = true
 `);
 
     await expect(agentCodexApplyConfig({ check: true })).rejects.toBeInstanceOf(AgentErrorThrow);

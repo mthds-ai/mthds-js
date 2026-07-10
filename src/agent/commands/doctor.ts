@@ -8,6 +8,7 @@ import { BINARY_RECOVERY, buildInstallCommand } from "../binaries.js";
 import type { BinaryRecoveryInfo } from "../binaries.js";
 import { checkBinaryVersion } from "../../installer/runtime/version-check.js";
 import { listConfig } from "../../config/config.js";
+import { codexVersionWarning } from "../codex-version.js";
 import { inspectCodexConfig } from "./codex-config.js";
 import type { CodexConfigInspection } from "./codex-config.js";
 import { inspectLegacyCodexHook } from "./codex.js";
@@ -272,6 +273,11 @@ export async function agentDoctor(format: OutputFormat = OutputFormat.MARKDOWN):
   }
   for (const warning of codex.warnings) {
     issues.push({ severity: "warning", message: `Codex: ${warning.message}` });
+  }
+  // Best-effort minimum-Codex-version check (silent when codex is not on PATH).
+  const versionWarning = codexVersionWarning();
+  if (versionWarning) {
+    issues.push({ severity: "warning", message: `Codex: ${versionWarning.message}` });
   }
   if (codex.parse_error) {
     issues.push({

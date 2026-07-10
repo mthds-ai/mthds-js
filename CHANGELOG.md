@@ -12,7 +12,7 @@
 - **Two-tiered Codex version validation** — Versions `< 0.131` trigger a hard `CODEX_HOOKS_UNAVAILABLE` error (plugin-bundled hooks cannot load at all), while versions `>= 0.131` but below the supported floor (`0.141.0`) trigger a `CODEX_VERSION_TOO_OLD` warning that fails `--check` but still lets hooks load best-effort.
 
 ### Fixed
-- **Executable CLI binaries** — Published CLI binaries are now guaranteed to be executable: the `build` script sets the executable bit (`chmod +x`) on `dist/cli.js` and `dist/agent-cli.js`, and `prepare` now delegates to `build` so the bit is set on every publish path.
+- **Executable CLI binaries** — Published CLI binaries are now guaranteed to be executable: the `build` script sets the executable bit on every `bin` entry via a cross-platform Node script (`scripts/set-executable.mjs`), so the build also works on native Windows, and `prepare` now delegates to `build` so the bit is set on every publish path.
 
 ## [v0.17.0] - 2026-07-08
 

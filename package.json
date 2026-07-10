@@ -29,7 +29,7 @@
     "mthds-agent": "./dist/agent-cli.js"
   },
   "scripts": {
-    "build": "tsc && chmod +x dist/agent-cli.js dist/cli.js",
+    "build": "tsc && node scripts/set-executable.mjs",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "typecheck": "tsc --noEmit",

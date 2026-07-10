@@ -1,11 +1,21 @@
 # Changelog
 
-## [v0.17.0] - 2026-07-06
+## [v0.18.0] - 2026-07-10
 
 ### Changed
 
 - **`codex apply-config` no longer writes a hooks feature flag.** Since Codex 0.141 the hooks feature is Stable and enabled by default (`[features] hooks`, `default_enabled: true`), so plugin-bundled hooks load with no opt-in — the old `[features] plugin_hooks = true` write only added a deprecated alias key to the user's config. `apply-config` now merges just `[sandbox_workspace_write] network_access = true` (still needed for method runs inside the sandbox; the validation hook itself is offline-safe) and continues to sweep any obsolete `~/.codex/hooks.json` entry. Enabling the hook is now nothing more than trusting it on first run (Codex persists trusted hashes under `[hooks.state]`). Requires Codex 0.141.0+.
 - **`apply-config` / `doctor` hook-disabled warning now covers all three feature keys.** An explicit `false` on the canonical `[features] hooks` or either deprecated alias (`plugin_hooks` / `codex_hooks`) is reported, so a stale disabling key can't silently break the hook.
+
+### Fixed
+
+- **Published CLI binaries are executable.** The `build` script now sets the executable bit on `dist/cli.js` and `dist/agent-cli.js`, and `prepare` delegates to `build` so the bit is set on every publish path (not only when CI happens to run `build` before `npm publish`).
+
+## [v0.17.0] - 2026-07-08
+
+### Added
+
+- **`mthds-agent inputs upload <file>`:** New subcommand under the `inputs` group that uploads a local file to pipelex storage and prints the returned `pipelex-storage://` URI. Built for environments where `inputs.json` must reference remote URIs only (e.g. the hosted build sandbox, whose filesystem is ephemeral and whose runner rejects local-path inputs); the uploaded file lands under the caller's `/assets/` prefix. Adds `uploadFile()` to `MthdsApiClient` — kept **off** the shared `Runner` interface because `POST /v1/upload` is non-contract and API-runner-only (a local pipelex runner has no upload route). Auth/size/server failures surface as the same typed `ApiResponseError` as the protocol surface; the content type is guessed from the file extension.
 
 ## [v0.16.0] - 2026-07-02
 

@@ -1,6 +1,6 @@
 {
   "name": "mthds",
-  "version": "0.17.0",
+  "version": "0.18.0",
   "description": "CLI and SDK for MTHDS — the open standard for executable AI methods. Install, execute, and manage methods.",
   "license": "MIT",
   "repository": {
@@ -40,7 +40,7 @@
     "depcruise": "depcruise --config .dependency-cruiser.cjs src",
     "check": "npm run lint && npm run format:check && npm run typecheck && npm run typecheck:test && npm run build && npm run depcruise",
     "example": "npx tsx examples/call_api.ts",
-    "prepare": "tsc"
+    "prepare": "npm run build"
   },
   "files": [
     "dist/"

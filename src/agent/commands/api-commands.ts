@@ -265,7 +265,11 @@ export function registerApiRunnerCommands(program: Command, makeRunner: () => Ru
     .action(async (target: string | undefined, options: { pipe?: string; content?: string }) => {
       const runner = safeCreateRunner(makeRunner);
       const content = resolveContent(target, options.content);
-      await emitInputsTemplate(runner, { content, source: target }, options.pipe);
+      // Only a real file path names the source — `--content` overrides the target, so
+      // stamping diagnostics with `target` would point at a file we never submitted.
+      // Same guard as `validate bundle` above.
+      const source = !options.content && target ? target : undefined;
+      await emitInputsTemplate(runner, { content, source }, options.pipe);
     });
 
   inputsGroup

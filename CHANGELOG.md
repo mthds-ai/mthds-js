@@ -6,14 +6,19 @@
 
 - **(Breaking) The `/v1/build/*` routes now ride the `files[]` envelope.** `buildInputs`, `buildOutput` and `buildRunner` take `files: [{ content, source? }]` (XOR a reserved `method_ref`, which answers `501` until the method registry lands) in place of the bare `mthds_contents: string[]`. The per-file `source` label is threaded onto every diagnostic the server raises from that file, so an invalid verdict can finally say which file caused it. `/execute`, `/start` and `/validate` are untouched — they are MTHDS Protocol routes, and their envelope is the standard's to change. See the new [docs/build-routes.md](docs/build-routes.md).
 - **(Breaking) `pipe_code` → `pipe_ref` on the build routes, and it is now QUALIFIED and OPTIONAL.** Pass `domain.pipe_code`, or omit it to default to the closure's declared `main_pipe`. An undefaultable closure — one declaring no `main_pipe`, or several across its domains — is an error rather than a guess. The valid arm echoes the resolved `pipe_ref` plus `requested_pipe_ref` (absent when it was defaulted). `--pipe` on `mthds build …` and `mthds-agent inputs …` takes the qualified ref and may now be omitted.
-- **(Breaking) The build routes answer with a verdict, not a bare payload.** Each returns a discriminated union: the valid arm, or a `CrateInvalidReport` (`is_valid: false` + structured `validation_errors[]`) on a **200**, following `/validate`'s discipline — an unresolvable closure is a produced verdict, not a transport failure. Consumers must branch on `is_valid`; a throw now means only that *no verdict could be produced*. `buildInputs` and `buildOutput` were previously typed `Promise<unknown>` and are now fully typed.
-- **(Breaking) The payload field follows the `format`.** `buildInputs` returns `inputs` (parsed object) for `format: "json"` and `inputs_toml` (raw text) for `"toml"`; `buildOutput` returns `output` (parsed object) for `"schema"`/`"json"` and `output_python` (source text) for `"python"`. The unused field is absent from the response. Carrying TOML as a parsed object would destroy the concept comments that are the reason to ask for it, and Python source has never survived a JSON parse.
+- **(Breaking) The build routes answer with a verdict, not a bare payload.** Each returns a discriminated union: the valid arm, or a `CrateInvalidReport` (`is_valid: false` + structured `validation_errors[]`) on a **200**, following `/validate`'s discipline — an unresolvable closure is a produced verdict, not a transport failure. Consumers must branch on `is_valid`; a throw now means only that _no verdict could be produced_. `buildInputs` and `buildOutput` were previously typed `Promise<unknown>` and are now fully typed.
+- **(Breaking) The payload field follows the `format`.** `buildInputs` returns `inputs` (parsed object) for `format: "json"` and `inputs_toml` (raw text) for `"toml"`; `buildOutput` returns `output` (parsed object) for `"schema"`/`"json"` and `output_python` (source text) for `"python"`. The unused field is absent from the response — so `BuildInputsValidReport` and `BuildOutputValidReport` are **discriminated unions** on `format`, not interfaces with two optional fields: narrowing on `format` hands you the field it selected as required and makes the other statically unreachable. Carrying TOML as a parsed object would destroy the concept comments that are the reason to ask for it, and Python source has never survived a JSON parse.
+- **`BuildRunnerValidReport.structures` is now optional.** The stamped projection comes from pipelex's codegen engine, which no published pipelex ships — so the local runner legitimately has none to report, while the API always sends one. Guard on it before writing the projection; `python_code` is valid either way.
+- **`allow_signatures` is rejected by the LOCAL runner rather than silently dropped.** `pipelex build runner` exposes no `--allow-signatures` flag, so there was nothing to forward and the flag was being ignored — meaning one `BuildRunnerRequest` meant two different things depending on which runner served it (the API would accept a closure with unresolved signatures that the local runner then rejected). It now throws with a clear pointer to `--runner api`.
 - **(Breaking) `allow_signatures` is gone from `buildInputs` and `buildOutput`.** It only ever parameterized the dry-run sweep, and those two are now static reads of the resolved closure. `buildRunner` keeps both the sweep and the flag.
 - **`buildInputs` gains the CLI's two rendering axes** — `format` (`json` | `toml`) and `explicit` (the ceremonial `{concept, content}` envelope) — matching `pipelex codegen inputs`. Surfaced on `mthds build inputs pipe` as `--format` / `--explicit`.
 - **`buildRunner`'s valid arm now carries the typed-structures projection** (`structures`: the stamped artifacts, the lock, and the directory to write them into) alongside `python_code`, so the emitted script has the types it imports.
 
 ### Fixed
 
+- **A TOML literal string no longer hides the domain from the local runner.** `.mthds` files are TOML, where `domain = 'smoke'` is exactly as valid as `domain = "smoke"` — but the local runner's pipe-ref resolution matched only double quotes, so a single-quoted bundle read as declaring no domain at all. Defaulting the selector then failed with "the closure declares no main_pipe", and a bare `--pipe echo` failed with a nonsense "the closure spans domains []". Both quote styles are now accepted, and a closure that genuinely declares no domain says so. (The example in `docs/build-routes.md` was itself single-quoted, i.e. we had documented a case the local runner could not serve.)
+- **A local `buildRunner` no longer discards a valid script over a missing lock file.** It required `structures/codegen.lock` beside the generated `runner.py`, but that lock is written only by pipelex's unreleased codegen engine — so against every _installable_ pipelex, a perfectly good `runner.py` was generated and then thrown away with an error. The projection is now a soft postcondition.
+- **An invalid build verdict is tagged `error_domain: validation`, not `runner`.** A 200 `is_valid: false` is a validation outcome, and `runProtocolValidate` already tagged it that way; the build path tagged it as a transport/runtime failure, so an agent routing on `error_domain` misfiled every invalid closure as an infrastructure problem.
 - **The two runners no longer disagree about what `buildInputs` returns.** The API runner returned the bare inputs template while the local `pipelex` runner returned the agent CLI's `{success, pipe_code, inputs}` envelope — behind a single `Runner` interface typed `Promise<unknown>`, which is what let the divergence hide. Both now return the template under `inputs`.
 - **The local runner defaulted `buildOutput`'s format to `json` where the API defaults to `schema`.** Same interface, two meanings. Both are now `schema`.
 - **The local runner echoed back an unresolved pipe ref.** It now resolves the qualified ref itself and passes it to `--pipe` explicitly, so the ref it reports is the ref it asked for — never a bare code presented as a resolved one.
@@ -25,15 +30,18 @@
 ## [v0.18.0] - 2026-07-10
 
 ### Added
+
 - **Codex version detection** — Added a best-effort minimum-Codex-version check to `apply-config` and `doctor`, detecting the installed version via `codex --version` (with safe handling of the Windows `.cmd` shim).
 - **Claude Code skills** — Updated `bump-required-versions` and `check-min-versions` to read and bump the new `MIN_CODEX_VERSION` floor alongside existing dependencies.
 
 ### Changed
+
 - **(Breaking) Hook-disabling keys are now hard errors** — Setting `[features] hooks = false` (or its deprecated alias `codex_hooks = false`) disables ALL Codex hooks, so it now raises a conflict-style `ConfigError` in `apply-config`, `--check`, `--dry-run`, and `doctor`. Previously this was only a warning, which could make setup appear complete while the mthds hook never loaded. The stale `plugin_hooks = false` key is rejected the same way — not as an alias, but as an obsolete leftover: it was an independent opt-in for plugin-bundled hooks that disabled them on Codex ≤ 0.133 and is ignored since 0.134, so it must be removed by hand (`apply-config` never flips an explicit user choice).
 - **Simplified `apply-config`** — The command no longer writes a hooks feature flag (`plugin_hooks = true`), since Codex enables hooks out of the box on every supported version (the opt-in key was removed in Codex 0.134). It now only merges `[sandbox_workspace_write] network_access = true` and sweeps obsolete hook entries.
 - **Two-tiered Codex version validation** — Versions `< 0.131` trigger a hard `CODEX_HOOKS_UNAVAILABLE` error (plugin-bundled hooks cannot load at all), while versions `>= 0.131` but below the supported floor (`0.141.0`) trigger a `CODEX_VERSION_TOO_OLD` warning that fails `--check` but still lets hooks load best-effort.
 
 ### Fixed
+
 - **Executable CLI binaries** — Published CLI binaries are now guaranteed to be executable: the `build` script sets the executable bit on every `bin` entry via a cross-platform Node script (`scripts/set-executable.mjs`), so the build also works on native Windows, and `prepare` now delegates to `build` so the bit is set on every publish path.
 
 ## [v0.17.0] - 2026-07-08
@@ -50,8 +58,8 @@
 
 ### Changed
 
-- **BREAKING — Renamed `MTHDS_API_URL` to `MTHDS_BASE_URL`:** Aligns all naming layers (`baseUrl` config key, `base-url` CLI flag, `MTHDS_BASE_URL` env/file key) with the Python client. *Migration:* there is no read alias; an existing `MTHDS_API_URL` will be ignored, so re-set it with `mthds config set base-url <url>` and update local environment variables.
-- **BREAKING — Renamed `MthdsApiClient` option `apiToken` to `apiKey`:** Matches the `MTHDS_API_KEY` environment variable it falls back to. *Migration:* update `new MthdsApiClient({ apiToken: "..." })` to `new MthdsApiClient({ apiKey: "..." })`; the `Authorization: Bearer` header behavior is unchanged.
+- **BREAKING — Renamed `MTHDS_API_URL` to `MTHDS_BASE_URL`:** Aligns all naming layers (`baseUrl` config key, `base-url` CLI flag, `MTHDS_BASE_URL` env/file key) with the Python client. _Migration:_ there is no read alias; an existing `MTHDS_API_URL` will be ignored, so re-set it with `mthds config set base-url <url>` and update local environment variables.
+- **BREAKING — Renamed `MthdsApiClient` option `apiToken` to `apiKey`:** Matches the `MTHDS_API_KEY` environment variable it falls back to. _Migration:_ update `new MthdsApiClient({ apiToken: "..." })` to `new MthdsApiClient({ apiKey: "..." })`; the `Authorization: Bearer` header behavior is unchanged.
 - **Documentation:** Updated `README.md`, `CLI.md`, and architecture docs for the new `MTHDS_BASE_URL` and `apiKey` naming. Replaced the inline `@pipelex/sdk` example in `docs/run-lifecycle.md` with a link to the SDK's official docs to prevent drift.
 - **Dependencies:** Bumped `axios` (1.18.1), `follow-redirects` (1.16.0), and `form-data` (4.0.6), and added `https-proxy-agent`.
 
@@ -78,6 +86,7 @@ The Pipelex-API narrowing of the `/v1/validate` verdict is removed from `mthds`;
 ## [v0.13.1] - 2026-06-28
 
 ### Changed
+
 - **Minimum Node.js raised to `>=22`:** Bumped `engines.node` from `>=18` to `>=22`. Node 18 reached end-of-life in April 2025 and Node 20 in April 2026, so 22 is the lowest LTS line still in maintenance (until April 2027). CI now provisions Node 22 in `publish.yml` and `quality-checks.yml` to match. `engines` is advisory — npm only warns on a mismatched runtime unless the consumer sets `engine-strict` — so this won't hard-break existing installs.
 
 ## [v0.13.0] - 2026-06-28
@@ -104,40 +113,45 @@ The durable run-lifecycle (poll a run by id) is a hosted-API extension, not part
 ## [v0.12.1] - 2026-06-22
 
 ### Changed
- - **Dependencies:** Bumped minimum `pipelex` (and `pipelex-agent`) to `>=0.35.1` and the minimum Claude Code mthds plugin version to `>=0.14.1`.
- - **Tests:** `plugin-version` test fixtures now derive their satisfying versions from `MIN_PLUGIN_VERSION` instead of hardcoded literals, so future floor bumps no longer require test edits.
+
+- **Dependencies:** Bumped minimum `pipelex` (and `pipelex-agent`) to `>=0.35.1` and the minimum Claude Code mthds plugin version to `>=0.14.1`.
+- **Tests:** `plugin-version` test fixtures now derive their satisfying versions from `MIN_PLUGIN_VERSION` instead of hardcoded literals, so future floor bumps no longer require test edits.
 
 ## [v0.12.0] - 2026-06-19
 
 ### Added
- - **CLI `validate` command:** Added `--format` and `--error-format` options to choose between `markdown` (default) and `json` output. An out-of-vocabulary value (e.g. a typo) is rejected with a clear `ArgumentError` on the API runner rather than silently coerced to `markdown`.
- - **Server-rendered Markdown:** Added support for requesting Markdown (`render: ["markdown"]`) from the API. The CLI emits it verbatim to `stdout` on success or `stderr` on failure, ensuring parity with the local `pipelex-agent`.
+
+- **CLI `validate` command:** Added `--format` and `--error-format` options to choose between `markdown` (default) and `json` output. An out-of-vocabulary value (e.g. a typo) is rejected with a clear `ArgumentError` on the API runner rather than silently coerced to `markdown`.
+- **Server-rendered Markdown:** Added support for requesting Markdown (`render: ["markdown"]`) from the API. The CLI emits it verbatim to `stdout` on success or `stderr` on failure, ensuring parity with the local `pipelex-agent`.
 
 ### Changed
- - **Codex hook:** Now invokes the agent with `--format json --error-format json` and parses the structured JSON envelope (`is_valid`, `error_domain`, `validation_errors`) for block/warn decisions, replacing the fragile Markdown-grepping approach (and its legacy `stripErrorSourceSection` / `extractErrorDomain` utilities).
- - **`PipelexRunner` exit codes:** Refined to a strict 0/1/2 policy. Exit code `1` (invalid bundle) now returns a structured negative verdict instead of throwing; exceptions are reserved for exit codes `2+` or spawn failures.
- - **Dependencies:** Bumped minimum `pipelex` to `>=0.35.0` and the minimum plugin version to `>=0.14.0`.
+
+- **Codex hook:** Now invokes the agent with `--format json --error-format json` and parses the structured JSON envelope (`is_valid`, `error_domain`, `validation_errors`) for block/warn decisions, replacing the fragile Markdown-grepping approach (and its legacy `stripErrorSourceSection` / `extractErrorDomain` utilities).
+- **`PipelexRunner` exit codes:** Refined to a strict 0/1/2 policy. Exit code `1` (invalid bundle) now returns a structured negative verdict instead of throwing; exceptions are reserved for exit codes `2+` or spawn failures.
+- **Dependencies:** Bumped minimum `pipelex` to `>=0.35.0` and the minimum plugin version to `>=0.14.0`.
 
 ## [v0.11.0] - 2026-06-17
 
 ### Added
- - **200-diagnostic `/validate` endpoint with discriminated union:** The `/validate` endpoint now returns a 200 status for both valid and invalid bundles via the `PipelexValidationResult` union, discriminated by `is_valid`. `is_valid: true` yields a `PipelexValidationReport` with structural artifacts (`bundle_blueprint`, `pipe_io_contracts`, `graph_spec`, etc.); `is_valid: false` yields a `PipelexInvalidReport` with structured `validation_errors[]` and runnability facts. An invalid bundle is now a produced verdict rather than a thrown error—only no-verdict conditions (malformed requests, auth issues, server faults) raise `ApiResponseError`.
- - **Per-content source tracking:** `MthdsApiClient.validate()` now accepts an optional `mthds_sources` array parallel to `mthds_contents`, enabling cross-file diagnostics to resolve and report the owning file.
- - **Explicit typing for `VersionInfo.implementation_version`:** Lets capability gating read the version directly instead of through an untyped index signature.
- - **`check-min-versions` Claude Code skill:** A new read-only skill (`.claude/skills/check-min-versions/SKILL.md`) reports the minimum required versions for the mthds plugin, pipelex, and pipelex-tools.
- - **Validation contract tests:** Added round-trip tests (`validation-contract.test.ts`) ensuring the TS types strictly match the wire boundary of the new 200-diagnostic response union.
+
+- **200-diagnostic `/validate` endpoint with discriminated union:** The `/validate` endpoint now returns a 200 status for both valid and invalid bundles via the `PipelexValidationResult` union, discriminated by `is_valid`. `is_valid: true` yields a `PipelexValidationReport` with structural artifacts (`bundle_blueprint`, `pipe_io_contracts`, `graph_spec`, etc.); `is_valid: false` yields a `PipelexInvalidReport` with structured `validation_errors[]` and runnability facts. An invalid bundle is now a produced verdict rather than a thrown error—only no-verdict conditions (malformed requests, auth issues, server faults) raise `ApiResponseError`.
+- **Per-content source tracking:** `MthdsApiClient.validate()` now accepts an optional `mthds_sources` array parallel to `mthds_contents`, enabling cross-file diagnostics to resolve and report the owning file.
+- **Explicit typing for `VersionInfo.implementation_version`:** Lets capability gating read the version directly instead of through an untyped index signature.
+- **`check-min-versions` Claude Code skill:** A new read-only skill (`.claude/skills/check-min-versions/SKILL.md`) reports the minimum required versions for the mthds plugin, pipelex, and pipelex-tools.
+- **Validation contract tests:** Added round-trip tests (`validation-contract.test.ts`) ensuring the TS types strictly match the wire boundary of the new 200-diagnostic response union.
 
 ### Changed
- - **Validation consumers use the discriminant:** All commands consuming `runner.validate()` (`mthds validate`, `mthds-agent validate`, `mthds install`) now check `report.is_valid === false` instead of catching 422 HTTP errors. Consequently, `ApiResponseError.validationErrors` only carries diagnostics for build routes (`/v1/build/*`); content validation errors no longer route through this exception.
- - **Agent envelope shapes aligned with the Pipelex Hosted API protocol:** For `--runner api validate bundle`, `agentError` now accepts optional `is_valid` and `validation_errors` extras to carry structured failures. For `models`, `/models` now uses the protocol's `models` list and drops the retired `presets` and `success` extras.
- - **Lenient Codex hook validation:** The Codex hook (Stage 3 / `apply_patch`) now passes `--allow-signatures` to `pipelex-agent validate bundle`, letting intermediate stepwise-refinement saves pass structural validation even with unimplemented `PipeSignature` placeholders.
- - **Local CLI runner output:** The local `PipelexRunner` now returns the minimal valid arm `{ is_valid: true }` on success instead of an empty object.
- - **Minimum dependency version bumps:** Claude Code mthds plugin `>=0.12.0` → `>=0.13.0`; `pipelex` (and `pipelex-agent`) `>=0.30.2` → `>=0.32.1`; `pipelex-tools` (`plxt`) `>=0.4.0` → `>=0.6.0`.
- - **Documentation:** Updated `README.md` and `docs/architecture.md` to reflect the 200-diagnostic validation surface, the discriminated union types, and the `mthds_sources` parameter.
+
+- **Validation consumers use the discriminant:** All commands consuming `runner.validate()` (`mthds validate`, `mthds-agent validate`, `mthds install`) now check `report.is_valid === false` instead of catching 422 HTTP errors. Consequently, `ApiResponseError.validationErrors` only carries diagnostics for build routes (`/v1/build/*`); content validation errors no longer route through this exception.
+- **Agent envelope shapes aligned with the Pipelex Hosted API protocol:** For `--runner api validate bundle`, `agentError` now accepts optional `is_valid` and `validation_errors` extras to carry structured failures. For `models`, `/models` now uses the protocol's `models` list and drops the retired `presets` and `success` extras.
+- **Lenient Codex hook validation:** The Codex hook (Stage 3 / `apply_patch`) now passes `--allow-signatures` to `pipelex-agent validate bundle`, letting intermediate stepwise-refinement saves pass structural validation even with unimplemented `PipeSignature` placeholders.
+- **Local CLI runner output:** The local `PipelexRunner` now returns the minimal valid arm `{ is_valid: true }` on success instead of an empty object.
+- **Minimum dependency version bumps:** Claude Code mthds plugin `>=0.12.0` → `>=0.13.0`; `pipelex` (and `pipelex-agent`) `>=0.30.2` → `>=0.32.1`; `pipelex-tools` (`plxt`) `>=0.4.0` → `>=0.6.0`.
+- **Documentation:** Updated `README.md` and `docs/architecture.md` to reflect the 200-diagnostic validation surface, the discriminated union types, and the `mthds_sources` parameter.
 
 ### Removed
- - **Retired the `success` extra on the models surface:** `/models` consumers now read the protocol's `models` list (the `presets` / `success` extras are gone). Validation is discriminated on `is_valid`; the agent CLI's own `success` / `error` envelope is unchanged — a valid verdict still rides `success: true`.
 
+- **Retired the `success` extra on the models surface:** `/models` consumers now read the protocol's `models` list (the `presets` / `success` extras are gone). Validation is discriminated on `is_valid`; the agent CLI's own `success` / `error` envelope is unchanged — a valid verdict still rides `success: true`.
 
 ## [v0.10.0] - 2026-06-12
 
@@ -262,7 +276,7 @@ This release aligns the SDK and CLIs with the MTHDS Protocol (`mthds-protocol.op
 
 ### Fixed
 
-- **`detectHost()` now trusts `CLAUDECODE=1` without requiring `installed_plugins.json` to exist.** Previously the function only returned `"claude"` when both `CLAUDECODE=1` was set *and* `~/.claude/plugins/installed_plugins.json` existed, so a Claude Code session with no plugins installed yet (fresh install, or a session that never ran an install) would fall through to the Codex cache check. On a machine with a leftover Codex cache directory that surfaced the wrong upgrade command (e.g. `/plugins install mthds`) to a Claude Code user. `CLAUDECODE=1` is a runtime signal Claude Code sets itself — if it's present we are definitively inside Claude Code, and `checkPluginVersion("claude")` correctly returns `null` when no registry file exists, so nothing spurious is emitted.
+- **`detectHost()` now trusts `CLAUDECODE=1` without requiring `installed_plugins.json` to exist.** Previously the function only returned `"claude"` when both `CLAUDECODE=1` was set _and_ `~/.claude/plugins/installed_plugins.json` existed, so a Claude Code session with no plugins installed yet (fresh install, or a session that never ran an install) would fall through to the Codex cache check. On a machine with a leftover Codex cache directory that surfaced the wrong upgrade command (e.g. `/plugins install mthds`) to a Claude Code user. `CLAUDECODE=1` is a runtime signal Claude Code sets itself — if it's present we are definitively inside Claude Code, and `checkPluginVersion("claude")` correctly returns `null` when no registry file exists, so nothing spurious is emitted.
 - **`readCache()` now picks the most recently written cache file when both primary and fallback exist.** Previously the reader always preferred `~/.mthds/state/last-update-check`, so a stale snapshot from a pre-sandbox session could shadow a fresh `$TMPDIR/mthds-agent/last-update-check` written by the current sandboxed session. The reader now compares mtimes and returns the newer of the two; single-cache cases are unaffected.
 
 ## [v0.6.3] - 2026-05-12
@@ -487,7 +501,7 @@ This release aligns the SDK and CLIs with the MTHDS Protocol (`mthds-protocol.op
 
 ### Breaking Changes
 
-- **Method names: strict snake_case** — the `name` field now enforces snake_case only (pattern `[a-z][a-z0-9_]{1,24}`). Hyphens are no longer allowed — names like `my-method` must become `my_method`.
+- **Method names: strict snake_case** — the `name` field now enforces snake*case only (pattern `[a-z]a-z0-9*]{1,24}`). Hyphens are no longer allowed — names like `my-method`must become`my_method`.
 - **`methodNameToDir()` removed** — method name is now used directly as the directory name with no conversion. The resolver expects the directory name to match the `name` field exactly.
 
 ### Changed

@@ -68,6 +68,11 @@ export interface BuildRunnerRequest extends BuildRequestBase {
    * Accept unresolved pipe signatures as pending rather than invalid. Alone
    * among the build routes this one still runs the dry-run sweep, and the flag
    * only ever parameterized that sweep.
+   *
+   * **API runner only.** `pipelex build runner` exposes no `--allow-signatures`
+   * flag, so the local runner has nothing to forward and REJECTS the request rather
+   * than silently ignoring the flag — a dropped `allow_signatures` would make the
+   * same request mean two different things depending on which runner served it.
    */
   allow_signatures?: boolean;
 }
@@ -121,25 +126,47 @@ interface BuildValidReportBase {
  * for `toml`. TOML cannot be carried as a parsed object without losing what makes
  * it worth asking for — its concept comments and key order — so the two are
  * separate fields and the unused one is absent from the body entirely.
+ *
+ * That "absent entirely" is why this is a union rather than one interface with two
+ * optional fields: `format` is a real discriminant, so narrowing on it hands you the
+ * field it selected as REQUIRED and makes the other one statically unreachable.
  */
-export interface BuildInputsValidReport extends BuildValidReportBase {
-  format: InputsTemplateFormat;
+interface BuildInputsJsonReport extends BuildValidReportBase {
+  format: "json";
   explicit: boolean;
-  inputs?: Record<string, unknown>;
-  inputs_toml?: string;
+  inputs: Record<string, unknown>;
+  inputs_toml?: never;
 }
+
+interface BuildInputsTomlReport extends BuildValidReportBase {
+  format: "toml";
+  explicit: boolean;
+  inputs?: never;
+  inputs_toml: string;
+}
+
+export type BuildInputsValidReport = BuildInputsJsonReport | BuildInputsTomlReport;
 
 export type BuildInputsResponse = BuildInputsValidReport | CrateInvalidReport;
 
 /**
  * The `/v1/build/output` valid arm. Same two-field split as the inputs template,
- * for the same reason: `schema` and `json` are objects, `python` is source text.
+ * for the same reason: `schema` and `json` are objects, `python` is source text —
+ * and so it is a discriminated union for the same reason too.
  */
-export interface BuildOutputValidReport extends BuildValidReportBase {
-  format: ConceptRepresentationFormat;
-  output?: Record<string, unknown>;
-  output_python?: string;
+interface BuildOutputObjectReport extends BuildValidReportBase {
+  format: "schema" | "json";
+  output: Record<string, unknown>;
+  output_python?: never;
 }
+
+interface BuildOutputPythonReport extends BuildValidReportBase {
+  format: "python";
+  output?: never;
+  output_python: string;
+}
+
+export type BuildOutputValidReport = BuildOutputObjectReport | BuildOutputPythonReport;
 
 export type BuildOutputResponse = BuildOutputValidReport | CrateInvalidReport;
 
@@ -163,7 +190,13 @@ export interface RunnerStructures {
 
 export interface BuildRunnerValidReport extends BuildValidReportBase {
   python_code: string;
-  structures: RunnerStructures;
+  /**
+   * The stamped structures projection. The API always sends one. The LOCAL runner
+   * only can when the installed pipelex ships the codegen engine that writes the
+   * lock — so treat it as optional and skip writing the projection when it's absent;
+   * `python_code` is valid either way.
+   */
+  structures?: RunnerStructures;
 }
 
 export type BuildRunnerResponse = BuildRunnerValidReport | CrateInvalidReport;

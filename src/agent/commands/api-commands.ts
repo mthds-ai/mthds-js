@@ -657,8 +657,12 @@ async function emitInputsTemplate(
   try {
     const result = await runner.buildInputs({ files: [file], pipe_ref: pipeRef });
     if (!result.is_valid) {
+      // A 200 `is_valid: false` is a VALIDATION verdict, not a transport/runtime
+      // failure — same as `runProtocolValidate`. `error_domain` exists for machine
+      // triage, so tagging this `runner` would make an agent misfile every invalid
+      // closure as an infrastructure problem. The catch below is the `runner` arm.
       agentError(result.message, "ValidationError", {
-        error_domain: AGENT_ERROR_DOMAINS.RUNNER,
+        error_domain: AGENT_ERROR_DOMAINS.VALIDATION,
         is_valid: false,
         validation_errors: result.validation_errors,
       });

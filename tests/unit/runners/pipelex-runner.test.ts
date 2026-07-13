@@ -485,6 +485,33 @@ describe("PipelexRunner", () => {
     });
   });
 
+  describe("buildRunner", () => {
+    // The stamped structures projection comes from pipelex's codegen engine, which is
+    // UNRELEASED — no published pipelex writes `structures/codegen.lock`. Requiring it
+    // meant every local buildRunner threw away a perfectly good runner.py over a
+    // sidecar that could not exist yet.
+    it("returns the runner script even when the CLI emitted no structures projection", async () => {
+      mockSpawnExit(0);
+      mockedExistsSync.mockReturnValue(false); // no structures/codegen.lock beside it
+      mockedReadFileSync.mockReturnValue("# runner.py\n");
+
+      const result = await runner.buildRunner({ files: [{ content: BUNDLE }] });
+
+      expect(result.is_valid).toBe(true);
+      if (!result.is_valid) throw new Error("unreachable");
+      expect(result.python_code).toBe("# runner.py\n");
+      expect(result.structures).toBeUndefined();
+    });
+
+    // `pipelex build runner` has no --allow-signatures flag, so there is nothing to
+    // forward. Dropping it silently would make one request mean two things.
+    it("rejects allow_signatures rather than silently ignoring it", async () => {
+      await expect(
+        runner.buildRunner({ files: [{ content: BUNDLE }], allow_signatures: true }),
+      ).rejects.toThrow(/allow_signatures is not supported by the local pipelex runner/);
+    });
+  });
+
   // The basic `mthds run` CLI dispatches to `execute` (pipelex, blocking) — this
   // is the local-runner half of the protocol's execute/start split.
   describe("execute", () => {

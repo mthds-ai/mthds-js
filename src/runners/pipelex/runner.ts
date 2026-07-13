@@ -126,18 +126,19 @@ const CODEGEN_LOCK_FILENAME = "codegen.lock";
  * the script it emits, so the local runner returns the same `structures` payload
  * the API does — the stamped artifacts plus the lock that tracks them.
  *
- * The lock is REQUIRED by the shape (a structures projection with no lock cannot
- * be offline-checked, which is the whole point of the trust chain), so a missing
- * one is an error rather than an empty string.
+ * Returns `undefined` when the CLI emitted no projection. That is not a failure: the
+ * stamped projection comes from pipelex's codegen engine, which is UNRELEASED — no
+ * published pipelex writes a lock here — and a closure that resolves to no crate
+ * yields no `structures/` either. The `runner.py` we just generated is valid in both
+ * cases, so treating a missing lock as fatal would throw away good output over an
+ * absent sidecar. The lock is still all-or-nothing: a projection without one cannot
+ * be offline-checked, so we never report a half one.
  */
-function readRunnerStructures(runnerPath: string): RunnerStructures {
+function readRunnerStructures(runnerPath: string): RunnerStructures | undefined {
   const dir = join(dirname(runnerPath), STRUCTURES_DIR);
   const lockPath = join(dir, CODEGEN_LOCK_FILENAME);
-  if (!existsSync(lockPath)) {
-    throw new Error(
-      `pipelex build runner emitted no ${STRUCTURES_DIR}/${CODEGEN_LOCK_FILENAME} beside ${runnerPath}.`,
-    );
-  }
+  if (!existsSync(lockPath)) return undefined;
+
   const artifacts = readdirSync(dir)
     .filter((name) => name !== CODEGEN_LOCK_FILENAME)
     .sort()
@@ -355,6 +356,18 @@ export class PipelexRunner implements Runner {
 
   // pipelex build runner bundle <bundle.mthds> --pipe <ref> -o <file>
   async buildRunner(request: BuildRunnerRequest): Promise<BuildRunnerResponse> {
+    // `pipelex build runner` has no --allow-signatures flag, so there is nothing to
+    // forward. Silently dropping it would make the same request mean two different
+    // things depending on the runner — the API would accept a closure with unresolved
+    // signatures that we'd then reject. Say so instead of guessing.
+    if (request.allow_signatures) {
+      throw new Error(
+        "allow_signatures is not supported by the local pipelex runner: " +
+          "`pipelex build runner` exposes no --allow-signatures flag. Use the API runner " +
+          "(--runner api) for closures with unresolved pipe signatures.",
+      );
+    }
+
     const tmp = makeTmpDir();
     try {
       const bundlePath = writeBuildFiles(tmp, request);
@@ -376,12 +389,13 @@ export class PipelexRunner implements Runner {
       ]);
 
       const pythonCode = readFileSync(outPath, "utf-8");
+      const structures = readRunnerStructures(outPath);
       return {
         is_valid: true,
         pipe_ref: pipeRef,
         ...(request.pipe_ref ? { requested_pipe_ref: request.pipe_ref } : {}),
         python_code: pythonCode,
-        structures: readRunnerStructures(outPath),
+        ...(structures ? { structures } : {}),
         message: "Runner code generated via local CLI",
       };
     } finally {

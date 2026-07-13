@@ -2,6 +2,22 @@
 
 ## [Unreleased]
 
+### Changed
+
+- **(Breaking) The `/v1/build/*` routes now ride the `files[]` envelope.** `buildInputs`, `buildOutput` and `buildRunner` take `files: [{ content, source? }]` (XOR a reserved `method_ref`, which answers `501` until the method registry lands) in place of the bare `mthds_contents: string[]`. The per-file `source` label is threaded onto every diagnostic the server raises from that file, so an invalid verdict can finally say which file caused it. `/execute`, `/start` and `/validate` are untouched — they are MTHDS Protocol routes, and their envelope is the standard's to change. See the new [docs/build-routes.md](docs/build-routes.md).
+- **(Breaking) `pipe_code` → `pipe_ref` on the build routes, and it is now QUALIFIED and OPTIONAL.** Pass `domain.pipe_code`, or omit it to default to the closure's declared `main_pipe`. An undefaultable closure — one declaring no `main_pipe`, or several across its domains — is an error rather than a guess. The valid arm echoes the resolved `pipe_ref` plus `requested_pipe_ref` (absent when it was defaulted). `--pipe` on `mthds build …` and `mthds-agent inputs …` takes the qualified ref and may now be omitted.
+- **(Breaking) The build routes answer with a verdict, not a bare payload.** Each returns a discriminated union: the valid arm, or a `CrateInvalidReport` (`is_valid: false` + structured `validation_errors[]`) on a **200**, following `/validate`'s discipline — an unresolvable closure is a produced verdict, not a transport failure. Consumers must branch on `is_valid`; a throw now means only that *no verdict could be produced*. `buildInputs` and `buildOutput` were previously typed `Promise<unknown>` and are now fully typed.
+- **(Breaking) The payload field follows the `format`.** `buildInputs` returns `inputs` (parsed object) for `format: "json"` and `inputs_toml` (raw text) for `"toml"`; `buildOutput` returns `output` (parsed object) for `"schema"`/`"json"` and `output_python` (source text) for `"python"`. The unused field is absent from the response. Carrying TOML as a parsed object would destroy the concept comments that are the reason to ask for it, and Python source has never survived a JSON parse.
+- **(Breaking) `allow_signatures` is gone from `buildInputs` and `buildOutput`.** It only ever parameterized the dry-run sweep, and those two are now static reads of the resolved closure. `buildRunner` keeps both the sweep and the flag.
+- **`buildInputs` gains the CLI's two rendering axes** — `format` (`json` | `toml`) and `explicit` (the ceremonial `{concept, content}` envelope) — matching `pipelex codegen inputs`. Surfaced on `mthds build inputs pipe` as `--format` / `--explicit`.
+- **`buildRunner`'s valid arm now carries the typed-structures projection** (`structures`: the stamped artifacts, the lock, and the directory to write them into) alongside `python_code`, so the emitted script has the types it imports.
+
+### Fixed
+
+- **The two runners no longer disagree about what `buildInputs` returns.** The API runner returned the bare inputs template while the local `pipelex` runner returned the agent CLI's `{success, pipe_code, inputs}` envelope — behind a single `Runner` interface typed `Promise<unknown>`, which is what let the divergence hide. Both now return the template under `inputs`.
+- **The local runner defaulted `buildOutput`'s format to `json` where the API defaults to `schema`.** Same interface, two meanings. Both are now `schema`.
+- **The local runner echoed back an unresolved pipe ref.** It now resolves the qualified ref itself and passes it to `--pipe` explicitly, so the ref it reports is the ref it asked for — never a bare code presented as a resolved one.
+
 ### Added
 
 - **`mthds-agent codegen types|check` passthrough stubs (pipelex runner):** the new `pipelex-agent codegen` family is now visible in `mthds-agent --help` and forwards verbatim like the other runner-aware commands. `types` projects the resolved method library into typed artifacts; `check` is the offline drift check. ⚠ Depends on an unreleased pipelex — no published pipelex ships `codegen` yet, so `PIPELEX_PKG.version_constraint` must be bumped to the pipelex version that ships it, in the same release. On the API runner the commands error cleanly as `UnsupportedError` (the codegen routes land with the API-route stretch).

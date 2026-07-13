@@ -69,12 +69,13 @@ export type ValidationErrorCategory =
 /**
  * One structured bundle-validation error — exact mirror of pipelex's
  * `ValidationErrorItem` (the union across the `ValidateBundleError` error-data
- * models). In `mthds` it types the build routes' `422` problem bodies
- * (`ApiResponseError.validationErrors`). The same item also narrows the **200**
- * invalid `/v1/validate` verdict, but that narrowing (`PipelexInvalidReport`)
- * lives in the runtime SDK (`@pipelex/sdk`) — `mthds`'s own `validate()` returns
- * the protocol's neutral `ValidationResult`, whose invalid arm exposes only the
- * standard `category` + `message`.
+ * models). In `mthds` it narrows the **200** invalid arm of every `/v1/build/*`
+ * route ({@link CrateInvalidReport}), and it also types whatever validation
+ * errors ride a problem body (`ApiResponseError.validationErrors`). The same item
+ * narrows the 200 invalid `/v1/validate` verdict, but that narrowing
+ * (`PipelexInvalidReport`) lives in the runtime SDK (`@pipelex/sdk`) — `mthds`'s
+ * own `validate()` returns the protocol's neutral `ValidationResult`, whose
+ * invalid arm exposes only the standard `category` + `message`.
  *
  * Only `category` and `message` are always present; the rest are populated per
  * `category` and dropped from the wire when unset (`exclude_none` server-side).

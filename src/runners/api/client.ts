@@ -3,7 +3,9 @@ import type {
   Runner,
   RunnerType,
   BuildInputsRequest,
+  BuildInputsResponse,
   BuildOutputRequest,
+  BuildOutputResponse,
   BuildRunnerRequest,
   BuildRunnerResponse,
   ConceptRequest,
@@ -511,11 +513,11 @@ export class MthdsApiClient implements Runner {
 
   // ── Build extensions (Pipelex API layer 2 — `/v1/build/*`) ────────
 
-  async buildInputs(request: BuildInputsRequest): Promise<unknown> {
+  async buildInputs(request: BuildInputsRequest): Promise<BuildInputsResponse> {
     return this.postApi("build/inputs", request);
   }
 
-  async buildOutput(request: BuildOutputRequest): Promise<unknown> {
+  async buildOutput(request: BuildOutputRequest): Promise<BuildOutputResponse> {
     return this.postApi("build/output", request);
   }
 

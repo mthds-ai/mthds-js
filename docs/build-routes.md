@@ -19,7 +19,9 @@ const result = await runner.buildInputs({
 
 **`source` is a provenance label**, not a path the server reads. Give it a filename and the server threads it onto the diagnostics it can attribute to that file, so an invalid verdict points at the file that caused it. Treat the attribution as best-effort: graph-level `dry_run` and `pipe_factory` items have no single owning file, and a `main_pipe` naming a nonexistent pipe currently reports its provenance in the message prose while leaving the structured field unset — which is why `ValidationErrorItem.source` is optional.
 
-The local runner puts the label to a second use — it names the file on disk in the temp closure it hands the CLI, so the CLI's own diagnostics agree. It **normalizes** it first, though, so local diagnostics may not echo `source` back verbatim the way the API does: only a plain `*.mthds` basename survives as-is. A path is stripped to its basename (`lib/shared.mthds` → `shared.mthds`), and anything else — a URI, a dotfile, a non-`.mthds` name — falls back to a positional name (`bundle.mthds`, `extra_2.mthds`). That is a deliberate guard against escaping the temp directory, not an oversight.
+The local runner puts the label to a second use — it names the file on disk in the temp closure it hands the CLI, so the CLI's own diagnostics agree. It **normalizes** it first, though, so local diagnostics may not echo `source` back verbatim the way the API does. The rule is: take the **final segment** of the label (splitting on `/` and `\`), and keep it only if it ends in `.mthds` and is not a dotfile; otherwise fall back to a positional name (`bundle.mthds`, `extra_2.mthds`).
+
+So `lib/shared.mthds` and `https://example.com/shared.mthds` both become `shared.mthds` — the prefix is dropped, the basename survives. A label whose final segment is not a `.mthds` file (`notes.txt`, `.hidden.mthds`, a bare label like `main`) gets the positional name instead. That is a deliberate guard against escaping the temp directory, not an oversight — and it's why the API is the one to trust for verbatim `source` round-tripping.
 
 **`pipe_ref` is a QUALIFIED `domain.pipe_code` ref, and it is optional.** Omit it and the pipe defaults to the closure's declared `main_pipe`. That default fails (`422` on the API, a throw locally) when the closure declares _no_ `main_pipe` — and equally when it declares _several_ across its domains, because an ambiguous closure has no single "the" pipe and guessing would be worse than asking.
 
@@ -68,7 +70,9 @@ The split is not cosmetic. TOML carried as a parsed object would lose its concep
 
 Alone among the three, `buildRunner` still runs the dry-run sweep — and `allow_signatures` only ever parameterized that sweep. `buildInputs` and `buildOutput` are static reads of the resolved closure, so the flag is meaningless to them and they do not accept it.
 
-**It is served by the API runner only.** `pipelex build runner` exposes no `--allow-signatures` flag, so the local runner has nothing to forward and **rejects** a request that sets it, rather than dropping it silently — a dropped flag would make the same request mean two different things depending on which runner served it. Use `--runner api` for closures with unresolved pipe signatures.
+**It is an API-runner option, and it is settable only from code.** `buildRunner({ files, allow_signatures: true })` on an `MthdsApiClient` sends it; the **`mthds build runner` CLI has no `--allow-signatures` flag at all**, on either runner, so no CLI invocation can turn it on — `--runner api` alone will not do it.
+
+The local runner **rejects** a request that sets the flag rather than dropping it silently: `pipelex build runner` exposes nothing to forward it to, and a silently-dropped flag would make one `BuildRunnerRequest` mean two different things depending on which runner served it (the API would accept a closure with unresolved signatures that the local runner then rejected). If you need it, build against the API runner programmatically.
 
 `buildRunner`'s valid arm carries the script plus the typed-structures projection it imports from: write `structures.artifacts` and `structures.lock` (under `structures.lock_filename`) into `structures.directory`, relative to the script, and the returned `python_code` runs against them.
 

@@ -363,8 +363,8 @@ export class PipelexRunner implements Runner {
     if (request.allow_signatures) {
       throw new Error(
         "allow_signatures is not supported by the local pipelex runner: " +
-          "`pipelex build runner` exposes no --allow-signatures flag. Use the API runner " +
-          "(--runner api) for closures with unresolved pipe signatures.",
+          "`pipelex build runner` exposes no --allow-signatures flag. Send this request " +
+          "through an MthdsApiClient (the API runner) instead.",
       );
     }
 

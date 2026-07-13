@@ -1,15 +1,32 @@
+import { TomlError, parse as parseToml } from "smol-toml";
 import type { MthdsFileItem } from "./types.js";
 
-// `.mthds` files are TOML, where a string is basic ("…") OR literal ('…') — both are
-// ordinary, and pipelex parses both. Matching only double quotes silently dropped the
-// domain of a perfectly valid bundle, which then read as "declares no domain".
-const DOMAIN_RE = /^\s*domain\s*=\s*(?:"([^"]+)"|'([^']+)')/m;
-const MAIN_PIPE_RE = /^\s*main_pipe\s*=\s*(?:"([^"]+)"|'([^']+)')/m;
-
-/** The captured value, whichever quote style carried it. */
-function tomlString(content: string, pattern: RegExp): string | undefined {
-  const match = content.match(pattern);
-  return match ? (match[1] ?? match[2]) : undefined;
+/**
+ * The two bundle-level keys the pipe selector needs.
+ *
+ * Read with the real TOML parser rather than a regex. `.mthds` files ARE TOML, and TOML
+ * spells these more ways than a regex comfortably matches: basic vs literal strings
+ * (`"smoke"` / `'smoke'`), quoted keys (`"domain" = …`), comments and whitespace between
+ * them. A regex that missed any of those silently reported a perfectly valid bundle as
+ * "declares no domain" — which is precisely the bug this replaced. `smol-toml` is already
+ * a dependency (see `package/manifest/validate.ts`), so this is cheaper than the regex was.
+ */
+function readBundleMeta(content: string): { domain?: string; mainPipe?: string } {
+  let parsed: unknown;
+  try {
+    parsed = parseToml(content);
+  } catch (err) {
+    // A malformed bundle is not this function's error to report — the CLI and the engine
+    // own that diagnostic, and they say it far better. Treat the metadata as absent; a
+    // caller who supplied a qualified `pipe_ref` never needed it anyway.
+    if (err instanceof TomlError) return {};
+    throw err;
+  }
+  const table = parsed as Record<string, unknown>;
+  return {
+    domain: typeof table.domain === "string" ? table.domain : undefined,
+    mainPipe: typeof table.main_pipe === "string" ? table.main_pipe : undefined,
+  };
 }
 
 function uniq(values: string[]): string[] {
@@ -43,14 +60,16 @@ export function resolveQualifiedPipeRef(files: MthdsFileItem[], pipeRef?: string
     );
   }
 
+  // A qualified ref is already the answer — resolve it before reading any file, so a
+  // caller who named their pipe is never blocked by a bundle we cannot parse.
+  if (pipeRef?.includes(".")) return pipeRef;
+
+  const meta = files.map((file) => readBundleMeta(file.content));
   const domains = uniq(
-    files
-      .map((file) => tomlString(file.content, DOMAIN_RE))
-      .filter((domain): domain is string => !!domain),
+    meta.map((entry) => entry.domain).filter((domain): domain is string => !!domain),
   );
 
   if (pipeRef) {
-    if (pipeRef.includes(".")) return pipeRef;
     if (domains.length === 1) return `${domains[0]}.${pipeRef}`;
     if (domains.length === 0) {
       throw new Error(
@@ -65,11 +84,9 @@ export function resolveQualifiedPipeRef(files: MthdsFileItem[], pipeRef?: string
   }
 
   const mainPipes = uniq(
-    files.flatMap((file) => {
-      const domain = tomlString(file.content, DOMAIN_RE);
-      const mainPipe = tomlString(file.content, MAIN_PIPE_RE);
-      return domain && mainPipe ? [`${domain}.${mainPipe}`] : [];
-    }),
+    meta.flatMap((entry) =>
+      entry.domain && entry.mainPipe ? [`${entry.domain}.${entry.mainPipe}`] : [],
+    ),
   );
 
   if (mainPipes.length === 1) return mainPipes[0]!;

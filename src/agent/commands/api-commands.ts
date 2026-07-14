@@ -653,7 +653,7 @@ function resolvePipeCode(mthdsContent: string, pipeCodeOption: string | undefine
  * envelope is the RESOLVED qualified ref the server picked, not the `--pipe` string
  * the caller may have omitted.
  */
-async function emitInputsTemplate(
+export async function emitInputsTemplate(
   runner: Runner,
   file: MthdsFileItem,
   pipeRef: string | undefined,
@@ -661,11 +661,12 @@ async function emitInputsTemplate(
   try {
     const result = await runner.buildInputs({ files: [file], pipe_ref: pipeRef });
     if (!result.is_valid) {
-      // A 200 `is_valid: false` is a VALIDATION verdict, not a transport/runtime
-      // failure — same as `runProtocolValidate`. `error_domain` exists for machine
-      // triage, so tagging this `runner` would make an agent misfile every invalid
-      // closure as an infrastructure problem. The catch below is the `runner` arm.
-      agentError(result.message, "ValidationError", {
+      // A 200 `is_valid: false` is a PRODUCED verdict, not a transport/runtime
+      // failure — the `ValidateBundleError` arm, same envelope as
+      // `runProtocolValidate` (`ValidationError` is the no-verdict type; `is_valid`
+      // and `validation_errors` ride only a verdict). `error_domain` stays
+      // `validation` for machine triage — the catch below is the `runner` arm.
+      agentError(result.message, "ValidateBundleError", {
         error_domain: AGENT_ERROR_DOMAINS.VALIDATION,
         is_valid: false,
         validation_errors: result.validation_errors,

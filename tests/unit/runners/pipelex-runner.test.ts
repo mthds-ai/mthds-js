@@ -24,11 +24,12 @@ vi.mock("node:os", () => ({
   tmpdir: vi.fn(() => "/tmp"),
 }));
 
-import { readFileSync, existsSync, writeFileSync } from "node:fs";
+import { readFileSync, readdirSync, existsSync, writeFileSync } from "node:fs";
 import { spawn } from "node:child_process";
 import { PipelexRunner } from "../../../src/runners/pipelex/runner.js";
 
 const mockedReadFileSync = vi.mocked(readFileSync);
+const mockedReaddirSync = vi.mocked(readdirSync);
 const mockedExistsSync = vi.mocked(existsSync);
 const mockedWriteFileSync = vi.mocked(writeFileSync);
 const mockedSpawn = vi.mocked(spawn);
@@ -391,6 +392,29 @@ describe("PipelexRunner", () => {
       await runner.buildInputs({ files: [{ content: BUNDLE }], explicit: true });
       expect(execFileAsync.mock.calls[1]![1] as string[]).toContain("--explicit");
     });
+
+    // pipelex-agent's JSON envelope always carries `inputs` — `{}` for an input-less
+    // pipe. An envelope WITHOUT the key means the CLI contract changed under us; that
+    // must surface as a loud no-verdict, not an `is_valid: true` with a hollowed-out
+    // template that would strip every required field from generated input forms.
+    it("throws when the agent envelope carries no `inputs` key", async () => {
+      execFileAsync.mockResolvedValue({
+        stdout: '{"success":true,"pipe_code":"echo"}',
+        stderr: "",
+      });
+
+      await expect(runner.buildInputs({ files: [{ content: BUNDLE }] })).rejects.toThrow(
+        /no `inputs` field/,
+      );
+    });
+
+    it("keeps an empty template valid — an input-less pipe is not a contract break", async () => {
+      execFileAsync.mockResolvedValue({ stdout: '{"inputs":{}}', stderr: "" });
+
+      const result = await runner.buildInputs({ files: [{ content: BUNDLE }] });
+
+      expect(result).toMatchObject({ is_valid: true, inputs: {} });
+    });
   });
 
   describe("buildOutput", () => {
@@ -486,10 +510,9 @@ describe("PipelexRunner", () => {
   });
 
   describe("buildRunner", () => {
-    // The stamped structures projection comes from pipelex's codegen engine, which is
-    // UNRELEASED — no published pipelex writes `structures/codegen.lock`. Requiring it
-    // meant every local buildRunner threw away a perfectly good runner.py over a
-    // sidecar that could not exist yet.
+    // A closure that resolves to no crate yields no structures projection (no
+    // `structures/codegen.lock`). That is not a failure: the runner.py we just
+    // generated is valid on its own, so a missing sidecar must not discard it.
     it("returns the runner script even when the CLI emitted no structures projection", async () => {
       mockSpawnExit(0);
       mockedExistsSync.mockReturnValue(false); // no structures/codegen.lock beside it
@@ -501,6 +524,45 @@ describe("PipelexRunner", () => {
       if (!result.is_valid) throw new Error("unreachable");
       expect(result.python_code).toBe("# runner.py\n");
       expect(result.structures).toBeUndefined();
+    });
+
+    // pipelex's lock layer validates artifact paths as (possibly multi-part) RELATIVE
+    // paths, so a projection may nest files in subdirectories. The collector must walk
+    // them and report each artifact under its relative path — not EISDIR on the
+    // directory entry, and not silently halve the locked artifact set by skipping it.
+    it("collects nested structure artifacts under their relative paths", async () => {
+      mockSpawnExit(0);
+      mockedExistsSync.mockReturnValue(true); // structures/codegen.lock present
+      const dirent = (name: string, kind: "file" | "dir") =>
+        ({ name, isFile: () => kind === "file", isDirectory: () => kind === "dir" }) as never;
+      mockedReaddirSync.mockImplementation((path) =>
+        String(path).endsWith("/structures")
+          ? ([
+              dirent("codegen.lock", "file"),
+              dirent("structures.py", "file"),
+              dirent("pkg", "dir"),
+            ] as never)
+          : ([dirent("mod.py", "file")] as never),
+      );
+      mockedReadFileSync.mockImplementation((path) => {
+        const p = String(path);
+        if (p.endsWith("runner.py")) return "# runner.py\n";
+        if (p.endsWith("codegen.lock")) return "lock-content";
+        return `content of ${p.split("/").pop()}`;
+      });
+
+      const result = await runner.buildRunner({ files: [{ content: BUNDLE }] });
+
+      expect(result.is_valid).toBe(true);
+      if (!result.is_valid) throw new Error("unreachable");
+      expect(result.structures).toMatchObject({
+        directory: "structures",
+        lock: "lock-content",
+        artifacts: [
+          { path: "pkg/mod.py", content: "content of mod.py" },
+          { path: "structures.py", content: "content of structures.py" },
+        ],
+      });
     });
 
     // `pipelex build runner` has no --allow-signatures flag, so there is nothing to

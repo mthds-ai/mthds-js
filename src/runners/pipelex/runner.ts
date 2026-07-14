@@ -122,27 +122,40 @@ const STRUCTURES_DIR = "structures";
 const CODEGEN_LOCK_FILENAME = "codegen.lock";
 
 /**
+ * Walk a projection directory and collect every file under its path RELATIVE to the
+ * root, "/"-separated regardless of platform — the wire shape `GeneratedArtifact.path`
+ * carries. pipelex's lock layer validates artifact paths as (possibly multi-part)
+ * relative paths, so nested files are part of the projection, not noise: skipping
+ * them would hand `codegen check` a silently halved artifact set.
+ */
+function collectArtifactFiles(root: string, rel = ""): { path: string; content: string }[] {
+  return readdirSync(join(root, rel), { withFileTypes: true }).flatMap((entry) => {
+    const relPath = rel ? `${rel}/${entry.name}` : entry.name;
+    if (entry.isDirectory()) return collectArtifactFiles(root, relPath);
+    if (!entry.isFile()) return [];
+    return [{ path: relPath, content: readFileSync(join(root, relPath), "utf-8") }];
+  });
+}
+
+/**
  * Collect the typed-structures projection `pipelex build runner` scaffolds beside
  * the script it emits, so the local runner returns the same `structures` payload
  * the API does — the stamped artifacts plus the lock that tracks them.
  *
- * Returns `undefined` when the CLI emitted no projection. That is not a failure: the
- * stamped projection comes from pipelex's codegen engine, which is UNRELEASED — no
- * published pipelex writes a lock here — and a closure that resolves to no crate
- * yields no `structures/` either. The `runner.py` we just generated is valid in both
- * cases, so treating a missing lock as fatal would throw away good output over an
- * absent sidecar. The lock is still all-or-nothing: a projection without one cannot
- * be offline-checked, so we never report a half one.
+ * Returns `undefined` when the CLI emitted no projection. That is not a failure: a
+ * closure that resolves to no crate yields no `structures/`, and the `runner.py` we
+ * just generated is valid regardless, so treating a missing lock as fatal would throw
+ * away good output over an absent sidecar. The lock is still all-or-nothing: a
+ * projection without one cannot be offline-checked, so we never report a half one.
  */
 function readRunnerStructures(runnerPath: string): RunnerStructures | undefined {
   const dir = join(dirname(runnerPath), STRUCTURES_DIR);
   const lockPath = join(dir, CODEGEN_LOCK_FILENAME);
   if (!existsSync(lockPath)) return undefined;
 
-  const artifacts = readdirSync(dir)
-    .filter((name) => name !== CODEGEN_LOCK_FILENAME)
-    .sort()
-    .map((name) => ({ path: name, content: readFileSync(join(dir, name), "utf-8") }));
+  const artifacts = collectArtifactFiles(dir)
+    .filter((artifact) => artifact.path !== CODEGEN_LOCK_FILENAME)
+    .sort((a, b) => (a.path < b.path ? -1 : 1));
 
   return {
     directory: STRUCTURES_DIR,
@@ -288,7 +301,13 @@ export class PipelexRunner implements Runner {
         return { ...base, format, inputs_toml: stdout };
       }
       const envelope = JSON.parse(stdout) as { inputs?: Record<string, unknown> };
-      return { ...base, format, inputs: envelope.inputs ?? {} };
+      // The envelope always carries `inputs` — `{}` for an input-less pipe. Its
+      // absence means the CLI contract changed under us; surface that as a
+      // no-verdict rather than an `is_valid: true` with a hollowed-out template.
+      if (envelope.inputs === undefined) {
+        throw new Error("pipelex-agent inputs returned no `inputs` field in its JSON envelope.");
+      }
+      return { ...base, format, inputs: envelope.inputs };
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }

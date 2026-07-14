@@ -1,13 +1,52 @@
+import { basename } from "node:path";
 import { readFileSync, writeFileSync } from "node:fs";
 import * as p from "@clack/prompts";
 import { printLogo } from "./index.js";
 import { isPipelexRunner, extractPassthroughArgs } from "./utils.js";
 import { createRunner } from "../../runners/registry.js";
-import type { ConceptRepresentationFormat, RunnerType } from "../../runners/types.js";
+import type {
+  ConceptRepresentationFormat,
+  CrateInvalidReport,
+  InputsTemplateFormat,
+  MthdsFileItem,
+  RunnerType,
+} from "../../runners/types.js";
 
 interface WithRunner {
   runner?: RunnerType;
   libraryDir?: string[];
+}
+
+/**
+ * Read a bundle into a `/v1/build/*` file item, labelled with its own filename so
+ * any diagnostic the server raises points back at the file the user named.
+ */
+function readBundleFile(target: string): MthdsFileItem {
+  return { content: readFileSync(target, "utf-8"), source: basename(target) };
+}
+
+/**
+ * Render an invalid-closure VERDICT (the `is_valid: false` arm) and exit non-zero.
+ *
+ * The build routes answer a bad closure with a 200 carrying diagnostics, not an
+ * exception — so a CLI that only caught throws would print a success message over
+ * an unusable result. Returns true when the verdict is valid and the caller should
+ * carry on. It never returns on the invalid arm (`process.exit`), but TypeScript
+ * cannot narrow through that, hence the boolean + the `is_valid` type guard.
+ */
+function reportIfInvalid(
+  spinner: ReturnType<typeof p.spinner>,
+  result: { is_valid: true } | CrateInvalidReport,
+): result is { is_valid: true } {
+  if (result.is_valid) return true;
+  spinner.stop("Build failed.");
+  p.log.error(result.message);
+  for (const item of result.validation_errors) {
+    const where = [item.source, item.pipe_code].filter(Boolean).join(" · ");
+    p.log.error(where ? `${where}: ${item.message}` : item.message);
+  }
+  p.outro("");
+  process.exit(1);
 }
 
 // ── mthds build runner method <name> ─────────────────────────────────
@@ -67,24 +106,10 @@ export async function buildRunnerPipe(
     return;
   }
 
-  const isBundle = target.endsWith(".mthds");
-
-  let mthdsContent: string;
-  let pipeCode: string;
-
-  if (isBundle) {
-    mthdsContent = readFileSync(target, "utf-8");
-    if (!options.pipe) {
-      p.log.error("--pipe is required when using the API runner.");
-      p.outro("");
-      process.exit(1);
-    }
-    pipeCode = options.pipe;
-  } else {
+  if (!target.endsWith(".mthds")) {
     p.log.error("build runner requires a .mthds bundle file. Pass the bundle path as the target.");
     p.outro("");
     process.exit(1);
-    return; // unreachable, keeps TS happy
   }
 
   const s = p.spinner();
@@ -92,9 +117,10 @@ export async function buildRunnerPipe(
 
   try {
     const result = await runner.buildRunner({
-      mthds_contents: [mthdsContent],
-      pipe_code: pipeCode,
+      files: [readBundleFile(target)],
+      pipe_ref: options.pipe,
     });
+    if (!reportIfInvalid(s, result)) return;
     s.stop(result.message);
 
     if (options.output) {
@@ -149,7 +175,7 @@ export async function buildInputsMethod(
 
 export async function buildInputsPipe(
   target: string,
-  options: { pipe?: string } & WithRunner,
+  options: { pipe?: string; format?: string; explicit?: boolean } & WithRunner,
 ): Promise<void> {
   printLogo();
   p.intro("mthds build inputs pipe");
@@ -170,15 +196,17 @@ export async function buildInputsPipe(
     return;
   }
 
-  if (!options.pipe) {
-    p.log.error("--pipe is required when using the API runner.");
+  const validFormats: InputsTemplateFormat[] = ["json", "toml"];
+  const format = (options.format ?? "json") as InputsTemplateFormat;
+  if (!validFormats.includes(format)) {
+    p.log.error(`Invalid format "${format}". Must be one of: ${validFormats.join(", ")}`);
     p.outro("");
     process.exit(1);
   }
 
-  let mthdsContent: string;
+  let file: MthdsFileItem;
   try {
-    mthdsContent = readFileSync(target, "utf-8");
+    file = readBundleFile(target);
   } catch (err) {
     p.log.error((err as Error).message);
     p.outro("");
@@ -190,11 +218,20 @@ export async function buildInputsPipe(
 
   try {
     const result = await runner.buildInputs({
-      mthds_contents: [mthdsContent],
-      pipe_code: options.pipe,
+      files: [file],
+      pipe_ref: options.pipe,
+      format,
+      explicit: options.explicit ?? false,
     });
-    s.stop("Inputs generated.");
-    p.log.info(JSON.stringify(result, null, 2));
+    if (!reportIfInvalid(s, result)) return;
+    s.stop(`Inputs generated for ${result.pipe_ref}.`);
+    // The template rides the field its `format` names — print it as the caller
+    // asked for it, not as a re-encoded blob.
+    p.log.info(
+      result.format === "toml"
+        ? (result.inputs_toml ?? "")
+        : JSON.stringify(result.inputs, null, 2),
+    );
     p.outro("Done");
   } catch (err) {
     s.stop("Build failed.");
@@ -261,25 +298,19 @@ export async function buildOutputPipe(
     return;
   }
 
-  if (!options.pipe) {
-    p.log.error("--pipe is required when using the API runner.");
+  const validFormats: ConceptRepresentationFormat[] = ["json", "python", "schema"];
+  const format = (options.format ?? "schema") as ConceptRepresentationFormat;
+  if (!validFormats.includes(format)) {
+    p.log.error(`Invalid format "${format}". Must be one of: ${validFormats.join(", ")}`);
     p.outro("");
     process.exit(1);
   }
 
-  let mthdsContent: string;
+  let file: MthdsFileItem;
   try {
-    mthdsContent = readFileSync(target, "utf-8");
+    file = readBundleFile(target);
   } catch (err) {
     p.log.error((err as Error).message);
-    p.outro("");
-    process.exit(1);
-  }
-
-  const validFormats: ConceptRepresentationFormat[] = ["json", "python", "schema"];
-  const format = (options.format ?? "schema") as string;
-  if (!validFormats.includes(format as ConceptRepresentationFormat)) {
-    p.log.error(`Invalid format "${format}". Must be one of: ${validFormats.join(", ")}`);
     p.outro("");
     process.exit(1);
   }
@@ -289,12 +320,18 @@ export async function buildOutputPipe(
 
   try {
     const result = await runner.buildOutput({
-      mthds_contents: [mthdsContent],
-      pipe_code: options.pipe,
-      format: format as ConceptRepresentationFormat,
+      files: [file],
+      pipe_ref: options.pipe,
+      format,
     });
-    s.stop("Output generated.");
-    p.log.info(JSON.stringify(result, null, 2));
+    if (!reportIfInvalid(s, result)) return;
+    s.stop(`Output generated for ${result.pipe_ref}.`);
+    // 'python' is source text, the others are objects — print each in its own form.
+    p.log.info(
+      result.format === "python"
+        ? (result.output_python ?? "")
+        : JSON.stringify(result.output, null, 2),
+    );
     p.outro("Done");
   } catch (err) {
     s.stop("Build failed.");

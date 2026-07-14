@@ -139,4 +139,25 @@ export function registerPipelexRunnerCommands(
       .argument("<name>", "Method name")
       .description("Generate inputs for an installed method"),
   );
+
+  // ── codegen ──
+
+  const codegenGroup = program
+    .command("codegen")
+    .description("Project the crate into typed artifacts (types) and check drift offline (check)")
+    .passThroughOptions()
+    .allowUnknownOption();
+
+  stub(
+    codegenGroup
+      .command("types")
+      .argument("[paths...]", "Directories of .mthds bundles to resolve into the closure")
+      .description("Project the crate's concept set into typed artifacts for a target flavor"),
+  );
+  stub(
+    codegenGroup
+      .command("check")
+      .argument("[root]", "Directory holding codegen.lock and generated artifacts")
+      .description("Verify generated artifacts are current (offline drift check)"),
+  );
 }

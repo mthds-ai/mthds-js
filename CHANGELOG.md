@@ -1,5 +1,36 @@
 # Changelog
 
+## [v0.19.0] - 2026-07-14
+
+### Added
+
+- **`mthds-agent codegen types|check` commands:** Passthrough stubs for the pipelex runner. `types` projects the resolved method library into typed artifacts; `check` performs an offline drift check. Requires a pipelex install that ships `codegen` (enforced by a version constraint); the API runner cleanly returns an `UnsupportedError`.
+- **Build routes documentation:** Added `docs/build-routes.md` covering the `/v1/build/*` projections — shared envelope, pipe selectors, and verdict handling — and updated `CLI.md` and `docs/api-runner.md` for the new commands and routing.
+- **`buildInputs` CLI flags:** Added `--format` (`json` | `toml`) and `--explicit` (ceremonial `{concept, content}` envelope) to match `pipelex codegen inputs`.
+
+### Changed
+
+- **(Breaking) `/v1/build/*` routes now use the `files[]` envelope:** `buildInputs`, `buildOutput`, and `buildRunner` now take `files: [{ content, source? }]` instead of bare `mthds_contents: string[]`. The `source` label is threaded onto diagnostics so invalid verdicts point to the exact offending file.
+- **(Breaking) `pipe_code` is now `pipe_ref` on build routes:** The reference is now qualified (`domain.pipe_code`) and optional; omitting it defaults to the closure's declared `main_pipe`. Ambiguous closures (no `main_pipe`, or multiple across domains) now throw a clear error rather than guessing.
+- **(Breaking) Per-pipe build projections return a verdict:** `build/inputs`, `build/output`, and `build/runner` now return a discriminated union (a valid arm or a `CrateInvalidReport` with `is_valid: false`) on a **200 OK**, rather than a bare payload or a transport failure. Consumers must branch on `is_valid`.
+- **(Breaking) Payload fields follow the requested `format`:** Responses are discriminated unions based on format to preserve data integrity. `buildInputs` returns `inputs` (parsed object) for `"json"` and `inputs_toml` (raw text) for `"toml"`; `buildOutput` returns `output` (parsed object) for `"schema"`/`"json"` and `output_python` (source text) for `"python"`.
+- **`allow_signatures` is now strictly validated:** The LOCAL runner explicitly rejects the flag (it has no `--allow-signatures` to forward) instead of silently dropping it, ensuring consistent behavior across runners. The flag remains available only on `buildRunner`, where it parameterizes the dry-run sweep; it was removed from `buildInputs` and `buildOutput`, which are static reads of the resolved closure.
+- **`buildRunner` structures projection:** The valid arm now carries the typed-structures projection (`structures`) alongside `python_code`. `BuildRunnerValidReport.structures` is optional because the projection is lock-gated: a closure that resolves to no crate yields no `structures/codegen.lock`, and the generated `runner.py` is valid on its own.
+- **Dependency bump:** Raised `PIPELEX_PKG.version_constraint` to `>=0.39.0` to support the new codegen features.
+
+### Fixed
+
+- **Robust TOML parsing for bundle metadata:** The local runner now reads the bundle's `domain` and `main_pipe` via `smol-toml` instead of a brittle regex, fixing false "no domain/pipe declared" errors on valid TOML (single-quoted strings, quoted keys, comments).
+- **Local `buildRunner` lock file requirement:** A local `buildRunner` no longer discards a valid generated `runner.py` just because `structures/codegen.lock` is missing.
+- **Error domain tagging:** Invalid build verdicts are now tagged with `error_domain: validation` instead of `runner`, preventing agents from misfiling invalid closures as infrastructure/transport problems.
+- **Diagnostic source stamping:** `mthds-agent inputs bundle <file> --content "..."` no longer stamps diagnostics with a filename whose bytes were overridden and not actually checked.
+- **Runner return shape alignment:** The API runner and local `pipelex` runner now return the same envelope shape for `buildInputs`, both exposing the template under the `inputs` field.
+- **Default format alignment:** The local runner now defaults `buildOutput`'s format to `schema` instead of `json`, matching the API runner.
+- **Resolved pipe ref echoing:** The local runner now resolves the qualified ref itself and passes it explicitly, so the ref it reports back is the actual resolved ref rather than a bare code.
+- **Nested structure artifacts:** The local `buildRunner` now walks the `structures/` projection recursively and reports each artifact under its path relative to `structures/`, instead of crashing (`EISDIR`) on a nested directory — pipelex's lock format allows multi-part relative artifact paths.
+- **Loud failure on a missing `inputs` envelope key:** The local `buildInputs` now throws when the pipelex-agent JSON envelope lacks the `inputs` field, instead of silently returning an empty template under a valid verdict.
+- **Invalid build closures emit `ValidateBundleError`:** `inputs bundle`/`inputs pipe` now surface an invalid closure with the produced-verdict `ValidateBundleError` envelope, matching `validate`, instead of the no-verdict `ValidationError` type.
+
 ## [v0.18.0] - 2026-07-10
 
 ### Added

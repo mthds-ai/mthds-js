@@ -164,7 +164,10 @@ const buildRunnerCmd = build
 buildRunnerCmd
   .command("method")
   .argument("<name>", "Name of the installed method")
-  .option("--pipe <code>", "Pipe code to generate runner for")
+  .option(
+    "--pipe <ref>",
+    "Qualified pipe ref (domain.pipe_code). Defaults to the closure's main_pipe.",
+  )
   .option("-o, --output <file>", "Path to save the generated Python file")
   .description("Generate runner for an installed method")
   .allowUnknownOption()
@@ -181,7 +184,10 @@ buildRunnerCmd
 buildRunnerCmd
   .command("pipe")
   .argument("<target>", "Bundle file path")
-  .option("--pipe <code>", "Pipe code to generate runner for")
+  .option(
+    "--pipe <ref>",
+    "Qualified pipe ref (domain.pipe_code). Defaults to the closure's main_pipe.",
+  )
   .option("-o, --output <file>", "Path to save the generated Python file")
   .description("Generate runner for a pipe by bundle path")
   .allowUnknownOption()
@@ -203,7 +209,10 @@ const buildInputsCmd = build
 buildInputsCmd
   .command("method")
   .argument("<name>", "Name of the installed method")
-  .option("--pipe <code>", "Pipe code to generate inputs for")
+  .option(
+    "--pipe <ref>",
+    "Qualified pipe ref (domain.pipe_code). Defaults to the closure's main_pipe.",
+  )
   .description("Generate inputs for an installed method")
   .allowUnknownOption()
   .allowExcessArguments(true)
@@ -219,18 +228,29 @@ buildInputsCmd
 buildInputsCmd
   .command("pipe")
   .argument("<target>", "Bundle file path")
-  .option("--pipe <code>", "Pipe code to generate inputs for")
+  .option(
+    "--pipe <ref>",
+    "Qualified pipe ref (domain.pipe_code). Defaults to the closure's main_pipe.",
+  )
+  .option("--format <format>", "Template format (json, toml)", "json")
+  .option("--explicit", "Emit the ceremonial {concept, content} envelope per input")
   .description("Generate inputs for a pipe by bundle path")
   .allowUnknownOption()
   .allowExcessArguments(true)
   .exitOverride()
-  .action(async (target: string, options: { pipe?: string }, cmd: Cmd) => {
-    await buildInputsPipe(target, {
-      ...options,
-      runner: getRunner(cmd),
-      libraryDir: getLibraryDirs(cmd),
-    });
-  });
+  .action(
+    async (
+      target: string,
+      options: { pipe?: string; format?: string; explicit?: boolean },
+      cmd: Cmd,
+    ) => {
+      await buildInputsPipe(target, {
+        ...options,
+        runner: getRunner(cmd),
+        libraryDir: getLibraryDirs(cmd),
+      });
+    },
+  );
 
 const buildOutputCmd = build
   .command("output")
@@ -240,7 +260,10 @@ const buildOutputCmd = build
 buildOutputCmd
   .command("method")
   .argument("<name>", "Name of the installed method")
-  .option("--pipe <code>", "Pipe code to generate output for")
+  .option(
+    "--pipe <ref>",
+    "Qualified pipe ref (domain.pipe_code). Defaults to the closure's main_pipe.",
+  )
   .option("--format <format>", "Output format (json, python, schema)", "schema")
   .description("Generate output for an installed method")
   .allowUnknownOption()
@@ -257,7 +280,10 @@ buildOutputCmd
 buildOutputCmd
   .command("pipe")
   .argument("<target>", "Bundle file path")
-  .option("--pipe <code>", "Pipe code to generate output for")
+  .option(
+    "--pipe <ref>",
+    "Qualified pipe ref (domain.pipe_code). Defaults to the closure's main_pipe.",
+  )
   .option("--format <format>", "Output format (json, python, schema)", "schema")
   .description("Generate output for a pipe by bundle path")
   .allowUnknownOption()

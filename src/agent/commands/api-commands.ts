@@ -16,7 +16,7 @@ import {
   AGENT_ERROR_DOMAINS,
 } from "../output.js";
 import { isApiRunner } from "../../cli/commands/utils.js";
-import type { Runner } from "../../runners/types.js";
+import type { MthdsFileItem, Runner } from "../../runners/types.js";
 import type { StartOptions } from "../../protocol/options.js";
 import type { ModelCategory } from "../../protocol/models.js";
 import { MODEL_CATEGORIES } from "../../protocol/models.js";
@@ -256,7 +256,7 @@ export function registerApiRunnerCommands(program: Command, makeRunner: () => Ru
   inputsGroup
     .command("bundle")
     .argument("[target]", "Bundle file (.mthds) or directory")
-    .option("--pipe <code>", "Pipe code to generate inputs for")
+    .option("--pipe <ref>", "Qualified pipe ref (domain.pipe_code); defaults to the main_pipe")
     .option("--content <mthds>", "Bundle content as a string")
     .description("Generate inputs from a bundle file or content")
     .allowUnknownOption()
@@ -264,52 +264,36 @@ export function registerApiRunnerCommands(program: Command, makeRunner: () => Ru
     .exitOverride()
     .action(async (target: string | undefined, options: { pipe?: string; content?: string }) => {
       const runner = safeCreateRunner(makeRunner);
-      const mthdsContent = resolveContent(target, options.content);
-      const pipeCode = resolvePipeCode(mthdsContent, options.pipe);
-      try {
-        const result = await runner.buildInputs({
-          mthds_contents: [mthdsContent],
-          pipe_code: pipeCode,
-        });
-        agentSuccess({ success: true, pipe_code: pipeCode, inputs: result });
-      } catch (err) {
-        agentError((err as Error).message, "RunnerError", {
-          error_domain: AGENT_ERROR_DOMAINS.RUNNER,
-        });
-      }
+      const content = resolveContent(target, options.content);
+      // Only a real file path names the source — `--content` overrides the target, so
+      // stamping diagnostics with `target` would point at a file we never submitted.
+      // Same guard as `validate bundle` above.
+      const source = !options.content && target ? target : undefined;
+      await emitInputsTemplate(runner, { content, source }, options.pipe);
     });
 
   inputsGroup
     .command("pipe")
     .argument("<target>", "Bundle file (.mthds) or pipe code")
-    .option("--pipe <code>", "Pipe code to generate inputs for")
+    .option("--pipe <ref>", "Qualified pipe ref (domain.pipe_code); defaults to the main_pipe")
     .description("Generate inputs for a pipe")
     .allowUnknownOption()
     .allowExcessArguments(true)
     .exitOverride()
     .action(async (target: string, options: { pipe?: string }) => {
       const runner = safeCreateRunner(makeRunner);
-      if (target.endsWith(".mthds")) {
-        const mthdsContent = readFileOrError(target);
-        const pipeCode = resolvePipeCode(mthdsContent, options.pipe);
-        try {
-          const result = await runner.buildInputs({
-            mthds_contents: [mthdsContent],
-            pipe_code: pipeCode,
-          });
-          agentSuccess({ success: true, pipe_code: pipeCode, inputs: result });
-        } catch (err) {
-          agentError((err as Error).message, "RunnerError", {
-            error_domain: AGENT_ERROR_DOMAINS.RUNNER,
-          });
-        }
-      } else {
+      if (!target.endsWith(".mthds")) {
         agentError(
           "Pipe code without a bundle file is not supported yet. Provide a .mthds file.",
           "ArgumentError",
           { error_domain: AGENT_ERROR_DOMAINS.ARGUMENT },
         );
       }
+      await emitInputsTemplate(
+        runner,
+        { content: readFileOrError(target), source: target },
+        options.pipe,
+      );
     });
 
   inputsGroup
@@ -483,6 +467,48 @@ export function registerApiRunnerCommands(program: Command, makeRunner: () => Ru
         { error_domain: AGENT_ERROR_DOMAINS.RUNNER },
       );
     });
+
+  // ── codegen ──
+  // codegen is a LOCAL CLI capability (pipelex runner) only for now — the MTHDS
+  // API has no codegen routes yet. Registered here so the API runner errors
+  // cleanly instead of Commander rejecting the args with a generic message.
+
+  const codegenUnsupported = () => {
+    agentError(
+      "codegen is not available on the API runner — the Pipelex API has no codegen routes yet. It is a local capability of the pipelex runner: re-run with --runner pipelex.",
+      "UnsupportedError",
+      { error_domain: AGENT_ERROR_DOMAINS.RUNNER },
+    );
+  };
+
+  const codegenGroup = program
+    .command("codegen")
+    .description(
+      "Project the crate into typed artifacts and check drift offline (pipelex runner only)",
+    )
+    .exitOverride();
+
+  codegenGroup
+    .command("types")
+    .description("Project the crate's concept set into typed artifacts (pipelex runner only)")
+    .argument("[paths...]", "Directories of .mthds bundles to resolve into the closure")
+    .allowUnknownOption()
+    .allowExcessArguments(true)
+    .exitOverride()
+    .action(async () => {
+      codegenUnsupported();
+    });
+
+  codegenGroup
+    .command("check")
+    .description("Verify generated artifacts are current (pipelex runner only)")
+    .argument("[root]", "Directory holding codegen.lock and generated artifacts")
+    .allowUnknownOption()
+    .allowExcessArguments(true)
+    .exitOverride()
+    .action(async () => {
+      codegenUnsupported();
+    });
 }
 
 // ── Helpers ──
@@ -602,6 +628,12 @@ function resolveContentForRun(
   return readFileOrError(bundlePath);
 }
 
+/**
+ * Resolve the pipe for a RUN request (`/execute`, `/start`), whose `pipe_code` is
+ * still a bare code. The build routes no longer come through here: they take a
+ * qualified `pipe_ref` and let the SERVER default it off the closure's `main_pipe`,
+ * which knows the whole closure rather than one file's regex.
+ */
 function resolvePipeCode(mthdsContent: string, pipeCodeOption: string | undefined): string {
   if (pipeCodeOption) return pipeCodeOption;
   const match = mthdsContent.match(/^main_pipe\s*=\s*"([^"]+)"/m);
@@ -610,6 +642,41 @@ function resolvePipeCode(mthdsContent: string, pipeCodeOption: string | undefine
     error_domain: AGENT_ERROR_DOMAINS.ARGUMENT,
   });
   throw new Error("unreachable");
+}
+
+/**
+ * Run `/v1/build/inputs` for one bundle and emit the agent envelope.
+ *
+ * The route answers an unresolvable closure with a **200** carrying diagnostics
+ * (`is_valid: false`), not a throw — so this branches on the verdict first and only
+ * then treats a throw as a transport/no-verdict failure. `pipe_ref` in the success
+ * envelope is the RESOLVED qualified ref the server picked, not the `--pipe` string
+ * the caller may have omitted.
+ */
+async function emitInputsTemplate(
+  runner: Runner,
+  file: MthdsFileItem,
+  pipeRef: string | undefined,
+): Promise<void> {
+  try {
+    const result = await runner.buildInputs({ files: [file], pipe_ref: pipeRef });
+    if (!result.is_valid) {
+      // A 200 `is_valid: false` is a VALIDATION verdict, not a transport/runtime
+      // failure — same as `runProtocolValidate`. `error_domain` exists for machine
+      // triage, so tagging this `runner` would make an agent misfile every invalid
+      // closure as an infrastructure problem. The catch below is the `runner` arm.
+      agentError(result.message, "ValidationError", {
+        error_domain: AGENT_ERROR_DOMAINS.VALIDATION,
+        is_valid: false,
+        validation_errors: result.validation_errors,
+      });
+    }
+    agentSuccess({ success: true, pipe_ref: result.pipe_ref, inputs: result.inputs ?? {} });
+  } catch (err) {
+    agentError((err as Error).message, "RunnerError", {
+      error_domain: AGENT_ERROR_DOMAINS.RUNNER,
+    });
+  }
 }
 
 function resolveRunInputs(options: {

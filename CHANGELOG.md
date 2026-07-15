@@ -1,5 +1,11 @@
 # Changelog
 
+## [v0.19.1] - 2026-07-15
+
+### Changed
+
+- **Dependency bump:** Raised `PIPELEX_TOOLS_PKG.version_constraint` to `>=0.7.2`, updating the minimum `plxt` (pipelex-tools) version that `mthds-agent` enforces at runtime.
+
 ## [v0.19.0] - 2026-07-14
 
 ### Added

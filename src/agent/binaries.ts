@@ -48,7 +48,7 @@ const PIPELEX_PKG = {
 const PIPELEX_TOOLS_PKG = {
   package: "pipelex-tools",
   uv_package: "pipelex-tools",
-  version_constraint: ">=0.6.0",
+  version_constraint: ">=0.7.2",
   version_extract: VERSION_RE,
   install_url: "https://pypi.org/project/pipelex-tools/",
   auto_installable: true,

@@ -348,6 +348,37 @@ describe("MthdsApiClient happy path", () => {
   });
 });
 
+describe("MthdsApiClient method-bundle transport (files / bundle_b64)", () => {
+  it("sends the files map on execute and accepts a bundle-only request", async () => {
+    const client = makeClient();
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(jsonResponse(200, { pipeline_run_id: "ok" }));
+    // No pipe_code, no mthds_contents — the bundle alone satisfies the precondition.
+    await client.execute({
+      files: { "m.mthds": "domain = 'x'", "funcs/f.py": "def f(): ..." },
+    });
+    const body = JSON.parse((fetchSpy.mock.calls[0]![1] as RequestInit).body as string);
+    expect(body.files).toEqual({ "m.mthds": "domain = 'x'", "funcs/f.py": "def f(): ..." });
+    expect(body.mthds_contents).toBeUndefined();
+  });
+
+  it("sends bundle_b64 on start", async () => {
+    const client = makeClient();
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(jsonResponse(202, { pipeline_run_id: "run-b", state: "STARTED" }));
+    await client.start({ bundle_b64: "UEsDBBQ=" });
+    const body = JSON.parse((fetchSpy.mock.calls[0]![1] as RequestInit).body as string);
+    expect(body.bundle_b64).toBe("UEsDBBQ=");
+  });
+
+  it("an empty files map does NOT satisfy the precondition", async () => {
+    const client = makeClient();
+    await expect(client.execute({ files: {} })).rejects.toBeInstanceOf(PipelineRequestError);
+  });
+});
+
 describe("MthdsApiClient.start", () => {
   it("POSTs /v1/start and returns the RunResult ack", async () => {
     const client = makeClient();

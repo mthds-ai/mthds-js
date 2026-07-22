@@ -4,6 +4,7 @@ import { existsSync, writeFileSync, readFileSync, mkdtempSync, rmSync } from "no
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { Runners } from "../types.js";
+import { materializeBundleFiles } from "../bundle.js";
 import type {
   Runner,
   RunnerType,
@@ -330,7 +331,17 @@ export class PipelexRunner implements Runner {
       // The pipelex CLI dispatches through `run bundle <path>` / `run pipe <code>`.
       const args: string[] = ["run"];
 
-      if (options.mthds_contents?.length) {
+      if (options.files && Object.keys(options.files).length > 0) {
+        // A full method bundle (custom PipeFunc Python travels with the method).
+        // Materialize it to disk preserving `funcs/*.py`, then run the main
+        // `.mthds` with the temp dir as its library so the funcs resolve.
+        const bundlePath = materializeBundleFiles(tmp, options.files);
+        args.push("bundle", bundlePath);
+        args.push("-L", tmp);
+        if (options.pipe_code) {
+          args.push("--pipe", options.pipe_code);
+        }
+      } else if (options.mthds_contents?.length) {
         const bundlePath = writeMthdsContents(tmp, options.mthds_contents);
         args.push("bundle", bundlePath);
         args.push("-L", tmp);

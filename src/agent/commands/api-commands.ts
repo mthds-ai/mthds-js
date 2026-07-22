@@ -16,6 +16,7 @@ import {
   AGENT_ERROR_DOMAINS,
 } from "../output.js";
 import { isApiRunner } from "../../cli/commands/utils.js";
+import { resolveRunBundle } from "../../runners/bundle.js";
 import type { Runner } from "../../runners/types.js";
 import type { StartOptions } from "../../protocol/options.js";
 import type { ModelCategory } from "../../protocol/models.js";
@@ -651,13 +652,27 @@ function resolveStartOptions(
     return { pipe_code: options.pipe, inputs: resolveRunInputs(options), ...outputs, extra };
   }
   // resolveContentForRun may set options.inputs (directory auto-discovery), so
-  // resolve the bundle before reading inputs.
+  // resolve the bundle before reading inputs. It also reads the main `.mthds` text,
+  // which resolvePipeCode needs to derive `main_pipe`.
   const mthdsContent = resolveContentForRun(target, options);
   const pipeCode = resolvePipeCode(mthdsContent, options.pipe);
+  const inputs = resolveRunInputs(options);
+  // A bundle whose directory carries custom PipeFunc Python (a sibling `.py`) must ship the whole
+  // bundle as `files` so that Python travels to the runner and into the sandbox crate — otherwise
+  // the runner registers the pipes from the `.mthds` alone, builds a crate with no function source,
+  // and the sandbox fails with "Function '<name>' not found in registry". A plain `.mthds` (no
+  // sibling `.py`) stays on the lighter `mthds_contents` path. `--content` is always inline text
+  // with no sibling files to collect, so it never becomes a bundle.
+  if (target && !options.content) {
+    const bundle = resolveRunBundle(target);
+    if (bundle.files) {
+      return { pipe_code: pipeCode, files: bundle.files, inputs, ...outputs, extra };
+    }
+  }
   return {
     pipe_code: pipeCode,
     mthds_contents: [mthdsContent],
-    inputs: resolveRunInputs(options),
+    inputs,
     ...outputs,
     extra,
   };

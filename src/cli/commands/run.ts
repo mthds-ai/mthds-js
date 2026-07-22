@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { resolve } from "node:path";
 import * as p from "@clack/prompts";
 import { printLogo } from "./index.js";
+import { resolveRunBundle } from "../../runners/bundle.js";
 import { isPipelexRunner, extractPassthroughArgs } from "./utils.js";
 import { createRunner } from "../../runners/registry.js";
 import type { Runner, RunnerType } from "../../runners/types.js";
@@ -112,7 +112,10 @@ export async function runBundle(target: string, options: RunOptions): Promise<vo
 
   let runOptions: StartOptions;
   try {
-    runOptions = { mthds_contents: [readFileSync(resolve(target), "utf-8")] };
+    // A bundle target is a directory (or a `.mthds` with sibling `funcs/*.py`):
+    // ship the whole method as `files` so custom PipeFunc Python travels with it.
+    // A plain `.mthds` stays on the lighter `mthds_contents` path.
+    runOptions = resolveRunBundle(target);
     if (options.pipe) {
       runOptions.pipe_code = options.pipe;
     }
@@ -138,7 +141,7 @@ export async function runPipe(target: string, options: RunOptions): Promise<void
   let runOptions: StartOptions;
   try {
     if (isBundlePath) {
-      runOptions = { mthds_contents: [readFileSync(resolve(target), "utf-8")] };
+      runOptions = resolveRunBundle(target);
       if (options.pipe) {
         runOptions.pipe_code = options.pipe;
       }

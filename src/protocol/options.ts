@@ -29,6 +29,22 @@ export interface RunRequest {
   output_multiplicity?: VariableMultiplicity | null;
   /** Override for the dynamic output concept reference. */
   dynamic_output_concept_ref?: string | null;
+  /**
+   * PIPELEX-API EXTENSION (not part of the pure MTHDS Protocol) — the whole
+   * method bundle as a `{ relativePath: text }` map (the `.mthds` plus its
+   * `funcs/*.py`, `structures/*.py`, `requirements.txt`). Lets custom PipeFunc
+   * Python travel with the method: the runner materializes it into a temporary
+   * library directory before the run, rather than only loading the inline
+   * `.mthds` text. Mutually exclusive with `bundle_b64` and with `mthds_contents`
+   * (a bundle carries its own `.mthds`).
+   */
+  files?: Record<string, string> | null;
+  /**
+   * PIPELEX-API EXTENSION — the same method bundle as a base64-encoded zip
+   * archive (the compressed equivalent of `files`). Mutually exclusive with
+   * `files` and with `mthds_contents`.
+   */
+  bundle_b64?: string | null;
 }
 
 /**

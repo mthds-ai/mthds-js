@@ -81,6 +81,13 @@ For anything long-running, prefer `start` over `execute`. The async `start` prim
 
 **Output shape.** The blocking `execute` path returns the runner's native `pipe_output`. The hosted durable path (in `@pipelex/sdk`) instead returns `main_stuff` + `graph_spec`. For v1 this difference is documented, not normalized (TODO).
 
+**Custom-PipeFunc method bundles.** A method whose pipes call custom Python (`funcs/*.py`, and any `structures/*.py` / `requirements.txt`) is more than its `.mthds` text. When `mthds run bundle` / `mthds run pipe` target a **directory** — or a `.mthds` file whose directory carries custom Python — the CLI ships the whole bundle instead of just the `.mthds`:
+
+- Against the **API runner**, the bundle travels as the pipelex-api `files` extension (a `{ relativePath: text }` map on the run request); the runner materializes it into a temporary library directory before the run, so the custom Python travels with the method. (Custom `.py` is only executed on a sandbox-hosted deployment — a non-sandbox runner rejects it with `CustomCodeRequiresSandbox`.)
+- Against the **pipelex runner**, the same bundle is written back to a temp directory and run locally with `-L`, so the `funcs/*.py` resolve.
+
+A plain `.mthds` file with no custom Python keeps the lighter single-content path (`mthds_contents`) — nothing changes for the common case. `files` is the SDK's `RunOptions.files` field (or `bundle_b64` for a zipped bundle); both are mutually exclusive with `mthds_contents`.
+
 **Minimum server version.** The SDK composes every endpoint under `/v1`, so a self-hosted runner must mount its API at `/v1` (the MTHDS Protocol cutover). Older images mounted `/api/v1` and answer `404` on every call — including the `/v1/version` handshake. Upgrade your runner image before (or together with) this SDK version.
 
 ## SDK

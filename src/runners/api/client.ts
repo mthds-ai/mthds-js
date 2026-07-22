@@ -321,10 +321,11 @@ export class MthdsApiClient implements Runner {
     if (
       !options.pipe_code &&
       (!options.mthds_contents || options.mthds_contents.length === 0) &&
+      !hasBundlePayload(options) &&
       Object.keys(extensions).length === 0
     ) {
       throw new PipelineRequestError(
-        "Either pipe_code, mthds_contents or a server-specific extension arg (extra) must be provided to execute().",
+        "Either pipe_code, mthds_contents, a method bundle (files/bundle_b64) or a server-specific extension arg (extra) must be provided to execute().",
       );
     }
 
@@ -335,6 +336,8 @@ export class MthdsApiClient implements Runner {
       output_name: options.output_name,
       output_multiplicity: options.output_multiplicity,
       dynamic_output_concept_ref: options.dynamic_output_concept_ref,
+      files: options.files ?? undefined,
+      bundle_b64: options.bundle_b64 ?? undefined,
       ...extensions,
     };
 
@@ -376,10 +379,11 @@ export class MthdsApiClient implements Runner {
     if (
       !options.pipe_code &&
       (!options.mthds_contents || options.mthds_contents.length === 0) &&
+      !hasBundlePayload(options) &&
       Object.keys(extensions).length === 0
     ) {
       throw new PipelineRequestError(
-        "Either pipe_code, mthds_contents or a server-specific extension arg (extra) must be provided to start().",
+        "Either pipe_code, mthds_contents, a method bundle (files/bundle_b64) or a server-specific extension arg (extra) must be provided to start().",
       );
     }
 
@@ -391,6 +395,8 @@ export class MthdsApiClient implements Runner {
       output_name: options.output_name ?? undefined,
       output_multiplicity: options.output_multiplicity ?? undefined,
       dynamic_output_concept_ref: options.dynamic_output_concept_ref ?? undefined,
+      files: options.files ?? undefined,
+      bundle_b64: options.bundle_b64 ?? undefined,
       ...extensions,
     };
 
@@ -588,6 +594,18 @@ function buildExtensions(
     );
   }
   return { ...extra };
+}
+
+/**
+ * Does the request carry a method bundle (the pipelex-api `files` / `bundle_b64`
+ * extension)? A bundle satisfies the "something to run" precondition on its own —
+ * it carries its own `.mthds`, so neither `pipe_code` nor `mthds_contents` is
+ * required alongside it.
+ */
+function hasBundlePayload(options: RunOptions): boolean {
+  const hasFiles = options.files != null && Object.keys(options.files).length > 0;
+  const hasZip = options.bundle_b64 != null && options.bundle_b64.length > 0;
+  return hasFiles || hasZip;
 }
 
 function withValidateMarkdownRender(render: string[] | undefined): string[] {

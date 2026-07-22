@@ -710,6 +710,74 @@ describe("MthdsApiClient.validateFiles", () => {
   });
 });
 
+// The `/v1/build/*` routes are Pipelex API extensions (never MTHDS Protocol), and
+// they share one envelope: `files[]` XOR `method_ref`, plus an optional QUALIFIED
+// `pipe_ref`. Their request types ARE the wire body — the client posts them
+// verbatim — so these tests pin the body, not just the call.
+describe("MthdsApiClient build routes", () => {
+  function bodyOf(fetchSpy: ReturnType<typeof vi.spyOn>): Record<string, unknown> {
+    const init = fetchSpy.mock.calls[0]![1] as { body?: string };
+    return JSON.parse(init.body ?? "{}") as Record<string, unknown>;
+  }
+
+  it("posts the files[] envelope with per-file source labels to build/inputs", async () => {
+    const client = makeClient();
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(jsonResponse(200, { is_valid: true, pipe_ref: "smoke.echo" }));
+
+    await client.buildInputs({
+      files: [{ content: "domain = 'smoke'", source: "smoke.mthds" }],
+      pipe_ref: "smoke.echo",
+      format: "toml",
+      explicit: true,
+    });
+
+    expect(fetchSpy.mock.calls[0]![0]).toBe("http://localhost:8081/v1/build/inputs");
+    expect(bodyOf(fetchSpy)).toEqual({
+      files: [{ content: "domain = 'smoke'", source: "smoke.mthds" }],
+      pipe_ref: "smoke.echo",
+      format: "toml",
+      explicit: true,
+    });
+  });
+
+  // An omitted `pipe_ref` is how a caller says "the closure's main_pipe" — it must
+  // reach the server ABSENT, so the server does the defaulting, not the client.
+  it("omits pipe_ref entirely when the caller does not select a pipe", async () => {
+    const client = makeClient();
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(jsonResponse(200, { is_valid: true, pipe_ref: "smoke.echo" }));
+
+    await client.buildOutput({ files: [{ content: "domain = 'smoke'" }] });
+
+    expect(fetchSpy.mock.calls[0]![0]).toBe("http://localhost:8081/v1/build/output");
+    expect(bodyOf(fetchSpy)).toEqual({ files: [{ content: "domain = 'smoke'" }] });
+  });
+
+  // The invalid arm is a 200 VERDICT, not a transport failure: the client must
+  // return it for the caller to branch on, never throw it.
+  it("returns the invalid arm of build/runner as a value, not an exception", async () => {
+    const client = makeClient();
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      jsonResponse(200, {
+        is_valid: false,
+        validation_errors: [
+          { category: "pipe_validation", message: "unknown concept", source: "smoke.mthds" },
+        ],
+        message: "MTHDS library could not be resolved",
+      }),
+    );
+
+    const result = await client.buildRunner({ files: [{ content: "domain = 'smoke'" }] });
+
+    expect(result.is_valid).toBe(false);
+    if (result.is_valid) throw new Error("expected the invalid arm");
+    expect(result.validation_errors[0]!.source).toBe("smoke.mthds");
+  });
+});
+
 describe("MthdsApiClient.models", () => {
   it("GETs /v1/models and returns the deck", async () => {
     const client = makeClient();

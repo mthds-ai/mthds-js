@@ -113,6 +113,7 @@ With no options, the constructor reads `MTHDS_BASE_URL` and `MTHDS_API_KEY` from
 ## See also
 
 - [run-lifecycle.md](./run-lifecycle.md) — `execute` vs. `start`, and durable poll-by-id.
+- [build-routes.md](./build-routes.md) — the `/v1/build/*` projections: the shared `files[]` envelope, the qualified `pipe_ref` selector, and the `is_valid` verdict.
 - [architecture.md](./architecture.md) — the SDK's protocol/runner split and the `MthdsApiClient` surface.
 - [errors.md](./errors.md) — the exception taxonomy: `PipelineExecuteTimeoutError`, `ApiResponseError`, `ApiUnreachableError`, and the rest.
 - [pipelex-api](https://github.com/Pipelex/pipelex-api) — the OSS runner's own OpenAPI contract and quickstart (`docs/index.md`), plus the MTHDS Protocol spec (`mthds-protocol.openapi.yaml`) in the standard repo.

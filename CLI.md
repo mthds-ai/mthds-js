@@ -878,3 +878,21 @@ All arguments are forwarded to `pipelex validate`. Requires the pipelex runner.
 ```bash
 mthds-agent validate bundle ./bundle.mthds --pipe my_pipe
 ```
+
+### `mthds-agent codegen types|check`
+
+Codegen passthrough via the pipelex runner: `types` projects the resolved method library (the normalized crate) into typed artifacts for a target flavor, `check` verifies generated artifacts are current offline (pure hashing over `codegen.lock` — no engine, no API key).
+
+```bash
+mthds-agent codegen types [paths...] --target <flavor> [OPTIONS]
+mthds-agent codegen check [root] [OPTIONS]
+```
+
+All arguments are forwarded to `pipelex-agent codegen`; the output contract (two-stream `--format` / `--error-format` markdown|json envelopes, `0/1/2` verdict exit codes) is defined there. Requires the pipelex runner **and a pipelex install that ships `codegen`** (unreleased at the time of writing — an older `pipelex-agent` reports `UnknownCommandError`). On the API runner the commands error cleanly as `UnsupportedError` — there are no codegen routes yet.
+
+**Example:**
+
+```bash
+mthds-agent codegen types ./my_pipes/ --target python-pydantic -o ./generated/
+mthds-agent codegen check ./generated/ --format json
+```

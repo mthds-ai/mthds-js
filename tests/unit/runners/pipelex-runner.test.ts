@@ -14,6 +14,7 @@ vi.mock("node:fs", () => ({
   mkdtempSync: vi.fn(() => "/tmp/mthds-test"),
   writeFileSync: vi.fn(),
   readFileSync: vi.fn(() => "{}"),
+  readdirSync: vi.fn(() => []),
   rmSync: vi.fn(),
   existsSync: vi.fn(() => false),
   mkdirSync: vi.fn(),
@@ -23,13 +24,18 @@ vi.mock("node:os", () => ({
   tmpdir: vi.fn(() => "/tmp"),
 }));
 
-import { readFileSync, existsSync } from "node:fs";
+import { readFileSync, readdirSync, existsSync, writeFileSync } from "node:fs";
 import { spawn } from "node:child_process";
 import { PipelexRunner } from "../../../src/runners/pipelex/runner.js";
 
 const mockedReadFileSync = vi.mocked(readFileSync);
+const mockedReaddirSync = vi.mocked(readdirSync);
 const mockedExistsSync = vi.mocked(existsSync);
+const mockedWriteFileSync = vi.mocked(writeFileSync);
 const mockedSpawn = vi.mocked(spawn);
+
+/** A minimal closure that declares both a domain and a main_pipe, so the selector can default. */
+const BUNDLE = 'domain = "smoke"\nmain_pipe = "echo"\n';
 
 /** Make `spawn` return a fake child that closes with the given exit code. */
 function mockSpawnExit(code: number): void {
@@ -257,6 +263,160 @@ describe("PipelexRunner", () => {
     });
   });
 
+  // The `files[]` envelope + the qualified `pipe_ref` selector the `/v1/build/*`
+  // routes share. The local runner cannot let the engine resolve the ref for it
+  // (it never loads a library), so it resolves one itself and passes it to `--pipe`
+  // explicitly — which is what lets it echo back a ref it can stand behind.
+  describe("build selector", () => {
+    beforeEach(() => {
+      execFileAsync.mockResolvedValue({ stdout: '{"inputs":{}}', stderr: "" });
+    });
+
+    it("defaults an omitted pipe_ref to the closure's main_pipe, qualified by its domain", async () => {
+      const result = await runner.buildInputs({ files: [{ content: BUNDLE }] });
+
+      const args = execFileAsync.mock.calls[0]![1] as string[];
+      expect(args[args.indexOf("--pipe") + 1]).toBe("smoke.echo");
+      // The RESOLVED ref is echoed; `requested_pipe_ref` is absent because the
+      // caller never submitted one.
+      expect(result).toMatchObject({ is_valid: true, pipe_ref: "smoke.echo" });
+      expect(result).not.toHaveProperty("requested_pipe_ref");
+    });
+
+    it("qualifies a bare pipe_ref against the closure's single domain and echoes what was asked", async () => {
+      const result = await runner.buildInputs({
+        files: [{ content: BUNDLE }],
+        pipe_ref: "other",
+      });
+
+      const args = execFileAsync.mock.calls[0]![1] as string[];
+      expect(args[args.indexOf("--pipe") + 1]).toBe("smoke.other");
+      expect(result).toMatchObject({ pipe_ref: "smoke.other", requested_pipe_ref: "other" });
+    });
+
+    it("rejects a bare pipe_ref that is ambiguous across domains", async () => {
+      await expect(
+        runner.buildInputs({
+          files: [{ content: BUNDLE }, { content: 'domain = "other"\n' }],
+          pipe_ref: "echo",
+        }),
+      ).rejects.toThrow(/ambiguous/);
+    });
+
+    it("rejects an omitted pipe_ref when the closure declares no main_pipe", async () => {
+      await expect(
+        runner.buildInputs({ files: [{ content: 'domain = "smoke"\n' }] }),
+      ).rejects.toThrow(/declares no main_pipe/);
+    });
+
+    // Mirrors the engine's own default-resolution: several main_pipes across the
+    // closure is an AMBIGUOUS closure, not a pick-the-first situation.
+    it("rejects an omitted pipe_ref when the closure declares several main_pipes", async () => {
+      await expect(
+        runner.buildInputs({
+          files: [{ content: BUNDLE }, { content: 'domain = "other"\nmain_pipe = "run"\n' }],
+        }),
+      ).rejects.toThrow(/several main_pipe/);
+    });
+
+    // `source` is what makes an invalid verdict point at a file. Locally it has a
+    // second job: it names the file on disk, so the CLI's own diagnostics match.
+    it("writes each file under its `source` label", async () => {
+      await runner.buildInputs({
+        files: [
+          { content: BUNDLE, source: "smoke.mthds" },
+          { content: 'domain = "shared"\n', source: "lib/shared.mthds" },
+        ],
+        pipe_ref: "smoke.echo",
+      });
+
+      const written = mockedWriteFileSync.mock.calls.map((call) => call[0]);
+      expect(written).toEqual(["/tmp/mthds-test/smoke.mthds", "/tmp/mthds-test/shared.mthds"]);
+    });
+
+    // A `source` that is not a plain `.mthds` basename must never steer the write
+    // out of the temp dir.
+    it("falls back to a positional name for a source that is not a safe basename", async () => {
+      await runner.buildInputs({
+        files: [{ content: BUNDLE, source: "https://example.com/x" }],
+        pipe_ref: "smoke.echo",
+      });
+
+      expect(mockedWriteFileSync.mock.calls[0]![0]).toBe("/tmp/mthds-test/bundle.mthds");
+    });
+
+    it("refuses method_ref, which only the API can serve (and only once the registry lands)", async () => {
+      await expect(runner.buildInputs({ method_ref: "acme/summarize" })).rejects.toThrow(
+        /method_ref is not supported/,
+      );
+    });
+  });
+
+  describe("buildInputs", () => {
+    it("unwraps the agent CLI's envelope so `inputs` is the bare template, as on the API", async () => {
+      execFileAsync.mockResolvedValue({
+        stdout: '{"success":true,"pipe_code":"echo","inputs":{"text":"text_value"}}',
+        stderr: "",
+      });
+
+      const result = await runner.buildInputs({ files: [{ content: BUNDLE }] });
+
+      expect(result).toMatchObject({ format: "json", inputs: { text: "text_value" } });
+      expect(result).not.toHaveProperty("inputs_toml");
+    });
+
+    // The format decides WHICH field carries the template. TOML rides raw text —
+    // parsing it into a dict would destroy the concept comments that are the only
+    // reason to ask for TOML.
+    it("returns raw text in inputs_toml for --format toml", async () => {
+      const toml = '# concept: native.Text\ntext = "text_value"\n';
+      execFileAsync.mockResolvedValue({ stdout: toml, stderr: "" });
+
+      const result = await runner.buildInputs({
+        files: [{ content: BUNDLE }],
+        format: "toml",
+      });
+
+      const args = execFileAsync.mock.calls[0]![1] as string[];
+      expect(args[args.indexOf("--format") + 1]).toBe("toml");
+      expect(result).toMatchObject({ format: "toml", inputs_toml: toml });
+      expect(result).not.toHaveProperty("inputs");
+    });
+
+    it("passes --explicit only when asked", async () => {
+      execFileAsync.mockResolvedValue({ stdout: '{"inputs":{}}', stderr: "" });
+
+      await runner.buildInputs({ files: [{ content: BUNDLE }] });
+      expect(execFileAsync.mock.calls[0]![1] as string[]).not.toContain("--explicit");
+
+      await runner.buildInputs({ files: [{ content: BUNDLE }], explicit: true });
+      expect(execFileAsync.mock.calls[1]![1] as string[]).toContain("--explicit");
+    });
+
+    // pipelex-agent's JSON envelope always carries `inputs` — `{}` for an input-less
+    // pipe. An envelope WITHOUT the key means the CLI contract changed under us; that
+    // must surface as a loud no-verdict, not an `is_valid: true` with a hollowed-out
+    // template that would strip every required field from generated input forms.
+    it("throws when the agent envelope carries no `inputs` key", async () => {
+      execFileAsync.mockResolvedValue({
+        stdout: '{"success":true,"pipe_code":"echo"}',
+        stderr: "",
+      });
+
+      await expect(runner.buildInputs({ files: [{ content: BUNDLE }] })).rejects.toThrow(
+        /no `inputs` field/,
+      );
+    });
+
+    it("keeps an empty template valid — an input-less pipe is not a contract break", async () => {
+      execFileAsync.mockResolvedValue({ stdout: '{"inputs":{}}', stderr: "" });
+
+      const result = await runner.buildInputs({ files: [{ content: BUNDLE }] });
+
+      expect(result).toMatchObject({ is_valid: true, inputs: {} });
+    });
+  });
+
   describe("buildOutput", () => {
     it("passes -o to a temp file and reads it back", async () => {
       const outputJson = '{"concept":"native.Text","content":{"type":"object"}}';
@@ -265,8 +425,8 @@ describe("PipelexRunner", () => {
       mockedReadFileSync.mockReturnValue(outputJson);
 
       const result = await runner.buildOutput({
-        mthds_contents: ["bundle content"],
-        pipe_code: "test_pipe",
+        files: [{ content: BUNDLE }],
+        pipe_ref: "smoke.echo",
       });
 
       const args = execFileAsync.mock.calls[0]![1] as string[];
@@ -274,63 +434,62 @@ describe("PipelexRunner", () => {
       expect(oIndex).toBeGreaterThan(-1);
       expect(args[oIndex + 1]).toMatch(/output\.json$/);
 
-      expect(result).toEqual({
-        concept: "native.Text",
-        content: { type: "object" },
+      expect(result).toMatchObject({
+        is_valid: true,
+        pipe_ref: "smoke.echo",
+        output: { concept: "native.Text", content: { type: "object" } },
       });
     });
 
-    // Regression: when the caller omits `format`, the runner must pass an explicit
-    // `--format json` to pipelex so the JSON.parse() branch below does not rely on
-    // pipelex's CLI default (which is outside our contract).
-    it("passes --format json when caller omits format", async () => {
+    // The runner must pass an explicit `--format` so the parsing branch below does
+    // not rely on pipelex's CLI default (which is outside our contract). The default
+    // it passes is `schema` — the same default the API's `/v1/build/output` applies,
+    // so the two runners behind one `Runner` interface cannot mean different things.
+    it("passes --format schema when the caller omits format", async () => {
       execFileAsync.mockResolvedValue({ stdout: "", stderr: "" });
       mockedExistsSync.mockReturnValue(true);
       mockedReadFileSync.mockReturnValue("{}");
 
-      await runner.buildOutput({
-        mthds_contents: ["bundle content"],
-        pipe_code: "test_pipe",
-      });
+      const result = await runner.buildOutput({ files: [{ content: BUNDLE }] });
 
       const args = execFileAsync.mock.calls[0]![1] as string[];
-      expect(args).toContain("--format");
-      expect(args[args.indexOf("--format") + 1]).toBe("json");
+      expect(args[args.indexOf("--format") + 1]).toBe("schema");
+      expect(result).toMatchObject({ format: "schema" });
     });
 
     // Regression: pipelex build output --format python writes Python source code,
-    // not JSON. Parsing it would crash. Schema/json formats remain JSON-parsed.
-    it("returns raw string for --format python", async () => {
+    // not JSON. Parsing it would crash — which is exactly the 500 the API's own
+    // `/build/output` used to return before the two-field split.
+    it("returns source text in output_python for --format python", async () => {
       const pythonCode = "from pydantic import BaseModel\n\nclass Out(BaseModel):\n    text: str\n";
       execFileAsync.mockResolvedValue({ stdout: "", stderr: "" });
       mockedExistsSync.mockReturnValue(true);
       mockedReadFileSync.mockReturnValue(pythonCode);
 
       const result = await runner.buildOutput({
-        mthds_contents: ["bundle content"],
-        pipe_code: "test_pipe",
+        files: [{ content: BUNDLE }],
         format: "python",
       });
 
-      expect(result).toBe(pythonCode);
+      expect(result).toMatchObject({ format: "python", output_python: pythonCode });
+      expect(result).not.toHaveProperty("output");
     });
 
-    it("JSON-parses --format schema output", async () => {
+    it("JSON-parses --format schema output into `output`", async () => {
       const schemaJson = '{"$schema":"http://json-schema.org/draft-07/schema#","type":"object"}';
       execFileAsync.mockResolvedValue({ stdout: "", stderr: "" });
       mockedExistsSync.mockReturnValue(true);
       mockedReadFileSync.mockReturnValue(schemaJson);
 
       const result = await runner.buildOutput({
-        mthds_contents: ["bundle content"],
-        pipe_code: "test_pipe",
+        files: [{ content: BUNDLE }],
         format: "schema",
       });
 
-      expect(result).toEqual({
-        $schema: "http://json-schema.org/draft-07/schema#",
-        type: "object",
+      expect(result).toMatchObject({
+        output: { $schema: "http://json-schema.org/draft-07/schema#", type: "object" },
       });
+      expect(result).not.toHaveProperty("output_python");
     });
 
     // Regression: pipelex can exit 0 without writing the file (e.g. render_output
@@ -343,13 +502,75 @@ describe("PipelexRunner", () => {
       });
       mockedExistsSync.mockReturnValue(false);
 
-      await expect(
-        runner.buildOutput({
-          mthds_contents: ["bundle content"],
-          pipe_code: "test_pipe",
-        }),
-      ).rejects.toThrow(/native\.Anything/);
+      await expect(runner.buildOutput({ files: [{ content: BUNDLE }] })).rejects.toThrow(
+        /native\.Anything/,
+      );
       expect(mockedReadFileSync).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("buildRunner", () => {
+    // A closure that resolves to no crate yields no structures projection (no
+    // `structures/codegen.lock`). That is not a failure: the runner.py we just
+    // generated is valid on its own, so a missing sidecar must not discard it.
+    it("returns the runner script even when the CLI emitted no structures projection", async () => {
+      mockSpawnExit(0);
+      mockedExistsSync.mockReturnValue(false); // no structures/codegen.lock beside it
+      mockedReadFileSync.mockReturnValue("# runner.py\n");
+
+      const result = await runner.buildRunner({ files: [{ content: BUNDLE }] });
+
+      expect(result.is_valid).toBe(true);
+      if (!result.is_valid) throw new Error("unreachable");
+      expect(result.python_code).toBe("# runner.py\n");
+      expect(result.structures).toBeUndefined();
+    });
+
+    // pipelex's lock layer validates artifact paths as (possibly multi-part) RELATIVE
+    // paths, so a projection may nest files in subdirectories. The collector must walk
+    // them and report each artifact under its relative path — not EISDIR on the
+    // directory entry, and not silently halve the locked artifact set by skipping it.
+    it("collects nested structure artifacts under their relative paths", async () => {
+      mockSpawnExit(0);
+      mockedExistsSync.mockReturnValue(true); // structures/codegen.lock present
+      const dirent = (name: string, kind: "file" | "dir") =>
+        ({ name, isFile: () => kind === "file", isDirectory: () => kind === "dir" }) as never;
+      mockedReaddirSync.mockImplementation((path) =>
+        String(path).endsWith("/structures")
+          ? ([
+              dirent("codegen.lock", "file"),
+              dirent("structures.py", "file"),
+              dirent("pkg", "dir"),
+            ] as never)
+          : ([dirent("mod.py", "file")] as never),
+      );
+      mockedReadFileSync.mockImplementation((path) => {
+        const p = String(path);
+        if (p.endsWith("runner.py")) return "# runner.py\n";
+        if (p.endsWith("codegen.lock")) return "lock-content";
+        return `content of ${p.split("/").pop()}`;
+      });
+
+      const result = await runner.buildRunner({ files: [{ content: BUNDLE }] });
+
+      expect(result.is_valid).toBe(true);
+      if (!result.is_valid) throw new Error("unreachable");
+      expect(result.structures).toMatchObject({
+        directory: "structures",
+        lock: "lock-content",
+        artifacts: [
+          { path: "pkg/mod.py", content: "content of mod.py" },
+          { path: "structures.py", content: "content of structures.py" },
+        ],
+      });
+    });
+
+    // `pipelex build runner` has no --allow-signatures flag, so there is nothing to
+    // forward. Dropping it silently would make one request mean two things.
+    it("rejects allow_signatures rather than silently ignoring it", async () => {
+      await expect(
+        runner.buildRunner({ files: [{ content: BUNDLE }], allow_signatures: true }),
+      ).rejects.toThrow(/allow_signatures is not supported by the local pipelex runner/);
     });
   });
 

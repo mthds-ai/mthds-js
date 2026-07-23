@@ -1,5 +1,20 @@
 # Changelog
 
+## [v0.20.0] - 2026-07-23
+
+### Added
+
+- **Method-bundle transport (custom PipeFunc Python over the API and both CLIs):** a run target can now carry the whole method — the `.mthds` plus its `funcs/*.py` / `structures/*.py` and an optional `requirements.txt` — instead of only the inline `mthds_contents` text, so custom PipeFunc Python travels with the method. Two equivalent, mutually-exclusive transport forms on `RunRequest`: `files` (a `{ relativePath: text }` map) and `bundle_b64` (the same bundle as a base64 zip). `resolveRunBundle` turns a `run` target into `files` (a directory, or a `.mthds` whose folder carries Python) or the lighter `mthds_contents` (a plain `.mthds`); the API runner ships the bundle over the wire and the pipelex runner materializes it into a temp library directory before the run. A plain `.mthds` with no custom Python is unchanged.
+
+### Security
+
+- **Bundle path-safety on materialization:** `materializeBundleFiles` validates every bundle key resolves under the target directory before writing, so a `files` key like `../../outside` or an absolute path is rejected instead of letting the write escape the temp dir. Mirrors the runner-side guard in `pipelex-api`.
+
+### Changed
+
+- **Run-source exclusivity enforced client-side:** the API runner's `execute()` / `start()` now reject a bundle combined with `mthds_contents`, or `files` combined with `bundle_b64`, as a clear `PipelineRequestError` before dispatch — instead of a server `422` or the local runner silently preferring `files`. Wording mirrors the server's validator so both surfaces reject the same combinations.
+- **Robust `main_pipe` detection in a multi-`.mthds` bundle:** the bundle entrypoint pick parses each candidate with `smol-toml` instead of a regex that missed quoted keys (`"main_pipe" = …`) and fell back to file order.
+
 ## [v0.19.1] - 2026-07-15
 
 ### Changed

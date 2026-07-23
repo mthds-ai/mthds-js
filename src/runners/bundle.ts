@@ -21,6 +21,8 @@
 import { mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { parse as parseToml } from "smol-toml";
+import { PipelineRequestError } from "../protocol/exceptions.js";
+import type { RunRequest } from "../protocol/options.js";
 
 /** File names (exact) that belong to a method bundle beyond the `.mthds`/`.py` set. */
 const BUNDLE_FILE_NAMES: ReadonlySet<string> = new Set(["requirements.txt"]);
@@ -35,6 +37,40 @@ export interface ResolvedRunBundle {
   files?: Record<string, string>;
   /** The single `.mthds` text, when the target carries no custom Python. */
   mthds_contents?: string[];
+  /**
+   * The bundle-relative path of the `.mthds` the target selected — the run's
+   * entrypoint. Set when the caller named a specific `.mthds` (so a directory
+   * holding several methods doesn't let a runner re-guess and run a sibling),
+   * and when a directory resolves to a single main. A local runner points
+   * `run bundle` at exactly this file instead of inferring it from the map.
+   */
+  main?: string;
+}
+
+/**
+ * Enforce the run-source exclusivity contract shared by every runner: a method
+ * bundle is self-contained (`files` / `bundle_b64` carry their own `.mthds`),
+ * so it cannot be combined with `mthds_contents`, and `files` / `bundle_b64`
+ * are two encodings of one bundle. Exclusivity keys off PRESENCE, not emptiness
+ * — a caller who supplies `files: {}` alongside `bundle_b64` still expressed two
+ * encodings — while `mthds_contents` counts only when non-empty (an empty array
+ * is "no contents"). Throws `PipelineRequestError`; both the API client and the
+ * local runner call it so they reject the same combinations identically.
+ */
+export function assertExclusiveRunSources(options: RunRequest): void {
+  const hasFiles = options.files != null;
+  const hasZip = options.bundle_b64 != null;
+  const hasContents = options.mthds_contents != null && options.mthds_contents.length > 0;
+  if (hasFiles && hasZip) {
+    throw new PipelineRequestError(
+      "files and bundle_b64 are two encodings of the same bundle and are mutually exclusive; provide one.",
+    );
+  }
+  if ((hasFiles || hasZip) && hasContents) {
+    throw new PipelineRequestError(
+      "A method bundle (files/bundle_b64) is self-contained; it cannot be combined with mthds_contents.",
+    );
+  }
 }
 
 function isBundleFile(name: string): boolean {
@@ -132,17 +168,26 @@ function resolveSafeBundlePath(root: string, rel: string): string {
  * absolute path of the bundle's main `.mthds` file — what a local runner points
  * `run bundle` at, with `targetDir` as its library directory.
  *
- * Every key is validated to stay under `targetDir` before any write, so a
- * traversal (`..`) or absolute-path key is rejected instead of escaping.
+ * `main` (when given) is the caller-selected entrypoint's bundle-relative path;
+ * it is honored verbatim rather than re-inferring the main from the map, so a
+ * bundle holding several methods runs the one the caller named. It must be a
+ * `.mthds` key present in `files`. Every key is validated to stay under
+ * `targetDir` before any write, so a traversal (`..`) or absolute-path key is
+ * rejected instead of escaping.
  */
-export function materializeBundleFiles(targetDir: string, files: Record<string, string>): string {
+export function materializeBundleFiles(
+  targetDir: string,
+  files: Record<string, string>,
+  main?: string,
+): string {
   const root = resolve(targetDir);
   for (const [rel, text] of Object.entries(files)) {
     const abs = resolveSafeBundlePath(root, rel);
     mkdirSync(dirname(abs), { recursive: true });
     writeFileSync(abs, text, "utf-8");
   }
-  return join(targetDir, pickMainBundleFile(files));
+  const mainRel = main != null && main in files ? main : pickMainBundleFile(files);
+  return join(targetDir, mainRel);
 }
 
 /**
@@ -164,11 +209,16 @@ export function resolveRunBundle(target: string): ResolvedRunBundle {
     if (!Object.keys(files).some((rel) => rel.endsWith(".mthds"))) {
       throw new Error(`No .mthds file found in bundle directory: ${resolved}`);
     }
-    return { files };
+    // No file was named, so the entrypoint is inferred (main_pipe, then order).
+    return { files, main: pickMainBundleFile(files) };
   }
-  const siblingFiles = collectBundleFiles(dirname(resolved));
+  const parentDir = dirname(resolved);
+  const siblingFiles = collectBundleFiles(parentDir);
   if (hasCustomPython(siblingFiles)) {
-    return { files: siblingFiles };
+    // The caller named a specific `.mthds`; preserve it as the entrypoint so a
+    // sibling method in the same directory can never be run in its place.
+    const main = relative(parentDir, resolved).split(sep).join("/");
+    return { files: siblingFiles, main };
   }
   return { mthds_contents: [readFileSync(resolved, "utf-8")] };
 }

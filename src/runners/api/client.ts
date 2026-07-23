@@ -30,6 +30,7 @@ import {
   RunStillRunningError,
 } from "./exceptions.js";
 import { isValidBaseUrl } from "../../config/config.js";
+import { assertExclusiveRunSources } from "../bundle.js";
 
 export interface MthdsFile {
   /** File contents to validate. */
@@ -339,8 +340,8 @@ export class MthdsApiClient implements Runner {
       output_name: options.output_name,
       output_multiplicity: options.output_multiplicity,
       dynamic_output_concept_ref: options.dynamic_output_concept_ref,
-      files: options.files ?? undefined,
-      bundle_b64: options.bundle_b64 ?? undefined,
+      files: nonEmptyFiles(options.files),
+      bundle_b64: nonEmptyString(options.bundle_b64),
       ...extensions,
     };
 
@@ -399,8 +400,8 @@ export class MthdsApiClient implements Runner {
       output_name: options.output_name ?? undefined,
       output_multiplicity: options.output_multiplicity ?? undefined,
       dynamic_output_concept_ref: options.dynamic_output_concept_ref ?? undefined,
-      files: options.files ?? undefined,
-      bundle_b64: options.bundle_b64 ?? undefined,
+      files: nonEmptyFiles(options.files),
+      bundle_b64: nonEmptyString(options.bundle_b64),
       ...extensions,
     };
 
@@ -573,6 +574,9 @@ export class MthdsApiClient implements Runner {
 // ── Module helpers ────────────────────────────────────────────────────
 
 // The protocol's own request fields — `extra` is for extension args only.
+// `files` / `bundle_b64` are reserved too: they are named run-source options,
+// so smuggling them through `extra` (which merges last into the body) would
+// overwrite the validated fields and bypass the run-source exclusivity check.
 const PROTOCOL_REQUEST_KEYS: ReadonlySet<string> = new Set([
   "pipe_code",
   "mthds_contents",
@@ -580,6 +584,8 @@ const PROTOCOL_REQUEST_KEYS: ReadonlySet<string> = new Set([
   "output_name",
   "output_multiplicity",
   "dynamic_output_concept_ref",
+  "files",
+  "bundle_b64",
 ]);
 
 /**
@@ -613,28 +619,19 @@ function hasBundlePayload(options: RunOptions): boolean {
 }
 
 /**
- * Enforce the run-source exclusivity contract BEFORE dispatch, so a conflicting
- * request fails as a clear `PipelineRequestError` here rather than as an opaque
- * server `422` (or, on the local runner, silently preferring `files`). A method
- * bundle is self-contained — it carries its own `.mthds` — so it may not ride
- * alongside `mthds_contents`, and `files` / `bundle_b64` are two encodings of
- * the same bundle. Mirrors the server's `HostedRunRequest` validator wording so
- * the two surfaces reject the same combinations identically.
+ * Normalize a bundle encoding for the wire: an empty map / string is NOT a
+ * runnable bundle, so it must not be sent (the runner rejects a zero-file
+ * bundle). Exclusivity is still checked on presence upstream, so an empty
+ * encoding supplied alongside another source has already been rejected.
  */
-function assertExclusiveRunSources(options: RunOptions): void {
-  const hasFiles = options.files != null && Object.keys(options.files).length > 0;
-  const hasZip = options.bundle_b64 != null && options.bundle_b64.length > 0;
-  const hasContents = options.mthds_contents != null && options.mthds_contents.length > 0;
-  if (hasFiles && hasZip) {
-    throw new PipelineRequestError(
-      "files and bundle_b64 are two encodings of the same bundle and are mutually exclusive; provide one.",
-    );
-  }
-  if ((hasFiles || hasZip) && hasContents) {
-    throw new PipelineRequestError(
-      "A method bundle (files/bundle_b64) is self-contained; it cannot be combined with mthds_contents.",
-    );
-  }
+function nonEmptyFiles(
+  files: Record<string, string> | null | undefined,
+): Record<string, string> | undefined {
+  return files != null && Object.keys(files).length > 0 ? files : undefined;
+}
+
+function nonEmptyString(value: string | null | undefined): string | undefined {
+  return value != null && value.length > 0 ? value : undefined;
 }
 
 function withValidateMarkdownRender(render: string[] | undefined): string[] {

@@ -3,12 +3,14 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from "nod
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import {
+  assertExclusiveRunSources,
   collectBundleFiles,
   hasCustomPython,
   pickMainBundleFile,
   materializeBundleFiles,
   resolveRunBundle,
 } from "../../../src/runners/bundle.js";
+import { PipelineRequestError } from "../../../src/protocol/exceptions.js";
 
 const MTHDS = [
   'domain      = "pf_hostname_probe"',
@@ -145,6 +147,53 @@ describe("materializeBundleFiles", () => {
     );
     expect(() => readFileSync(abs, "utf-8")).toThrow();
   });
+
+  it("honors an explicit `main` over the inferred pick", () => {
+    // Both root .mthds declare main_pipe, so the inferred pick would take the
+    // first; an explicit main must win so the caller's selection is respected.
+    const files = {
+      "method_a.mthds": 'domain = "a"\nmain_pipe = "run_a"',
+      "method_b.mthds": 'domain = "b"\nmain_pipe = "run_b"',
+    };
+    expect(materializeBundleFiles(dir, files, "method_b.mthds")).toBe(join(dir, "method_b.mthds"));
+    // An unknown main falls back to the inferred pick rather than a bogus path.
+    expect(materializeBundleFiles(dir, files, "nope.mthds")).toBe(join(dir, "method_a.mthds"));
+  });
+});
+
+describe("assertExclusiveRunSources", () => {
+  it("accepts a single run source", () => {
+    expect(() => assertExclusiveRunSources({ files: { "m.mthds": "x" } })).not.toThrow();
+    expect(() => assertExclusiveRunSources({ bundle_b64: "UEs=" })).not.toThrow();
+    expect(() => assertExclusiveRunSources({ mthds_contents: ["x"] })).not.toThrow();
+    expect(() =>
+      assertExclusiveRunSources({ pipe_code: "p", files: { "m.mthds": "x" } }),
+    ).not.toThrow();
+  });
+
+  it("rejects both bundle encodings (presence, even if one is empty)", () => {
+    expect(() =>
+      assertExclusiveRunSources({ files: { "m.mthds": "x" }, bundle_b64: "UEs=" }),
+    ).toThrow(PipelineRequestError);
+    expect(() => assertExclusiveRunSources({ files: {}, bundle_b64: "UEs=" })).toThrow(
+      PipelineRequestError,
+    );
+  });
+
+  it("rejects a bundle combined with non-empty mthds_contents", () => {
+    expect(() =>
+      assertExclusiveRunSources({ files: { "m.mthds": "x" }, mthds_contents: ["y"] }),
+    ).toThrow(PipelineRequestError);
+    expect(() => assertExclusiveRunSources({ bundle_b64: "UEs=", mthds_contents: ["y"] })).toThrow(
+      PipelineRequestError,
+    );
+  });
+
+  it("ignores an empty mthds_contents array (no contents)", () => {
+    expect(() =>
+      assertExclusiveRunSources({ files: { "m.mthds": "x" }, mthds_contents: [] }),
+    ).not.toThrow();
+  });
 });
 
 describe("resolveRunBundle", () => {
@@ -178,6 +227,29 @@ describe("resolveRunBundle", () => {
     const resolved = resolveRunBundle(mthdsPath);
     expect(resolved.mthds_contents).toBeUndefined();
     expect(resolved.files?.["funcs/probe_host.py"]).toBe(FUNC);
+  });
+
+  it("preserves the targeted .mthds as `main` when a sibling method shares the dir", () => {
+    // Two methods in one dir + custom Python. Targeting method_b must resolve
+    // method_b as the entrypoint, never let a runner run method_a instead.
+    const methodA = 'domain = "a"\nmain_pipe = "run_a"';
+    const methodB = 'domain = "b"\nmain_pipe = "run_b"';
+    writeFileSync(join(dir, "method_a.mthds"), methodA, "utf-8");
+    const targetB = join(dir, "method_b.mthds");
+    writeFileSync(targetB, methodB, "utf-8");
+    mkdirSync(join(dir, "funcs"));
+    writeFileSync(join(dir, "funcs", "x.py"), FUNC, "utf-8");
+
+    const resolved = resolveRunBundle(targetB);
+    expect(resolved.main).toBe("method_b.mthds");
+    expect(resolved.files?.["method_a.mthds"]).toBe(methodA);
+  });
+
+  it("directory target records the inferred `main`", () => {
+    writeFileSync(join(dir, "root.mthds"), MTHDS, "utf-8");
+    mkdirSync(join(dir, "funcs"));
+    writeFileSync(join(dir, "funcs", "probe_host.py"), FUNC, "utf-8");
+    expect(resolveRunBundle(dir).main).toBe("root.mthds");
   });
 
   it("plain .mthds file (no custom Python) → mthds_contents", () => {

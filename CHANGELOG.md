@@ -9,11 +9,18 @@
 ### Security
 
 - **Bundle path-safety on materialization:** `materializeBundleFiles` validates every bundle key resolves under the target directory before writing, so a `files` key like `../../outside` or an absolute path is rejected instead of letting the write escape the temp dir. Mirrors the runner-side guard in `pipelex-api`.
+- **`files` / `bundle_b64` are reserved request keys:** they can no longer be smuggled through the `extra` passthrough (which merges last into the body and would have overwritten the validated run-source fields, bypassing the exclusivity check).
 
 ### Changed
 
-- **Run-source exclusivity enforced client-side:** the API runner's `execute()` / `start()` now reject a bundle combined with `mthds_contents`, or `files` combined with `bundle_b64`, as a clear `PipelineRequestError` before dispatch — instead of a server `422` or the local runner silently preferring `files`. Wording mirrors the server's validator so both surfaces reject the same combinations.
-- **Robust `main_pipe` detection in a multi-`.mthds` bundle:** the bundle entrypoint pick parses each candidate with `smol-toml` instead of a regex that missed quoted keys (`"main_pipe" = …`) and fell back to file order.
+- **Run-source exclusivity enforced by both runners:** a bundle combined with `mthds_contents`, or `files` combined with `bundle_b64`, is rejected as a clear `PipelineRequestError` before dispatch — in the API client **and** the local pipelex runner (previously it silently preferred `files`). Exclusivity keys off field presence, so an empty-but-supplied encoding is caught too, and empty encodings are never shipped on the wire. Wording mirrors the server's validator.
+- **Selected `.mthds` entrypoint is preserved:** running a specific `.mthds` in a directory that holds several methods now runs the one named, not a re-inferred sibling — `resolveRunBundle` records the target as the bundle's `main` and the local runner points `run bundle` at it.
+- **Robust `main_pipe` detection:** both the bundle entrypoint pick and the agent run command derive `main_pipe` with `smol-toml` instead of a regex that missed quoted/literal keys (`'main_pipe' = …`, `"main_pipe" = …`) and fell back to file order.
+- **Directory bundles resolve their own entrypoint:** the agent run command finds the main `.mthds` from the directory's bundle files instead of requiring it to be named literally `bundle.mthds`, so a custom-Python bundle with any entry name can start.
+
+### Fixed
+
+- **Local runner rejects `bundle_b64`:** the zip transport form has no local decoder, so `PipelexRunner` now fails with a clear message pointing at `files` / the API runner instead of dispatching `run` with no target.
 
 ## [v0.19.1] - 2026-07-15
 

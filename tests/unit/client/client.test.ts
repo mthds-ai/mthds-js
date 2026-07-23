@@ -404,6 +404,31 @@ describe("MthdsApiClient method-bundle transport (files / bundle_b64)", () => {
     ).rejects.toBeInstanceOf(PipelineRequestError);
     expect(fetchSpy).not.toHaveBeenCalled();
   });
+
+  it("rejects bundle fields smuggled through `extra` (reserved request keys)", async () => {
+    const client = makeClient();
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+    await expect(
+      client.execute({ pipe_code: "p", extra: { files: { "m.mthds": "domain = 'x'" } } }),
+    ).rejects.toBeInstanceOf(PipelineRequestError);
+    await expect(
+      client.execute({ pipe_code: "p", extra: { bundle_b64: "UEsDBBQ=" } }),
+    ).rejects.toBeInstanceOf(PipelineRequestError);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("does not ship an empty files map on the wire", async () => {
+    const client = makeClient();
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(jsonResponse(200, { pipeline_run_id: "ok" }));
+    // pipe_code satisfies the precondition; the empty `files` must be dropped so
+    // the runner never sees a zero-file bundle.
+    await client.execute({ pipe_code: "registered_pipe", files: {} });
+    const body = JSON.parse((fetchSpy.mock.calls[0]![1] as RequestInit).body as string);
+    expect(body.files).toBeUndefined();
+    expect(body.pipe_code).toBe("registered_pipe");
+  });
 });
 
 describe("MthdsApiClient.start", () => {

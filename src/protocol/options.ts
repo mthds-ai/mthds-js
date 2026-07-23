@@ -65,6 +65,14 @@ export type StartRequest = RunRequest;
  */
 export interface ExtensionOptions {
   extra?: Record<string, unknown> | null;
+  /**
+   * CLIENT-ONLY entrypoint hint — NEVER sent on the wire. The bundle-relative
+   * path of the `.mthds` a `run` target selected, so a local runner points
+   * `run bundle` at exactly the file the caller named instead of re-inferring
+   * the main from a multi-method directory. Set by `resolveRunBundle`; the API
+   * request builders name wire fields explicitly and ignore it.
+   */
+  bundleMain?: string;
 }
 
 /**

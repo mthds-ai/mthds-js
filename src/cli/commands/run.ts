@@ -114,8 +114,15 @@ export async function runBundle(target: string, options: RunOptions): Promise<vo
   try {
     // A bundle target is a directory (or a `.mthds` with sibling `funcs/*.py`):
     // ship the whole method as `files` so custom PipeFunc Python travels with it.
-    // A plain `.mthds` stays on the lighter `mthds_contents` path.
-    runOptions = resolveRunBundle(target);
+    // A plain `.mthds` stays on the lighter `mthds_contents` path. `main` carries
+    // the selected entrypoint through as `bundleMain` so a local runner points
+    // `run bundle` at the named `.mthds`, never a sibling in the same directory.
+    const resolved = resolveRunBundle(target);
+    runOptions = {
+      files: resolved.files,
+      mthds_contents: resolved.mthds_contents,
+      bundleMain: resolved.main,
+    };
     if (options.pipe) {
       runOptions.pipe_code = options.pipe;
     }

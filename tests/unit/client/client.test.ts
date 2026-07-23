@@ -377,6 +377,33 @@ describe("MthdsApiClient method-bundle transport (files / bundle_b64)", () => {
     const client = makeClient();
     await expect(client.execute({ files: {} })).rejects.toBeInstanceOf(PipelineRequestError);
   });
+
+  it("rejects files + bundle_b64 before dispatch (two encodings of one bundle)", async () => {
+    const client = makeClient();
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+    await expect(
+      client.execute({ files: { "m.mthds": "domain = 'x'" }, bundle_b64: "UEsDBBQ=" }),
+    ).rejects.toBeInstanceOf(PipelineRequestError);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("rejects a bundle combined with mthds_contents before dispatch (bundle is self-contained)", async () => {
+    const client = makeClient();
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+    await expect(
+      client.execute({ files: { "m.mthds": "domain = 'x'" }, mthds_contents: ["domain = 'y'"] }),
+    ).rejects.toBeInstanceOf(PipelineRequestError);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("start() also rejects a bundle combined with mthds_contents before dispatch", async () => {
+    const client = makeClient();
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+    await expect(
+      client.start({ bundle_b64: "UEsDBBQ=", mthds_contents: ["domain = 'y'"] }),
+    ).rejects.toBeInstanceOf(PipelineRequestError);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
 });
 
 describe("MthdsApiClient.start", () => {

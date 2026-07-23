@@ -20,6 +20,7 @@
 
 import { mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, relative, resolve, sep } from "node:path";
+import { parse as parseToml } from "smol-toml";
 
 /** File names (exact) that belong to a method bundle beyond the `.mthds`/`.py` set. */
 const BUNDLE_FILE_NAMES: ReadonlySet<string> = new Set(["requirements.txt"]);
@@ -74,6 +75,24 @@ export function hasCustomPython(files: Record<string, string>): boolean {
 }
 
 /**
+ * Does a `.mthds` document declare a top-level `main_pipe` key? Parsed with the
+ * same TOML parser the rest of the toolchain uses (a `.mthds` file IS TOML), so
+ * a quoted key (`"main_pipe" = …`) or an unusual-but-valid layout is recognized
+ * — a regex missed those and fell back to file order, which could point a runner
+ * at the wrong method. A document that isn't valid TOML simply doesn't count as
+ * declaring `main_pipe` (the entrypoint pick falls back to the first candidate).
+ */
+function declaresMainPipe(content: string): boolean {
+  let parsed: unknown;
+  try {
+    parsed = parseToml(content);
+  } catch {
+    return false;
+  }
+  return typeof parsed === "object" && parsed !== null && "main_pipe" in parsed;
+}
+
+/**
  * Pick the main `.mthds` file of a bundle — the one a runner should point
  * `run bundle` at. Prefers a root-level `.mthds` that declares a `main_pipe`,
  * then any root-level `.mthds`, then the first `.mthds` found.
@@ -85,8 +104,26 @@ export function pickMainBundleFile(files: Record<string, string>): string {
   }
   const rootLevel = mthdsFiles.filter((rel) => !rel.includes("/"));
   const candidates = rootLevel.length > 0 ? rootLevel : mthdsFiles;
-  const withMainPipe = candidates.find((rel) => /(^|\n)\s*main_pipe\s*=/.test(files[rel] ?? ""));
+  const withMainPipe = candidates.find((rel) => declaresMainPipe(files[rel] ?? ""));
   return withMainPipe ?? candidates[0]!;
+}
+
+/**
+ * Resolve a bundle-map key to an absolute path GUARANTEED to stay under `root`,
+ * or throw. A `files` map reaches this from the public `RunOptions.files` (a
+ * programmatic caller can put anything there), so a key like `../../outside` or
+ * an absolute path must never let `writeFileSync` clobber a file elsewhere with
+ * the process's permissions. Mirrors the runner-side path-safety guard in
+ * `pipelex-api` (`_safe_relpath`), so both runners reject the same escapes.
+ */
+function resolveSafeBundlePath(root: string, rel: string): string {
+  const abs = resolve(root, rel);
+  if (abs !== root && !abs.startsWith(root + sep)) {
+    throw new Error(
+      `Unsafe bundle file path ${JSON.stringify(rel)}: it escapes the bundle directory.`,
+    );
+  }
+  return abs;
 }
 
 /**
@@ -94,10 +131,14 @@ export function pickMainBundleFile(files: Record<string, string>): string {
  * directory structure (so `funcs/*.py` land under `funcs/`). Returns the
  * absolute path of the bundle's main `.mthds` file — what a local runner points
  * `run bundle` at, with `targetDir` as its library directory.
+ *
+ * Every key is validated to stay under `targetDir` before any write, so a
+ * traversal (`..`) or absolute-path key is rejected instead of escaping.
  */
 export function materializeBundleFiles(targetDir: string, files: Record<string, string>): string {
+  const root = resolve(targetDir);
   for (const [rel, text] of Object.entries(files)) {
-    const abs = join(targetDir, rel);
+    const abs = resolveSafeBundlePath(root, rel);
     mkdirSync(dirname(abs), { recursive: true });
     writeFileSync(abs, text, "utf-8");
   }

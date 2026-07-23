@@ -89,6 +89,21 @@ describe("pickMainBundleFile", () => {
   it("throws when there is no .mthds", () => {
     expect(() => pickMainBundleFile({ "funcs/x.py": FUNC })).toThrow(/no .mthds/i);
   });
+  it("recognizes a quoted `main_pipe` TOML key (regex missed it, fell back to file order)", () => {
+    const files = {
+      "a_no_main.mthds": 'domain = "a"',
+      "b_quoted.mthds": 'domain = "b"\n"main_pipe" = "run_b"',
+    };
+    expect(pickMainBundleFile(files)).toBe("b_quoted.mthds");
+  });
+  it("does not treat a `main_pipe` mention inside another value as a declaration", () => {
+    // A commented-out / string-embedded mention is not a real top-level key.
+    const files = {
+      "real.mthds": 'domain = "r"\nmain_pipe = "go"',
+      "decoy.mthds": 'domain = "d"\ndescription = "sets main_pipe = later"',
+    };
+    expect(pickMainBundleFile(files)).toBe("real.mthds");
+  });
 });
 
 describe("materializeBundleFiles", () => {
@@ -106,6 +121,29 @@ describe("materializeBundleFiles", () => {
     expect(mainPath).toBe(join(dir, "hostname_probe.mthds"));
     expect(readFileSync(join(dir, "funcs", "probe_host.py"), "utf-8")).toBe(FUNC);
     expect(readFileSync(mainPath, "utf-8")).toBe(MTHDS);
+  });
+
+  it("rejects a key that escapes the target directory via `..` (no write outside)", () => {
+    // Target a nested subdir so an escape lands under `dir` (auto-cleaned),
+    // never in the shared tmpdir.
+    const target = join(dir, "box");
+    mkdirSync(target);
+    const outside = join(target, "..", "escaped.py"); // → dir/escaped.py
+    expect(() =>
+      materializeBundleFiles(target, { "m.mthds": MTHDS, "../escaped.py": "pwned" }),
+    ).toThrow(/escape|unsafe/i);
+    expect(() => readFileSync(outside, "utf-8")).toThrow();
+  });
+
+  it("rejects an absolute-path key pointing outside the target directory", () => {
+    const target = join(dir, "box");
+    mkdirSync(target);
+    // Absolute, under `dir` (auto-cleaned) but NOT under `target`.
+    const abs = join(dir, "abs-escape-target.py");
+    expect(() => materializeBundleFiles(target, { "m.mthds": MTHDS, [abs]: "pwned" })).toThrow(
+      /escape|unsafe|absolute/i,
+    );
+    expect(() => readFileSync(abs, "utf-8")).toThrow();
   });
 });
 

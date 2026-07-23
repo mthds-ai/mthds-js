@@ -323,12 +323,14 @@ export class MthdsApiClient implements Runner {
     if (
       !options.pipe_code &&
       (!options.mthds_contents || options.mthds_contents.length === 0) &&
+      !hasBundlePayload(options) &&
       Object.keys(extensions).length === 0
     ) {
       throw new PipelineRequestError(
-        "Either pipe_code, mthds_contents or a server-specific extension arg (extra) must be provided to execute().",
+        "Either pipe_code, mthds_contents, a method bundle (files/bundle_b64) or a server-specific extension arg (extra) must be provided to execute().",
       );
     }
+    assertExclusiveRunSources(options);
 
     const request: RunRequest & Record<string, unknown> = {
       pipe_code: options.pipe_code,
@@ -337,6 +339,8 @@ export class MthdsApiClient implements Runner {
       output_name: options.output_name,
       output_multiplicity: options.output_multiplicity,
       dynamic_output_concept_ref: options.dynamic_output_concept_ref,
+      files: options.files ?? undefined,
+      bundle_b64: options.bundle_b64 ?? undefined,
       ...extensions,
     };
 
@@ -378,12 +382,14 @@ export class MthdsApiClient implements Runner {
     if (
       !options.pipe_code &&
       (!options.mthds_contents || options.mthds_contents.length === 0) &&
+      !hasBundlePayload(options) &&
       Object.keys(extensions).length === 0
     ) {
       throw new PipelineRequestError(
-        "Either pipe_code, mthds_contents or a server-specific extension arg (extra) must be provided to start().",
+        "Either pipe_code, mthds_contents, a method bundle (files/bundle_b64) or a server-specific extension arg (extra) must be provided to start().",
       );
     }
+    assertExclusiveRunSources(options);
 
     // `?? undefined` so JSON.stringify drops absent fields from the wire body.
     const request: StartRequest & Record<string, unknown> = {
@@ -393,6 +399,8 @@ export class MthdsApiClient implements Runner {
       output_name: options.output_name ?? undefined,
       output_multiplicity: options.output_multiplicity ?? undefined,
       dynamic_output_concept_ref: options.dynamic_output_concept_ref ?? undefined,
+      files: options.files ?? undefined,
+      bundle_b64: options.bundle_b64 ?? undefined,
       ...extensions,
     };
 
@@ -590,6 +598,43 @@ function buildExtensions(
     );
   }
   return { ...extra };
+}
+
+/**
+ * Does the request carry a method bundle (the pipelex-api `files` / `bundle_b64`
+ * extension)? A bundle satisfies the "something to run" precondition on its own —
+ * it carries its own `.mthds`, so neither `pipe_code` nor `mthds_contents` is
+ * required alongside it.
+ */
+function hasBundlePayload(options: RunOptions): boolean {
+  const hasFiles = options.files != null && Object.keys(options.files).length > 0;
+  const hasZip = options.bundle_b64 != null && options.bundle_b64.length > 0;
+  return hasFiles || hasZip;
+}
+
+/**
+ * Enforce the run-source exclusivity contract BEFORE dispatch, so a conflicting
+ * request fails as a clear `PipelineRequestError` here rather than as an opaque
+ * server `422` (or, on the local runner, silently preferring `files`). A method
+ * bundle is self-contained — it carries its own `.mthds` — so it may not ride
+ * alongside `mthds_contents`, and `files` / `bundle_b64` are two encodings of
+ * the same bundle. Mirrors the server's `HostedRunRequest` validator wording so
+ * the two surfaces reject the same combinations identically.
+ */
+function assertExclusiveRunSources(options: RunOptions): void {
+  const hasFiles = options.files != null && Object.keys(options.files).length > 0;
+  const hasZip = options.bundle_b64 != null && options.bundle_b64.length > 0;
+  const hasContents = options.mthds_contents != null && options.mthds_contents.length > 0;
+  if (hasFiles && hasZip) {
+    throw new PipelineRequestError(
+      "files and bundle_b64 are two encodings of the same bundle and are mutually exclusive; provide one.",
+    );
+  }
+  if ((hasFiles || hasZip) && hasContents) {
+    throw new PipelineRequestError(
+      "A method bundle (files/bundle_b64) is self-contained; it cannot be combined with mthds_contents.",
+    );
+  }
 }
 
 function withValidateMarkdownRender(render: string[] | undefined): string[] {

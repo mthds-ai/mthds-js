@@ -617,6 +617,32 @@ describe("PipelexRunner", () => {
         /pipelex exited with code 1/,
       );
     });
+
+    it("rejects bundle_b64 — the local runner has no zip decoder", async () => {
+      await expect(runner.execute({ bundle_b64: "UEsDBBQ=" })).rejects.toThrow(/bundle_b64|zip/i);
+      expect(mockedSpawn).not.toHaveBeenCalled();
+    });
+
+    it("rejects files combined with mthds_contents (self-contained bundle)", async () => {
+      await expect(
+        runner.execute({ files: { "m.mthds": BUNDLE }, mthds_contents: ["domain = 'x'"] }),
+      ).rejects.toThrow(/self-contained|mutually exclusive/i);
+      expect(mockedSpawn).not.toHaveBeenCalled();
+    });
+
+    it("points `run bundle` at the caller-selected entrypoint (bundleMain)", async () => {
+      mockSpawnExit(0);
+      mockedExistsSync.mockReturnValue(true);
+      mockedReadFileSync.mockReturnValue(JSON.stringify({ root: {}, aliases: {} }));
+      await runner.execute({
+        files: { "method_a.mthds": 'main_pipe = "a"', "method_b.mthds": 'main_pipe = "b"' },
+        bundleMain: "method_b.mthds",
+      });
+      const spawnArgs = mockedSpawn.mock.calls[0]![1] as string[];
+      // `run bundle <path>` — the path must be the selected method_b, not method_a.
+      expect(spawnArgs[2]).toContain("method_b.mthds");
+      expect(spawnArgs[2]).not.toContain("method_a.mthds");
+    });
   });
 
   describe("validate — 0/1/2 exit-code policy", () => {

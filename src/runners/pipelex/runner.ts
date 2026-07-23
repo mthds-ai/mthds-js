@@ -4,6 +4,8 @@ import { existsSync, writeFileSync, readFileSync, readdirSync, mkdtempSync, rmSy
 import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 import { Runners } from "../types.js";
+import { assertExclusiveRunSources, materializeBundleFiles } from "../bundle.js";
+import { PipelineRequestError } from "../../protocol/exceptions.js";
 import type {
   Runner,
   RunnerType,
@@ -493,12 +495,36 @@ export class PipelexRunner implements Runner {
   // the API runner for that).
 
   async execute(options: RunOptions): Promise<DictRunResultExecute> {
+    // Reject conflicting run sources up front — the same contract the API client
+    // enforces — so a bundle combined with `mthds_contents` (or both encodings)
+    // fails clearly instead of the branch order below silently preferring one.
+    assertExclusiveRunSources(options);
+    // The local runner materializes `files` to disk; it has no zip decoder, so
+    // the `bundle_b64` transport form is API-runner-only. Reject it explicitly
+    // rather than dispatching `run` with no target (which fails cryptically).
+    if (options.bundle_b64 != null) {
+      throw new PipelineRequestError(
+        "The local pipelex runner does not support the bundle_b64 (zip) transport; pass the bundle as `files`, or use the API runner.",
+      );
+    }
     const tmp = makeTmpDir();
     try {
       // The pipelex CLI dispatches through `run bundle <path>` / `run pipe <code>`.
       const args: string[] = ["run"];
 
-      if (options.mthds_contents?.length) {
+      if (options.files && Object.keys(options.files).length > 0) {
+        // A full method bundle (custom PipeFunc Python travels with the method).
+        // Materialize it to disk preserving `funcs/*.py`, then run the main
+        // `.mthds` with the temp dir as its library so the funcs resolve. The
+        // caller-selected entrypoint (`bundleMain`) is honored so a directory of
+        // several methods runs the one that was named, not a re-guessed sibling.
+        const bundlePath = materializeBundleFiles(tmp, options.files, options.bundleMain);
+        args.push("bundle", bundlePath);
+        args.push("-L", tmp);
+        if (options.pipe_code) {
+          args.push("--pipe", options.pipe_code);
+        }
+      } else if (options.mthds_contents?.length) {
         const bundlePath = writeMthdsContents(tmp, options.mthds_contents);
         args.push("bundle", bundlePath);
         args.push("-L", tmp);

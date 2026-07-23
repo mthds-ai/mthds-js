@@ -16,6 +16,8 @@ import {
   AGENT_ERROR_DOMAINS,
 } from "../output.js";
 import { isApiRunner } from "../../cli/commands/utils.js";
+import { collectBundleFiles, pickMainBundleFile, resolveRunBundle } from "../../runners/bundle.js";
+import { readBundleMeta } from "../../runners/pipe-ref.js";
 import type { MthdsFileItem, Runner } from "../../runners/types.js";
 import type { StartOptions } from "../../protocol/options.js";
 import type { ModelCategory } from "../../protocol/models.js";
@@ -607,14 +609,17 @@ function resolveContentForRun(
   }
   let bundlePath = target;
   if (existsSync(target) && statSync(target).isDirectory()) {
-    const candidate = join(target, "bundle.mthds");
-    if (existsSync(candidate)) {
-      bundlePath = candidate;
-    } else {
-      agentError(`No bundle.mthds found in directory: ${target}`, "IOError", {
+    // Resolve the entrypoint from the directory's bundle files rather than
+    // assuming it is literally named `bundle.mthds` — a custom-Python method's
+    // main `.mthds` can have any name, and hardcoding `bundle.mthds` rejected
+    // otherwise-valid bundles before they could run.
+    const files = collectBundleFiles(target);
+    if (!Object.keys(files).some((rel) => rel.endsWith(".mthds"))) {
+      agentError(`No .mthds file found in directory: ${target}`, "IOError", {
         error_domain: AGENT_ERROR_DOMAINS.IO,
       });
     }
+    bundlePath = join(target, pickMainBundleFile(files));
     // TODO: refactor to return { bundleContent, resolvedInputsPath } instead of mutating
     // the caller's options object. This side-effect coupling is fragile — if the call
     // order in resolveStartOptions changes, auto-discovery silently breaks with no compile-time signal.
@@ -636,8 +641,12 @@ function resolveContentForRun(
  */
 function resolvePipeCode(mthdsContent: string, pipeCodeOption: string | undefined): string {
   if (pipeCodeOption) return pipeCodeOption;
-  const match = mthdsContent.match(/^main_pipe\s*=\s*"([^"]+)"/m);
-  if (match?.[1]) return match[1];
+  // Read `main_pipe` with the real TOML parser, not a regex: a `.mthds` file IS
+  // TOML and spells the key more ways than a regex matches (literal strings
+  // `'run'`, quoted keys `"main_pipe" = …`, comments), so the regex rejected
+  // valid bundles as having no derivable pipe.
+  const { mainPipe } = readBundleMeta(mthdsContent);
+  if (mainPipe) return mainPipe;
   agentError("Could not determine pipe code. Use --pipe to specify it.", "ArgumentError", {
     error_domain: AGENT_ERROR_DOMAINS.ARGUMENT,
   });
@@ -719,13 +728,27 @@ function resolveStartOptions(
     return { pipe_code: options.pipe, inputs: resolveRunInputs(options), ...outputs, extra };
   }
   // resolveContentForRun may set options.inputs (directory auto-discovery), so
-  // resolve the bundle before reading inputs.
+  // resolve the bundle before reading inputs. It also reads the main `.mthds` text,
+  // which resolvePipeCode needs to derive `main_pipe`.
   const mthdsContent = resolveContentForRun(target, options);
   const pipeCode = resolvePipeCode(mthdsContent, options.pipe);
+  const inputs = resolveRunInputs(options);
+  // A bundle whose directory carries custom PipeFunc Python (a sibling `.py`) must ship the whole
+  // bundle as `files` so that Python travels to the runner and into the sandbox crate — otherwise
+  // the runner registers the pipes from the `.mthds` alone, builds a crate with no function source,
+  // and the sandbox fails with "Function '<name>' not found in registry". A plain `.mthds` (no
+  // sibling `.py`) stays on the lighter `mthds_contents` path. `--content` is always inline text
+  // with no sibling files to collect, so it never becomes a bundle.
+  if (target && !options.content) {
+    const bundle = resolveRunBundle(target);
+    if (bundle.files) {
+      return { pipe_code: pipeCode, files: bundle.files, inputs, ...outputs, extra };
+    }
+  }
   return {
     pipe_code: pipeCode,
     mthds_contents: [mthdsContent],
-    inputs: resolveRunInputs(options),
+    inputs,
     ...outputs,
     extra,
   };

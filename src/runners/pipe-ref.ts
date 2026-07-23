@@ -11,7 +11,7 @@ import type { MthdsFileItem } from "./types.js";
  * "declares no domain" — which is precisely the bug this replaced. `smol-toml` is already
  * a dependency (see `package/manifest/validate.ts`), so this is cheaper than the regex was.
  */
-function readBundleMeta(content: string): { domain?: string; mainPipe?: string } {
+export function readBundleMeta(content: string): { domain?: string; mainPipe?: string } {
   let parsed: unknown;
   try {
     parsed = parseToml(content);

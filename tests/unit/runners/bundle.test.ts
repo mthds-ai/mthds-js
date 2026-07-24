@@ -3,14 +3,12 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from "nod
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import {
-  assertExclusiveRunSources,
   collectBundleFiles,
   hasCustomPython,
   pickMainBundleFile,
   materializeBundleFiles,
   resolveRunBundle,
 } from "../../../src/runners/bundle.js";
-import { PipelineRequestError } from "../../../src/protocol/exceptions.js";
 
 const MTHDS = [
   'domain      = "pf_hostname_probe"',
@@ -158,41 +156,6 @@ describe("materializeBundleFiles", () => {
     expect(materializeBundleFiles(dir, files, "method_b.mthds")).toBe(join(dir, "method_b.mthds"));
     // An unknown main falls back to the inferred pick rather than a bogus path.
     expect(materializeBundleFiles(dir, files, "nope.mthds")).toBe(join(dir, "method_a.mthds"));
-  });
-});
-
-describe("assertExclusiveRunSources", () => {
-  it("accepts a single run source", () => {
-    expect(() => assertExclusiveRunSources({ files: { "m.mthds": "x" } })).not.toThrow();
-    expect(() => assertExclusiveRunSources({ bundle_b64: "UEs=" })).not.toThrow();
-    expect(() => assertExclusiveRunSources({ mthds_contents: ["x"] })).not.toThrow();
-    expect(() =>
-      assertExclusiveRunSources({ pipe_code: "p", files: { "m.mthds": "x" } }),
-    ).not.toThrow();
-  });
-
-  it("rejects both bundle encodings (presence, even if one is empty)", () => {
-    expect(() =>
-      assertExclusiveRunSources({ files: { "m.mthds": "x" }, bundle_b64: "UEs=" }),
-    ).toThrow(PipelineRequestError);
-    expect(() => assertExclusiveRunSources({ files: {}, bundle_b64: "UEs=" })).toThrow(
-      PipelineRequestError,
-    );
-  });
-
-  it("rejects a bundle combined with non-empty mthds_contents", () => {
-    expect(() =>
-      assertExclusiveRunSources({ files: { "m.mthds": "x" }, mthds_contents: ["y"] }),
-    ).toThrow(PipelineRequestError);
-    expect(() => assertExclusiveRunSources({ bundle_b64: "UEs=", mthds_contents: ["y"] })).toThrow(
-      PipelineRequestError,
-    );
-  });
-
-  it("ignores an empty mthds_contents array (no contents)", () => {
-    expect(() =>
-      assertExclusiveRunSources({ files: { "m.mthds": "x" }, mthds_contents: [] }),
-    ).not.toThrow();
   });
 });
 

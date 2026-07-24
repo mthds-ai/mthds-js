@@ -88,6 +88,8 @@ For anything long-running, prefer `start` over `execute`. The async `start` prim
 
 A plain `.mthds` file with no custom Python keeps the lighter single-content path (`mthds_contents`) — nothing changes for the common case. `files` is the SDK's `RunOptions.files` field (or `bundle_b64` for a zipped bundle); both are mutually exclusive with `mthds_contents`.
 
+That exclusivity is a property of the request shape, not of any one runner, so it ships with the shape: `assertExclusiveRunSources` and `hasBundlePayload` live in `protocol/options.ts` beside `RunRequest` and are exported from `mthds/protocol`. The API runner, the local pipelex runner, and downstream clients (`@pipelex/sdk`) all enforce the contract from that one definition rather than re-deriving it — so they cannot disagree about which combinations are legal.
+
 **Minimum server version.** The SDK composes every endpoint under `/v1`, so a self-hosted runner must mount its API at `/v1` (the MTHDS Protocol cutover). Older images mounted `/api/v1` and answer `404` on every call — including the `/v1/version` handshake. Upgrade your runner image before (or together with) this SDK version.
 
 ## SDK

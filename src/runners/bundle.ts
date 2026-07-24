@@ -21,8 +21,6 @@
 import { mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { parse as parseToml } from "smol-toml";
-import { PipelineRequestError } from "../protocol/exceptions.js";
-import type { RunRequest } from "../protocol/options.js";
 
 /** File names (exact) that belong to a method bundle beyond the `.mthds`/`.py` set. */
 const BUNDLE_FILE_NAMES: ReadonlySet<string> = new Set(["requirements.txt"]);
@@ -47,31 +45,10 @@ export interface ResolvedRunBundle {
   main?: string;
 }
 
-/**
- * Enforce the run-source exclusivity contract shared by every runner: a method
- * bundle is self-contained (`files` / `bundle_b64` carry their own `.mthds`),
- * so it cannot be combined with `mthds_contents`, and `files` / `bundle_b64`
- * are two encodings of one bundle. Exclusivity keys off PRESENCE, not emptiness
- * — a caller who supplies `files: {}` alongside `bundle_b64` still expressed two
- * encodings — while `mthds_contents` counts only when non-empty (an empty array
- * is "no contents"). Throws `PipelineRequestError`; both the API client and the
- * local runner call it so they reject the same combinations identically.
- */
-export function assertExclusiveRunSources(options: RunRequest): void {
-  const hasFiles = options.files != null;
-  const hasZip = options.bundle_b64 != null;
-  const hasContents = options.mthds_contents != null && options.mthds_contents.length > 0;
-  if (hasFiles && hasZip) {
-    throw new PipelineRequestError(
-      "files and bundle_b64 are two encodings of the same bundle and are mutually exclusive; provide one.",
-    );
-  }
-  if ((hasFiles || hasZip) && hasContents) {
-    throw new PipelineRequestError(
-      "A method bundle (files/bundle_b64) is self-contained; it cannot be combined with mthds_contents.",
-    );
-  }
-}
+// `assertExclusiveRunSources` now lives in `protocol/options.ts`, beside the
+// `RunRequest` shape whose invariant it enforces — it is a pure request-shape
+// predicate, not runner logic, and downstream clients (`@pipelex/sdk`) consume
+// it through the `mthds/protocol` subpath.
 
 function isBundleFile(name: string): boolean {
   if (BUNDLE_FILE_NAMES.has(name)) return true;

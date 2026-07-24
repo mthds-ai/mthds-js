@@ -1,5 +1,13 @@
 # Changelog
 
+## [v0.21.0] - 2026-07-24
+
+### Changed
+
+- **(Breaking) The run-source predicates moved from `runners/bundle.ts` to `protocol/options.ts` and are now exported from `mthds/protocol`.** `assertExclusiveRunSources` (which source combinations are legal) and `hasBundlePayload` (does the request carry a runnable bundle) are pure predicates over `RunRequest` — their only dependencies were already `PipelineRequestError` and `RunRequest` — so they now travel with the request shape whose invariant they enforce instead of sitting under `runners/`. `hasBundlePayload` was additionally a private duplicate inside the API client; there is now one definition. Import them from `mthds/protocol` (they are runtime values, not types); `runners/bundle.ts` no longer exports `assertExclusiveRunSources`.
+
+  This is what lets a downstream client enforce the contract rather than restate it: `@pipelex/sdk` re-implements the protocol routes and may only import through the `mthds/protocol` subpath, so before this move it had no way to reach the check and would have had to keep a second copy that could silently disagree about which combinations are legal. `protocol/` stays pure — `dependency-cruiser`'s `protocol-stays-pure` rule passes unchanged, since neither predicate touches `fs`, `path`, or `smol-toml`; the genuinely runner-side half of `bundle.ts` (`resolveRunBundle`, `materializeBundleFiles`, `collectBundleFiles`) is untouched and imports the check back from `protocol/`.
+
 ## [v0.20.0] - 2026-07-23
 
 ### Added

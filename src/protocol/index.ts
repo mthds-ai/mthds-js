@@ -25,6 +25,9 @@ export type {
   StartOptions,
   ExtensionOptions,
 } from "./options.js";
+// Run-source predicates — invariants of the request shape itself, so every
+// client that builds a `RunRequest` enforces them from one definition.
+export { assertExclusiveRunSources, hasBundlePayload } from "./options.js";
 
 // ── Wire models ──────────────────────────────────────────────────────
 export { MTHDS_PROTOCOL_VERSION, MODEL_CATEGORIES } from "./models.js";

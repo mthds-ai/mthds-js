@@ -1,6 +1,10 @@
 # Changelog
 
-## [v0.21.0] - 2026-07-24
+## [v0.22.0] - 2026-07-24
+
+### Added
+
+- **Canonical method-file serialization on `mthds/protocol`.** New `MethodFile` type (`{ name, content }`) plus `serializeMethodFiles` / `parseMethodFiles`, the single owner of the `[{ name, content }]` JSON array form the hosted platform persists for a stored method's `.mthds` source and its custom PipeFunc `python`. Until now that format (the platform's `_method_source_to_contents`) was re-ported in every JS/TS consumer — `@pipelex/sdk`'s `method-source.ts`, `pipelex-mcp`'s own parser mirror — each free to drift; this gives them one definition to import. The empty list serializes to `""` (the platform's "no source" / "clear the field" sentinel, never `"[]"`) and blank-content entries are dropped, so `serialize` ↔ `parse` round-trips are stable; a non-array or unparseable source throws `PipelineRequestError`. This is the at-rest catalog representation and is deliberately distinct from the run-surface `files` map (`{ relativePath: text }`) on `RunRequest`. `protocol/` stays pure — the module depends only on `PipelineRequestError`.
 
 ### Changed
 

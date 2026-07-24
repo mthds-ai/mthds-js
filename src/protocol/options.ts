@@ -6,8 +6,15 @@
  * arguments as named parameters and serializes the wire body directly, merging
  * any server-specific extension args (`extra`) as top-level properties. These
  * option/request shapes are the TS expression of that argument surface.
+ *
+ * The run-source predicates below travel with the request shape rather than
+ * with any one runner: which source combinations are legal is an invariant of
+ * `RunRequest` itself, so every client that builds one — the API runner, the
+ * local pipelex runner, `@pipelex/sdk` — enforces it from this single
+ * definition instead of re-deriving it and drifting.
  */
 
+import { PipelineRequestError } from "./exceptions.js";
 import type { VariableMultiplicity } from "./pipe_output.js";
 import type { PipelineInputs } from "./pipeline_inputs.js";
 
@@ -88,3 +95,44 @@ export type RunOptions = RunRequest & ExtensionOptions;
  * passthrough (server-specific args, merged into the body).
  */
 export type StartOptions = StartRequest & ExtensionOptions;
+
+/**
+ * Enforce the run-source exclusivity contract shared by every client: a method
+ * bundle is self-contained (`files` / `bundle_b64` carry their own `.mthds`),
+ * so it cannot be combined with `mthds_contents`, and `files` / `bundle_b64`
+ * are two encodings of one bundle. Exclusivity keys off PRESENCE, not emptiness
+ * — a caller who supplies `files: {}` alongside `bundle_b64` still expressed two
+ * encodings — while `mthds_contents` counts only when non-empty (an empty array
+ * is "no contents"). Throws `PipelineRequestError`; the API client, the local
+ * runner, and `@pipelex/sdk` all call it so they reject the same combinations
+ * identically. Wording mirrors the server's validator.
+ */
+export function assertExclusiveRunSources(options: RunRequest): void {
+  const hasFiles = options.files != null;
+  const hasZip = options.bundle_b64 != null;
+  const hasContents = options.mthds_contents != null && options.mthds_contents.length > 0;
+  if (hasFiles && hasZip) {
+    throw new PipelineRequestError(
+      "files and bundle_b64 are two encodings of the same bundle and are mutually exclusive; provide one.",
+    );
+  }
+  if ((hasFiles || hasZip) && hasContents) {
+    throw new PipelineRequestError(
+      "A method bundle (files/bundle_b64) is self-contained; it cannot be combined with mthds_contents.",
+    );
+  }
+}
+
+/**
+ * Does the request carry a method bundle (the pipelex-api `files` / `bundle_b64`
+ * extension)? A bundle satisfies the "something to run" precondition on its own —
+ * it carries its own `.mthds`, so neither `pipe_code` nor `mthds_contents` is
+ * required alongside it. Unlike {@link assertExclusiveRunSources}, this keys off
+ * a RUNNABLE payload: an empty map / string carries no method, so it does not
+ * satisfy the precondition.
+ */
+export function hasBundlePayload(options: RunRequest): boolean {
+  const hasFiles = options.files != null && Object.keys(options.files).length > 0;
+  const hasZip = options.bundle_b64 != null && options.bundle_b64.length > 0;
+  return hasFiles || hasZip;
+}

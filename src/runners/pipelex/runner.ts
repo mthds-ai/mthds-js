@@ -4,7 +4,8 @@ import { existsSync, writeFileSync, readFileSync, readdirSync, mkdtempSync, rmSy
 import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 import { Runners } from "../types.js";
-import { assertExclusiveRunSources, materializeBundleFiles } from "../bundle.js";
+import { materializeBundleFiles } from "../bundle.js";
+import { assertExclusiveRunSources } from "../../protocol/options.js";
 import { PipelineRequestError } from "../../protocol/exceptions.js";
 import type {
   Runner,

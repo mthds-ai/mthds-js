@@ -30,7 +30,7 @@ import {
   RunStillRunningError,
 } from "./exceptions.js";
 import { isValidBaseUrl } from "../../config/config.js";
-import { assertExclusiveRunSources } from "../bundle.js";
+import { assertExclusiveRunSources, hasBundlePayload } from "../../protocol/options.js";
 
 export interface MthdsFile {
   /** File contents to validate. */
@@ -604,18 +604,6 @@ function buildExtensions(
     );
   }
   return { ...extra };
-}
-
-/**
- * Does the request carry a method bundle (the pipelex-api `files` / `bundle_b64`
- * extension)? A bundle satisfies the "something to run" precondition on its own —
- * it carries its own `.mthds`, so neither `pipe_code` nor `mthds_contents` is
- * required alongside it.
- */
-function hasBundlePayload(options: RunOptions): boolean {
-  const hasFiles = options.files != null && Object.keys(options.files).length > 0;
-  const hasZip = options.bundle_b64 != null && options.bundle_b64.length > 0;
-  return hasFiles || hasZip;
 }
 
 /**

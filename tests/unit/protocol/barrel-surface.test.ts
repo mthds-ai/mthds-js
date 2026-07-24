@@ -25,6 +25,7 @@ import type {
   StuffAbstract,
   StuffContentAbstract,
   WorkingMemoryAbstract,
+  MethodFile,
 } from "../../../src/protocol/index.js";
 
 /**
@@ -76,6 +77,7 @@ export type ProtocolTypeSurface = [
   StuffAbstract,
   StuffContentAbstract,
   WorkingMemoryAbstract,
+  MethodFile,
 ];
 
 describe("protocol barrel", () => {
@@ -87,6 +89,8 @@ describe("protocol barrel", () => {
       "assertExclusiveRunSources",
       "conceptRef",
       "hasBundlePayload",
+      "parseMethodFiles",
+      "serializeMethodFiles",
     ]);
   });
 });

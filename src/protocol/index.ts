@@ -29,6 +29,12 @@ export type {
 // client that builds a `RunRequest` enforces them from one definition.
 export { assertExclusiveRunSources, hasBundlePayload } from "./options.js";
 
+// ── Method-file (catalog) serialization ──────────────────────────────
+// The canonical `[{ name, content }]` form a stored method's source/`python`
+// serializes to; one owner so consumers stop re-porting the platform's parser.
+export type { MethodFile } from "./method_files.js";
+export { serializeMethodFiles, parseMethodFiles } from "./method_files.js";
+
 // ── Wire models ──────────────────────────────────────────────────────
 export { MTHDS_PROTOCOL_VERSION, MODEL_CATEGORIES } from "./models.js";
 export type {

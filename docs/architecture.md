@@ -51,7 +51,7 @@ The package's entry points differ in what they drag into a bundler's graph:
 | Import | Source | Carries | Bundles where | Use for |
 |---|---|---|---|---|
 | `mthds` | `src/index.ts` | protocol surface + `MthdsApiClient` + error classes | **server/Node** (statically pulls `MthdsApiClient → config/ → node:fs`) | the full SDK |
-| `mthds/protocol` | `src/protocol/index.ts` | the pure protocol surface — types + runtime values (`PipelineRequestError`, `MTHDS_PROTOCOL_VERSION`/`MODEL_CATEGORIES`, `conceptRef`, the run-source predicates `assertExclusiveRunSources`/`hasBundlePayload`) | isomorphic | the protocol surface, with no runner or Node deps |
+| `mthds/protocol` | `src/protocol/index.ts` | the pure protocol surface — types + runtime values (`PipelineRequestError`, `MTHDS_PROTOCOL_VERSION`/`MODEL_CATEGORIES`, `conceptRef`, the run-source predicates `assertExclusiveRunSources`/`hasBundlePayload`, the method-file serialization `serializeMethodFiles`/`parseMethodFiles`) | isomorphic | the protocol surface, with no runner or Node deps |
 | `mthds/errors` | `src/errors.ts` | the exception classes only | **client-safe** (no `node:fs`) | `instanceof` checks in client code |
 
 ### Why `mthds/errors` exists

@@ -4,7 +4,7 @@
 
 ### Changed
 
-- **Raised the runtime version floors `mthds-agent` enforces.** `PIPELEX_PKG.version_constraint` moves to `>=0.44.0` (the `pipelex` PyPI package, covering both the `pipelex` and `pipelex-agent` binaries), `PIPELEX_TOOLS_PKG.version_constraint` to `>=0.8.0` (the `pipelex-tools` package, covering the `plxt` binary), `MIN_PLUGIN_VERSION` to `>=0.15.1` (the Claude Code mthds plugin), and `MIN_CODEX_VERSION` to `0.144.0` (the Codex app, checked best-effort by `codex apply-config` and `doctor`). Below its floor each surface reports the way it did before — an install/upgrade recovery hint for the uv-installable packages, a `CODEX_VERSION_TOO_OLD` warning for Codex. `CODEX_PLUGIN_HOOKS_MIN` (the fixed `0.131.0` boundary below which plugin-bundled hooks cannot load) is unchanged.
+- **Raised the runtime version floors `mthds-agent` enforces.** `PIPELEX_PKG.version_constraint` moves to `>=0.46.4` (the `pipelex` PyPI package, covering both the `pipelex` and `pipelex-agent` binaries), `PIPELEX_TOOLS_PKG.version_constraint` to `>=0.8.0` (the `pipelex-tools` package, covering the `plxt` binary), `MIN_PLUGIN_VERSION` to `>=0.15.1` (the Claude Code mthds plugin), and `MIN_CODEX_VERSION` to `0.144.0` (the Codex app, checked best-effort by `codex apply-config` and `doctor`). Below its floor each surface reports the way it did before — an install/upgrade recovery hint for the uv-installable packages, a `CODEX_VERSION_TOO_OLD` warning for Codex. `CODEX_PLUGIN_HOOKS_MIN` (the fixed `0.131.0` boundary below which plugin-bundled hooks cannot load) is unchanged.
 
 ## [v0.22.0] - 2026-07-24
 

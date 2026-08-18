@@ -39,7 +39,10 @@ vi.mock("../../../src/agent/commands/codex.js", () => ({
 
 // Best-effort Codex app version check — default to "recent enough / undetectable"
 // so the generic tests stay version-agnostic; the dedicated cases below override.
-vi.mock("../../../src/agent/codex-version.js", () => ({
+// Only `assessCodexVersion` is stubbed: the real constants stay exported so the
+// fixtures below can derive the floor instead of hardcoding it.
+vi.mock("../../../src/agent/codex-version.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../../src/agent/codex-version.js")>()),
   assessCodexVersion: vi.fn(() => null),
 }));
 
@@ -56,6 +59,7 @@ import { checkBinaryVersion } from "../../../src/installer/runtime/version-check
 import { listConfig } from "../../../src/config/config.js";
 import { agentDoctor, OutputFormat } from "../../../src/agent/commands/doctor.js";
 import { BINARY_RECOVERY } from "../../../src/agent/binaries.js";
+import { MIN_CODEX_VERSION } from "../../../src/agent/codex-version.js";
 
 const PX_CONSTRAINT = BINARY_RECOVERY["pipelex"].version_constraint;
 
@@ -399,7 +403,7 @@ describe("agentDoctor", () => {
     vi.mocked(codexVersion.assessCodexVersion).mockReturnValueOnce({
       code: "CODEX_VERSION_TOO_OLD",
       severity: "warning",
-      message: "Codex 0.135.0 is older than 0.141.0, the minimum version the mthds plugin supports",
+      message: `Codex 0.135.0 is older than ${MIN_CODEX_VERSION}, the minimum version the mthds plugin supports`,
     });
 
     await agentDoctor(OutputFormat.JSON);

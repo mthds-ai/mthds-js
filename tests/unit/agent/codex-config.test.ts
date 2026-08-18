@@ -47,9 +47,14 @@ vi.mock("../../../src/agent/output.js", () => ({
 type VersionFinding = { code: string; severity: "warning" | "error"; message: string };
 const assessCodexVersionMock = vi.fn<() => VersionFinding | null>();
 
-vi.mock("../../../src/agent/codex-version.js", () => ({
+// Only `assessCodexVersion` is stubbed: the real constants stay exported so the
+// fixtures below can derive the floor instead of hardcoding it.
+vi.mock("../../../src/agent/codex-version.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../../src/agent/codex-version.js")>()),
   assessCodexVersion: () => assessCodexVersionMock(),
 }));
+
+import { MIN_CODEX_VERSION } from "../../../src/agent/codex-version.js";
 
 let agentCodexApplyConfig: (opts?: { check?: boolean; dryRun?: boolean }) => Promise<void>;
 
@@ -333,7 +338,7 @@ hooks = false
     assessCodexVersionMock.mockReturnValue({
       code: "CODEX_VERSION_TOO_OLD",
       severity: "warning",
-      message: "Codex 0.135.0 is older than 0.141.0, the minimum version the mthds plugin supports",
+      message: `Codex 0.135.0 is older than ${MIN_CODEX_VERSION}, the minimum version the mthds plugin supports`,
     });
 
     await agentCodexApplyConfig();
@@ -478,7 +483,7 @@ network_access = true
     assessCodexVersionMock.mockReturnValue({
       code: "CODEX_VERSION_TOO_OLD",
       severity: "warning",
-      message: "Codex 0.135.0 is older than 0.141.0, the minimum version the mthds plugin supports",
+      message: `Codex 0.135.0 is older than ${MIN_CODEX_VERSION}, the minimum version the mthds plugin supports`,
     });
     writeConfig(`[sandbox_workspace_write]
 network_access = true

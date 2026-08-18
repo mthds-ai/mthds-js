@@ -29,7 +29,7 @@ import semver from "semver";
 
 /** Minimum Codex app version the mthds plugin supports (see history above).
  *  Managed by the bump-required-versions skill alongside the other floors. */
-export const MIN_CODEX_VERSION = "0.141.0";
+export const MIN_CODEX_VERSION = "0.144.0";
 
 /** Below this version plugin-bundled hooks cannot load at all: they were
  *  gated behind the `plugin_hooks` opt-in (default-off before 0.131), and

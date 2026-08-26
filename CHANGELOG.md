@@ -1,5 +1,22 @@
 # Changelog
 
+## [v0.23.0] - 2026-08-27
+
+### Added
+
+- **MTHDS protocol extensions**: Added `src/protocol/pipe_io_contracts.ts` and `src/protocol/input_form.ts` mirroring the MTHDS v0.9.0 standard, providing strict closed-shape TypeScript types for the standard's two recommended validate extensions. `PipeIOContracts` covers the per-pipe input/output contracts (`PresenceMarker`, `IOMultiplicity`, and an `item_count` that is always on the wire); `InputForm` covers the ordered, recursive input-form descriptor discriminated on the closed `FieldKind` union (exported as `FIELD_KINDS` at run time). Both ride `ValidationReport`'s extension fields rather than becoming base fields — the protocol's base did not change — and both are exported from `mthds/protocol` and the top-level barrel. `protocol/` stays pure: types only, no runtime validator. The pairing rules the pages state are encoded structurally rather than left as prose: both contracts are unions discriminated on `multiplicity` (`item_count` non-`null` exactly on the fixed arm, plural inputs always `presence: "plain"`, plural outputs never optional), and the two pipe-slot facts `presence` and `gating` are required members of the new `InputFormTopLevelField` — the shape of a descriptor's `fields` entries — and appear on no nested shape, mirroring the parse-time checks `mthds-python` enforces on the same fixture.
+- **Protocol parity fixtures**: Added a fixture system under `tests/fixtures/protocol/`, shared with `mthds-python`, containing one real JSON payload pair from `pipelex` 0.53.0 committed byte-for-byte identical in both mirrors of the standard. Added `scripts/gen-protocol-fixture-twins.mjs` (via `npm run fixtures:protocol`) to generate TypeScript literal twins (`.fixture.ts`) for compile-time excess-property and discriminant checks; the README beside the fixtures records their provenance and the engine divergences the standard's pages rule against.
+- **Validation tests**: Added `tests/unit/protocol/input-form-parity.test.ts` and `input-form-shapes.test.ts` to assert cross-artifact rules, per-kind shape constraints, and exact parity with the reference engine's JSON output. Extended `barrel-surface.test.ts` so the new exports cannot drift out of the public surface silently.
+
+### Changed
+
+- **Architecture documentation**: Updated `docs/architecture.md` to document the new protocol extensions, clarifying the strict typing of `pipe_io_contracts` and `input_form`, why they are typed here rather than in `@pipelex/sdk`, and the boundary between MTHDS standard artifacts and Pipelex-specific artifacts.
+- **Contract-check skill**: Updated `.claude/skills/contract-check/SKILL.md` to reference `docs/specs/pipelex-codegen.md` as the canonical spec for the `/v1/build/*` wire surface (`files[]`, `pipe_ref`, discriminated `is_valid` verdicts, and payload splits).
+
+### Fixed
+
+- **Config test isolation**: `tests/unit/config/config.test.ts` now strips ambient `MTHDS_*` variables (and `DISABLE_TELEMETRY`) before each test. Env legitimately beats file in the config precedence, so a real `MTHDS_API_KEY` exported in the developer's shell used to override the temp config file the tests write and fail the file-layer assertions.
+
 ## [v0.22.1] - 2026-08-13
 
 ### Changed

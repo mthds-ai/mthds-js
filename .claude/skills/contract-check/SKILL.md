@@ -23,14 +23,16 @@ Do not proceed with the review if specs are missing.
 
 ### The spec set in scope
 
-`docs/specs/` holds more specs than this skill checks. Only these four touch mthds-js code:
+`docs/specs/` holds more specs than this skill checks. Only these touch mthds-js code:
 
 | Spec | mthds-js's relationship | Owner repo |
 |---|---|---|
 | `mthds-agent-cli.md` | **owns** — defines the `mthds` + `mthds-agent` CLIs this package ships | mthds-js |
 | `pipelex-mthds-protocol.md` | **implements/consumes** — the API runner (`MthdsApiClient`) is a protocol client; the wire shapes (validate report + model deck, RFC 7807 errors, `pipe_ref` identity) are this spec | pipelex + pipelex-api |
+| `mthds-input-form-descriptor.md` | **implements** — the carriage spec for the two standard-owned validate extensions (`pipe_io_contracts`, `input_form`) that `src/protocol/pipe_io_contracts.ts` and `src/protocol/input_form.ts` type; it defers the artifacts' *shape* to the normative pages in `mthds/docs/spec/`, so check both | pipelex + pipelex-api (carriage), the standard (shape) |
 | `plxt-cli.md` | **consumes** — passthrough invokes the `plxt` binary | vscode-pipelex |
 | `hook-lint-pipeline.md` | **participates** — the hook calls `mthds-agent validate bundle`, and `codex-hook.ts` runs a parallel lint→fmt→validate pipeline | mthds-plugins |
+| `pipelex-codegen.md` | **implements/consumes** — its "Route envelopes" section is the canonical spec for the `/v1/build/*` wire surface (`files[]`, qualified `pipe_ref`, the discriminated `is_valid` verdicts, the format-following payload split) that `src/runners/api/client.ts`, `src/runners/pipelex/runner.ts` and `src/cli/commands/build.ts` implement | pipelex + pipelex-api |
 
 The other specs (`pipelex-validation-api.md`, `mthds-ui-graph-viewer.md`) describe surfaces mthds-js neither ships nor calls — ignore them unless the user asks.
 
@@ -72,6 +74,7 @@ Read `../docs/specs/mthds-agent-cli.md`'s `sources:` and diff exactly those glob
 | Spec | mthds-js files |
 |---|---|
 | `pipelex-mthds-protocol.md` | `src/runners/api/**` (the `MthdsApiClient` wire surface, run lifecycle, Dict models, transport errors), `src/protocol/**` (the protocol interface + wire models), `src/runners/types.ts` |
+| `mthds-input-form-descriptor.md` | `src/protocol/pipe_io_contracts.ts`, `src/protocol/input_form.ts` (the typed validate extensions) |
 | `plxt-cli.md` | `src/agent/passthrough.ts`, `src/agent/binaries.ts` (how `plxt` is invoked and version-pinned) |
 | `hook-lint-pipeline.md` | `src/agent/commands/codex-hook.ts`, plus the `mthds-agent validate bundle` surface in `src/agent/commands/` |
 
@@ -127,6 +130,8 @@ For each contract-visible change, read the relevant spec and compare:
 | Passthrough to `plxt` (arguments, flags forwarded, version pin) | `../docs/specs/plxt-cli.md` |
 | Passthrough to `pipelex-agent` | `../docs/specs/mthds-agent-cli.md` (runner-aware section) |
 | Hook-facing behavior (`codex-hook.ts`, the lint/fmt/validate pipeline, the `validate bundle` envelope the hook parses) | `../docs/specs/hook-lint-pipeline.md` |
+| Build/codegen route shapes — the `files[]` envelope, `pipe_ref` defaulting to `main_pipe`, the `200` + `is_valid` verdict discipline, the `inputs`/`inputs_toml` and `output`/`output_python` payload split, `allow_signatures` handling, the `structures` projection | `../docs/specs/pipelex-codegen.md` |
+| The standard's validate extensions — the `pipe_io_contracts` contract members, the closed `FieldKind` union and its per-kind slots, the common field slots, where `item_count` is present versus `null` | `../docs/specs/mthds-input-form-descriptor.md` for the carriage, and the normative shape pages it points at (`mthds/docs/spec/pipe-io-contracts.md`, `mthds/docs/spec/input-form-descriptor.md`, `mthds/docs/spec/intent-hints.md`) |
 | `mthds` interactive CLI | No spec exists yet — flag new commands/options for the user's awareness, but no spec comparison needed |
 
 **Pipelex stub sync check** (always run, even if `pipelex-commands.ts` itself didn't change):
@@ -168,6 +173,8 @@ Start the report with a header block, then the summary table, then the detailed 
 - `docs/specs/pipelex-mthds-protocol.md` — MTHDS Protocol wire surface (owned by pipelex + pipelex-api; implemented by the API runner)
 - `docs/specs/plxt-cli.md` — plxt CLI (owned by vscode-pipelex; consumed via passthrough)
 - `docs/specs/hook-lint-pipeline.md` — hook pipeline (owned by mthds-plugins; participated in by codex-hook.ts)
+- `docs/specs/pipelex-codegen.md` — the `/v1/build/*` wire surface (owned by pipelex + pipelex-api; implemented by both runners)
+- `docs/specs/mthds-input-form-descriptor.md` — carriage of the standard's validate extensions (shape owned by the standard; typed in `src/protocol/`)
 ```
 
 ### Summary Table

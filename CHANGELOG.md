@@ -13,6 +13,10 @@
 - **Architecture documentation**: Updated `docs/architecture.md` to document the new protocol extensions, clarifying the strict typing of `pipe_io_contracts` and `input_form`, why they are typed here rather than in `@pipelex/sdk`, and the boundary between MTHDS standard artifacts and Pipelex-specific artifacts.
 - **Contract-check skill**: Updated `.claude/skills/contract-check/SKILL.md` to reference `docs/specs/pipelex-codegen.md` as the canonical spec for the `/v1/build/*` wire surface (`files[]`, `pipe_ref`, discriminated `is_valid` verdicts, and payload splits).
 
+### Fixed
+
+- **Config test isolation**: `tests/unit/config/config.test.ts` now strips ambient `MTHDS_*` variables (and `DISABLE_TELEMETRY`) before each test. Env legitimately beats file in the config precedence, so a real `MTHDS_API_KEY` exported in the developer's shell used to override the temp config file the tests write and fail the file-layer assertions.
+
 ## [v0.22.1] - 2026-08-13
 
 ### Changed

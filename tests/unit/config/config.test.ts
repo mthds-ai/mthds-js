@@ -29,6 +29,16 @@ describe("config", () => {
   beforeEach(() => {
     tempHome = mkdtempSync(join(tmpdir(), "mthds-test-"));
     vi.unstubAllEnvs();
+    // Env beats file in the config precedence, so any MTHDS_* variable exported by
+    // the shell running vitest (a developer's real MTHDS_API_KEY, typically) would
+    // leak into every assertion. unstubAllEnvs only clears stubs, not ambient env —
+    // stub each ambient config variable to undefined so it is deleted for the test
+    // and restored afterwards.
+    for (const name of Object.keys(process.env)) {
+      if (name.startsWith("MTHDS_") || name === "DISABLE_TELEMETRY") {
+        vi.stubEnv(name, undefined);
+      }
+    }
   });
 
   afterEach(() => {

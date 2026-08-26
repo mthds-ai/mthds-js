@@ -52,6 +52,41 @@ export type {
 export type { VariableMultiplicity, PipeOutputAbstract } from "./pipe_output.js";
 export type { StuffContentOrData, PipelineInputs } from "./pipeline_inputs.js";
 
+// ── Validate extensions the standard recommends ──────────────────────
+// The two artifacts MTHDS v0.9.0 defines as pages of their own and names as
+// recommended extension fields of the validate response — `pipe_io_contracts`
+// (mirror of `mthds/protocol/pipe_io_contracts.py`) and `input_form` (mirror of
+// `mthds/protocol/input_form.py`). Types only; the one runtime value is the
+// closed kind vocabulary, `FIELD_KINDS`, from which `FieldKind` is derived.
+export type {
+  IOMultiplicity,
+  PresenceMarker,
+  PipeInputContract,
+  PipeOutputContract,
+  PipeIOContract,
+  PipeIOContracts,
+} from "./pipe_io_contracts.js";
+export { FIELD_KINDS } from "./input_form.js";
+export type {
+  FieldKind,
+  IntentHints,
+  InputFormField,
+  InputFormItem,
+  TextFieldNode,
+  ProseFieldNode,
+  DateFieldNode,
+  NumberFieldNode,
+  BooleanFieldNode,
+  EnumFieldNode,
+  DocumentFieldNode,
+  ImageFieldNode,
+  ObjectFieldNode,
+  ListFieldNode,
+  UnknownFieldNode,
+  PipeInputFormDescriptor,
+  InputForm,
+} from "./input_form.js";
+
 // ── Abstract domain shapes (exact mirror of mthds-python) ─────────────
 export { conceptRef } from "./concept.js";
 export type { ConceptAbstract } from "./concept.js";

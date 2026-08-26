@@ -1,5 +1,12 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- **The standard's recommended validate extensions are typed on `mthds/protocol`.** Two new protocol modules mirror the pages MTHDS v0.9.0 published: `src/protocol/pipe_io_contracts.ts` follows "Pipe I/O Contracts" (`mthds/docs/spec/pipe-io-contracts.md`) with `PipeIOContracts` → `PipeIOContract` → `PipeInputContract` / `PipeOutputContract`, `IOMultiplicity` and `PresenceMarker`; `src/protocol/input_form.ts` follows "Input-Form Descriptor" (`mthds/docs/spec/input-form-descriptor.md`, with the `hints` slot's shape from "Intent Hints") with `InputForm` → `PipeInputFormDescriptor` → the recursive `InputFormField`, discriminated on the closed `FieldKind` union (`FIELD_KINDS` at run time, the `MODEL_CATEGORIES` precedent), its per-kind node interfaces, `InputFormItem` (a `list`'s `item`: the same node minus `name`) and `IntentHints`. Types only, snake_case wire names, closed shapes (an unknown member is version drift; the validate report itself stays extension-open); both ride `ValidationReport`'s extension fields `pipe_io_contracts` and `input_form` — named on its docstring, not added as base fields, since the protocol's base did not change. Exported from `mthds/protocol` and the top-level barrel; `protocol/` stays pure. This is the reshape catch-up ledger item `L-260823-0cebf8` asked for — input contracts now carry `presence` (`plain` | `optional` | `force`) instead of a boolean, and both sides carry the three-valued `multiplicity` plus `item_count` — and it warrants a **minor** bump.
+- **A protocol parity fixture, shared with `mthds-python`.** `tests/fixtures/protocol/input_form.json` and `pipe_io_contracts.json` are one real payload pair from `pipelex` 0.53.0, committed byte-for-byte identical in both mirrors of the standard. `npm run fixtures:protocol` generates their TypeScript twins (the payload as a literal declared `InputForm` / `PipeIOContracts`), which is the compile-time parity check; `tests/unit/protocol/input-form-parity.test.ts` keeps the twins equal to the JSON and asserts the pages' cross-artifact rules. The README beside the fixture records its provenance and the engine divergences the standard's pages rule against (`L-260826-236839`, `L-260826-0ed8dd`).
+
 ## [v0.22.1] - 2026-08-13
 
 ### Changed

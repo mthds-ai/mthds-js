@@ -90,11 +90,27 @@ export interface ModelDeck {
  * declares no further body fields; implementations may include their own
  * artifacts (parsed structures, graphs, anything else), preserved here as
  * extension fields.
+ *
+ * Two of those extensions the standard itself defines and recommends, under
+ * fixed field names: `pipe_io_contracts` — the per-pipe input/output contracts,
+ * typed as `PipeIOContracts` in `./pipe_io_contracts.ts` — and `input_form` —
+ * the per-pipe ordered input-form descriptor, typed as `InputForm` in
+ * `./input_form.ts`. They are *recommended extension fields*, not base fields
+ * (the protocol's base did not change when the standard adopted them, and how
+ * a caller asks an implementation for the descriptor stays
+ * implementation-defined), so they ride the index signature here and a
+ * consumer narrows them by import: `report.pipe_io_contracts as PipeIOContracts`.
+ * Unlike this report, both artifacts are closed shapes.
  */
 export interface ValidationReport {
   /** Discriminant of the valid arm of the 200 response union. */
   is_valid: true;
-  /** Implementation extension fields (e.g. `bundle_blueprint`, `graph_spec`, `pipe_io_contracts`, `validated_pipes`, `pending_signatures`, `is_runnable`). */
+  /**
+   * Implementation extension fields (e.g. `bundle_blueprint`, `graph_spec`,
+   * `validated_pipes`, `pending_signatures`, `is_runnable`) — and the standard's
+   * two recommended ones, `pipe_io_contracts` (`PipeIOContracts`) and
+   * `input_form` (`InputForm`).
+   */
   [extension: string]: unknown;
 }
 

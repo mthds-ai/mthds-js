@@ -130,6 +130,17 @@ describe("protocol parity fixtures — the pages' cross-artifact rules", () => {
     }
   });
 
+  it("item_count is a top-level fact — no nested list node carries it", () => {
+    for (const descriptor of Object.values(INPUT_FORM_FIXTURE)) {
+      for (const field of descriptor.fields) {
+        for (const node of walkNodes(field)) {
+          if (node === field) continue;
+          if (node.kind === "list") expect("item_count" in node).toBe(false);
+        }
+      }
+    }
+  });
+
   it("a defaulted field always reports required: false", () => {
     for (const node of allNodes()) {
       if ("default_value" in node) expect(node.required).toBe(false);

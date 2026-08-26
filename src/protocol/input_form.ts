@@ -86,7 +86,8 @@ export type IntentHints = Record<string, string>;
 /**
  * The slots every node carries whatever its kind — everything but the authored
  * identifier `name`, which a `list`'s `item` does not have (see `InputFormItem`
- * and `InputFormField`).
+ * and `InputFormField`), and the two pipe-slot facts `presence` and `gating`,
+ * which only a top-level field states (see `InputFormTopLevelField`).
  */
 interface InputFormNodeCommon {
   /**
@@ -122,21 +123,6 @@ interface InputFormNodeCommon {
    * the run may start is the separate `gating` fact.
    */
   required: boolean;
-  /**
-   * Top-level fields only: the authored presence marker of the pipe's input
-   * slot, three-valued so `!` is not flattened away. Nested fields carry no
-   * `presence` — presence is a pipe-slot fact.
-   */
-  presence?: PresenceMarker;
-  /**
-   * Top-level fields only: the run cannot start until the caller provides
-   * content for this slot; a nested field gates through its parent. Stated
-   * rather than left to a consumer to re-derive, because it is not `required`:
-   * the rule is `presence !== "optional"` and not (`kind === "list"` without
-   * `item_count`) — a variable list is required, yet `[]` satisfies it, so it
-   * never gates; a fixed `[N]` list does.
-   */
-  gating?: boolean;
   /**
    * The value applied when the caller omits the field. Present only when a
    * default was authored — the `null` a schema projection attaches to every
@@ -296,6 +282,32 @@ export type InputFormItem =
 export type InputFormField = InputFormItem & { name: string };
 
 /**
+ * A top-level field — the shape of a `PipeInputFormDescriptor.fields` entry,
+ * and the only layer that carries the two pipe-slot facts. Both are required:
+ * the page gives their applicability as "top-level fields only" and derives a
+ * determinate value for every authorable slot form, so "absent" is never a
+ * legitimate answer here. Neither appears on any nested shape — the same
+ * structural mechanism that keeps `name` off a list's `item`.
+ */
+export type InputFormTopLevelField = InputFormField & {
+  /**
+   * The authored presence marker of the pipe's input slot, three-valued so `!`
+   * is not flattened away. Nested fields carry no `presence` — presence is a
+   * pipe-slot fact.
+   */
+  presence: PresenceMarker;
+  /**
+   * The run cannot start until the caller provides content for this slot; a
+   * nested field gates through its parent. Stated rather than left to a
+   * consumer to re-derive, because it is not `required`: the rule is
+   * `presence !== "optional"` and not (`kind === "list"` without `item_count`)
+   * — a variable list is required, yet `[]` satisfies it, so it never gates; a
+   * fixed `[N]` list does.
+   */
+  gating: boolean;
+};
+
+/**
  * The input form of one pipe — one entry of `InputForm`. `fields` holds one
  * descriptor per declared input slot, **in authored input order** — the order
  * the contract's `inputs` map deliberately does not carry, and the reason the
@@ -304,7 +316,7 @@ export type InputFormField = InputFormItem & { name: string };
  * form is a valid form, not an omitted entry. Closed shape.
  */
 export interface PipeInputFormDescriptor {
-  fields: InputFormField[];
+  fields: InputFormTopLevelField[];
 }
 
 /**

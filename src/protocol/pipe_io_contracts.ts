@@ -48,32 +48,16 @@ export type IOMultiplicity = "single" | "variable" | "fixed";
 export type PresenceMarker = "plain" | "optional" | "force";
 
 /**
- * One declared input slot — an entry of `PipeIOContract.inputs`, keyed by the
- * authored input name (dotted names included). Closed shape.
+ * The members every input slot carries whatever its multiplicity. Not exported:
+ * the consumer-facing shape is the `PipeInputContract` union.
  */
-export interface PipeInputContract {
+interface PipeInputContractCommon {
   /**
    * The fully-qualified concept the slot expects, with any multiplicity suffix
    * stripped — a `Concept[]` slot names `Concept`. Plurality is stated by
    * `multiplicity`, never here.
    */
   concept_ref: string;
-  /**
-   * The authored presence marker. Markers may not be combined with
-   * multiplicity, so a slot whose `multiplicity` is `"variable"` or `"fixed"`
-   * always reports `"plain"`.
-   */
-  presence: PresenceMarker;
-  /** How many items the slot takes. */
-  multiplicity: IOMultiplicity;
-  /**
-   * The exact item count, non-`null` exactly when `multiplicity` is `"fixed"`
-   * (and then always greater than one). **Always on the wire**, `null` off the
-   * fixed arm — the input-form descriptor makes the opposite choice and omits
-   * its `item_count` when it does not apply; the two artifacts differ
-   * deliberately, and each states its own rule.
-   */
-  item_count: number | null;
   /**
    * The JSON Schema the slot's *content* must satisfy — what the caller puts in
    * the slot, not the slot's envelope. A plural slot's schema is an array
@@ -86,30 +70,83 @@ export interface PipeInputContract {
 }
 
 /**
+ * One declared input slot — an entry of `PipeIOContract.inputs`, keyed by the
+ * authored input name (dotted names included). Closed shape.
+ *
+ * A union discriminated on `multiplicity`, so the page's pairing rules are the
+ * type rather than prose beside it:
+ *   - `item_count` is non-`null` exactly when `multiplicity` is `"fixed"`, and
+ *     **always on the wire**, `null` off the fixed arm — the input-form
+ *     descriptor makes the opposite choice and omits its `item_count` when it
+ *     does not apply; the two artifacts differ deliberately, and each states
+ *     its own rule;
+ *   - markers may not be combined with multiplicity, so a plural slot
+ *     (`"variable"` or `"fixed"`) always reports `presence: "plain"` — the
+ *     three-valued marker only lives on the single arm.
+ * The one pairing a type cannot state: a fixed count is always greater than
+ * one (`Concept[1]` is a way of writing `Concept` and reports `"single"`).
+ * That half stays a producer obligation.
+ */
+export type PipeInputContract =
+  | (PipeInputContractCommon & {
+      presence: PresenceMarker;
+      multiplicity: "single";
+      item_count: null;
+    })
+  | (PipeInputContractCommon & {
+      presence: "plain";
+      multiplicity: "variable";
+      item_count: null;
+    })
+  | (PipeInputContractCommon & {
+      presence: "plain";
+      multiplicity: "fixed";
+      item_count: number;
+    });
+
+/**
+ * The member every output slot carries whatever its multiplicity. Not
+ * exported: the consumer-facing shape is the `PipeOutputContract` union.
+ */
+interface PipeOutputContractCommon {
+  /** The fully-qualified concept the pipe produces, multiplicity suffix stripped. */
+  concept_ref: string;
+}
+
+/**
  * What one pipe resolves to. Deliberately asymmetric with the input side: an
  * output carries a two-valued `optional` where an input carries a three-valued
  * `presence`, because `!` MUST NOT appear on `output` — a force marker is a
  * use-site assertion about an input, so a three-valued output slot would have
- * an arm nothing can ever produce. No output member carries a schema: the
- * payload a run actually produces is the run's own result. Closed shape.
+ * an arm nothing can ever produce. `optional` is `true` when the output is
+ * declared optional (`?`): a *successful* run may resolve it as a recorded
+ * absence instead of a value — not that the run may fail. No output member
+ * carries a schema: the payload a run actually produces is the run's own
+ * result. Closed shape.
+ *
+ * A union discriminated on `multiplicity`, the same pairing rules as the
+ * input: `item_count` is non-`null` exactly on the fixed arm (and then always
+ * greater than one — the half a type cannot state, left as a producer
+ * obligation), and because a marker may not be combined with multiplicity, a
+ * plural output is never optional — `optional: true` only lives on the single
+ * arm.
  */
-export interface PipeOutputContract {
-  /** The fully-qualified concept the pipe produces, multiplicity suffix stripped. */
-  concept_ref: string;
-  /**
-   * How many items the pipe resolves to — the same three values and the same
-   * `[1]`-is-single rule as an input.
-   */
-  multiplicity: IOMultiplicity;
-  /** The exact item count, non-`null` exactly when `multiplicity` is `"fixed"`. */
-  item_count: number | null;
-  /**
-   * `true` when the output is declared optional (`?`): a *successful* run may
-   * resolve it as a recorded absence instead of a value — not that the run may
-   * fail.
-   */
-  optional: boolean;
-}
+export type PipeOutputContract =
+  | (PipeOutputContractCommon & {
+      multiplicity: "single";
+      item_count: null;
+      optional: boolean;
+    })
+  | (PipeOutputContractCommon & {
+      multiplicity: "variable";
+      item_count: null;
+      optional: false;
+    })
+  | (PipeOutputContractCommon & {
+      multiplicity: "fixed";
+      item_count: number;
+      optional: false;
+    });
 
 /**
  * The contract of one pipe — one entry of `PipeIOContracts`. Both members are

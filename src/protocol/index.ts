@@ -72,6 +72,7 @@ export type {
   IntentHints,
   InputFormField,
   InputFormItem,
+  InputFormTopLevelField,
   TextFieldNode,
   ProseFieldNode,
   DateFieldNode,

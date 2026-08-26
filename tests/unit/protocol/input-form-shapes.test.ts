@@ -4,13 +4,17 @@ import type {
   FieldKind,
   InputFormField,
   InputFormItem,
+  InputFormTopLevelField,
   ListFieldNode,
   NumberFieldNode,
+  PipeInputFormDescriptor,
 } from "../../../src/protocol/input_form.js";
 import type {
+  IOMultiplicity,
   PipeInputContract,
   PipeIOContract,
   PipeOutputContract,
+  PresenceMarker,
 } from "../../../src/protocol/pipe_io_contracts.js";
 
 /**
@@ -37,6 +41,21 @@ export type KindUnionIsTheTuple = Expect<Equal<FieldKind, (typeof FIELD_KINDS)[n
 /** A list's item is the field shape minus `name` — no member of the union carries one. */
 export type ItemHasNoName = Expect<Equal<"name" extends keyof InputFormItem ? true : false, false>>;
 export type FieldNameIsRequired = Expect<Equal<InputFormField["name"], string>>;
+/** The pipe-slot facts are top-level only: no nested shape carries either. */
+export type ItemHasNoPresence = Expect<
+  Equal<"presence" extends keyof InputFormItem ? true : false, false>
+>;
+export type FieldHasNoGating = Expect<
+  Equal<"gating" extends keyof InputFormField ? true : false, false>
+>;
+/** …and a top-level field states both (the `| undefined` an optional slot would add fails Equal). */
+export type TopLevelPresenceIsRequired = Expect<
+  Equal<InputFormTopLevelField["presence"], PresenceMarker>
+>;
+export type TopLevelGatingIsRequired = Expect<Equal<InputFormTopLevelField["gating"], boolean>>;
+export type DescriptorFieldsAreTopLevel = Expect<
+  Equal<PipeInputFormDescriptor["fields"], InputFormTopLevelField[]>
+>;
 /** The descriptor omits `item_count` off the fixed arm; the contract carries `null` there. */
 export type DescriptorItemCountIsAbsentOrNumber = Expect<
   Equal<ListFieldNode["item_count"], number | undefined>
@@ -44,12 +63,36 @@ export type DescriptorItemCountIsAbsentOrNumber = Expect<
 export type ContractItemCountIsAlwaysOnTheWire = Expect<
   Equal<PipeInputContract["item_count"], number | null>
 >;
+/** The contract unions discriminate on the full closed multiplicity vocabulary. */
+export type InputContractCoversEveryMultiplicity = Expect<
+  Equal<PipeInputContract["multiplicity"], IOMultiplicity>
+>;
+export type OutputContractCoversEveryMultiplicity = Expect<
+  Equal<PipeOutputContract["multiplicity"], IOMultiplicity>
+>;
+/** The pairing rules the pages state, as narrowing: count non-`null` exactly on the fixed arm… */
+export type FixedInputCountIsNumber = Expect<
+  Equal<Extract<PipeInputContract, { multiplicity: "fixed" }>["item_count"], number>
+>;
+export type SingleInputCountIsNull = Expect<
+  Equal<Extract<PipeInputContract, { multiplicity: "single" }>["item_count"], null>
+>;
+export type FixedOutputCountIsNumber = Expect<
+  Equal<Extract<PipeOutputContract, { multiplicity: "fixed" }>["item_count"], number>
+>;
+/** …markers never combine with multiplicity: a plural input is plain, a plural output never optional. */
+export type PluralInputPresenceIsPlain = Expect<
+  Equal<Extract<PipeInputContract, { multiplicity: "variable" | "fixed" }>["presence"], "plain">
+>;
+export type PluralOutputIsNeverOptional = Expect<
+  Equal<Extract<PipeOutputContract, { multiplicity: "variable" | "fixed" }>["optional"], false>
+>;
 export type NumberStatesInteger = Expect<Equal<NumberFieldNode["integer"], boolean>>;
 export type OutputOptionalIsTwoValued = Expect<Equal<PipeOutputContract["optional"], boolean>>;
 
 // ── Positive cases: what the pages' own examples look like ──────────────────
 
-const fixedList: InputFormField = {
+const fixedList: InputFormTopLevelField = {
   kind: "list",
   name: "clauses",
   concept_ref: "legal.Clause",
@@ -66,7 +109,7 @@ const fixedList: InputFormField = {
   item_count: 3,
 };
 
-const objectWithEnum: InputFormField = {
+const objectWithEnum: InputFormTopLevelField = {
   kind: "object",
   name: "review",
   concept_ref: "demo.Review",
@@ -156,6 +199,28 @@ const dateWithoutDatetime: InputFormField = {
   required: true,
 };
 
+// @ts-expect-error a top-level field states both pipe-slot facts
+const topLevelWithoutSlotFacts: InputFormTopLevelField = {
+  kind: "boolean",
+  name: "flag",
+  required: true,
+};
+
+const nestedWithPresence: InputFormField = {
+  kind: "object",
+  name: "review",
+  required: true,
+  fields: [
+    {
+      kind: "text",
+      name: "headline",
+      required: true,
+      // @ts-expect-error presence is a pipe-slot fact, stated on top-level fields only
+      presence: "plain",
+    },
+  ],
+};
+
 const contractWithExtraMember: PipeIOContract = {
   inputs: {},
   output: {
@@ -180,6 +245,60 @@ const contractWithFlattenedPresence: PipeIOContract = {
     },
   },
   output: { concept_ref: "x.Y", multiplicity: "single", item_count: null, optional: false },
+};
+
+// The pairing rules, as the invalid literals mthds-python's validators reject.
+
+// @ts-expect-error the fixed arm states its exact count, never null
+const inputFixedWithoutCount: PipeInputContract = {
+  concept_ref: "x.Y",
+  presence: "plain",
+  multiplicity: "fixed",
+  item_count: null,
+  json_schema: {},
+};
+
+// @ts-expect-error item_count is null off the fixed arm — [1] is a way of writing Concept
+const inputSingleWithCount: PipeInputContract = {
+  concept_ref: "x.Y",
+  presence: "plain",
+  multiplicity: "single",
+  item_count: 1,
+  json_schema: {},
+};
+
+// @ts-expect-error markers may not combine with multiplicity: a plural slot is plain
+const inputVariableOptional: PipeInputContract = {
+  concept_ref: "x.Y",
+  presence: "optional",
+  multiplicity: "variable",
+  item_count: null,
+  json_schema: {},
+};
+
+// @ts-expect-error markers may not combine with multiplicity: a plural slot is plain
+const inputFixedForced: PipeInputContract = {
+  concept_ref: "x.Y",
+  presence: "force",
+  multiplicity: "fixed",
+  item_count: 2,
+  json_schema: {},
+};
+
+// @ts-expect-error the fixed arm states its exact count, never null
+const outputFixedWithoutCount: PipeOutputContract = {
+  concept_ref: "x.Y",
+  multiplicity: "fixed",
+  item_count: null,
+  optional: false,
+};
+
+// @ts-expect-error a plural output is never optional — ? may not ride multiplicity
+const outputFixedOptional: PipeOutputContract = {
+  concept_ref: "x.Y",
+  multiplicity: "fixed",
+  item_count: 2,
+  optional: true,
 };
 
 describe("input-form and contract shapes", () => {
@@ -209,10 +328,23 @@ describe("input-form and contract shapes", () => {
       itemWithName,
       numberWithoutInteger,
       dateWithoutDatetime,
+      topLevelWithoutSlotFacts,
+      nestedWithPresence,
     ];
     expect(cases.map((field) => field.name)).toHaveLength(cases.length);
     expect(Object.keys(contract.inputs)).toEqual(["clauses", "instructions"]);
     expect(contractWithExtraMember.output.optional).toBe(false);
     expect(contractWithFlattenedPresence.inputs.a.multiplicity).toBe("single");
+    const invalidContractSlots = [
+      inputFixedWithoutCount,
+      inputSingleWithCount,
+      inputVariableOptional,
+      inputFixedForced,
+      outputFixedWithoutCount,
+      outputFixedOptional,
+    ];
+    expect(invalidContractSlots.map((slot) => slot.concept_ref)).toHaveLength(
+      invalidContractSlots.length,
+    );
   });
 });

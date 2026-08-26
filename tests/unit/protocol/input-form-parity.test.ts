@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { FIELD_KINDS } from "../../../src/protocol/input_form.js";
-import type { InputFormField, InputFormItem } from "../../../src/protocol/input_form.js";
+import type { InputFormItem, InputFormTopLevelField } from "../../../src/protocol/input_form.js";
 import type { IOMultiplicity, PresenceMarker } from "../../../src/protocol/pipe_io_contracts.js";
 import { INPUT_FORM_FIXTURE } from "../../fixtures/protocol/input_form.fixture.js";
 import { PIPE_IO_CONTRACTS_FIXTURE } from "../../fixtures/protocol/pipe_io_contracts.fixture.js";
@@ -93,7 +93,7 @@ describe("protocol parity fixtures — the pages' cross-artifact rules", () => {
   it("each top-level field matches its slot's contract on order, concept, presence and plurality", () => {
     for (const [pipeRef, descriptor] of Object.entries(INPUT_FORM_FIXTURE)) {
       const inputs = PIPE_IO_CONTRACTS_FIXTURE[pipeRef].inputs;
-      const fields: InputFormField[] = descriptor.fields;
+      const fields: InputFormTopLevelField[] = descriptor.fields;
       expect(fields.map((field) => field.name)).toEqual(Object.keys(inputs));
       for (const field of fields) {
         const contract = inputs[field.name];

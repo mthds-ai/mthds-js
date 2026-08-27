@@ -187,15 +187,18 @@ describe("protocol parity fixtures — the pages' cross-artifact rules", () => {
   });
 
   it("a native concept with a pinned structure lands on the object arm, not a scalar", () => {
+    const expectedFields: Record<string, string[]> = {
+      "native.Date": ["date", "time"],
+      "native.Html": ["inner_html", "css_class"],
+    };
     const fields = INPUT_FORM_FIXTURE["input_semantics_probe.probe_native_inputs"].fields;
-    const structured = fields.filter(
-      (field) => field.concept_ref === "native.Date" || field.concept_ref === "native.Html",
-    );
-    expect(structured).toHaveLength(2);
-    for (const field of structured) {
+    for (const [conceptRef, names] of Object.entries(expectedFields)) {
+      const field = fields.find((candidate) => candidate.concept_ref === conceptRef);
+      expect(field).toBeDefined();
+      if (!field) continue;
       expect(field.kind).toBe("object");
       if (field.kind !== "object") continue;
-      expect(field.fields.map((nested) => nested.name)).not.toHaveLength(0);
+      expect(field.fields.map((nested) => nested.name)).toEqual(names);
     }
   });
 });

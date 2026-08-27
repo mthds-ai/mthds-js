@@ -288,24 +288,35 @@ export type InputFormField = InputFormItem & { name: string };
  * determinate value for every authorable slot form, so "absent" is never a
  * legitimate answer here. Neither appears on any nested shape — the same
  * structural mechanism that keeps `name` off a list's `item`.
+ *
+ * A union discriminated on `required`, so the page's derivations are the type
+ * rather than prose beside it — the idiom of `PipeInputContract`:
+ *   - a top-level `required` restates the marker, `presence !== "optional"`
+ *     exactly as the page derives it, so `required: true` pairs only with
+ *     `"plain"` or `"force"` (the `Exclude` keeps the arm tied to the marker
+ *     vocabulary) and `required: false` only with `"optional"` —
+ *     `mthds-python` rejects the same two literals at the parse
+ *     (`validate_required_restates_presence`);
+ *   - an optional slot never gates: the page's gating table derives
+ *     `gating: false` for `Concept?` unconditionally, so the optional arm
+ *     pins it.
+ * The one derivation a type cannot state: on the required arm, `gating` is
+ * `false` exactly when the slot is a variable list (`kind === "list"` without
+ * `item_count`) — a variable list is required, yet `[]` satisfies it, so it
+ * never gates; a fixed `[N]` list does. That half stays a producer
+ * obligation, and is why `gating` is stated on the wire at all rather than
+ * left to a consumer to re-derive.
+ *
+ * `presence` is the authored marker of the pipe's input slot, three-valued so
+ * `!` is not flattened away; `gating` says the run cannot start until the
+ * caller provides content for this slot (a nested field gates through its
+ * parent). Nested fields carry neither — both are pipe-slot facts.
  */
-export type InputFormTopLevelField = InputFormField & {
-  /**
-   * The authored presence marker of the pipe's input slot, three-valued so `!`
-   * is not flattened away. Nested fields carry no `presence` — presence is a
-   * pipe-slot fact.
-   */
-  presence: PresenceMarker;
-  /**
-   * The run cannot start until the caller provides content for this slot; a
-   * nested field gates through its parent. Stated rather than left to a
-   * consumer to re-derive, because it is not `required`: the rule is
-   * `presence !== "optional"` and not (`kind === "list"` without `item_count`)
-   * — a variable list is required, yet `[]` satisfies it, so it never gates; a
-   * fixed `[N]` list does.
-   */
-  gating: boolean;
-};
+export type InputFormTopLevelField = InputFormField &
+  (
+    | { required: true; presence: Exclude<PresenceMarker, "optional">; gating: boolean }
+    | { required: false; presence: "optional"; gating: false }
+  );
 
 /**
  * The input form of one pipe — one entry of `InputForm`. `fields` holds one

@@ -53,6 +53,17 @@ export type TopLevelPresenceIsRequired = Expect<
   Equal<InputFormTopLevelField["presence"], PresenceMarker>
 >;
 export type TopLevelGatingIsRequired = Expect<Equal<InputFormTopLevelField["gating"], boolean>>;
+/** …and `required` restates the marker: presence != "optional", exactly as the page derives it… */
+export type RequiredTopLevelIsNeverOptional = Expect<
+  Equal<Extract<InputFormTopLevelField, { required: true }>["presence"], "plain" | "force">
+>;
+export type OptionalTopLevelIsNeverRequired = Expect<
+  Equal<Extract<InputFormTopLevelField, { required: false }>["presence"], "optional">
+>;
+/** …while an optional slot never gates — the gating table's `Concept?` row. */
+export type OptionalTopLevelNeverGates = Expect<
+  Equal<Extract<InputFormTopLevelField, { required: false }>["gating"], false>
+>;
 export type DescriptorFieldsAreTopLevel = Expect<
   Equal<PipeInputFormDescriptor["fields"], InputFormTopLevelField[]>
 >;
@@ -131,6 +142,15 @@ const objectWithEnum: InputFormTopLevelField = {
   ],
 };
 
+const forcedSingle: InputFormTopLevelField = {
+  kind: "document",
+  name: "signed_original",
+  concept_ref: "native.Document",
+  required: true,
+  presence: "force",
+  gating: true,
+};
+
 const contract: PipeIOContract = {
   inputs: {
     clauses: {
@@ -204,6 +224,35 @@ const topLevelWithoutSlotFacts: InputFormTopLevelField = {
   kind: "boolean",
   name: "flag",
   required: true,
+};
+
+// The presence pairing, as the invalid literals mthds-python's validators reject.
+
+// @ts-expect-error required restates the marker: an optional slot is never required
+const topLevelOptionalYetRequired: InputFormTopLevelField = {
+  kind: "text",
+  name: "instructions",
+  required: true,
+  presence: "optional",
+  gating: false,
+};
+
+// @ts-expect-error required restates the marker: a plain slot is always required
+const topLevelPlainYetNotRequired: InputFormTopLevelField = {
+  kind: "text",
+  name: "brief",
+  required: false,
+  presence: "plain",
+  gating: true,
+};
+
+// @ts-expect-error an optional slot never gates — the gating table's `Concept?` row
+const topLevelOptionalYetGating: InputFormTopLevelField = {
+  kind: "text",
+  name: "notes",
+  required: false,
+  presence: "optional",
+  gating: true,
 };
 
 const nestedWithPresence: InputFormField = {
@@ -323,12 +372,16 @@ describe("input-form and contract shapes", () => {
     const cases = [
       fixedList,
       objectWithEnum,
+      forcedSingle,
       unknownKind,
       unknownMember,
       itemWithName,
       numberWithoutInteger,
       dateWithoutDatetime,
       topLevelWithoutSlotFacts,
+      topLevelOptionalYetRequired,
+      topLevelPlainYetNotRequired,
+      topLevelOptionalYetGating,
       nestedWithPresence,
     ];
     expect(cases.map((field) => field.name)).toHaveLength(cases.length);

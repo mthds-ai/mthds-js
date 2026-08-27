@@ -92,6 +92,8 @@ Use the appropriate subsections (Added, Changed, Fixed, Removed, Breaking Change
 
 Before running checks, verify that the package's interfaces haven't drifted from their specs. Run the `/contract-check` skill. If it reports any confirmed breakages or undocumented additions, warn the user and ask whether to continue the release or pause to address the findings first.
 
+`/contract-check` files its actionable findings as workspace ledger items — it does not write a report file. So the findings survive the release either way: what you decide not to fix now is already tracked and owned by the repo that has to act. Carry the IDs it prints into the release summary. If any of them are owned by `mthds-js` and the user chooses to fix them now, make the fix here and commit it on the release branch **before** Step 7 — in its own commit, so the release commit in Step 8 stays exactly the version bump and the changelog.
+
 This step is especially important when the diff includes changes to `src/cli.ts`, `src/agent-cli.ts`, `src/agent/`, `src/cli/commands/`, `src/runners/`, or `src/protocol/` (the CLI, the API-runner protocol surface, and passthrough/hook behavior).
 
 ## Step 7 — Run Checks
@@ -131,7 +133,7 @@ Wait for explicit user approval before pushing or creating a PR.
 
 ## Rules
 
-- Never use `git add .` or `git add -A` — only stage `package.json`, `package-lock.json`, and `CHANGELOG.md`.
+- Never use `git add .` or `git add -A`. The release commit stages only `package.json`, `package-lock.json`, and `CHANGELOG.md`; a contract fix taken in Step 6b is its own commit, staged by naming its files.
 - Never push or create PRs without explicit user approval.
 - The `v` prefix appears in branch names and changelog headers, but **not** in `package.json`.
 - Always use today's date for new changelog entries (format: `YYYY-MM-DD`).

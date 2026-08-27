@@ -1259,12 +1259,20 @@ export const PIPE_IO_CONTRACTS_FIXTURE: PipeIOContracts = {
               type: "string",
             },
             css_class: {
+              anyOf: [
+                {
+                  type: "string",
+                },
+                {
+                  type: "null",
+                },
+              ],
+              default: null,
               description: "The CSS class of the content",
               title: "Css Class",
-              type: "string",
             },
           },
-          required: ["inner_html", "css_class"],
+          required: ["inner_html"],
           title: "native.Html",
           type: "object",
         },

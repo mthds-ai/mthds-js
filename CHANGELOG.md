@@ -1,5 +1,13 @@
 # Changelog
 
+## [Unreleased]
+
+### Changed
+
+- **Recaptured the protocol parity fixtures from a conforming engine.** `tests/fixtures/protocol/input_form.json` and `pipe_io_contracts.json` are replaced with a fresh byte-for-byte capture taken from `pipelex` `dev` at `bdd853c41` — after the engine caught up to MTHDS v0.9.0 — and `mthds-python` commits the identical bytes, so the two mirrors of the standard stay checked against one payload. The previous capture was `pipelex` 0.53.0's emission and carried three divergences from the standard's pages, all of them now fixed at the source: a `list`'s `item` no longer carries a `name` member, `native.Date` and `native.Html` input slots land on the `object` arm with `fields` from the pinned native definitions instead of on the `date` / `prose` scalars (and `native.Html`'s `css_class` is optional), and a description-only concept no longer reports a `refines: ["native.Text"]` link nobody authored.
+- **Dropped the `@ts-expect-error` suppressions the stale capture forced.** The generated twins carried a suppression at every site where a list item's `name` broke the declared type; the fresh capture conforms, so `scripts/gen-protocol-fixture-twins.mjs` has no `KNOWN_DIVERGENCES` entries left and the twins have no suppressions. The machinery stays for the next divergence — a future entry names the ledger item tracking its engine fix, and the self-cleaning check still refuses to run once an entry matches nothing.
+- **Promoted the drift pins in `tests/unit/protocol/input-form-parity.test.ts` into ordinary assertions.** The two `it.fails` cases that pinned the engine's disagreement now assert the pages' rules directly: `name` is carried on every node except a `list`'s `item` (both arms exercised, so a payload with no list cannot pass vacuously), and a native concept with a pinned structure lands on the `object` arm rather than a scalar.
+
 ## [v0.23.0] - 2026-08-27
 
 ### Added

@@ -12,7 +12,6 @@ export const INPUT_FORM_FIXTURE: InputForm = {
         kind: "prose",
         name: "plain",
         concept_ref: "input_semantics_hinted.Essay",
-        refines: ["native.Text"],
         description: "HINTED_concept_Essay: description-only concept carrying a concept-level hint",
         required: true,
         presence: "plain",
@@ -25,7 +24,6 @@ export const INPUT_FORM_FIXTURE: InputForm = {
         kind: "prose",
         name: "expanded_plain",
         concept_ref: "input_semantics_hinted.Essay",
-        refines: ["native.Text"],
         description: "HINTED_concept_Essay: description-only concept carrying a concept-level hint",
         required: true,
         presence: "plain",
@@ -96,7 +94,6 @@ export const INPUT_FORM_FIXTURE: InputForm = {
         kind: "list",
         name: "hinted_marked",
         concept_ref: "input_semantics_hinted.Badge",
-        refines: ["native.Text"],
         description: "HINTED_concept_Badge: base of a hinted refinement chain",
         required: true,
         presence: "plain",
@@ -106,10 +103,7 @@ export const INPUT_FORM_FIXTURE: InputForm = {
         },
         item: {
           kind: "text",
-          // @ts-expect-error L-260826-0ed8dd: pipelex 0.53.0 emits `name` on a list's `item`; the page says an item carries no `name` member
-          name: "hinted_marked",
           concept_ref: "input_semantics_hinted.Badge",
-          refines: ["native.Text"],
           description: "HINTED_concept_Badge: base of a hinted refinement chain",
           required: true,
           hints: {
@@ -217,8 +211,6 @@ export const INPUT_FORM_FIXTURE: InputForm = {
             default_value: ["PROBE_tag_a", "PROBE_tag_b"],
             item: {
               kind: "text",
-              // @ts-expect-error L-260826-0ed8dd: pipelex 0.53.0 emits `name` on a list's `item`; the page says an item carries no `name` member
-              name: "tags",
               required: true,
             },
           },
@@ -229,8 +221,6 @@ export const INPUT_FORM_FIXTURE: InputForm = {
             required: false,
             item: {
               kind: "number",
-              // @ts-expect-error L-260826-0ed8dd: pipelex 0.53.0 emits `name` on a list's `item`; the page says an item carries no `name` member
-              name: "ratings",
               required: true,
               integer: true,
             },
@@ -242,8 +232,6 @@ export const INPUT_FORM_FIXTURE: InputForm = {
             required: false,
             item: {
               kind: "unknown",
-              // @ts-expect-error L-260826-0ed8dd: pipelex 0.53.0 emits `name` on a list's `item`; the page says an item carries no `name` member
-              name: "matrix",
               required: true,
             },
           },
@@ -255,8 +243,6 @@ export const INPUT_FORM_FIXTURE: InputForm = {
             required: false,
             item: {
               kind: "object",
-              // @ts-expect-error L-260826-0ed8dd: pipelex 0.53.0 emits `name` on a list's `item`; the page says an item carries no `name` member
-              name: "gadgets",
               concept_ref: "input_semantics_probe.Gadget",
               description: "PROBE_desc_concept_Gadget: mid-level structure nested inside Widget",
               required: true,
@@ -414,7 +400,6 @@ export const INPUT_FORM_FIXTURE: InputForm = {
         kind: "prose",
         name: "note",
         concept_ref: "input_semantics_probe.PlainNote",
-        refines: ["native.Text"],
         description: "PROBE_desc_concept_PlainNote: description-only concept (basic blueprint)",
         required: true,
         presence: "plain",
@@ -483,8 +468,6 @@ export const INPUT_FORM_FIXTURE: InputForm = {
                 required: false,
                 item: {
                   kind: "image",
-                  // @ts-expect-error L-260826-0ed8dd: pipelex 0.53.0 emits `name` on a list's `item`; the page says an item carries no `name` member
-                  name: "images",
                   concept_ref: "native.Image",
                   description: "An image",
                   required: true,
@@ -518,7 +501,7 @@ export const INPUT_FORM_FIXTURE: InputForm = {
         integer: false,
       },
       {
-        kind: "date",
+        kind: "object",
         name: "date_in",
         concept_ref: "native.Date",
         description:
@@ -526,7 +509,23 @@ export const INPUT_FORM_FIXTURE: InputForm = {
         required: true,
         presence: "plain",
         gating: true,
-        datetime: false,
+        fields: [
+          {
+            kind: "date",
+            name: "date",
+            description: "The calendar date, in ISO 8601 (e.g. 2026-07-07). Always required.",
+            required: true,
+            datetime: false,
+          },
+          {
+            kind: "text",
+            name: "time",
+            description:
+              "The time of day, in ISO 8601 (e.g. 15:40:00, or 15:40:00+02:00 with a UTC offset). Include it only when the source states a time — never invent a time. Keep the UTC offset exactly when the source states one.",
+            required: false,
+            format: "time",
+          },
+        ],
       },
       {
         kind: "text",
@@ -540,13 +539,27 @@ export const INPUT_FORM_FIXTURE: InputForm = {
         format: "time",
       },
       {
-        kind: "prose",
+        kind: "object",
         name: "html_in",
         concept_ref: "native.Html",
         description: "HTML content",
         required: true,
         presence: "plain",
         gating: true,
+        fields: [
+          {
+            kind: "text",
+            name: "inner_html",
+            description: "The inner HTML of the content",
+            required: true,
+          },
+          {
+            kind: "text",
+            name: "css_class",
+            description: "The CSS class of the content",
+            required: false,
+          },
+        ],
       },
       {
         kind: "boolean",
@@ -657,8 +670,6 @@ export const INPUT_FORM_FIXTURE: InputForm = {
             default_value: ["PROBE_tag_a", "PROBE_tag_b"],
             item: {
               kind: "text",
-              // @ts-expect-error L-260826-0ed8dd: pipelex 0.53.0 emits `name` on a list's `item`; the page says an item carries no `name` member
-              name: "tags",
               required: true,
             },
           },
@@ -669,8 +680,6 @@ export const INPUT_FORM_FIXTURE: InputForm = {
             required: false,
             item: {
               kind: "number",
-              // @ts-expect-error L-260826-0ed8dd: pipelex 0.53.0 emits `name` on a list's `item`; the page says an item carries no `name` member
-              name: "ratings",
               required: true,
               integer: true,
             },
@@ -682,8 +691,6 @@ export const INPUT_FORM_FIXTURE: InputForm = {
             required: false,
             item: {
               kind: "unknown",
-              // @ts-expect-error L-260826-0ed8dd: pipelex 0.53.0 emits `name` on a list's `item`; the page says an item carries no `name` member
-              name: "matrix",
               required: true,
             },
           },
@@ -695,8 +702,6 @@ export const INPUT_FORM_FIXTURE: InputForm = {
             required: false,
             item: {
               kind: "object",
-              // @ts-expect-error L-260826-0ed8dd: pipelex 0.53.0 emits `name` on a list's `item`; the page says an item carries no `name` member
-              name: "gadgets",
               concept_ref: "input_semantics_probe.Gadget",
               description: "PROBE_desc_concept_Gadget: mid-level structure nested inside Widget",
               required: true,
@@ -827,7 +832,6 @@ export const INPUT_FORM_FIXTURE: InputForm = {
         gating: false,
         item: {
           kind: "object",
-          name: "many",
           concept_ref: "input_semantics_probe.Widget",
           description: "PROBE_desc_concept_Widget: the full-matrix structure under audit",
           required: true,
@@ -919,8 +923,6 @@ export const INPUT_FORM_FIXTURE: InputForm = {
               default_value: ["PROBE_tag_a", "PROBE_tag_b"],
               item: {
                 kind: "text",
-                // @ts-expect-error L-260826-0ed8dd: pipelex 0.53.0 emits `name` on a list's `item`; the page says an item carries no `name` member
-                name: "tags",
                 required: true,
               },
             },
@@ -931,8 +933,6 @@ export const INPUT_FORM_FIXTURE: InputForm = {
               required: false,
               item: {
                 kind: "number",
-                // @ts-expect-error L-260826-0ed8dd: pipelex 0.53.0 emits `name` on a list's `item`; the page says an item carries no `name` member
-                name: "ratings",
                 required: true,
                 integer: true,
               },
@@ -944,8 +944,6 @@ export const INPUT_FORM_FIXTURE: InputForm = {
               required: false,
               item: {
                 kind: "unknown",
-                // @ts-expect-error L-260826-0ed8dd: pipelex 0.53.0 emits `name` on a list's `item`; the page says an item carries no `name` member
-                name: "matrix",
                 required: true,
               },
             },
@@ -957,8 +955,6 @@ export const INPUT_FORM_FIXTURE: InputForm = {
               required: false,
               item: {
                 kind: "object",
-                // @ts-expect-error L-260826-0ed8dd: pipelex 0.53.0 emits `name` on a list's `item`; the page says an item carries no `name` member
-                name: "gadgets",
                 concept_ref: "input_semantics_probe.Gadget",
                 description: "PROBE_desc_concept_Gadget: mid-level structure nested inside Widget",
                 required: true,
@@ -1090,8 +1086,6 @@ export const INPUT_FORM_FIXTURE: InputForm = {
         gating: true,
         item: {
           kind: "object",
-          // @ts-expect-error L-260826-0ed8dd: pipelex 0.53.0 emits `name` on a list's `item`; the page says an item carries no `name` member
-          name: "two",
           concept_ref: "input_semantics_probe.Gadget",
           description: "PROBE_desc_concept_Gadget: mid-level structure nested inside Widget",
           required: true,
@@ -1194,7 +1188,6 @@ export const INPUT_FORM_FIXTURE: InputForm = {
         kind: "prose",
         name: "stringnote",
         concept_ref: "input_semantics_probe.StringNote",
-        refines: ["native.Text"],
         description: "PROBE_desc_concept_StringNote: a concept declared as a bare string",
         required: true,
         presence: "plain",

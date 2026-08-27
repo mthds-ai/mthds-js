@@ -7,6 +7,8 @@ description: Detect interface-contract drift between this package's code and a b
 
 Detects discrepancies between the interfaces this package implements or consumes and the specs that document them. "Interface" here is broader than the CLI: it includes the `mthds-agent` CLI, the **MTHDS Protocol** wire surface the API runner implements (`MthdsApiClient`), the `plxt` / `pipelex-agent` passthrough, and the hook pipeline. A discrepancy means the code and the spec disagree — but this skill does NOT presume which side is wrong. The code may need fixing, the spec may need updating, or both. That judgment belongs to the human reviewing the report.
 
+The output is a summary in the session plus one **workspace ledger item per actionable finding**, owned by the repo that has to act on it. It is never a report file: see Step 6.
+
 ## Prerequisites: Locate the Specs
 
 The specs live at `../docs/specs/` (relative to the mthds-js repo root, i.e. the sibling `docs` repo). They were previously called "contracts" and lived in `../docs/contracts/` — that path is gone; use `../docs/specs/`. Before doing anything else:
@@ -153,7 +155,9 @@ For each contract-visible change, determine:
 
 ## Step 5 — Report
 
-The report must be **self-contained** — readable by someone who has never seen this codebase. It may be handed off to a different SWE agent working in a different repo (e.g., the `docs` repo to update specs, the `conformance` repo to add tests, or the `skills` repo to adapt consumers). Include enough context for that agent to act without re-running this analysis.
+Present the findings in the session. This is what the human reading the check sees, and it is the whole output for anything that is not actionable.
+
+Every **Discrepancy** and **Unmatched Addition** section must be written **self-contained** — readable by someone who has never seen this codebase — because Step 6 files it verbatim as the body of a ledger item, and the agent who picks that item up will be working in a different repo with none of your context. Write each one once, well enough to hand over.
 
 Start the report with a header block, then the summary table, then the detailed sections.
 
@@ -215,22 +219,124 @@ Changes that are consistent between code and spec. List briefly for completeness
 
 ---
 
-## Step 6 — Offer to Save the Report
+## Step 6 — File the Actionable Findings as Ledger Items
 
-After presenting the report, ask the user:
+The report itself is not written to a file. Findings that somebody must act on become **workspace ledger items**, one per finding, owned by the repo that has to act. Everything else stays in the printed report and goes nowhere.
 
-> "Save this report to `wip/`? (e.g., `wip/contract-check-v0.1.3-to-v0.2.0.md`)"
+This is the workspace rule — no inbox files, no `_top_priorities.md`, no ad hoc follow-up lists — and a `wip/contract-check-*.md` report is exactly the pile it replaced. The contract is `ledger/README.md`; the `/ledger` skill has the full command reference.
 
-If the user agrees:
+### 6a — Decide what is actionable
 
-1. Create the `wip/` directory if it doesn't exist
-2. Write the report as a markdown file named `wip/contract-check-<baseline>-to-<target>.md`
-3. The saved report must include the full header block so that a different SWE agent working in a different repo (e.g., `docs`, `conformance`, `skills`, `vscode-pipelex`) can understand what was checked, what was found, and what needs resolution — without needing access to this repo or this conversation
+| Report section | Destination |
+|---|---|
+| **Discrepancies** | one ledger item each |
+| **Unmatched Additions** | one ledger item each |
+| **Aligned changes** | the printed report only — nothing is filed |
+| `mthds` interactive CLI notes (no spec exists) | the printed report only, unless the user asks for one |
+| Stable knowledge the check surfaced that is *information rather than work* — e.g. why two runners deliberately diverge on a surface | `mthds-js/docs/`, in the same change |
+
+### 6b — Fix in place what belongs here
+
+Before filing anything owned by `mthds-js`, ask the user whether to fix it now. **The ledger is for work crossing a boundary you cannot or should not cross — never a way to defer your own.** A finding whose fix is a small, obvious change in this repo should be made in this session; file it only when it is genuinely out of scope (it predates the baseline and is unrelated to the change in hand, or the fix is a design call the user does not want to take now).
+
+### 6c — Check for an existing item first
+
+This check runs before every release, against a moving baseline, so the same drift resurfaces run after run. **Filing it twice is the failure mode.** Every item this skill files carries `--ref skill:contract-check`, which is what makes the previous run's output findable:
+
+```bash
+ledger list --ref skill:contract-check --status open
+ledger list --ref spec:docs/specs/<file>          # prefix match on the surface
+```
+
+If an open item already covers the finding, do not file a second one. Record the new sighting on the existing item and move on:
+
+```bash
+ledger note <id> "Still open at baseline <baseline> → HEAD <short-sha>."
+```
+
+Mention the existing ID in the report so the reader sees it was already tracked.
+
+### 6d — Pick the owner and the type
+
+`--owner` is the repo that *fixes* it — not the repo that found it. Note that `docs/specs/` lives in the workspace meta-repo, so a spec edit is owned by `workspace`, never by mthds-js.
+
+| What resolving the finding requires | `--owner` | `--type` |
+|---|---|---|
+| An mthds-js code change | `mthds-js` | `bug` if shipped behavior is wrong, else `task` |
+| A `docs/specs/` edit (and its `conformance/` pair) | `workspace` | `spec` |
+| A change in another implementation of the same spec — `pipelex`, `pipelex-api`, `vscode-pipelex`, `mthds-plugins` | that repo | `bug` or `task` |
+| **Which side is wrong is genuinely undetermined** | `workspace` | `decision` |
+
+That last row is how this skill keeps its stance: it detects drift and does not assign blame. When the code and the spec disagree and neither is obviously the one that moved, the finding is a call only a person can make — file it as a `decision` with `## Options` and `## Recommendation`, not as a task pointed at whichever side is easier to change.
+
+Severity follows who breaks, not how big the diff is:
+
+- `high` — a shipped consumer (an AI agent, the `mthds` plugin, `pipelex-app`, `conformance`) reads the surface and would act on the wrong description; or the code contradicts a spec surface that carries a `> Verified by:` link, so a conformance test is already lying or about to fail.
+- `normal` — an undocumented addition: the code works, the spec under-describes it.
+- `low` — wording, or awareness-only.
+
+### 6e — Write the body and file
+
+Write each finding's body to a scratch file and pass it with `--body-from`; never hand-write an item file. The body is the report section you already wrote in Step 5, arranged into the required sections:
+
+- `## What` — the disagreement, plainly, as if the reader has never seen this repo.
+- `## Evidence` — required. `repo/path/file.ext:line` on both sides (the code site *and* the spec line), the commands you ran (`git diff <baseline> HEAD -- <file>`, the `grep` that came back empty), and the surface's conformance status: its `> Verified by:` target, or that it is unverified.
+- `## Why it was not fixed in place` — required whenever the owner is not `mthds-js`. Name the boundary: the spec lives in the workspace repo and its `conformance/` pair must move in the same change; the passthrough contract is `vscode-pipelex`'s; and so on.
+- `## Suggested fix` — optional but valuable here, and say how confident you are. State the options; do not prescribe which side changes.
+- `## Options` / `## Recommendation` — required on a `decision`.
+
+Then file it:
+
+```bash
+ledger new \
+  --owner workspace --type spec --severity normal \
+  --theme cross-repo-hygiene \
+  --title "…" \
+  --ref skill:contract-check \
+  --ref "spec:docs/specs/<file>#<section>" \
+  --ref mthds-js/src/<path>.ts \
+  --body-from <scratch-path>
+```
+
+`--theme` takes a key from `ledger/heat.toml`; `cross-repo-hygiene` is the right default for spec-versus-code drift — use a more specific existing theme when the finding plainly belongs to one. `--ref skill:contract-check` is not optional: it is the dedupe key 6c depends on.
+
+The three ref kinds each earn their place. `skill:contract-check` is provenance and dedupe. `spec:…` is prefix-matched by `ledger list --ref`, so the anchor costs nothing and helps. And the bare `repo/path/file.ts:line` — line number and all, which `ledger doctor` strips before checking the path resolves — is what `ledger match --path` compares against the files a merged PR touched, so a fix that lands without naming the item in its body is still found as a ride-along.
+
+Link the item when something genuinely connects: `--discovered-from <id>` when this run was triggered by other work already in the ledger, `--blocked-by <id>` when it cannot start until another item closes.
+
+**When one run produces a cascade** — several findings that only make sense together, e.g. a whole route family undocumented across two specs plus the conformance arm it needs — erect the epic first and attach the findings to it:
+
+```bash
+ledger new --type epic --owner workspace --theme <theme> --title "…"
+ledger new --owner <repo> --parent <epic-id> --title "…"
+```
+
+### 6f — Report what was filed, then commit
+
+Close the session's report with the IDs, so the human can see the check's output as work rather than prose:
+
+```
+Filed:
+  L-…  workspace  spec      Document `run start` in the mthds-agent CLI spec
+  L-…  mthds-js   bug       Register the `codegen` stub on the API runner
+Already tracked:
+  L-…  (noted this run's sighting)
+```
+
+Then:
+
+```bash
+ledger validate
+ledger commit
+```
+
+`ledger commit` is the only thing that sends the ledger anywhere. A check that files items and does not commit leaves them on this machine alone.
 
 ## Notes
 
-- **Specs and conformance are a linked pair.** If the resolution to a finding is to edit a spec in `docs/specs/`, the matching `conformance/` test must be updated in the same change, and `make check-spec-links` (run from the `conformance/` repo) must pass — it enforces the bidirectional `> Verified by:` ↔ `pytestmark = pytest.mark.spec(...)` links. A spec edit that renames a heading or documents a new surface without touching conformance will fail that gate. Remind the user of this whenever a finding points at a spec edit.
+- **Never write a `wip/contract-check-*.md` report.** That was this skill's output until the workspace ledger existed, and it is the shape the ledger replaced: a file nobody reads, in a repo that often is not the one that has to act. Findings go to `ledger new` (Step 6), durable knowledge goes to `mthds-js/docs/`, and the summary goes to the session.
+- **Specs and conformance are a linked pair.** If the resolution to a finding is to edit a spec in `docs/specs/`, the matching `conformance/` test must be updated in the same change, and `make check-spec-links` (run from the `conformance/` repo) must pass — it enforces the bidirectional `> Verified by:` ↔ `pytestmark = pytest.mark.spec(...)` links. A spec edit that renames a heading or documents a new surface without touching conformance will fail that gate. Say so in the item body whenever a finding points at a spec edit — the agent who picks it up needs to know the change is two repos wide.
 - The `mthds` interactive CLI does not have a spec yet (it's user-facing, not machine-facing). Flag notable changes for awareness but don't treat them as spec violations.
 - The `mthds-agent` CLI spec and the MTHDS Protocol spec are the most critical, because AI agents, the `skills` plugin, and `pipelex-app` depend on their exact output/wire formats.
 - When checking passthrough behavior, pay special attention to how arguments are constructed and forwarded — even small changes (extra flags, different ordering) can break downstream consumers.
-- This skill detects discrepancies — it does not assign blame. The code might be wrong, the spec might be stale, or both might need updating. That's a human decision.
+- This skill detects discrepancies — it does not assign blame. The code might be wrong, the spec might be stale, or both might need updating. That's a human decision, and when the check cannot tell which side moved, the item it files is a `decision` (Step 6d) rather than a task pointed at one side.

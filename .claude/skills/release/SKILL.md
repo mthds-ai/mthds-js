@@ -92,6 +92,8 @@ Use the appropriate subsections (Added, Changed, Fixed, Removed, Breaking Change
 
 Before running checks, verify that the package's interfaces haven't drifted from their specs. Run the `/contract-check` skill. If it reports any confirmed breakages or undocumented additions, warn the user and ask whether to continue the release or pause to address the findings first.
 
+`/contract-check` files its actionable findings as workspace ledger items — it does not write a report file. So the findings survive the release either way: what you decide not to fix now is already tracked and owned by the repo that has to act. Carry the IDs it prints into the release summary, and if any of them are owned by `mthds-js` and the user chooses to fix them now, fold that into this release rather than shipping past it.
+
 This step is especially important when the diff includes changes to `src/cli.ts`, `src/agent-cli.ts`, `src/agent/`, `src/cli/commands/`, `src/runners/`, or `src/protocol/` (the CLI, the API-runner protocol surface, and passthrough/hook behavior).
 
 ## Step 7 — Run Checks

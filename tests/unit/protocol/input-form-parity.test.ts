@@ -18,9 +18,10 @@ import { PIPE_IO_CONTRACTS_FIXTURE } from "../../fixtures/protocol/pipe_io_contr
  * `required`, `gating`, `multiplicity` and `item_count` line up between the
  * contract and the descriptor of the same slot.
  *
- * The `it.fails` cases pin the known engine drift the README lists: they are
- * expected to fail against this fixture, and they flip to a failure of their
- * own the day a regenerated fixture conforms — the cue to delete them.
+ * There is no drift block: the capture this fixture holds conforms to the pages
+ * at every site it reaches. The rules that used to be pinned here as expected
+ * failures are now ordinary assertions among the rest — a rule the engine got
+ * right is worth asserting for the same reason it was worth pinning wrong.
  */
 
 const PRESENCE_MARKERS: readonly PresenceMarker[] = ["plain", "optional", "force"];
@@ -45,6 +46,30 @@ function* walkNodes(node: InputFormItem): Generator<InputFormItem> {
 function* allNodes(): Generator<InputFormItem> {
   for (const descriptor of Object.values(INPUT_FORM_FIXTURE)) {
     for (const field of descriptor.fields) yield* walkNodes(field);
+  }
+}
+
+/**
+ * Every node paired with whether it sits in a `list`'s `item` position — the
+ * one position the page says carries no `name`. Tracked here rather than read
+ * off the node itself because the distinction is structural: an item node and
+ * a named field node are otherwise the same shape.
+ */
+function* walkPositioned(
+  node: InputFormItem,
+  isItem: boolean,
+): Generator<{ node: InputFormItem; isItem: boolean }> {
+  yield { node, isItem };
+  if (node.kind === "object") {
+    for (const field of node.fields) yield* walkPositioned(field, false);
+  } else if (node.kind === "list") {
+    yield* walkPositioned(node.item, true);
+  }
+}
+
+function* allPositionedNodes(): Generator<{ node: InputFormItem; isItem: boolean }> {
+  for (const descriptor of Object.values(INPUT_FORM_FIXTURE)) {
+    for (const field of descriptor.fields) yield* walkPositioned(field, false);
   }
 }
 
@@ -146,21 +171,34 @@ describe("protocol parity fixtures — the pages' cross-artifact rules", () => {
       if ("default_value" in node) expect(node.required).toBe(false);
     }
   });
-});
 
-describe("protocol parity fixtures — known engine drift (see the README)", () => {
-  it.fails("L-260826-0ed8dd: a list's item carries no name member", () => {
-    for (const node of allNodes()) {
-      if (node.kind === "list") expect("name" in node.item).toBe(false);
+  it("name is carried on every node except a list's item", () => {
+    let items = 0;
+    let named = 0;
+    for (const { node, isItem } of allPositionedNodes()) {
+      expect("name" in node).toBe(!isItem);
+      if (isItem) items += 1;
+      else named += 1;
     }
+    // Both arms are exercised: a payload that happened to hold no list would
+    // pass the assertion above without ever testing the rule it is here for.
+    expect(items).toBeGreaterThan(0);
+    expect(named).toBeGreaterThan(0);
   });
 
-  it.fails("L-260826-236839: native.Date and native.Html slots are object nodes", () => {
+  it("a native concept with a pinned structure lands on the object arm, not a scalar", () => {
+    const expectedFields: Record<string, string[]> = {
+      "native.Date": ["date", "time"],
+      "native.Html": ["inner_html", "css_class"],
+    };
     const fields = INPUT_FORM_FIXTURE["input_semantics_probe.probe_native_inputs"].fields;
-    for (const field of fields) {
-      if (field.concept_ref === "native.Date" || field.concept_ref === "native.Html") {
-        expect(field.kind).toBe("object");
-      }
+    for (const [conceptRef, names] of Object.entries(expectedFields)) {
+      const field = fields.find((candidate) => candidate.concept_ref === conceptRef);
+      expect(field).toBeDefined();
+      if (!field) continue;
+      expect(field.kind).toBe("object");
+      if (field.kind !== "object") continue;
+      expect(field.fields.map((nested) => nested.name)).toEqual(names);
     }
   });
 });

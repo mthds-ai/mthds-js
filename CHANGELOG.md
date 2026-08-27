@@ -1,5 +1,25 @@
 # Changelog
 
+## [v0.24.0] - 2026-08-27
+
+### Added
+
+- **Type-level tests for the input-form shapes.** `tests/unit/protocol/input-form-shapes.test.ts` gains type-level assertions (`Expect<Equal<...>>`) and negative tests (`@ts-expect-error`) that check the strict pairing of `required`, `presence`, and `gating` at compile time rather than only at run time.
+
+### Changed
+
+- **`InputFormTopLevelField` is a discriminated union on `required` (breaking).** The type now enforces the spec's rules at compile time: `required: true` pairs only with `presence: "plain" | "force"`, and `required: false` only with `presence: "optional"` and `gating: false`. A literal like `{required: true, presence: "optional"}` — which `mthds-python` already rejects at the parse — no longer compiles here, closing the two-client divergence, and narrowing works both ways for consumers. *Migration:* a consumer assembling a top-level field from computed booleans must branch once on optionality and write each arm as a literal.
+- **`/contract-check` files its findings as workspace ledger items.** The skill no longer writes a static `wip/contract-check-*.md` report. Each discrepancy and unmatched addition becomes one deduplicated ledger item owned by the repo that has to act on it — `workspace` for a `docs/specs/` edit, `mthds-js` for a code fix, the implementing repo for anything else.
+- **`/release` supports the ledger system.** Findings now survive the release process, and a fix taken during a release lands in its own commit before the version bump.
+- **Recaptured the protocol parity fixtures.** `tests/fixtures/protocol/input_form.json` and `pipe_io_contracts.json` are a fresh byte-for-byte capture from the now-conforming reference engine (`pipelex` `dev` at `bdd853c41`); `mthds-python` commits the identical bytes, so the two mirrors of the standard stay checked against one payload.
+- **Promoted the drift pins in `input-form-parity.test.ts` to ordinary assertions.** The `it.fails` cases that pinned the engine's disagreement now assert the standard's rules directly, since the engine conforms.
+- **Documentation.** `docs/architecture.md` records the discriminated-union types and notes that the current parity fixtures carry no known spec divergences.
+
+### Fixed
+
+- **Spec divergences in the captured payloads.** The historical engine-to-spec discrepancies are resolved at the source: a `list`'s `item` node no longer carries a `name` member; `native.Date` and `native.Html` slots land on the `object` arm with their pinned fields instead of on the `date` / `prose` scalars; `native.Html`'s `css_class` is optional; and a description-only concept no longer fabricates a `refines: ["native.Text"]` link nobody authored.
+- **Suppressions the stale capture forced.** The generated `input_form.fixture.ts` has no `@ts-expect-error` suppressions left and `KNOWN_DIVERGENCES` in `scripts/gen-protocol-fixture-twins.mjs` is empty. The self-cleaning divergence-tracking machinery stays in place for the next one.
+
 ## [v0.23.0] - 2026-08-27
 
 ### Added

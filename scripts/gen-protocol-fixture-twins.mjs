@@ -60,14 +60,11 @@ const TWINS = [
  * element, the array's key). A match emits a `@ts-expect-error` directive on
  * the line before the property.
  */
-const KNOWN_DIVERGENCES = [
-  {
-    ledger: "L-260826-0ed8dd",
-    reason:
-      "pipelex 0.53.0 emits `name` on a list's `item`; the page says an item carries no `name` member",
-    matches: ({ key, parentKey }) => parentKey === "item" && key === "name",
-  },
-];
+// Deliberately empty: the engine the current capture came from conforms to the
+// page at every site the fixture reaches, so no twin carries a suppression. The
+// machinery below stays because the next divergence is cheaper to record here
+// than to rediscover — add an entry naming the ledger item that tracks the fix.
+const KNOWN_DIVERGENCES = [];
 
 /**
  * Prints `value` as a TypeScript literal. Returns the text and how many rule
@@ -139,10 +136,13 @@ for (const spec of TWINS) {
   const options = (await prettier.resolveConfig(twinPath)) ?? {};
   writeFileSync(twinPath, await prettier.format(source, { ...options, filepath: twinPath }));
   for (const rule of hits.keys()) matchedRules.add(rule);
-  const summary = KNOWN_DIVERGENCES.map((rule) => {
-    const tally = hits.get(rule) ?? { emitted: 0, shadowed: 0 };
-    return `${rule.ledger}: ${tally.emitted} directives, ${tally.shadowed} shadowed`;
-  }).join("; ");
+  const summary =
+    KNOWN_DIVERGENCES.length === 0
+      ? "no known divergences"
+      : KNOWN_DIVERGENCES.map((rule) => {
+          const tally = hits.get(rule) ?? { emitted: 0, shadowed: 0 };
+          return `${rule.ledger}: ${tally.emitted} directives, ${tally.shadowed} shadowed`;
+        }).join("; ");
   process.stdout.write(`${spec.twin}: written (${summary})\n`);
 }
 

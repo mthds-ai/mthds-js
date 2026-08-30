@@ -34,17 +34,31 @@ export interface MthdsFileItem {
 /**
  * The closure + pipe selector every `/v1/build/*` route shares.
  *
- * Supply the closure EITHER as inline `files` OR as a `method_ref` into the
- * method registry — never both. `method_ref` is reserved: the registry does not
- * exist yet, so the server answers `501` for it today.
+ * Supply the closure EITHER as inline `files` OR as a `method_ref` — never both.
+ * An **address-form** `method_ref` (`github.com/<owner>/<repo>[/<selector>][@<tag>]`)
+ * is resolved by the API (pipelex-api >= 0.21.0): the repository is fetched at the
+ * tag, the package is located by manifest identity, and its `.mthds` files feed the
+ * closure with their real relative paths as per-file sources. The **registry form**
+ * (any non-address reference) stays reserved and answers `501` until a method
+ * registry exists.
+ *
+ * Either form is API-only. The local `pipelex` runner materializes its closure from
+ * `files` on disk and rejects a `method_ref` outright rather than fetching one.
  */
 export interface BuildRequestBase {
   files?: MthdsFileItem[];
   method_ref?: string;
   /**
-   * The pipe to project, as a QUALIFIED `domain.pipe_code` ref. Omit it to
-   * default to the closure's declared `main_pipe` — which fails (422) when the
-   * closure declares none, or declares several across its domains.
+   * The pipe to project, as a QUALIFIED `domain.pipe_code` ref. Omit it to default
+   * the way a run by address does: to the fetched package manifest's `main_pipe` on
+   * a `method_ref` request, else to the closure's declared `main_pipe` — which fails
+   * (422) when the closure declares none, or declares several across its domains.
+   *
+   * That manifest arm needs a server NEWER than pipelex-api 0.21.0. 0.21.0 resolves
+   * the address form but drops the manifest on the tooling path, falling straight
+   * through to the closure's own domain-level declarations — so a package whose
+   * `METHODS.toml` names an entry pipe that its domains do not answers `422` there.
+   * Send `pipe_ref` explicitly to be portable across both.
    */
   pipe_ref?: string;
 }

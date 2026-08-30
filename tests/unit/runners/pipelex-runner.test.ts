@@ -345,7 +345,7 @@ describe("PipelexRunner", () => {
       expect(mockedWriteFileSync.mock.calls[0]![0]).toBe("/tmp/mthds-test/bundle.mthds");
     });
 
-    it("refuses method_ref, which only the API can serve (and only once the registry lands)", async () => {
+    it("refuses method_ref, whose address form only the API resolves", async () => {
       await expect(runner.buildInputs({ method_ref: "acme/summarize" })).rejects.toThrow(
         /method_ref is not supported/,
       );

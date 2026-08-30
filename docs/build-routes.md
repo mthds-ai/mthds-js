@@ -15,7 +15,11 @@ const result = await runner.buildInputs({
 });
 ```
 
-**`files[]` XOR `method_ref`.** Supply the closure inline as `files`, or name a registry method with `method_ref` — never both. `method_ref` is reserved: the method registry does not exist yet, so the API answers `501` and the local runner throws.
+**`files[]` XOR `method_ref`.** Supply the closure inline as `files`, or name a published method with `method_ref` — never both.
+
+An **address-form** `method_ref` (`github.com/<owner>/<repo>[/<selector>][@<tag>]`) is resolved by the API as of pipelex-api 0.21.0: the repository is fetched at the tag, the package inside it is located by manifest identity, and its `.mthds` files become the closure with their real relative paths as per-file `source` labels. Omitting `pipe_ref` on such a request defaults to the fetched manifest's `main_pipe`, exactly the way a run by address does. The **registry form** — any reference that is not an address — stays reserved and answers `501` until a method registry exists.
+
+Both forms are API-only. The local runner shells out to `pipelex-agent <projection> bundle <path>`, which reads a closure already on disk, so it has nothing to resolve a reference against and throws on any `method_ref`.
 
 **`source` is a provenance label**, not a path the server reads. Give it a filename and the server threads it onto the diagnostics it can attribute to that file, so an invalid verdict points at the file that caused it. Treat the attribution as best-effort: graph-level `dry_run` and `pipe_factory` items have no single owning file, and a `main_pipe` naming a nonexistent pipe currently reports its provenance in the message prose while leaving the structured field unset — which is why `ValidationErrorItem.source` is optional.
 

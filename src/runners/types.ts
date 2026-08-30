@@ -53,6 +53,12 @@ export interface BuildRequestBase {
    * the way a run by address does: to the fetched package manifest's `main_pipe` on
    * a `method_ref` request, else to the closure's declared `main_pipe` — which fails
    * (422) when the closure declares none, or declares several across its domains.
+   *
+   * That manifest arm needs a server NEWER than pipelex-api 0.21.0. 0.21.0 resolves
+   * the address form but drops the manifest on the tooling path, falling straight
+   * through to the closure's own domain-level declarations — so a package whose
+   * `METHODS.toml` names an entry pipe that its domains do not answers `422` there.
+   * Send `pipe_ref` explicitly to be portable across both.
    */
   pipe_ref?: string;
 }

@@ -17,7 +17,9 @@ const result = await runner.buildInputs({
 
 **`files[]` XOR `method_ref`.** Supply the closure inline as `files`, or name a published method with `method_ref` — never both.
 
-An **address-form** `method_ref` (`github.com/<owner>/<repo>[/<selector>][@<tag>]`) is resolved by the API as of pipelex-api 0.21.0: the repository is fetched at the tag, the package inside it is located by manifest identity, and its `.mthds` files become the closure with their real relative paths as per-file `source` labels. Omitting `pipe_ref` on such a request defaults to the fetched manifest's `main_pipe`, exactly the way a run by address does. The **registry form** — any reference that is not an address — stays reserved and answers `501` until a method registry exists.
+An **address-form** `method_ref` (`github.com/<owner>/<repo>[/<selector>][@<tag>]`) is resolved by the API as of pipelex-api 0.21.0: the repository is fetched at the tag, the package inside it is located by manifest identity, and its `.mthds` files become the closure with their real relative paths as per-file `source` labels. The **registry form** — any reference that is not an address — stays reserved and answers `501` until a method registry exists.
+
+Omitting `pipe_ref` on an address-form request defaults to the fetched manifest's `main_pipe`, the way a run by address does — but only on a server **newer than pipelex-api 0.21.0**. 0.21.0 resolves the address form and then drops the manifest on the tooling path, falling straight through to the closure's own domain-level declarations, so a package whose `METHODS.toml` names an entry pipe that its domains do not answers `422` there. Send `pipe_ref` explicitly to be portable across both.
 
 Both forms are API-only. The local runner shells out to `pipelex-agent <projection> bundle <path>`, which reads a closure already on disk, so it has nothing to resolve a reference against and throws on any `method_ref`.
 
@@ -27,7 +29,7 @@ The local runner puts the label to a second use — it names the file on disk in
 
 So `lib/shared.mthds` and `https://example.com/shared.mthds` both become `shared.mthds` — the prefix is dropped, the basename survives. A label whose final segment is not a `.mthds` file (`notes.txt`, `.hidden.mthds`, a bare label like `main`) gets the positional name instead. That is a deliberate guard against escaping the temp directory, not an oversight — and it's why the API is the one to trust for verbatim `source` round-tripping.
 
-**`pipe_ref` is a QUALIFIED `domain.pipe_code` ref, and it is optional.** Omit it and the pipe defaults to the closure's declared `main_pipe`. That default fails (`422` on the API, a throw locally) when the closure declares _no_ `main_pipe` — and equally when it declares _several_ across its domains, because an ambiguous closure has no single "the" pipe and guessing would be worse than asking.
+**`pipe_ref` is a QUALIFIED `domain.pipe_code` ref, and it is optional.** Omit it and the pipe defaults to the closure's declared `main_pipe` (preceded, on an address-form `method_ref`, by the fetched manifest's — see above). That default fails (`422` on the API, a throw locally) when the closure declares _no_ `main_pipe` — and equally when it declares _several_ across its domains, because an ambiguous closure has no single "the" pipe and guessing would be worse than asking.
 
 The valid arm echoes both the ref it resolved and, when you submitted one, the ref you asked for:
 

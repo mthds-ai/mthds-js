@@ -116,15 +116,15 @@ function writeMthdsContents(tmp: string, contents: string[]): string {
  * The refusal is about THIS runner, not about the selector: it shells out to
  * `pipelex-agent <projection> bundle <path>`, which reads a closure already on disk, so
  * there is nothing here to resolve a reference against. The API runner does resolve the
- * address form — only its registry form is still a `501`.
+ * address form, from pipelex-api 0.21.0 — only its registry form is still a `501`.
  */
 function writeBuildFiles(tmp: string, request: BuildRequestBase): string {
   if (request.method_ref) {
     throw new Error(
       "method_ref is not supported by the local pipelex runner — pass the closure as files[], " +
-        "or send this request to the API runner, which resolves the address form " +
-        "(github.com/<owner>/<repo>[/<selector>][@<tag>]). Only a registry-form reference " +
-        "is refused there, with a 501, until a method registry exists.",
+        "or send this request to an API runner on pipelex-api 0.21.0 or newer, which resolves " +
+        "the address form (github.com/<owner>/<repo>[/<selector>][@<tag>]). Only a registry-form " +
+        "reference is refused there, with a 501, until a method registry exists.",
     );
   }
   return writeMthdsFiles(tmp, request.files ?? []);

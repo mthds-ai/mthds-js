@@ -350,6 +350,15 @@ describe("PipelexRunner", () => {
         /method_ref is not supported/,
       );
     });
+
+    it("names the pipelex-api floor when it sends the caller to the API runner", async () => {
+      // The redirect is only good advice against a server that actually resolves the
+      // address form, which is 0.21.0 and up — an older self-hosted API is a second
+      // failing path, so the floor belongs in the message and not just in the types.
+      await expect(runner.buildInputs({ method_ref: "acme/summarize" })).rejects.toThrow(
+        /0\.21\.0/,
+      );
+    });
   });
 
   describe("buildInputs", () => {

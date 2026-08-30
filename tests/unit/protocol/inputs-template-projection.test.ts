@@ -110,6 +110,15 @@ function valueAtPath(root: unknown, path: string): unknown {
 }
 
 describe("the inputs-template corpus", () => {
+  // The axes are read from the manifest but not trusted from it. Every case below is a product of
+  // these two lists, so a regeneration that dropped a shape or a format would quietly shrink the
+  // suite instead of failing it — the parity check would stop covering TOML and still report green.
+  // Pinning them means the corpus can grow a pipe without touching this file, but never lose an axis.
+  it("still holds both shapes and both formats", () => {
+    expect([...MANIFEST.shapes].sort()).toEqual(["compact", "explicit"]);
+    expect([...MANIFEST.formats].sort()).toEqual(["json", "toml"]);
+  });
+
   it("exercises the whole closed kind vocabulary", () => {
     const covered = new Set<string>();
     for (const descriptor of Object.values(INPUT_FORM)) {

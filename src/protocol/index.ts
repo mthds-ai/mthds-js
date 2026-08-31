@@ -88,6 +88,26 @@ export type {
   InputForm,
 } from "./input_form.js";
 
+// ── The inputs-template projection ───────────────────────────────────
+// A pipe's fill-in template, projected client-side from the `input_form`
+// descriptor above rather than fetched from a build route — once here and once
+// in `mthds-python`, held to the same bytes by the shared fixture corpus. The
+// serialization is part of it: `toml_emitter` states the TOML layout the two
+// languages must agree on, and `TemplateFloat` is the decimal point TypeScript's
+// single number type cannot otherwise keep. The layout functions themselves stay
+// module-level — a consumer renders through `renderInputsTemplate`.
+export {
+  INPUTS_TEMPLATE_FORMATS,
+  InputsTemplateError,
+  formatSlotSignature,
+  projectConceptComments,
+  projectInputsTemplate,
+  renderInputsTemplate,
+} from "./inputs_template.js";
+export type { InputsTemplateFormat } from "./inputs_template.js";
+export { TemplateFloat, TomlEmissionError } from "./toml_emitter.js";
+export type { TemplateTable, TemplateValue } from "./toml_emitter.js";
+
 // ── Abstract domain shapes (exact mirror of mthds-python) ─────────────
 export { conceptRef } from "./concept.js";
 export type { ConceptAbstract } from "./concept.js";

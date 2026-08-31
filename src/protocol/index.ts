@@ -53,11 +53,13 @@ export type { VariableMultiplicity, PipeOutputAbstract } from "./pipe_output.js"
 export type { StuffContentOrData, PipelineInputs } from "./pipeline_inputs.js";
 
 // ── Validate extensions the standard recommends ──────────────────────
-// The two artifacts MTHDS v0.9.0 defines as pages of their own and names as
-// recommended extension fields of the validate response — `pipe_io_contracts`
-// (mirror of `mthds/protocol/pipe_io_contracts.py`) and `input_form` (mirror of
-// `mthds/protocol/input_form.py`). Types only; the one runtime value is the
-// closed kind vocabulary, `FIELD_KINDS`, from which `FieldKind` is derived.
+// The artifacts MTHDS defines as pages of their own and names as recommended
+// extension fields of the validate response — `pipe_io_contracts` (mirror of
+// `mthds/protocol/pipe_io_contracts.py`), `input_form` (mirror of
+// `mthds/protocol/input_form.py`) and `output_form` (mirror of
+// `mthds/protocol/output_form.py`). Types only; the one runtime value is the
+// closed kind vocabulary, `FIELD_KINDS`, from which `FieldKind` is derived —
+// and it covers the output form too, which reuses the same node union.
 export type {
   IOMultiplicity,
   PresenceMarker,
@@ -87,6 +89,7 @@ export type {
   PipeInputFormDescriptor,
   InputForm,
 } from "./input_form.js";
+export type { PipeOutputFormDescriptor, OutputForm } from "./output_form.js";
 
 // ── The inputs-template projection ───────────────────────────────────
 // A pipe's fill-in template, projected client-side from the `input_form`

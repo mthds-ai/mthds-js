@@ -1477,4 +1477,95 @@ export const INPUT_FORM_FIXTURE: InputForm = {
       },
     ],
   },
+  "input_semantics_output.output_structured": {
+    fields: [
+      {
+        kind: "prose",
+        name: "note",
+        concept_ref: "native.Text",
+        description: "A text",
+        required: true,
+        presence: "plain",
+        gating: true,
+      },
+    ],
+  },
+  "input_semantics_output.output_nested": {
+    fields: [
+      {
+        kind: "prose",
+        name: "note",
+        concept_ref: "native.Text",
+        description: "A text",
+        required: true,
+        presence: "plain",
+        gating: true,
+      },
+    ],
+  },
+  "input_semantics_output.output_plural": {
+    fields: [
+      {
+        kind: "prose",
+        name: "note",
+        concept_ref: "native.Text",
+        description: "A text",
+        required: true,
+        presence: "plain",
+        gating: true,
+      },
+    ],
+  },
+  "input_semantics_output.output_fixed_plural": {
+    fields: [
+      {
+        kind: "prose",
+        name: "note",
+        concept_ref: "native.Text",
+        description: "A text",
+        required: true,
+        presence: "plain",
+        gating: true,
+      },
+    ],
+  },
+  "input_semantics_output.output_optional": {
+    fields: [
+      {
+        kind: "prose",
+        name: "note",
+        concept_ref: "native.Text",
+        description: "A text",
+        required: true,
+        presence: "plain",
+        gating: true,
+      },
+    ],
+  },
+  "input_semantics_output.output_native_text": {
+    fields: [
+      {
+        kind: "prose",
+        name: "note",
+        concept_ref: "native.Text",
+        description: "A text",
+        required: true,
+        presence: "plain",
+        gating: true,
+      },
+    ],
+  },
+  "input_semantics_output.output_native_image": {
+    fields: [
+      {
+        kind: "prose",
+        name: "subject",
+        concept_ref: "native.Text",
+        description: "A text",
+        required: true,
+        presence: "plain",
+        gating: true,
+      },
+    ],
+  },
 };

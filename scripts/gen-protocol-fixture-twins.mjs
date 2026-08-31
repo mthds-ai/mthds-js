@@ -46,6 +46,13 @@ const TWINS = [
     typeModule: "../../../src/protocol/input_form.js",
   },
   {
+    json: "output_form.json",
+    twin: "output_form.fixture.ts",
+    exportName: "OUTPUT_FORM_FIXTURE",
+    typeName: "OutputForm",
+    typeModule: "../../../src/protocol/output_form.js",
+  },
+  {
     json: "pipe_io_contracts.json",
     twin: "pipe_io_contracts.fixture.ts",
     exportName: "PIPE_IO_CONTRACTS_FIXTURE",

@@ -173,16 +173,20 @@ export function projectInputsTemplate(
   descriptor: PipeInputFormDescriptor,
   options: { explicit: boolean },
 ): TemplateTable {
-  const template: TemplateTable = {};
-  for (const field of descriptor.fields) {
-    template[field.name] = options.explicit
-      ? {
-          [ENVELOPE_CONCEPT_KEY]: field.concept_ref ?? null,
-          [ENVELOPE_CONTENT_KEY]: slotContent(field, field.name),
-        }
-      : compactSlot(field);
-  }
-  return template;
+  // Built by defining each key rather than by assigning it: an input named `__proto__` reaches
+  // `Object.prototype`'s own accessor under assignment, which defines nothing and drops the slot
+  // from both serializations. Every other mapping this module builds already defines its keys.
+  return Object.fromEntries(
+    descriptor.fields.map((field) => [
+      field.name,
+      options.explicit
+        ? {
+            [ENVELOPE_CONCEPT_KEY]: field.concept_ref ?? null,
+            [ENVELOPE_CONTENT_KEY]: slotContent(field, field.name),
+          }
+        : compactSlot(field),
+    ]),
+  );
 }
 
 /** The per-slot `concept: …` comment map a compact TOML rendering carries above each key. */

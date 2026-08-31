@@ -219,6 +219,29 @@ const FLOAT_SLOT: InputFormTopLevelField = {
   integer: false,
 };
 
+/**
+ * Two text slots, the first named for the one string JavaScript treats as an instruction rather
+ * than as a key. The ordinary slot beside it is what shows the whole table did not simply vanish.
+ */
+const PROTOTYPE_COLLIDING_SLOTS: InputFormTopLevelField[] = [
+  {
+    name: "__proto__",
+    kind: "text",
+    concept_ref: "native.Text",
+    required: true,
+    presence: "plain",
+    gating: true,
+  },
+  {
+    name: "ordinary",
+    kind: "text",
+    concept_ref: "native.Text",
+    required: true,
+    presence: "plain",
+    gating: true,
+  },
+];
+
 const SHAPES: { explicit: boolean; label: string }[] = [
   { explicit: false, label: "compact" },
   { explicit: true, label: "explicit" },
@@ -309,4 +332,24 @@ describe("a float placeholder", () => {
       "# concept: probe.Ratio\nratio = 0.0\n",
     );
   });
+});
+
+describe("a slot whose name collides with Object.prototype", () => {
+  for (const { explicit, label } of SHAPES) {
+    it(`keeps its place in the ${label} shape`, () => {
+      // `template[field.name] = …` reaches `Object.prototype`'s own `__proto__` accessor rather than
+      // defining a key, so the declared slot leaves no enumerable entry and disappears from both
+      // serializations — silently, and differently in each shape: the explicit shape's envelope is an
+      // object, so the setter fires and rehomes the table's prototype, while a compact text slot is a
+      // bare string, which the setter ignores outright. The projection therefore builds its table the
+      // way the rest of this module already does, by defining every key rather than assigning it.
+      const descriptor: PipeInputFormDescriptor = { fields: PROTOTYPE_COLLIDING_SLOTS };
+      const template = projectInputsTemplate(descriptor, { explicit });
+      expect(Object.keys(template)).toEqual(["__proto__", "ordinary"]);
+      expect(Object.getPrototypeOf(template)).toBe(Object.prototype);
+      expect(renderInputsTemplate(descriptor, { explicit, format: "json" })).toContain(
+        '"__proto__"',
+      );
+    });
+  }
 });

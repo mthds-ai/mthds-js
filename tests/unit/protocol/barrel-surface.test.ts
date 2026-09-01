@@ -50,6 +50,9 @@ import type {
   UnknownFieldNode,
   PipeInputFormDescriptor,
   InputForm,
+  InputsTemplateFormat,
+  TemplateTable,
+  TemplateValue,
 } from "../../../src/protocol/index.js";
 
 /**
@@ -126,19 +129,30 @@ export type ProtocolTypeSurface = [
   UnknownFieldNode,
   PipeInputFormDescriptor,
   InputForm,
+  InputsTemplateFormat,
+  TemplateTable,
+  TemplateValue,
 ];
 
 describe("protocol barrel", () => {
   it("re-exports every runtime value in the public surface", () => {
     expect(Object.keys(protocol).sort()).toEqual([
       "FIELD_KINDS",
+      "INPUTS_TEMPLATE_FORMATS",
+      "InputsTemplateError",
       "MODEL_CATEGORIES",
       "MTHDS_PROTOCOL_VERSION",
       "PipelineRequestError",
+      "TemplateFloat",
+      "TomlEmissionError",
       "assertExclusiveRunSources",
       "conceptRef",
+      "formatSlotSignature",
       "hasBundlePayload",
       "parseMethodFiles",
+      "projectConceptComments",
+      "projectInputsTemplate",
+      "renderInputsTemplate",
       "serializeMethodFiles",
     ]);
   });

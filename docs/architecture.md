@@ -30,6 +30,11 @@ src/protocol/                 PURE — the MTHDS Protocol mirror (imports nothin
   input_form.ts               InputForm (pipe_ref → PipeInputFormDescriptor), the recursive InputFormField /
                               InputFormItem discriminated on FieldKind (FIELD_KINDS at run time), IntentHints —
                               the validate extension `input_form` (mirror of mthds/protocol/input_form.py)
+  inputs_template.ts          renderInputsTemplate / projectInputsTemplate / projectConceptComments /
+                              formatSlotSignature — one pipe's fill-in inputs template, projected from its
+                              input-form descriptor (mirror of mthds/protocol/inputs_template.py)
+  toml_emitter.ts             the deterministic TOML layout the two projections share, TemplateFloat and the
+                              TemplateValue shapes (mirror of mthds/protocol/toml_emitter.py)
   concept.ts                  ConceptAbstract + conceptRef()
   stuff.ts                    StuffAbstract<TConcept, TContent>, StuffContentAbstract
   working_memory.ts           WorkingMemoryAbstract<TStuff>
@@ -57,7 +62,7 @@ The package's entry points differ in what they drag into a bundler's graph:
 | Import | Source | Carries | Bundles where | Use for |
 |---|---|---|---|---|
 | `mthds` | `src/index.ts` | protocol surface + `MthdsApiClient` + error classes | **server/Node** (statically pulls `MthdsApiClient → config/ → node:fs`) | the full SDK |
-| `mthds/protocol` | `src/protocol/index.ts` | the pure protocol surface — types + runtime values (`PipelineRequestError`, `MTHDS_PROTOCOL_VERSION`/`MODEL_CATEGORIES`/`FIELD_KINDS`, `conceptRef`, the run-source predicates `assertExclusiveRunSources`/`hasBundlePayload`, the method-file serialization `serializeMethodFiles`/`parseMethodFiles`) | isomorphic | the protocol surface, with no runner or Node deps |
+| `mthds/protocol` | `src/protocol/index.ts` | the pure protocol surface — types + runtime values (`PipelineRequestError`, `MTHDS_PROTOCOL_VERSION`/`MODEL_CATEGORIES`/`FIELD_KINDS`, `conceptRef`, the run-source predicates `assertExclusiveRunSources`/`hasBundlePayload`, the method-file serialization `serializeMethodFiles`/`parseMethodFiles`, the inputs-template projection `renderInputsTemplate`/`projectInputsTemplate`/`projectConceptComments`/`formatSlotSignature` with `INPUTS_TEMPLATE_FORMATS`, `TemplateFloat` and the two errors `InputsTemplateError`/`TomlEmissionError`) | isomorphic | the protocol surface, with no runner or Node deps |
 | `mthds/errors` | `src/errors.ts` | the exception classes only | **client-safe** (no `node:fs`) | `instanceof` checks in client code |
 
 ### Why `mthds/errors` exists
@@ -111,6 +116,18 @@ What the types say, in the pages' own terms:
 - **Types only.** There is no runtime validator in `protocol/`; engines own their emission gates (`pipelex` validates with the `mthds.protocol` models, `@pipelex/runtime` with its Zod schema) and are pinned to these types. The one runtime value is `FIELD_KINDS`, the `const` tuple the `FieldKind` union is derived from — the `MODEL_CATEGORIES` precedent — so a renderer can guard `kind` exhaustively at run time.
 
 **The parity fixture.** `tests/fixtures/protocol/` holds one real payload pair of both artifacts, emitted by the reference engine and committed byte-for-byte identical in `mthds-python`, where the pydantic mirror parses it — that identity is how the two mirrors are checked against one payload. `npm run fixtures:protocol` generates a `.fixture.ts` twin per JSON — the payload as a fresh object literal declared `InputForm` / `PipeIOContracts` — which is the compile-time check: `npm run typecheck:test` fails when the fixture and the types disagree. `tests/unit/protocol/input-form-parity.test.ts` asserts each twin deep-equals its JSON and checks the cross-artifact rules the pages state (shared key set, closed vocabularies, how `presence`, `required`, `gating` and `item_count` line up between a slot's contract and its descriptor). Where the engine is known to disagree with a page, the page wins: the types follow the page, the fixture stays what the engine produced — never edited to hide the difference — and the README beside it names the ledger item that tracks each divergence. The current capture carries none: it is `pipelex` `dev` at `bdd853c41`, taken after the engine caught up to MTHDS v0.9.0, and it conforms at every site it reaches.
+
+### The inputs template is projected from the descriptor, not fetched
+
+A pipe's **fill-in inputs template** — what a person at a form or an agent preparing a run fills in and hands back — used to be built server-side and fetched over HTTP (`POST /v1/build/inputs`). It is projected here instead, from the `input_form` descriptor the standard already defines, so a client holding a descriptor needs nothing further to offer a template for a method it does not have on disk. `renderInputsTemplate(descriptor, { explicit, format })` is the entry point; `projectInputsTemplate` returns the template as a value, `projectConceptComments` and `formatSlotSignature` build the io-ref notation (`Concept`, `Concept[]`, `Concept[2]`, `Concept?`, `Concept!`) a compact TOML rendering carries above each key.
+
+Two shapes, and the difference is what the runtime's own input shaper can take back. The **compact** shape is the light form a smart-inputs run accepts directly — a bare string for a text slot, a bare URL for a file-ish one, the content mapping for a structured one — except where a bare value is not re-shapable, which keeps the `{concept, content}` envelope because a template that does not run is not a template. The **explicit** shape keeps that envelope on every slot. The projection walks the *descriptor*, never a runtime content class, which is the whole difference from the reference engine's own renderer: the engine's template states what the runtime holds, this one states what the method declares. Each class of difference is declared, with worked sites, in the corpus manifest.
+
+**The bar is byte identity with `mthds-python`**, across every kind of the closed vocabulary, both shapes and both formats — otherwise the JS/Python asymmetry that retiring the build routes removed is rebuilt one layer up. Two consequences for how this is written. The TOML is emitted by `toml_emitter.ts` rather than by `smol-toml`: a library emits no comments and may change its layout in a patch release, in one language and not the other, so the layout is stated in the few dozen lines it takes and mirrored line for line. And a number carries a `TemplateFloat` marker where it must print with its decimal point — TypeScript has one number type where Python has two, so `0.0` would otherwise print as `0` — which is also why the JSON half is written here rather than handed to `JSON.stringify`.
+
+`tests/fixtures/protocol/inputs_template/` is the corpus that holds the two sides to it: one file per pipe, shape and format, committed identically in both repos. The rules the captured bundles do not reach are stated on their own — each TOML layout rule as bytes in `toml-emitter.test.ts`, and the forms no capture produced (an input-less pipe, a plural native slot, an unknown format) in `inputs-template-rendering.test.ts`.
+
+Wiring `mthds-agent inputs` on the API runner onto this projection — and off `POST /v1/build/inputs` — is the second half of `L-260829-f50e2b`, and waits on the descriptor's own route.
 
 ### Token precedence
 

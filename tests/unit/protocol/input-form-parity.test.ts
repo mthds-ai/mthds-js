@@ -4,6 +4,7 @@ import { FIELD_KINDS } from "../../../src/protocol/input_form.js";
 import type { InputFormItem, InputFormTopLevelField } from "../../../src/protocol/input_form.js";
 import type { IOMultiplicity, PresenceMarker } from "../../../src/protocol/pipe_io_contracts.js";
 import { INPUT_FORM_FIXTURE } from "../../fixtures/protocol/input_form.fixture.js";
+import { OUTPUT_FORM_FIXTURE } from "../../fixtures/protocol/output_form.fixture.js";
 import { PIPE_IO_CONTRACTS_FIXTURE } from "../../fixtures/protocol/pipe_io_contracts.fixture.js";
 
 /**
@@ -78,16 +79,93 @@ describe("protocol parity fixtures — twins", () => {
     expect(INPUT_FORM_FIXTURE).toEqual(readFixture("input_form.json"));
   });
 
+  it("the output_form twin is its JSON, value for value", () => {
+    expect(OUTPUT_FORM_FIXTURE).toEqual(readFixture("output_form.json"));
+  });
+
   it("the pipe_io_contracts twin is its JSON, value for value", () => {
     expect(PIPE_IO_CONTRACTS_FIXTURE).toEqual(readFixture("pipe_io_contracts.json"));
   });
 });
 
 describe("protocol parity fixtures — the pages' cross-artifact rules", () => {
-  it("both artifacts are keyed by the same pipe_ref set", () => {
+  it("all three artifacts are keyed by the same pipe_ref set", () => {
     expect(Object.keys(INPUT_FORM_FIXTURE).sort()).toEqual(
       Object.keys(PIPE_IO_CONTRACTS_FIXTURE).sort(),
     );
+    expect(Object.keys(OUTPUT_FORM_FIXTURE).sort()).toEqual(
+      Object.keys(PIPE_IO_CONTRACTS_FIXTURE).sort(),
+    );
+  });
+
+  it("every kind an output node states is one this version of the standard defines", () => {
+    // The output form reuses the input form's node union, so the SAME closed
+    // vocabulary covers it. That reuse is the artifact's whole design, and this
+    // is what keeps it honest rather than merely intended.
+    for (const descriptor of Object.values(OUTPUT_FORM_FIXTURE)) {
+      for (const node of walkNodes(descriptor.field)) {
+        expect(FIELD_KINDS).toContain(node.kind);
+      }
+    }
+  });
+
+  it("an output node states neither presence nor gating", () => {
+    // Both are facts of an INPUT slot: `!` may not appear on an output, `?` is
+    // what the contract's `optional` states, and nothing waits on a result. The
+    // node type leaves them optional so a slotless node can exist at all — not
+    // so a producer may fill them in with something plausible.
+    for (const descriptor of Object.values(OUTPUT_FORM_FIXTURE)) {
+      const node = descriptor.field as unknown as Record<string, unknown>;
+      expect(node.presence).toBeUndefined();
+      expect(node.gating).toBeUndefined();
+    }
+  });
+
+  it("a plural output is described as a list, and a single one is not", () => {
+    // THE producer obligation of this artifact, and the one that fails silently.
+    // `concept_ref` is the element with the multiplicity suffix stripped on both
+    // sides of the contract, so a producer that does not read `multiplicity`
+    // describes one item where a run returns many — and every renderer then
+    // shows one.
+    for (const [pipeRef, descriptor] of Object.entries(OUTPUT_FORM_FIXTURE)) {
+      const output = PIPE_IO_CONTRACTS_FIXTURE[pipeRef]!.output;
+      if (output.multiplicity === "single") {
+        expect(descriptor.field.kind, pipeRef).not.toBe("list");
+      } else {
+        expect(descriptor.field.kind, pipeRef).toBe("list");
+      }
+    }
+  });
+
+  it("a fixed-count output states the same count on the descriptor and the contract", () => {
+    for (const [pipeRef, descriptor] of Object.entries(OUTPUT_FORM_FIXTURE)) {
+      const output = PIPE_IO_CONTRACTS_FIXTURE[pipeRef]!.output;
+      if (descriptor.field.kind !== "list") continue;
+      expect(descriptor.field.item_count ?? null, pipeRef).toEqual(output.item_count);
+    }
+  });
+
+  it("an output's payload schema is its content model, never a bare array", () => {
+    // Where the output side departs from the input side, asserted rather than
+    // only documented. An input's schema describes what a caller SENDS, so a
+    // plural slot's is a bare array; an output's describes what COMES BACK,
+    // which is a content model — an object — whatever the multiplicity.
+    for (const [pipeRef, contract] of Object.entries(PIPE_IO_CONTRACTS_FIXTURE)) {
+      const schema = contract.output.json_schema as { type?: unknown; properties?: unknown };
+      expect(schema.type, pipeRef).toBe("object");
+      expect(schema.properties, pipeRef).toBeTypeOf("object");
+    }
+  });
+
+  it("a fixed-count output bounds its element array to that count", () => {
+    for (const [pipeRef, contract] of Object.entries(PIPE_IO_CONTRACTS_FIXTURE)) {
+      const output = contract.output;
+      if (output.multiplicity !== "fixed") continue;
+      const properties = (output.json_schema as { properties: Record<string, unknown> }).properties;
+      const elements = Object.values(properties)[0] as { minItems?: number; maxItems?: number };
+      expect(elements.minItems, pipeRef).toBe(output.item_count);
+      expect(elements.maxItems, pipeRef).toBe(output.item_count);
+    }
   });
 
   it("every kind the engine emitted is one this version of the standard defines", () => {

@@ -111,6 +111,29 @@ export type PipeInputContract =
 interface PipeOutputContractCommon {
   /** The fully-qualified concept the pipe produces, multiplicity suffix stripped. */
   concept_ref: string;
+  /**
+   * The JSON Schema of the payload the pipe resolves to — the concept's CONTENT
+   * MODEL, not a caller's argument, which is where this member's rule departs
+   * from its input twin.
+   *
+   * A `native.Text` output resolves to that concept's content model, so its
+   * schema is the object declaring `text`; a `Concept[]` output resolves to the
+   * list content model, so its schema is the object declaring the element array.
+   * Stating a bare array here — the input side's plural rule — would describe a
+   * payload no runtime produces.
+   *
+   * Two rules and nothing else: on the fixed arm the element array carries
+   * `minItems` and `maxItems` equal to `item_count`, and because `optional`
+   * already states that the output may be absent, the schema describes the shape
+   * *when present* — never a null arm.
+   *
+   * Read with the output-form descriptor (`OutputForm` in `./output_form.ts`),
+   * which states the node's `kind`. Neither is sufficient alone: the descriptor
+   * says what the field IS, the schema names the property its payload sits
+   * under, and a consumer holding one but not the other is back to inferring the
+   * other from the value.
+   */
+  json_schema: Record<string, unknown>;
 }
 
 /**
@@ -120,9 +143,13 @@ interface PipeOutputContractCommon {
  * use-site assertion about an input, so a three-valued output slot would have
  * an arm nothing can ever produce. `optional` is `true` when the output is
  * declared optional (`?`): a *successful* run may resolve it as a recorded
- * absence instead of a value — not that the run may fail. No output member
- * carries a schema: the payload a run actually produces is the run's own
- * result. Closed shape.
+ * absence instead of a value — not that the run may fail. Closed shape.
+ *
+ * The schema asymmetry is gone, and deliberately: an output used to carry none,
+ * on the reasoning that the payload a run produces is the run's own result —
+ * which answers *what did this run produce?* rather than the question a consumer
+ * asks, *what shape will it be?* The second is declared in the `.mthds` source
+ * and knowable before any run happens, exactly as it is on the input side.
  *
  * A union discriminated on `multiplicity`, the same pairing rules as the
  * input: `item_count` is non-`null` exactly on the fixed arm (and then always

@@ -1,5 +1,25 @@
 # Changelog
 
+## [v0.25.0] - 2026-09-02
+
+### Added
+
+- **Client-side inputs-template projection:** Clients can now project fill-in input templates directly from `input_form` descriptors (`src/protocol/inputs_template.ts`) in both JSON and TOML, without fetching them from the server via `POST /v1/build/inputs`. Includes a deterministic TOML emitter (`src/protocol/toml_emitter.ts`) that guarantees byte-for-byte parity with `mthds-python`, covering `# concept:` comment lines and float decimal formatting.
+- **Output-form descriptor:** Added `OutputForm` and `PipeOutputFormDescriptor` (`src/protocol/output_form.ts`) to mirror the standard's output-form page and the `mthds-python` implementation.
+- **Protocol corpus parity CI gate:** Added a GitHub Actions workflow (`.github/workflows/protocol-corpus-parity.yml`) that checks out the sibling `mthds-python` repository on every PR to ensure the shared protocol fixture corpus stays byte-identical across both languages.
+- **Shared projection fixture corpus:** Added a fixture corpus (`tests/fixtures/protocol/inputs_template/`) validating byte-parity of projected templates across all supported shapes (compact/explicit) and formats (JSON/TOML), including open natives (`native.JSON`, `native.Dynamic`, `native.Composite`) and a bundle capturing output shapes rather than the single native scalar every earlier bundle resolved to.
+
+### Changed
+
+- `PipeOutputContract` now requires a `json_schema` member describing the payload's shape (the concept's content model); hand-built `PipeIOContract` literals will no longer type-check until this member is added (Breaking).
+- `input-form-parity.test.ts` now enforces the cross-artifact rules a type cannot express: the three artifacts keyed alike, no slot facts on an output node, the plural wrap, and the fixed count agreeing between descriptor and contract.
+- Updated `scripts/gen-protocol-fixture-twins.mjs` to automatically generate TypeScript twins for the new `output_form.json` artifact.
+- Updated `docs/architecture.md` to document the client-side inputs-template projection architecture and its byte-identity requirements.
+
+### Fixed
+
+- Corrected `method_ref` resolution messaging across `docs/build-routes.md`, `BuildRequestBase` JSDoc, and local runner errors: `pipelex-api` (>= 0.21.0) resolves address-form references (`github.com/<owner>/<repo>...`), and only registry-form references return `501 Not Implemented`.
+
 ## [v0.24.0] - 2026-08-27
 
 ### Added

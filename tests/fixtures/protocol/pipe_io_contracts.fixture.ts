@@ -148,6 +148,19 @@ export const PIPE_IO_CONTRACTS_FIXTURE: PipeIOContracts = {
       multiplicity: "single",
       item_count: null,
       optional: false,
+      json_schema: {
+        description: "A text",
+        properties: {
+          text: {
+            description: "The text",
+            title: "Text",
+            type: "string",
+          },
+        },
+        required: ["text"],
+        title: "native.Text",
+        type: "object",
+      },
     },
   },
   "input_semantics_probe.probe_single": {
@@ -717,6 +730,19 @@ export const PIPE_IO_CONTRACTS_FIXTURE: PipeIOContracts = {
       multiplicity: "single",
       item_count: null,
       optional: false,
+      json_schema: {
+        description: "A text",
+        properties: {
+          text: {
+            description: "The text",
+            title: "Text",
+            type: "string",
+          },
+        },
+        required: ["text"],
+        title: "native.Text",
+        type: "object",
+      },
     },
   },
   "input_semantics_probe.probe_native_inputs": {
@@ -1302,6 +1328,19 @@ export const PIPE_IO_CONTRACTS_FIXTURE: PipeIOContracts = {
       multiplicity: "single",
       item_count: null,
       optional: false,
+      json_schema: {
+        description: "A text",
+        properties: {
+          text: {
+            description: "The text",
+            title: "Text",
+            type: "string",
+          },
+        },
+        required: ["text"],
+        title: "native.Text",
+        type: "object",
+      },
     },
   },
   "input_semantics_probe.probe_markers": {
@@ -2373,6 +2412,19 @@ export const PIPE_IO_CONTRACTS_FIXTURE: PipeIOContracts = {
       multiplicity: "single",
       item_count: null,
       optional: false,
+      json_schema: {
+        description: "A text",
+        properties: {
+          text: {
+            description: "The text",
+            title: "Text",
+            type: "string",
+          },
+        },
+        required: ["text"],
+        title: "native.Text",
+        type: "object",
+      },
     },
   },
   "input_semantics_probe.probe_refined": {
@@ -2544,6 +2596,1392 @@ export const PIPE_IO_CONTRACTS_FIXTURE: PipeIOContracts = {
       multiplicity: "single",
       item_count: null,
       optional: false,
+      json_schema: {
+        description: "A text",
+        properties: {
+          text: {
+            description: "The text",
+            title: "Text",
+            type: "string",
+          },
+        },
+        required: ["text"],
+        title: "native.Text",
+        type: "object",
+      },
+    },
+  },
+  "input_semantics_scaffold.scaffold_nesting": {
+    inputs: {
+      bookmark: {
+        concept_ref: "input_semantics_scaffold.Bookmark",
+        presence: "plain",
+        multiplicity: "single",
+        item_count: null,
+        json_schema: {
+          description:
+            "SCAFFOLD_desc_concept_Bookmark: a shelf reference whose text fields are named like links",
+          properties: {
+            url: {
+              description: "SCAFFOLD_desc_field_url: a required text field merely NAMED url",
+              title: "Url",
+              type: "string",
+            },
+            homepage_url: {
+              anyOf: [
+                {
+                  type: "string",
+                },
+                {
+                  type: "null",
+                },
+              ],
+              default: null,
+              description:
+                "SCAFFOLD_desc_field_homepage_url: an optional text field whose name ENDS in _url",
+              title: "Homepage Url",
+            },
+            label: {
+              description: "SCAFFOLD_desc_field_label: ordinary required text beside them",
+              title: "Label",
+              type: "string",
+            },
+            shelf_note: {
+              anyOf: [
+                {
+                  type: "string",
+                },
+                {
+                  type: "null",
+                },
+              ],
+              default: null,
+              description: "SCAFFOLD_desc_field_shelf_note: ordinary optional text beside them",
+              title: "Shelf Note",
+            },
+          },
+          required: ["url", "label"],
+          title: "input_semantics_scaffold.Bookmark",
+          type: "object",
+        },
+      },
+      dossier: {
+        concept_ref: "input_semantics_scaffold.Dossier",
+        presence: "plain",
+        multiplicity: "single",
+        item_count: null,
+        json_schema: {
+          $defs: {
+            DocumentContent: {
+              description: "A document",
+              properties: {
+                url: {
+                  description:
+                    "The document URL: a storage URI, an HTTP(S) URL, or a base64 data URL",
+                  title: "Url",
+                  type: "string",
+                },
+                public_url: {
+                  anyOf: [
+                    {
+                      type: "string",
+                    },
+                    {
+                      type: "null",
+                    },
+                  ],
+                  default: null,
+                  description: "The public HTTPS URL of the document",
+                  title: "Public Url",
+                },
+                mime_type: {
+                  anyOf: [
+                    {
+                      type: "string",
+                    },
+                    {
+                      type: "null",
+                    },
+                  ],
+                  default: null,
+                  description: "The MIME type of the document",
+                  title: "Mime Type",
+                },
+                filename: {
+                  anyOf: [
+                    {
+                      type: "string",
+                    },
+                    {
+                      type: "null",
+                    },
+                  ],
+                  default: null,
+                  description: "The original filename of the document",
+                  title: "Filename",
+                },
+                title: {
+                  anyOf: [
+                    {
+                      type: "string",
+                    },
+                    {
+                      type: "null",
+                    },
+                  ],
+                  default: null,
+                  description: "The title of the document or source",
+                  title: "Title",
+                },
+                snippet: {
+                  anyOf: [
+                    {
+                      type: "string",
+                    },
+                    {
+                      type: "null",
+                    },
+                  ],
+                  default: null,
+                  description: "A text snippet or excerpt from the document",
+                  title: "Snippet",
+                },
+              },
+              required: ["url"],
+              title: "DocumentContent",
+              type: "object",
+            },
+            ImageContent: {
+              description: "An image",
+              properties: {
+                url: {
+                  description: "The image URL: a storage URI, an HTTP(S) URL, or a base64 data URL",
+                  title: "Url",
+                  type: "string",
+                },
+                public_url: {
+                  anyOf: [
+                    {
+                      type: "string",
+                    },
+                    {
+                      type: "null",
+                    },
+                  ],
+                  default: null,
+                  description: "The public URL of the image",
+                  title: "Public Url",
+                },
+                source_prompt: {
+                  anyOf: [
+                    {
+                      type: "string",
+                    },
+                    {
+                      type: "null",
+                    },
+                  ],
+                  default: null,
+                  description: "The source prompt of the image",
+                  title: "Source Prompt",
+                },
+                source_negative_prompt: {
+                  anyOf: [
+                    {
+                      type: "string",
+                    },
+                    {
+                      type: "null",
+                    },
+                  ],
+                  default: null,
+                  description: "The source negative prompt of the image",
+                  title: "Source Negative Prompt",
+                },
+                caption: {
+                  anyOf: [
+                    {
+                      type: "string",
+                    },
+                    {
+                      type: "null",
+                    },
+                  ],
+                  default: null,
+                  description: "The caption of the image",
+                  title: "Caption",
+                },
+                mime_type: {
+                  anyOf: [
+                    {
+                      type: "string",
+                    },
+                    {
+                      type: "null",
+                    },
+                  ],
+                  default: null,
+                  description: "The MIME type of the image",
+                  title: "Mime Type",
+                },
+                width: {
+                  anyOf: [
+                    {
+                      exclusiveMinimum: 0,
+                      type: "integer",
+                    },
+                    {
+                      type: "null",
+                    },
+                  ],
+                  default: null,
+                  description: "The width of the image, in pixels",
+                  title: "Width",
+                },
+                height: {
+                  anyOf: [
+                    {
+                      exclusiveMinimum: 0,
+                      type: "integer",
+                    },
+                    {
+                      type: "null",
+                    },
+                  ],
+                  default: null,
+                  description: "The height of the image, in pixels",
+                  title: "Height",
+                },
+                filename: {
+                  anyOf: [
+                    {
+                      type: "string",
+                    },
+                    {
+                      type: "null",
+                    },
+                  ],
+                  default: null,
+                  description: "The original filename of the image",
+                  title: "Filename",
+                },
+              },
+              required: ["url"],
+              title: "ImageContent",
+              type: "object",
+            },
+            input_semantics_scaffold__Bookmark: {
+              description:
+                "SCAFFOLD_desc_concept_Bookmark: a shelf reference whose text fields are named like links",
+              properties: {
+                url: {
+                  description: "SCAFFOLD_desc_field_url: a required text field merely NAMED url",
+                  title: "Url",
+                  type: "string",
+                },
+                homepage_url: {
+                  anyOf: [
+                    {
+                      type: "string",
+                    },
+                    {
+                      type: "null",
+                    },
+                  ],
+                  default: null,
+                  description:
+                    "SCAFFOLD_desc_field_homepage_url: an optional text field whose name ENDS in _url",
+                  title: "Homepage Url",
+                },
+                label: {
+                  description: "SCAFFOLD_desc_field_label: ordinary required text beside them",
+                  title: "Label",
+                  type: "string",
+                },
+                shelf_note: {
+                  anyOf: [
+                    {
+                      type: "string",
+                    },
+                    {
+                      type: "null",
+                    },
+                  ],
+                  default: null,
+                  description: "SCAFFOLD_desc_field_shelf_note: ordinary optional text beside them",
+                  title: "Shelf Note",
+                },
+              },
+              required: ["url", "label"],
+              title: "input_semantics_scaffold__Bookmark",
+              type: "object",
+            },
+          },
+          description:
+            "SCAFFOLD_desc_concept_Dossier: an archive folder holding required and optional attachments",
+          properties: {
+            title: {
+              description: "SCAFFOLD_desc_field_title: required text heading the folder",
+              title: "Title",
+              type: "string",
+            },
+            stamp: {
+              $ref: "#/$defs/ImageContent",
+              description: "SCAFFOLD_desc_field_stamp: a REQUIRED nested image",
+            },
+            cover: {
+              anyOf: [
+                {
+                  $ref: "#/$defs/ImageContent",
+                },
+                {
+                  type: "null",
+                },
+              ],
+              default: null,
+              description: "SCAFFOLD_desc_field_cover: an OPTIONAL nested image",
+            },
+            attachment: {
+              anyOf: [
+                {
+                  $ref: "#/$defs/DocumentContent",
+                },
+                {
+                  type: "null",
+                },
+              ],
+              default: null,
+              description: "SCAFFOLD_desc_field_attachment: an OPTIONAL nested document",
+            },
+            bookmark: {
+              anyOf: [
+                {
+                  $ref: "#/$defs/input_semantics_scaffold__Bookmark",
+                },
+                {
+                  type: "null",
+                },
+              ],
+              default: null,
+              description: "SCAFFOLD_desc_field_bookmark: the url-named fields one level deeper",
+            },
+          },
+          required: ["title", "stamp"],
+          title: "input_semantics_scaffold.Dossier",
+          type: "object",
+        },
+      },
+    },
+    output: {
+      concept_ref: "native.Text",
+      multiplicity: "single",
+      item_count: null,
+      optional: false,
+      json_schema: {
+        description: "A text",
+        properties: {
+          text: {
+            description: "The text",
+            title: "Text",
+            type: "string",
+          },
+        },
+        required: ["text"],
+        title: "native.Text",
+        type: "object",
+      },
+    },
+  },
+  "input_semantics_scaffold.scaffold_fixed_batch": {
+    inputs: {
+      dossiers: {
+        concept_ref: "input_semantics_scaffold.Dossier",
+        presence: "plain",
+        multiplicity: "fixed",
+        item_count: 2,
+        json_schema: {
+          type: "array",
+          items: {
+            $defs: {
+              DocumentContent: {
+                description: "A document",
+                properties: {
+                  url: {
+                    description:
+                      "The document URL: a storage URI, an HTTP(S) URL, or a base64 data URL",
+                    title: "Url",
+                    type: "string",
+                  },
+                  public_url: {
+                    anyOf: [
+                      {
+                        type: "string",
+                      },
+                      {
+                        type: "null",
+                      },
+                    ],
+                    default: null,
+                    description: "The public HTTPS URL of the document",
+                    title: "Public Url",
+                  },
+                  mime_type: {
+                    anyOf: [
+                      {
+                        type: "string",
+                      },
+                      {
+                        type: "null",
+                      },
+                    ],
+                    default: null,
+                    description: "The MIME type of the document",
+                    title: "Mime Type",
+                  },
+                  filename: {
+                    anyOf: [
+                      {
+                        type: "string",
+                      },
+                      {
+                        type: "null",
+                      },
+                    ],
+                    default: null,
+                    description: "The original filename of the document",
+                    title: "Filename",
+                  },
+                  title: {
+                    anyOf: [
+                      {
+                        type: "string",
+                      },
+                      {
+                        type: "null",
+                      },
+                    ],
+                    default: null,
+                    description: "The title of the document or source",
+                    title: "Title",
+                  },
+                  snippet: {
+                    anyOf: [
+                      {
+                        type: "string",
+                      },
+                      {
+                        type: "null",
+                      },
+                    ],
+                    default: null,
+                    description: "A text snippet or excerpt from the document",
+                    title: "Snippet",
+                  },
+                },
+                required: ["url"],
+                title: "DocumentContent",
+                type: "object",
+              },
+              ImageContent: {
+                description: "An image",
+                properties: {
+                  url: {
+                    description:
+                      "The image URL: a storage URI, an HTTP(S) URL, or a base64 data URL",
+                    title: "Url",
+                    type: "string",
+                  },
+                  public_url: {
+                    anyOf: [
+                      {
+                        type: "string",
+                      },
+                      {
+                        type: "null",
+                      },
+                    ],
+                    default: null,
+                    description: "The public URL of the image",
+                    title: "Public Url",
+                  },
+                  source_prompt: {
+                    anyOf: [
+                      {
+                        type: "string",
+                      },
+                      {
+                        type: "null",
+                      },
+                    ],
+                    default: null,
+                    description: "The source prompt of the image",
+                    title: "Source Prompt",
+                  },
+                  source_negative_prompt: {
+                    anyOf: [
+                      {
+                        type: "string",
+                      },
+                      {
+                        type: "null",
+                      },
+                    ],
+                    default: null,
+                    description: "The source negative prompt of the image",
+                    title: "Source Negative Prompt",
+                  },
+                  caption: {
+                    anyOf: [
+                      {
+                        type: "string",
+                      },
+                      {
+                        type: "null",
+                      },
+                    ],
+                    default: null,
+                    description: "The caption of the image",
+                    title: "Caption",
+                  },
+                  mime_type: {
+                    anyOf: [
+                      {
+                        type: "string",
+                      },
+                      {
+                        type: "null",
+                      },
+                    ],
+                    default: null,
+                    description: "The MIME type of the image",
+                    title: "Mime Type",
+                  },
+                  width: {
+                    anyOf: [
+                      {
+                        exclusiveMinimum: 0,
+                        type: "integer",
+                      },
+                      {
+                        type: "null",
+                      },
+                    ],
+                    default: null,
+                    description: "The width of the image, in pixels",
+                    title: "Width",
+                  },
+                  height: {
+                    anyOf: [
+                      {
+                        exclusiveMinimum: 0,
+                        type: "integer",
+                      },
+                      {
+                        type: "null",
+                      },
+                    ],
+                    default: null,
+                    description: "The height of the image, in pixels",
+                    title: "Height",
+                  },
+                  filename: {
+                    anyOf: [
+                      {
+                        type: "string",
+                      },
+                      {
+                        type: "null",
+                      },
+                    ],
+                    default: null,
+                    description: "The original filename of the image",
+                    title: "Filename",
+                  },
+                },
+                required: ["url"],
+                title: "ImageContent",
+                type: "object",
+              },
+              input_semantics_scaffold__Bookmark: {
+                description:
+                  "SCAFFOLD_desc_concept_Bookmark: a shelf reference whose text fields are named like links",
+                properties: {
+                  url: {
+                    description: "SCAFFOLD_desc_field_url: a required text field merely NAMED url",
+                    title: "Url",
+                    type: "string",
+                  },
+                  homepage_url: {
+                    anyOf: [
+                      {
+                        type: "string",
+                      },
+                      {
+                        type: "null",
+                      },
+                    ],
+                    default: null,
+                    description:
+                      "SCAFFOLD_desc_field_homepage_url: an optional text field whose name ENDS in _url",
+                    title: "Homepage Url",
+                  },
+                  label: {
+                    description: "SCAFFOLD_desc_field_label: ordinary required text beside them",
+                    title: "Label",
+                    type: "string",
+                  },
+                  shelf_note: {
+                    anyOf: [
+                      {
+                        type: "string",
+                      },
+                      {
+                        type: "null",
+                      },
+                    ],
+                    default: null,
+                    description:
+                      "SCAFFOLD_desc_field_shelf_note: ordinary optional text beside them",
+                    title: "Shelf Note",
+                  },
+                },
+                required: ["url", "label"],
+                title: "input_semantics_scaffold__Bookmark",
+                type: "object",
+              },
+            },
+            description:
+              "SCAFFOLD_desc_concept_Dossier: an archive folder holding required and optional attachments",
+            properties: {
+              title: {
+                description: "SCAFFOLD_desc_field_title: required text heading the folder",
+                title: "Title",
+                type: "string",
+              },
+              stamp: {
+                $ref: "#/$defs/ImageContent",
+                description: "SCAFFOLD_desc_field_stamp: a REQUIRED nested image",
+              },
+              cover: {
+                anyOf: [
+                  {
+                    $ref: "#/$defs/ImageContent",
+                  },
+                  {
+                    type: "null",
+                  },
+                ],
+                default: null,
+                description: "SCAFFOLD_desc_field_cover: an OPTIONAL nested image",
+              },
+              attachment: {
+                anyOf: [
+                  {
+                    $ref: "#/$defs/DocumentContent",
+                  },
+                  {
+                    type: "null",
+                  },
+                ],
+                default: null,
+                description: "SCAFFOLD_desc_field_attachment: an OPTIONAL nested document",
+              },
+              bookmark: {
+                anyOf: [
+                  {
+                    $ref: "#/$defs/input_semantics_scaffold__Bookmark",
+                  },
+                  {
+                    type: "null",
+                  },
+                ],
+                default: null,
+                description: "SCAFFOLD_desc_field_bookmark: the url-named fields one level deeper",
+              },
+            },
+            required: ["title", "stamp"],
+            title: "input_semantics_scaffold.Dossier",
+            type: "object",
+          },
+          minItems: 2,
+          maxItems: 2,
+        },
+      },
+      bookmarks: {
+        concept_ref: "input_semantics_scaffold.Bookmark",
+        presence: "plain",
+        multiplicity: "variable",
+        item_count: null,
+        json_schema: {
+          type: "array",
+          items: {
+            description:
+              "SCAFFOLD_desc_concept_Bookmark: a shelf reference whose text fields are named like links",
+            properties: {
+              url: {
+                description: "SCAFFOLD_desc_field_url: a required text field merely NAMED url",
+                title: "Url",
+                type: "string",
+              },
+              homepage_url: {
+                anyOf: [
+                  {
+                    type: "string",
+                  },
+                  {
+                    type: "null",
+                  },
+                ],
+                default: null,
+                description:
+                  "SCAFFOLD_desc_field_homepage_url: an optional text field whose name ENDS in _url",
+                title: "Homepage Url",
+              },
+              label: {
+                description: "SCAFFOLD_desc_field_label: ordinary required text beside them",
+                title: "Label",
+                type: "string",
+              },
+              shelf_note: {
+                anyOf: [
+                  {
+                    type: "string",
+                  },
+                  {
+                    type: "null",
+                  },
+                ],
+                default: null,
+                description: "SCAFFOLD_desc_field_shelf_note: ordinary optional text beside them",
+                title: "Shelf Note",
+              },
+            },
+            required: ["url", "label"],
+            title: "input_semantics_scaffold.Bookmark",
+            type: "object",
+          },
+        },
+      },
+    },
+    output: {
+      concept_ref: "native.Text",
+      multiplicity: "single",
+      item_count: null,
+      optional: false,
+      json_schema: {
+        description: "A text",
+        properties: {
+          text: {
+            description: "The text",
+            title: "Text",
+            type: "string",
+          },
+        },
+        required: ["text"],
+        title: "native.Text",
+        type: "object",
+      },
+    },
+  },
+  "input_semantics_scaffold.scaffold_open_natives": {
+    inputs: {
+      json_in: {
+        concept_ref: "native.JSON",
+        presence: "plain",
+        multiplicity: "single",
+        item_count: null,
+        json_schema: {
+          properties: {
+            json_obj: {
+              additionalProperties: true,
+              description: "The JSON object",
+              title: "Json Obj",
+              type: "object",
+            },
+          },
+          required: ["json_obj"],
+          title: "native.JSON",
+          type: "object",
+          description: "A JSON object",
+        },
+      },
+      dynamic_in: {
+        concept_ref: "native.Dynamic",
+        presence: "plain",
+        multiplicity: "single",
+        item_count: null,
+        json_schema: {
+          properties: {},
+          title: "native.Dynamic",
+          type: "object",
+          description: "A dynamic concept",
+        },
+      },
+      composite_in: {
+        concept_ref: "native.Composite",
+        presence: "plain",
+        multiplicity: "single",
+        item_count: null,
+        json_schema: {
+          additionalProperties: true,
+          description: "A named composition of contents",
+          properties: {},
+          title: "native.Composite",
+          type: "object",
+        },
+      },
+    },
+    output: {
+      concept_ref: "native.Text",
+      multiplicity: "single",
+      item_count: null,
+      optional: false,
+      json_schema: {
+        description: "A text",
+        properties: {
+          text: {
+            description: "The text",
+            title: "Text",
+            type: "string",
+          },
+        },
+        required: ["text"],
+        title: "native.Text",
+        type: "object",
+      },
+    },
+  },
+  "input_semantics_output.output_structured": {
+    inputs: {
+      note: {
+        concept_ref: "native.Text",
+        presence: "plain",
+        multiplicity: "single",
+        item_count: null,
+        json_schema: {
+          description: "A text",
+          properties: {
+            text: {
+              description: "The text",
+              title: "Text",
+              type: "string",
+            },
+          },
+          required: ["text"],
+          title: "native.Text",
+          type: "object",
+        },
+      },
+    },
+    output: {
+      concept_ref: "input_semantics_output.Verdict",
+      multiplicity: "single",
+      item_count: null,
+      optional: false,
+      json_schema: {
+        description:
+          "OUTPUT_desc_concept_Verdict: a flat structured result, so an output descriptor recurses at least once",
+        properties: {
+          label: {
+            description: "OUTPUT_desc_field_label: the verdict itself",
+            enum: ["accepted", "rejected", "deferred"],
+            title: "Label",
+            type: "string",
+          },
+          confidence: {
+            description: "OUTPUT_desc_field_confidence: how sure, 0 to 1",
+            title: "Confidence",
+            type: "number",
+          },
+          rationale: {
+            anyOf: [
+              {
+                type: "string",
+              },
+              {
+                type: "null",
+              },
+            ],
+            default: null,
+            description: "OUTPUT_desc_field_rationale: why it landed there",
+            title: "Rationale",
+          },
+        },
+        required: ["label", "confidence"],
+        title: "input_semantics_output.Verdict",
+        type: "object",
+      },
+    },
+  },
+  "input_semantics_output.output_nested": {
+    inputs: {
+      note: {
+        concept_ref: "native.Text",
+        presence: "plain",
+        multiplicity: "single",
+        item_count: null,
+        json_schema: {
+          description: "A text",
+          properties: {
+            text: {
+              description: "The text",
+              title: "Text",
+              type: "string",
+            },
+          },
+          required: ["text"],
+          title: "native.Text",
+          type: "object",
+        },
+      },
+    },
+    output: {
+      concept_ref: "input_semantics_output.Dossier",
+      multiplicity: "single",
+      item_count: null,
+      optional: false,
+      json_schema: {
+        $defs: {
+          input_semantics_output__Finding: {
+            description: "OUTPUT_desc_concept_Finding: one element of a plural result",
+            properties: {
+              summary: {
+                description: "OUTPUT_desc_field_summary: what was found",
+                title: "Summary",
+                type: "string",
+              },
+              severity: {
+                description: "OUTPUT_desc_field_severity: how bad, 1 to 5",
+                title: "Severity",
+                type: "integer",
+              },
+            },
+            required: ["summary", "severity"],
+            title: "input_semantics_output__Finding",
+            type: "object",
+          },
+        },
+        description:
+          "OUTPUT_desc_concept_Dossier: a nested structured result carrying a date and a list of concepts",
+        properties: {
+          reference: {
+            description: "OUTPUT_desc_field_reference: the dossier reference",
+            title: "Reference",
+            type: "string",
+          },
+          opened_on: {
+            description: "OUTPUT_desc_field_opened_on: when it was opened",
+            format: "date",
+            title: "Opened On",
+            type: "string",
+          },
+          settled: {
+            anyOf: [
+              {
+                type: "boolean",
+              },
+              {
+                type: "null",
+              },
+            ],
+            default: null,
+            description: "OUTPUT_desc_field_settled: whether it is closed",
+            title: "Settled",
+          },
+          findings: {
+            description:
+              "OUTPUT_desc_field_findings: a NESTED list, which stays a bare array on the wire",
+            items: {
+              $ref: "#/$defs/input_semantics_output__Finding",
+            },
+            title: "Findings",
+            type: "array",
+          },
+        },
+        required: ["reference", "opened_on", "findings"],
+        title: "input_semantics_output.Dossier",
+        type: "object",
+      },
+    },
+  },
+  "input_semantics_output.output_plural": {
+    inputs: {
+      note: {
+        concept_ref: "native.Text",
+        presence: "plain",
+        multiplicity: "single",
+        item_count: null,
+        json_schema: {
+          description: "A text",
+          properties: {
+            text: {
+              description: "The text",
+              title: "Text",
+              type: "string",
+            },
+          },
+          required: ["text"],
+          title: "native.Text",
+          type: "object",
+        },
+      },
+    },
+    output: {
+      concept_ref: "input_semantics_output.Finding",
+      multiplicity: "variable",
+      item_count: null,
+      optional: false,
+      json_schema: {
+        $defs: {
+          input_semantics_output__Finding: {
+            description: "OUTPUT_desc_concept_Finding: one element of a plural result",
+            properties: {
+              summary: {
+                description: "OUTPUT_desc_field_summary: what was found",
+                title: "Summary",
+                type: "string",
+              },
+              severity: {
+                description: "OUTPUT_desc_field_severity: how bad, 1 to 5",
+                title: "Severity",
+                type: "integer",
+              },
+            },
+            required: ["summary", "severity"],
+            title: "input_semantics_output__Finding",
+            type: "object",
+          },
+        },
+        properties: {
+          items: {
+            items: {
+              $ref: "#/$defs/input_semantics_output__Finding",
+            },
+            title: "Items",
+            type: "array",
+          },
+        },
+        required: ["items"],
+        title: "ListContent[input_semantics_output__Finding]",
+        type: "object",
+      },
+    },
+  },
+  "input_semantics_output.output_fixed_plural": {
+    inputs: {
+      note: {
+        concept_ref: "native.Text",
+        presence: "plain",
+        multiplicity: "single",
+        item_count: null,
+        json_schema: {
+          description: "A text",
+          properties: {
+            text: {
+              description: "The text",
+              title: "Text",
+              type: "string",
+            },
+          },
+          required: ["text"],
+          title: "native.Text",
+          type: "object",
+        },
+      },
+    },
+    output: {
+      concept_ref: "input_semantics_output.Finding",
+      multiplicity: "fixed",
+      item_count: 3,
+      optional: false,
+      json_schema: {
+        $defs: {
+          input_semantics_output__Finding: {
+            description: "OUTPUT_desc_concept_Finding: one element of a plural result",
+            properties: {
+              summary: {
+                description: "OUTPUT_desc_field_summary: what was found",
+                title: "Summary",
+                type: "string",
+              },
+              severity: {
+                description: "OUTPUT_desc_field_severity: how bad, 1 to 5",
+                title: "Severity",
+                type: "integer",
+              },
+            },
+            required: ["summary", "severity"],
+            title: "input_semantics_output__Finding",
+            type: "object",
+          },
+        },
+        properties: {
+          items: {
+            items: {
+              $ref: "#/$defs/input_semantics_output__Finding",
+            },
+            title: "Items",
+            type: "array",
+            minItems: 3,
+            maxItems: 3,
+          },
+        },
+        required: ["items"],
+        title: "ListContent[input_semantics_output__Finding]",
+        type: "object",
+      },
+    },
+  },
+  "input_semantics_output.output_optional": {
+    inputs: {
+      note: {
+        concept_ref: "native.Text",
+        presence: "plain",
+        multiplicity: "single",
+        item_count: null,
+        json_schema: {
+          description: "A text",
+          properties: {
+            text: {
+              description: "The text",
+              title: "Text",
+              type: "string",
+            },
+          },
+          required: ["text"],
+          title: "native.Text",
+          type: "object",
+        },
+      },
+    },
+    output: {
+      concept_ref: "input_semantics_output.Verdict",
+      multiplicity: "single",
+      item_count: null,
+      optional: true,
+      json_schema: {
+        description:
+          "OUTPUT_desc_concept_Verdict: a flat structured result, so an output descriptor recurses at least once",
+        properties: {
+          label: {
+            description: "OUTPUT_desc_field_label: the verdict itself",
+            enum: ["accepted", "rejected", "deferred"],
+            title: "Label",
+            type: "string",
+          },
+          confidence: {
+            description: "OUTPUT_desc_field_confidence: how sure, 0 to 1",
+            title: "Confidence",
+            type: "number",
+          },
+          rationale: {
+            anyOf: [
+              {
+                type: "string",
+              },
+              {
+                type: "null",
+              },
+            ],
+            default: null,
+            description: "OUTPUT_desc_field_rationale: why it landed there",
+            title: "Rationale",
+          },
+        },
+        required: ["label", "confidence"],
+        title: "input_semantics_output.Verdict",
+        type: "object",
+      },
+    },
+  },
+  "input_semantics_output.output_native_text": {
+    inputs: {
+      note: {
+        concept_ref: "native.Text",
+        presence: "plain",
+        multiplicity: "single",
+        item_count: null,
+        json_schema: {
+          description: "A text",
+          properties: {
+            text: {
+              description: "The text",
+              title: "Text",
+              type: "string",
+            },
+          },
+          required: ["text"],
+          title: "native.Text",
+          type: "object",
+        },
+      },
+    },
+    output: {
+      concept_ref: "native.Text",
+      multiplicity: "single",
+      item_count: null,
+      optional: false,
+      json_schema: {
+        description: "A text",
+        properties: {
+          text: {
+            description: "The text",
+            title: "Text",
+            type: "string",
+          },
+        },
+        required: ["text"],
+        title: "native.Text",
+        type: "object",
+      },
+    },
+  },
+  "input_semantics_output.output_native_image": {
+    inputs: {
+      subject: {
+        concept_ref: "native.Text",
+        presence: "plain",
+        multiplicity: "single",
+        item_count: null,
+        json_schema: {
+          description: "A text",
+          properties: {
+            text: {
+              description: "The text",
+              title: "Text",
+              type: "string",
+            },
+          },
+          required: ["text"],
+          title: "native.Text",
+          type: "object",
+        },
+      },
+    },
+    output: {
+      concept_ref: "native.Image",
+      multiplicity: "single",
+      item_count: null,
+      optional: false,
+      json_schema: {
+        description: "An image",
+        properties: {
+          url: {
+            description: "The image URL: a storage URI, an HTTP(S) URL, or a base64 data URL",
+            title: "Url",
+            type: "string",
+          },
+          public_url: {
+            anyOf: [
+              {
+                type: "string",
+              },
+              {
+                type: "null",
+              },
+            ],
+            default: null,
+            description: "The public URL of the image",
+            title: "Public Url",
+          },
+          source_prompt: {
+            anyOf: [
+              {
+                type: "string",
+              },
+              {
+                type: "null",
+              },
+            ],
+            default: null,
+            description: "The source prompt of the image",
+            title: "Source Prompt",
+          },
+          source_negative_prompt: {
+            anyOf: [
+              {
+                type: "string",
+              },
+              {
+                type: "null",
+              },
+            ],
+            default: null,
+            description: "The source negative prompt of the image",
+            title: "Source Negative Prompt",
+          },
+          caption: {
+            anyOf: [
+              {
+                type: "string",
+              },
+              {
+                type: "null",
+              },
+            ],
+            default: null,
+            description: "The caption of the image",
+            title: "Caption",
+          },
+          mime_type: {
+            anyOf: [
+              {
+                type: "string",
+              },
+              {
+                type: "null",
+              },
+            ],
+            default: null,
+            description: "The MIME type of the image",
+            title: "Mime Type",
+          },
+          width: {
+            anyOf: [
+              {
+                exclusiveMinimum: 0,
+                type: "integer",
+              },
+              {
+                type: "null",
+              },
+            ],
+            default: null,
+            description: "The width of the image, in pixels",
+            title: "Width",
+          },
+          height: {
+            anyOf: [
+              {
+                exclusiveMinimum: 0,
+                type: "integer",
+              },
+              {
+                type: "null",
+              },
+            ],
+            default: null,
+            description: "The height of the image, in pixels",
+            title: "Height",
+          },
+          filename: {
+            anyOf: [
+              {
+                type: "string",
+              },
+              {
+                type: "null",
+              },
+            ],
+            default: null,
+            description: "The original filename of the image",
+            title: "Filename",
+          },
+        },
+        required: ["url"],
+        title: "native.Image",
+        type: "object",
+      },
     },
   },
 };

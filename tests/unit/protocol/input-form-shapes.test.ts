@@ -173,6 +173,10 @@ const contract: PipeIOContract = {
     multiplicity: "single",
     item_count: null,
     optional: false,
+    // The payload's schema — the concept's content model, not a caller's
+    // argument. A structured concept IS its own content model, so nothing
+    // wraps it; a plural output's would be the list envelope instead.
+    json_schema: { type: "object" },
   },
 };
 
@@ -277,8 +281,10 @@ const contractWithExtraMember: PipeIOContract = {
     multiplicity: "single",
     item_count: null,
     optional: false,
-    // @ts-expect-error closed shape: the output contract carries no schema
     json_schema: {},
+    // @ts-expect-error closed shape: an output contract carries no presence —
+    // `!` may not appear on an output, and `?` is what `optional` states.
+    presence: "plain",
   },
 };
 
@@ -293,7 +299,13 @@ const contractWithFlattenedPresence: PipeIOContract = {
       json_schema: {},
     },
   },
-  output: { concept_ref: "x.Y", multiplicity: "single", item_count: null, optional: false },
+  output: {
+    concept_ref: "x.Y",
+    multiplicity: "single",
+    item_count: null,
+    optional: false,
+    json_schema: {},
+  },
 };
 
 // The pairing rules, as the invalid literals mthds-python's validators reject.

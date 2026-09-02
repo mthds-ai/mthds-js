@@ -179,6 +179,17 @@ describe("the declared divergences from the reference engine", () => {
     expect(MANIFEST.divergences.length).toBeGreaterThan(0);
   });
 
+  // The README beside the corpus explains each class in prose, and it is the one half of the
+  // record nothing enforced: the manifest is checked hard — a class that stops occurring has to
+  // be retired deliberately — but a retired class used to leave its bullet behind, describing a
+  // difference that no longer exists, with the suite still green.
+  it("is documented in the README, one bullet per declared class", () => {
+    const readme = readFileSync(new URL("README.md", CORPUS_URL), "utf-8");
+    const documented = [...readme.matchAll(/^- `([a-z0-9-]+)` \u2014 /gm)].map((match) => match[1]);
+    const declared = MANIFEST.divergences.map((divergence) => divergence.divergence_id);
+    expect(documented.slice().sort()).toEqual(declared.slice().sort());
+  });
+
   for (const divergence of MANIFEST.divergences) {
     describe(divergence.divergence_id, () => {
       it("states why it exists and where it occurs", () => {

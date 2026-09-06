@@ -1,5 +1,16 @@
 # Changelog
 
+## [Unreleased]
+
+### Changed
+
+- **Shared projection fixture corpus recaptured from `pipelex` `dev`.** Two pipes join it from `scaffold_bundle.mthds`: one placing `native.Anything` at an input slot, which the descriptor states as an `unknown` node, and one pairing `native.Dynamic` with a structured concept whose text fields are named `url` and `homepage_url`. Both add worked sites to the existing `text-named-url` and `optional-field-included` divergence classes rather than declaring a new one, so the projection in `src/protocol/inputs_template.ts` needed no change. `input_form.json`, `output_form.json`, `pipe_io_contracts.json`, `inputs_template/manifest.json` and the regenerated TypeScript twins move with it, byte-identical with `mthds-python`.
+- **The unshapeable record names a second open engine bug.** Both shapes of the new `scaffold_anything_slot` template are refused by the reference runtime's input shaper with a `StuffFactoryError`, tracked by `L-260902-10eb56` — at a `native.Anything` slot it accepts a bare string and nothing else, refusing the empty object that slot's own published contract gives as its template. Consumers reading the record to learn which pinned templates must not be expected to run now see two causes rather than one.
+
+### Fixed
+
+- **The fixture corpus README's provenance named the wrong capture.** It listed three bundles where the committed capture has been taken from four since `output_bundle.mthds` joined, and omitted `output_form.json` from the files to copy across, so following it reproduced neither the committed bytes nor a complete capture.
+
 ## [v0.25.0] - 2026-09-02
 
 ### Added

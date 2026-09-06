@@ -78,6 +78,13 @@ export function agentError(
     is_valid?: boolean;
     /** Structured per-error diagnostics on an invalid-bundle verdict (the `/validate` 200 InvalidReport arm). */
     validation_errors?: unknown[];
+    /**
+     * The methods the resolver refused, with the reasons. Rides an error the
+     * same way it rides a success: an agent told "no valid methods" and nothing
+     * else has no way to learn that the manifests were fine and addressed to
+     * another version of the standard.
+     */
+    skipped_methods?: unknown[];
   },
 ): never {
   const payload: Record<string, unknown> = {
@@ -98,6 +105,9 @@ export function agentError(
   }
   if (extras?.validation_errors !== undefined) {
     payload.validation_errors = extras.validation_errors;
+  }
+  if (extras?.skipped_methods !== undefined) {
+    payload.skipped_methods = extras.skipped_methods;
   }
 
   // Remove undefined values for cleaner output

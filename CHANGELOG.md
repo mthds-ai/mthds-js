@@ -1,5 +1,25 @@
 # Changelog
 
+## [v0.26.0] - 2026-09-06
+
+### Added
+
+- **`skipped_methods` field in agent envelopes (Breaking):** The `mthds-agent` commands (`install`, `publish`, `share`) now include a `skipped_methods` array in both success and error envelopes, reporting any methods the resolver refused to process and the reasons. This lets consumers distinguish complete from partial repository operations. *(Breaking for strict consumers that reject unknown fields.)*
+- **Versioning documentation:** Added `docs/versioning.md` documenting the differences between the MTHDS standard version, protocol version, and package version, and how version constraints are evaluated.
+
+### Changed
+
+- **Bumped `MTHDS_STANDARD_VERSION` to `2.0.0` (Breaking):** Updated from `1.0.0` to `2.0.0` to align with the upstream MTHDS specification cut. As a result, `mthds package init` now writes `mthds_version = ">=2.0.0"` into new `METHODS.toml` files.
+- **Strict `mthds_version` validation:** Manifests are now evaluated against the implemented standard version. Previously `validateManifest` only checked that the value was a string; now an incompatible or unparseable constraint is explicitly refused with a failure reason.
+- **Full MTHDS constraint grammar support:** Replaced the npm `semver.Range` parser with a custom `parseConstraint` implementation that supports the full MTHDS grammar, including `,` (AND-ed clauses), `==` (exact match), and `!=` (exclusion). Also added length and clause-count limits to constraints to prevent memory exhaustion from maliciously crafted manifests.
+- **Fixture corpus updates:** Updated the shared projection fixture corpus with new scaffold templates (`scaffold_anything_slot` and `scaffold_dynamic_prompt`), regenerating the corresponding JSON/TOML templates and IO contracts to maintain byte-parity with `mthds-python`.
+
+### Fixed
+
+- **Silent dropping of refused methods:** The agent CLI (`install`, `publish`, `share`) no longer returns `success: true` while silently dropping methods it refused to process. It now accurately reports failures, so a "zero-survivor" publish no longer fails without a reason.
+- **Misleading `--method` error messages:** Filtering by `--method` no longer reports a valid but incompatible method as "not found". The CLI now checks the skip list first and reports the specific skip reason (e.g., version incompatibility); genuinely missing methods still return a "not found" error.
+- **Fixture README provenance:** Corrected the fixture corpus README to accurately reflect capture provenance and to include `output_form.json` in the copy instructions.
+
 ## [v0.25.0] - 2026-09-02
 
 ### Added

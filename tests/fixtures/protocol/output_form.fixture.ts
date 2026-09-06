@@ -78,6 +78,24 @@ export const OUTPUT_FORM_FIXTURE: OutputForm = {
       required: true,
     },
   },
+  "input_semantics_scaffold.scaffold_anything_slot": {
+    field: {
+      kind: "prose",
+      name: "output",
+      concept_ref: "native.Text",
+      description: "A text",
+      required: true,
+    },
+  },
+  "input_semantics_scaffold.scaffold_dynamic_prompt": {
+    field: {
+      kind: "prose",
+      name: "output",
+      concept_ref: "native.Text",
+      description: "A text",
+      required: true,
+    },
+  },
   "input_semantics_output.output_structured": {
     field: {
       kind: "object",

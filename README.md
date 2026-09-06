@@ -113,6 +113,7 @@ The CLI validates everything during install:
 - `METHODS.toml` must parse as valid TOML
 - `[package]` section with `name`, `address`, `version` (semver), and `description` are required
 - `address` must include a hostname with a dot (e.g. `github.com/...`)
+- `mthds_version`, if present, must be a valid version constraint *and* must be satisfied by the MTHDS standard version this CLI implements — a method declaring itself incompatible is refused rather than installed. See [docs/versioning.md](docs/versioning.md)
 - Invalid methods are skipped with detailed error messages; valid ones proceed to install
 
 ## Runners

@@ -6,7 +6,7 @@ Everything in this directory is committed **byte-identically** here and in `mthd
 
 ## Provenance
 
-- Bundles, in this order: `pipelex/tests/data/input_semantics/hinted_bundle.mthds`, `probe_bundle.mthds`, `scaffold_bundle.mthds`. The argument order decides the key order of the emitted maps, so it is part of the capture: a swapped order produces the same content with different bytes, which breaks the byte parity with `mthds-python`. A bundle added at the end keeps the existing bytes stable.
+- Bundles, in this order: `pipelex/tests/data/input_semantics/hinted_bundle.mthds`, `probe_bundle.mthds`, `scaffold_bundle.mthds`, `output_bundle.mthds`. The argument order decides the key order of the emitted maps, so it is part of the capture: a swapped order produces the same content with different bytes, which breaks the byte parity with `mthds-python`. A bundle added at the end keeps the existing bytes stable.
 - Command, run at the `pipelex` checkout root:
 
   ```bash
@@ -14,10 +14,11 @@ Everything in this directory is committed **byte-identically** here and in `mthd
     tests/data/input_semantics/hinted_bundle.mthds \
     tests/data/input_semantics/probe_bundle.mthds \
     tests/data/input_semantics/scaffold_bundle.mthds \
+    tests/data/input_semantics/output_bundle.mthds \
     -o <dir>
   ```
 
-  Copy `input_form.json`, `pipe_io_contracts.json` and the whole `inputs_template/` tree from `<dir>` into this directory and into `mthds-python`'s twin of it, then run `npm run fixtures:protocol` here. The `engine/` directory the command also writes is **not** committed: it holds the reference engine's own renderings, which is what the divergence record below is measured against.
+  Copy `input_form.json`, `output_form.json`, `pipe_io_contracts.json` and the whole `inputs_template/` tree from `<dir>` into this directory and into `mthds-python`'s twin of it, then run `npm run fixtures:protocol` here. The `engine/` directory the command also writes is **not** committed: it holds the reference engine's own renderings, which is what the divergence record below is measured against.
 - Engine: `pipelex`, at the change that introduced `pipelex-dev generate-projection-corpus` (its own page is `pipelex/docs/contribute/generate-projection-corpus.md`). That command replaced `trace-input-semantics` as the producer of these files; generating from the two original bundles alone reproduces the previous capture byte for byte, so the move was a no-op diff.
 - Pages the types follow: `mthds/docs/spec/input-form-descriptor.md` and `mthds/docs/spec/pipe-io-contracts.md` as published in MTHDS v0.9.0, with `mthds/docs/spec/intent-hints.md` for the `hints` slot.
 
@@ -44,7 +45,7 @@ Each entry carries the workspace-ledger item tracking the engine fix, or `null` 
 
 The templates are held to a second bar that is easy to lose sight of behind the byte parity: they must still **run**. A template is what someone fills in and hands back, so every slot of it has to survive the runtime's own input shaper. That is what separates a deliberate divergence from a projection bug — the file-leaf entry pins `{"url": ...}` because the shaper accepts exactly that wrapper, and the object-native entry keeps the envelope for the same reason. Where a class is retired, the corpus is regenerated and its entry disappears from the manifest on its own.
 
-That bar is now measured rather than argued. The generator hands every projected template, in both shapes, to `InputShaper.shape` at capture time and writes the verdict into the manifest's `unshapeable` array — one entry per refused `(pipe_ref, shape)`, carrying the error's class name and the ledger item whose fix retires it — refusing to write a capture that holds a refusal nobody declared, or that declares one which has started shaping. The entries this capture carries are the four templates blocked on `L-260830-191719`, the nested-list slot the shaper cannot take back.
+That bar is now measured rather than argued. The generator hands every projected template, in both shapes, to `InputShaper.shape` at capture time and writes the verdict into the manifest's `unshapeable` array — one entry per refused `(pipe_ref, shape)`, carrying the error's class name and the ledger item whose fix retires it — refusing to write a capture that holds a refusal nobody declared, or that declares one which has started shaping. The entries this capture carries fall under two open engine bugs. The `probe_markers` and `probe_single` templates are blocked on `L-260830-191719`, the nested-list slot the shaper cannot take back. The `scaffold_anything_slot` pair is blocked on `L-260902-10eb56`: at a `native.Anything` input slot the shaper accepts a bare string and nothing else — refusing the empty object that slot's own published contract gives as its template — and even that string it shapes into a `native.Text` stuff rather than an `Anything` one.
 
 The array is a statement the corpus makes about itself, and this repo cannot re-derive it: there is no input shaper on this side of the mirror, so the verdict is taken on the generator's authority. What the suite here checks is that the record stays about *this* corpus — every entry keyed to a pipe and shape the manifest holds, one entry per key, each naming a real error type and a real ledger item, and the array an exception list rather than the whole corpus. A consumer harness may read the entries to know which pinned templates it must not expect to run; nothing requires it to.
 

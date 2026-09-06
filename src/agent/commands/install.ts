@@ -7,6 +7,7 @@ import { agentSuccess, agentError, AGENT_ERROR_DOMAINS } from "../output.js";
 import { parseAddress } from "../../installer/resolver/address.js";
 import { resolveFromGitHub } from "../../installer/resolver/github.js";
 import { resolveFromLocal } from "../../installer/resolver/local.js";
+import { describeUnusableMethod, skippedMethodReports } from "../../installer/resolver/skipped.js";
 import { isPipelexInstalled } from "../../installer/runtime/check.js";
 import { ensureRuntime } from "../../installer/runtime/installer.js";
 import { shutdown } from "../../installer/telemetry/posthog.js";
@@ -98,12 +99,10 @@ export async function agentInstall(
   if (methodFilter) {
     const match = resolved.methods.find((method) => method.name === methodFilter);
     if (!match) {
-      const available = resolved.methods.map((method) => method.name).join(", ");
-      agentError(
-        `Method "${methodFilter}" not found. Available methods: ${available || "(none)"}`,
-        "InstallError",
-        { error_domain: AGENT_ERROR_DOMAINS.INSTALL },
-      );
+      agentError(describeUnusableMethod(resolved, methodFilter), "InstallError", {
+        error_domain: AGENT_ERROR_DOMAINS.INSTALL,
+        skipped_methods: skippedMethodReports(resolved),
+      });
     }
     resolved = { ...resolved, methods: [match] };
   }
@@ -111,6 +110,7 @@ export async function agentInstall(
   if (resolved.methods.length === 0) {
     agentError("No valid methods to install.", "InstallError", {
       error_domain: AGENT_ERROR_DOMAINS.INSTALL,
+      skipped_methods: skippedMethodReports(resolved),
     });
   }
 
@@ -145,5 +145,6 @@ export async function agentInstall(
     target_dir: result.targetDir,
     shim_dir: result.shimDir,
     shims_generated: result.shimsGenerated,
+    skipped_methods: skippedMethodReports(resolved),
   });
 }

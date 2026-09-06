@@ -7,6 +7,7 @@ import { agentSuccess, agentError, AGENT_ERROR_DOMAINS } from "../output.js";
 import { parseAddress } from "../../installer/resolver/address.js";
 import { resolveFromGitHub } from "../../installer/resolver/github.js";
 import { resolveFromLocal } from "../../installer/resolver/local.js";
+import { describeUnusableMethod, skippedMethodReports } from "../../installer/resolver/skipped.js";
 import { buildShareUrls } from "../../cli/commands/share.js";
 import type { SharePlatform } from "../../cli/commands/share.js";
 import type { ResolvedRepo } from "../../package/manifest/types.js";
@@ -81,12 +82,10 @@ export async function agentShare(
   if (methodFilter) {
     const match = resolved.methods.find((m) => m.name === methodFilter);
     if (!match) {
-      const available = resolved.methods.map((m) => m.name).join(", ");
-      agentError(
-        `Method "${methodFilter}" not found. Available methods: ${available || "(none)"}`,
-        "ShareError",
-        { error_domain: AGENT_ERROR_DOMAINS.INSTALL },
-      );
+      agentError(describeUnusableMethod(resolved, methodFilter), "ShareError", {
+        error_domain: AGENT_ERROR_DOMAINS.INSTALL,
+        skipped_methods: skippedMethodReports(resolved),
+      });
     }
     resolved = { ...resolved, methods: [match] };
   }
@@ -94,6 +93,7 @@ export async function agentShare(
   if (resolved.methods.length === 0) {
     agentError("No valid methods to share.", "ShareError", {
       error_domain: AGENT_ERROR_DOMAINS.INSTALL,
+      skipped_methods: skippedMethodReports(resolved),
     });
   }
 
@@ -128,5 +128,6 @@ export async function agentShare(
     methods: resolved.methods.map((m) => m.name),
     address: orgRepo,
     share_urls: shareUrls,
+    skipped_methods: skippedMethodReports(resolved),
   });
 }

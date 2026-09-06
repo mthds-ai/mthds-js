@@ -12,10 +12,13 @@
 
 ### Added
 
+- **`skipped_methods` on every `mthds-agent` envelope that reads a repository** (Breaking for consumers that reject unknown fields). `install`, `publish` and `share` now report the methods the resolver refused, as `{ name, errors }`, on their success envelopes and on their errors alike. The field is always present and empty when nothing was refused, and it reports the whole repository's skip list even under `--method`, since a skip is a property of the repository rather than of the selection. `success: true` continues to mean the command did what it could; `skipped_methods` is what says whether that was everything.
 - **`docs/versioning.md`** — which of the two version numbers this package copies means what, where each is declared, why `mthds_version` is a constraint rather than a stamp, why shape and satisfaction are checked in different modules, and how to follow the next cut.
 
 ### Fixed
 
+- **The agent CLI answered `success: true` while dropping the methods it refused.** `install`, `publish` and `share` built their envelopes from the surviving methods and never read the resolver's skip list, so an agent could not tell a full publish from a half one, and `share` composed a social post from the same filtered set. This was survivable while a skip meant a structurally broken `METHODS.toml` — the author of that file finds out soon enough — and stopped being survivable once a well-formed manifest whose `mthds_version` this build does not satisfy became a refusal. The zero-survivor case was the worst of it: "No valid methods to publish." with no reason attached at all.
+- **`--method` called a refused method "not found".** In all six commands that take the flag — `mthds install`, `publish`, `share`, and their `mthds-agent` counterparts — the filter ran against the surviving methods and exited before the skip list was ever walked, so a method that exists on disk, is spelled correctly and carries a perfectly valid manifest was reported as not existing, and the "available methods" list offered as a correction silently omitted it. The reason the resolver had already produced sat unread twenty lines further down. The filter now looks in the skip list first and reports that reason; a genuinely absent name still gets "not found" and the available list, which is a correction only in that case.
 - **The fixture corpus README's provenance named the wrong capture.** It listed three bundles where the committed capture has been taken from four since `output_bundle.mthds` joined, and omitted `output_form.json` from the files to copy across, so following it reproduced neither the committed bytes nor a complete capture.
 
 ## [v0.25.0] - 2026-09-02

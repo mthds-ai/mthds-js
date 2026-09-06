@@ -3,6 +3,8 @@ import {
   validateManifest,
   collectAllExportedPipes,
 } from "../../../../src/package/manifest/validate.js";
+import { MTHDS_STANDARD_VERSION } from "../../../../src/package/manifest/schema.js";
+import { parseVersion } from "../../../../src/package/semver.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -426,6 +428,95 @@ pipes = ["classify_document"]
     expect(r.errors).toContainEqual(
       expect.stringContaining('[package.main_pipe] "nonexistent_pipe" must be listed'),
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// validateManifest — package.mthds_version
+//
+// The constraint is evaluated against MTHDS_STANDARD_VERSION rather than
+// compared to it, so these cases are written relative to the constant and stay
+// true across a cut of the standard.
+// ---------------------------------------------------------------------------
+describe("validateManifest — package.mthds_version", () => {
+  const withConstraint = (constraint: string): string => `
+[package]
+name = "tools"
+address = "github.com/acme/tools"
+version = "1.0.0"
+description = "Useful tools."
+mthds_version = ${JSON.stringify(constraint)}
+
+[exports.default]
+pipes = ["do_thing"]
+`;
+
+  const current = parseVersion(MTHDS_STANDARD_VERSION);
+  const older = `${current.major}.${current.minor}.${current.patch === 0 ? 0 : current.patch - 1}`;
+  const newerMajor = `${current.major + 1}.0.0`;
+
+  it("accepts a floor the standard version satisfies", () => {
+    const r = validateManifest(withConstraint(`>=${older}`));
+    expect(r.valid).toBe(true);
+  });
+
+  it("accepts an exact match on the standard version", () => {
+    const r = validateManifest(withConstraint(`==${MTHDS_STANDARD_VERSION}`));
+    expect(r.valid).toBe(true);
+  });
+
+  it("accepts a compound constraint bracketing the standard version", () => {
+    const r = validateManifest(withConstraint(`>=${MTHDS_STANDARD_VERSION}, <${newerMajor}`));
+    expect(r.valid).toBe(true);
+  });
+
+  it("accepts a wildcard", () => {
+    expect(validateManifest(withConstraint("*")).valid).toBe(true);
+  });
+
+  it("rejects a floor above the standard version", () => {
+    const r = validateManifest(withConstraint(`>=${newerMajor}`));
+    expect(r.valid).toBe(false);
+    expect(r.errors).toContainEqual(
+      expect.stringContaining(
+        `is not satisfied by the MTHDS standard version this implementation implements (${MTHDS_STANDARD_VERSION})`,
+      ),
+    );
+  });
+
+  it("rejects a not-equal excluding the standard version", () => {
+    const r = validateManifest(withConstraint(`!=${MTHDS_STANDARD_VERSION}`));
+    expect(r.valid).toBe(false);
+    expect(r.errors).toContainEqual(expect.stringContaining("is not satisfied"));
+  });
+
+  it("rejects a malformed constraint", () => {
+    const r = validateManifest(withConstraint("not-a-constraint"));
+    expect(r.valid).toBe(false);
+    expect(r.errors).toContainEqual(expect.stringContaining("is not a valid version constraint"));
+  });
+
+  it("rejects a non-string mthds_version", () => {
+    const raw = `
+[package]
+name = "tools"
+address = "github.com/acme/tools"
+version = "1.0.0"
+description = "Useful tools."
+mthds_version = 2
+
+[exports.default]
+pipes = ["do_thing"]
+`;
+    const r = validateManifest(raw);
+    expect(r.valid).toBe(false);
+    expect(r.errors).toContainEqual(
+      expect.stringContaining("[package.mthds_version] must be a string."),
+    );
+  });
+
+  it("accepts a manifest with no mthds_version at all", () => {
+    expect(validateManifest(minimal).valid).toBe(true);
   });
 });
 

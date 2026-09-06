@@ -1,6 +1,11 @@
 import { parse } from "smol-toml";
 import type { MethodsManifest, ExportNode, Exports } from "./types.js";
-import { METHOD_NAME_RE } from "./schema.js";
+import {
+  isValidVersionConstraint,
+  METHOD_NAME_RE,
+  MTHDS_STANDARD_VERSION,
+  satisfiesMthdsStandardVersion,
+} from "./schema.js";
 import { isPipeCodeValid } from "./validation.js";
 
 export interface ValidationResult {
@@ -151,10 +156,33 @@ export function validateManifest(raw: string): ValidationResult {
     }
   }
 
-  // package.mthds_version (optional)
-  if (pkg["mthds_version"] !== undefined) {
-    if (typeof pkg["mthds_version"] !== "string") {
+  // package.mthds_version (optional) — a constraint on the MTHDS standard version,
+  // so it is checked for shape AND evaluated against the version we implement. An
+  // unsatisfied constraint is an error rather than a warning: the package states it
+  // is not compatible with this implementation, and the callers of this validator
+  // (the GitHub and local installer resolvers) skip what does not validate, which
+  // is the right outcome for a method we cannot honour.
+  const mthdsVersion = pkg["mthds_version"];
+  if (mthdsVersion !== undefined) {
+    if (typeof mthdsVersion !== "string") {
       errors.push("[package.mthds_version] must be a string.");
+    } else if (!isValidVersionConstraint(mthdsVersion)) {
+      errors.push(
+        `[package.mthds_version] "${mthdsVersion}" is not a valid version constraint ` +
+          `(e.g. "${MTHDS_STANDARD_VERSION}", "^${MTHDS_STANDARD_VERSION}", ">=${MTHDS_STANDARD_VERSION}").`,
+      );
+    } else {
+      const verdict = satisfiesMthdsStandardVersion(mthdsVersion);
+      if (verdict.kind === "malformed") {
+        errors.push(
+          `[package.mthds_version] "${mthdsVersion}" could not be evaluated: ${verdict.reason}`,
+        );
+      } else if (verdict.kind === "unsatisfied") {
+        errors.push(
+          `[package.mthds_version] "${mthdsVersion}" is not satisfied by the MTHDS standard version ` +
+            `this implementation implements (${verdict.standardVersion}).`,
+        );
+      }
     }
   }
 

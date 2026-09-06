@@ -57,8 +57,76 @@ describe("parseConstraint", () => {
     expect(range).toBeDefined();
   });
 
+  it("parses a comma-separated compound constraint", () => {
+    expect(parseConstraint(">=1.0.0, <2.0.0")).toBeDefined();
+    expect(parseConstraint(">=1.0.0,<2.0.0")).toBeDefined();
+  });
+
+  it("parses the == and != operators", () => {
+    expect(parseConstraint("==1.0.0")).toBeDefined();
+    expect(parseConstraint("!=1.0.0")).toBeDefined();
+  });
+
+  it("parses partial and wildcard forms", () => {
+    expect(parseConstraint("1")).toBeDefined();
+    expect(parseConstraint("1.0")).toBeDefined();
+    expect(parseConstraint("1.*")).toBeDefined();
+    expect(parseConstraint("1.0.*")).toBeDefined();
+  });
+
   it("throws SemVerError for invalid constraint", () => {
     expect(() => parseConstraint("not-valid!!!")).toThrow(SemVerError);
+  });
+
+  it("throws SemVerError for an empty or all-empty-clause constraint", () => {
+    expect(() => parseConstraint("")).toThrow(SemVerError);
+    expect(() => parseConstraint("   ")).toThrow(SemVerError);
+    expect(() => parseConstraint(">=1.0.0,")).toThrow(SemVerError);
+  });
+});
+
+// The MTHDS constraint grammar (mthds/docs/spec/manifest-format.md § "Version
+// Constraint Syntax") is not npm's: `,` ANDs, `==` is exact, `!=` excludes.
+// npm's own `satisfies` reads none of those three, so they are the cases worth
+// pinning here.
+describe("versionSatisfies — the MTHDS constraint grammar", () => {
+  const check = (constraint: string, version: string): boolean =>
+    versionSatisfies(parseVersion(version), parseConstraint(constraint));
+
+  it("ANDs comma-separated clauses", () => {
+    expect(check(">=1.0.0, <2.0.0", "1.5.0")).toBe(true);
+    expect(check(">=1.0.0, <2.0.0", "2.0.0")).toBe(false);
+    expect(check(">=1.0.0, <2.0.0", "0.9.0")).toBe(false);
+    expect(check(">=1.0.0,<2.0.0", "1.5.0")).toBe(true);
+  });
+
+  it("reads == as exact match", () => {
+    expect(check("==1.0.0", "1.0.0")).toBe(true);
+    expect(check("==1.0.0", "1.0.1")).toBe(false);
+  });
+
+  it("reads != as exclusion", () => {
+    expect(check("!=1.0.0", "2.0.0")).toBe(true);
+    expect(check("!=1.0.0", "1.0.0")).toBe(false);
+  });
+
+  it("combines a floor with an exclusion", () => {
+    expect(check(">=1.0.0, !=1.5.0", "1.6.0")).toBe(true);
+    expect(check(">=1.0.0, !=1.5.0", "1.5.0")).toBe(false);
+    expect(check(">=1.0.0, !=1.5.0", "0.9.0")).toBe(false);
+  });
+
+  it("treats a partial version as a wildcard on the missing components", () => {
+    expect(check("1.0", "1.0.5")).toBe(true);
+    expect(check("1.0", "1.1.0")).toBe(false);
+    expect(check("1.*", "1.9.0")).toBe(true);
+    expect(check("1.*", "2.0.0")).toBe(false);
+    expect(check("*", "3.1.4")).toBe(true);
+  });
+
+  it("still reads a space-separated npm range as one clause", () => {
+    expect(check(">=1.0.0 <2.0.0", "1.5.0")).toBe(true);
+    expect(check(">=1.0.0 <2.0.0", "2.0.0")).toBe(false);
   });
 });
 

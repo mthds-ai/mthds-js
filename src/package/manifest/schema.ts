@@ -11,6 +11,8 @@
 
 import { z } from "zod";
 
+import { parseConstraint, parseVersion, SemVerError, versionSatisfies } from "../semver.js";
+
 // ---------------------------------------------------------------------------
 // Regex patterns
 // ---------------------------------------------------------------------------
@@ -37,7 +39,17 @@ const ADDRESS_RE = /^[a-zA-Z0-9._-]+\.[a-zA-Z0-9._-]+\/[a-zA-Z0-9._/-]+$/;
 
 export const RESERVED_DOMAINS: ReadonlySet<string> = new Set(["native", "mthds", "pipelex"]);
 
-export const MTHDS_STANDARD_VERSION = "1.0.0";
+/**
+ * The MTHDS standard version this implementation implements — the version of the
+ * specification itself (its language, native concept set, manifest, lock and crate
+ * formats). Cut by `mthds/docs/spec/versioning.md` § "The Standard Version"; this
+ * is the single declaration of it in this package, so following a cut is one edit.
+ *
+ * It is what a manifest's `mthds_version` constraint is evaluated against
+ * (`satisfiesMthdsStandardVersion` below) and what `mthds package init` writes as
+ * the floor of a new package's constraint.
+ */
+export const MTHDS_STANDARD_VERSION = "2.0.0";
 
 // ---------------------------------------------------------------------------
 // Standalone validation helpers (used outside the parser too)
@@ -58,6 +70,38 @@ export function isValidVersionConstraint(constraint: string): boolean {
 
 export function isValidAddress(address: string): boolean {
   return ADDRESS_RE.test(address);
+}
+
+/** The verdict of evaluating a manifest's `mthds_version` against the standard. */
+export type MthdsVersionVerdict =
+  | { readonly kind: "satisfied" }
+  /** Well-formed, but the standard version this implementation implements is outside it. */
+  | { readonly kind: "unsatisfied"; readonly standardVersion: string }
+  /** Not a constraint at all — `isValidVersionConstraint` rejects it too. */
+  | { readonly kind: "malformed"; readonly reason: string };
+
+/**
+ * Evaluate a manifest's `mthds_version` against the standard version this
+ * implementation implements.
+ *
+ * `mthds_version` is a **constraint** — the versions of the MTHDS standard the
+ * package declares itself compatible with — and not a stamp, so it is checked by
+ * evaluation rather than by equality. See `mthds/docs/spec/versioning.md`
+ * § "`mthds_version` and the Crate Stamp".
+ */
+export function satisfiesMthdsStandardVersion(constraint: string): MthdsVersionVerdict {
+  try {
+    const parsed = parseConstraint(constraint);
+    const current = parseVersion(MTHDS_STANDARD_VERSION);
+    return versionSatisfies(current, parsed)
+      ? { kind: "satisfied" }
+      : { kind: "unsatisfied", standardVersion: MTHDS_STANDARD_VERSION };
+  } catch (err) {
+    if (err instanceof SemVerError) {
+      return { kind: "malformed", reason: err.message };
+    }
+    throw err;
+  }
 }
 
 // ---------------------------------------------------------------------------

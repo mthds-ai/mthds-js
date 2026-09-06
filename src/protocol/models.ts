@@ -14,7 +14,18 @@
  * same passthrough principle as the request-side `extra`.
  */
 
-/** The MTHDS Protocol version this SDK implements (the MTHDS standard version). */
+/**
+ * The MTHDS Protocol version this SDK implements — the HTTP runner contract: its
+ * routes and their request and response shapes. Cut by
+ * `mthds/docs/spec/versioning.md` § "The Protocol Version"; this is the single
+ * declaration of it in this package, so following a cut is one edit.
+ *
+ * It moves on its own cadence and is **not** derived from the MTHDS standard
+ * version (`MTHDS_STANDARD_VERSION` in `package/manifest/schema.ts`): a release of
+ * the standard that leaves the protocol alone leaves this number where it is. It
+ * is the `info.version` of `mthds-protocol.openapi.yaml` and what a runner reports
+ * as `protocol_version` from `GET /version`.
+ */
 export const MTHDS_PROTOCOL_VERSION = "0.6.0";
 
 // ── Run responses (`POST /execute` 200, `POST /start` 202) ───────────

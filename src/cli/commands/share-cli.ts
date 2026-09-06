@@ -6,6 +6,7 @@ import { printLogo } from "./index.js";
 import { parseAddress } from "../../installer/resolver/address.js";
 import { resolveFromGitHub } from "../../installer/resolver/github.js";
 import { resolveFromLocal } from "../../installer/resolver/local.js";
+import { describeUnusableMethod } from "../../installer/resolver/skipped.js";
 import { buildShareUrls } from "./share.js";
 import type { SharePlatform } from "./share.js";
 import type { ResolvedRepo } from "../../package/manifest/types.js";
@@ -79,10 +80,7 @@ export async function shareMethod(options: {
   if (methodFilter) {
     const match = resolved.methods.find((m) => m.name === methodFilter);
     if (!match) {
-      const available = resolved.methods.map((m) => m.name).join(", ");
-      p.log.error(
-        `Method "${methodFilter}" not found. Available methods: ${available || "(none)"}`,
-      );
+      p.log.error(describeUnusableMethod(resolved, methodFilter));
       p.outro("");
       process.exit(1);
     }

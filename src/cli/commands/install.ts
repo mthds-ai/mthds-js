@@ -10,6 +10,7 @@ import { printLogo } from "./index.js";
 import { parseAddress } from "../../installer/resolver/address.js";
 import { resolveFromGitHub } from "../../installer/resolver/github.js";
 import { resolveFromLocal } from "../../installer/resolver/local.js";
+import { describeUnusableMethod } from "../../installer/resolver/skipped.js";
 import { runInstallFlow } from "../../installer/methods/install-flow.js";
 import type { InstallFlowResult } from "../../installer/methods/install-flow.js";
 import { InstallLocation } from "../../installer/methods/types.js";
@@ -96,10 +97,7 @@ export async function installMethod(options: {
   if (methodFilter) {
     const match = resolved.methods.find((method) => method.name === methodFilter);
     if (!match) {
-      const available = resolved.methods.map((method) => method.name).join(", ");
-      p.log.error(
-        `Method "${methodFilter}" not found. Available methods: ${available || "(none)"}`,
-      );
+      p.log.error(describeUnusableMethod(resolved, methodFilter));
       p.outro("");
       process.exit(1);
     }

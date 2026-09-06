@@ -243,3 +243,89 @@ describe("agentPublish", () => {
     expect(mockedAgentSuccess).toHaveBeenCalledTimes(1);
   });
 });
+
+// ── The skip list reaches the envelope ───────────────────────────────
+//
+// Before this, `resolved.skipped` was never read by any agent command, so an
+// agent could not tell a full publish from a half one: the envelope said
+// success and listed the survivors. Harmless while a skip meant a broken
+// METHODS.toml; not harmless once an `mthds_version` this build does not
+// satisfy became a refusal, since that manifest is well-formed.
+
+const INCOMPATIBLE =
+  '[package.mthds_version] "^1.0.0" is not satisfied by the MTHDS standard version this implementation implements (2.0.0).';
+
+const partiallyResolved: ResolvedRepo = {
+  ...fakeResolved,
+  skipped: [{ dirName: "legacy_tool", errors: [INCOMPATIBLE] }],
+};
+
+describe("agentPublish and the refused methods", () => {
+  it("reports the refused methods beside the published ones", async () => {
+    mockedResolveFromLocal.mockReturnValue({ ...partiallyResolved, source: "local" });
+
+    await agentPublish(undefined, { local: "/some/path" });
+
+    expect(mockedAgentSuccess).toHaveBeenCalledWith(
+      expect.objectContaining({
+        success: true,
+        published_methods: ["contract-analysis"],
+        skipped_methods: [{ name: "legacy_tool", errors: [INCOMPATIBLE] }],
+      }),
+    );
+  });
+
+  it("carries the field as an empty array when nothing was refused", async () => {
+    mockedResolveFromLocal.mockReturnValue({ ...fakeResolved, source: "local" });
+
+    await agentPublish(undefined, { local: "/some/path" });
+
+    const successCall = mockedAgentSuccess.mock.calls[0]![0];
+    expect(successCall.skipped_methods).toEqual([]);
+  });
+
+  it("reports the refusals even under --method, since a skip is the repo's property", async () => {
+    mockedResolveFromLocal.mockReturnValue({ ...partiallyResolved, source: "local" });
+
+    await agentPublish(undefined, { local: "/some/path", method: "contract-analysis" });
+
+    expect(mockedAgentSuccess).toHaveBeenCalledWith(
+      expect.objectContaining({
+        published_methods: ["contract-analysis"],
+        skipped_methods: [{ name: "legacy_tool", errors: [INCOMPATIBLE] }],
+      }),
+    );
+  });
+
+  it("gives the filter the refusal reason instead of calling the method missing", async () => {
+    mockedResolveFromLocal.mockReturnValue({ ...partiallyResolved, source: "local" });
+
+    await expect(
+      agentPublish(undefined, { local: "/some/path", method: "legacy_tool" }),
+    ).rejects.toThrow(AgentErrorThrow);
+
+    const [message, , extras] = mockedAgentError.mock.calls[0]!;
+    expect(message).toContain('Method "legacy_tool" was found but skipped');
+    expect(message).toContain(INCOMPATIBLE);
+    expect(message).not.toContain("not found");
+    expect(extras).toMatchObject({
+      skipped_methods: [{ name: "legacy_tool", errors: [INCOMPATIBLE] }],
+    });
+  });
+
+  it("says why when nothing survived, rather than only that nothing did", async () => {
+    mockedResolveFromLocal.mockReturnValue({
+      ...partiallyResolved,
+      source: "local",
+      methods: [],
+    });
+
+    await expect(agentPublish(undefined, { local: "/some/path" })).rejects.toThrow(AgentErrorThrow);
+
+    const [message, , extras] = mockedAgentError.mock.calls[0]!;
+    expect(message).toBe("No valid methods to publish.");
+    expect(extras).toMatchObject({
+      skipped_methods: [{ name: "legacy_tool", errors: [INCOMPATIBLE] }],
+    });
+  });
+});

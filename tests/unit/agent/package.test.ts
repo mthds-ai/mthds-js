@@ -36,6 +36,7 @@ import {
   agentPackageList,
   agentPackageValidate,
 } from "../../../src/agent/commands/package.js";
+import { MTHDS_STANDARD_VERSION } from "../../../src/package/manifest/schema.js";
 
 const mockedExistsSync = vi.mocked(existsSync);
 const mockedReadFileSync = vi.mocked(readFileSync);
@@ -166,7 +167,10 @@ describe("agentPackageInit", () => {
     await agentPackageInit(baseOpts);
 
     const manifest = capturedResult!.manifest as Record<string, unknown>;
-    expect(manifest.mthds_version).toMatch(/^>=\d+\.\d+\.\d+$/);
+    // Pinned to the constant, not to a shape: what init writes is the floor the
+    // standard's current cut sets, and a hardcoded literal creeping back into
+    // src/agent/commands/package.ts would still match a shape assertion.
+    expect(manifest.mthds_version).toBe(`>=${MTHDS_STANDARD_VERSION}`);
   });
 
   // ── Optional fields ───────────────────────────────────────────────

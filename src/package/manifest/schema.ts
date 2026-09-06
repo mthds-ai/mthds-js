@@ -77,7 +77,14 @@ export type MthdsVersionVerdict =
   | { readonly kind: "satisfied" }
   /** Well-formed, but the standard version this implementation implements is outside it. */
   | { readonly kind: "unsatisfied"; readonly standardVersion: string }
-  /** Not a constraint at all — `isValidVersionConstraint` rejects it too. */
+  /**
+   * The evaluator could not compile it. This is not the same population as the
+   * one `isValidVersionConstraint` rejects: the regex is the looser of the two
+   * in places — it admits a prerelease suffix on a partial version (`>=1.0-beta`,
+   * `1-alpha`), which npm's `Range` will not read — so a constraint can pass the
+   * regex gate and land here. Callers that gate on the regex first must still
+   * handle this verdict.
+   */
   | { readonly kind: "malformed"; readonly reason: string };
 
 /**
@@ -90,9 +97,13 @@ export type MthdsVersionVerdict =
  * § "`mthds_version` and the Crate Stamp".
  */
 export function satisfiesMthdsStandardVersion(constraint: string): MthdsVersionVerdict {
+  // Parsed outside the try below: this is OUR constant, and a defect in it is not
+  // the manifest's fault. Left inside, a typo here (`"2.0"` for `"2.0.0"`) came
+  // back as `malformed` and every method on every repository was skipped with a
+  // message quoting the manifest's own perfectly valid constraint.
+  const current = parseVersion(MTHDS_STANDARD_VERSION);
   try {
     const parsed = parseConstraint(constraint);
-    const current = parseVersion(MTHDS_STANDARD_VERSION);
     return versionSatisfies(current, parsed)
       ? { kind: "satisfied" }
       : { kind: "unsatisfied", standardVersion: MTHDS_STANDARD_VERSION };

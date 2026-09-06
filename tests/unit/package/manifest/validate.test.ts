@@ -452,7 +452,9 @@ pipes = ["do_thing"]
 `;
 
   const current = parseVersion(MTHDS_STANDARD_VERSION);
-  const older = `${current.major}.${current.minor}.${current.patch === 0 ? 0 : current.patch - 1}`;
+  // Below any standard version this package will plausibly implement, and — unlike
+  // decrementing a component — genuinely lower whatever the constant becomes.
+  const older = "0.0.1";
   const newerMajor = `${current.major + 1}.0.0`;
 
   it("accepts a floor the standard version satisfies", () => {
@@ -517,6 +519,35 @@ pipes = ["do_thing"]
 
   it("accepts a manifest with no mthds_version at all", () => {
     expect(validateManifest(minimal).valid).toBe(true);
+  });
+
+  // The user-visible consequence of the standard's cut, pinned explicitly: a
+  // manifest written against the pre-cut standard installs only if its constraint
+  // was an open floor. Written as literals rather than derived from the constant,
+  // because the question these ask is what happens to the manifests already
+  // published against 1.0.0 — a fixed population that a later cut does not move.
+  describe("manifests written against the pre-cut standard", () => {
+    it.each(["1.0.0", "==1.0.0", "^1.0.0", "~1.0.0", "1.*", ">=1.0.0, <2.0.0"])(
+      "refuses %s, so the installer skips the method",
+      (constraint) => {
+        const r = validateManifest(withConstraint(constraint));
+        expect(r.valid).toBe(false);
+        expect(r.errors).toContainEqual(expect.stringContaining("is not satisfied"));
+      },
+    );
+
+    it.each([">=1.0.0", "*"])("keeps accepting %s", (constraint) => {
+      expect(validateManifest(withConstraint(constraint)).valid).toBe(true);
+    });
+  });
+
+  it("reports a constraint the regex admits but the evaluator cannot compile", () => {
+    // The regex allows a prerelease suffix on a partial version; npm's Range does
+    // not read it. The two acceptors are deliberately not identical, so this
+    // reaches the `malformed` verdict rather than the shape error.
+    const r = validateManifest(withConstraint(">=1.0-beta"));
+    expect(r.valid).toBe(false);
+    expect(r.errors).toContainEqual(expect.stringContaining("could not be evaluated"));
   });
 });
 

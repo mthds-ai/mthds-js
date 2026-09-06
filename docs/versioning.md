@@ -25,12 +25,14 @@ A manifest's `mthds_version` declares which versions of the standard the package
 
 **The shape check and the satisfaction check live in different places, deliberately:**
 
-- `parser.ts` — the METHODS.toml *parser* — checks only that `mthds_version` is a well-formed constraint. A manifest targeting a standard version this implementation does not implement is still a manifest, and reading, editing and publishing it must keep working.
-- `validate.ts` — the *validator* the installer's GitHub and local resolvers gate on — checks the shape and then evaluates it. An unsatisfied constraint is an error there, which makes the resolver skip the method with a reason. Refusing to install a package that says it is incompatible with us is the point.
+- `parser.ts` — the METHODS.toml *parser* — checks only that `mthds_version` is a well-formed constraint. A manifest targeting a standard version this implementation does not implement is still a manifest, and reading and editing it keeps working.
+- `validate.ts` — the *validator* — checks the shape and then evaluates it. An unsatisfied constraint is an error there. Refusing to install a package that says it is incompatible with us is the point.
+
+**Today that split does not reach as far as the commands.** `validate.ts` is called from the GitHub and local resolvers (`src/installer/resolver/github.ts`, `local.ts`), and those resolvers are shared by every command that reads a repository — `mthds install`, but also `mthds publish`, `mthds-agent publish` and `mthds-agent share`. A method whose `mthds_version` this implementation does not satisfy therefore lands in `resolved.skipped` for all of them, so it cannot be *published* either, not merely not installed. That is a wider refusal than the split above intends: publishing a package that targets a different standard version is a legitimate thing to do, and the resolver cannot currently tell "this manifest is malformed" from "this manifest is fine but addressed to another version of the standard". Separating those two verdicts at the resolver boundary is tracked as its own piece of work; until it lands, read the rule as *the parser is lenient, and every resolver-backed command is strict*.
 
 ## The constraint grammar
 
-`mthds_version` and `[dependencies].version` share one grammar, defined in `mthds/docs/spec/manifest-format.md` § "Version Constraint Syntax". It is **not** npm's range syntax, and the three differences are exactly the ones npm's `semver` cannot read:
+`mthds_version` uses the constraint grammar defined in `mthds/docs/spec/manifest-format.md` § "Version Constraint Syntax". (The grammar also governs `[dependencies].version`, but this implementation has no dependencies to apply it to: `validate.ts` rejects a `[dependencies]` section outright — "Dependencies have been removed from the MTHDS standard" — and `dependency-resolver.ts` / `vcs-resolver.ts` are retained but reached by nothing outside their own tests. So `mthds_version` is the only live consumer here.) It is **not** npm's range syntax, and the three differences are exactly the ones npm's `semver` cannot read:
 
 | MTHDS | npm | Handling |
 |---|---|---|
@@ -40,7 +42,13 @@ A manifest's `mthds_version` declares which versions of the standard the package
 
 Everything else — `^`, `~`, `>=`, `<=`, `>`, `<`, a bare exact version, `*`, and the partial and wildcard forms `1`, `1.0`, `1.*`, `1.0.*` — npm reads natively and is delegated to it.
 
-`src/package/semver.ts` is where that lives. `parseConstraint` returns a `VersionConstraint` (the AND of its clauses), not a `semver.Range`: `!=` has no `Range` to compile into. Treat the result as opaque and evaluate it with `versionSatisfies`, `selectMinimumVersion`, or `selectMinimumVersionForMultipleConstraints`. `isValidVersionConstraint` (`schema.ts`) is the regex that accepts the same grammar; the two are meant to agree, and a constraint that passes the regex must be one `parseConstraint` can evaluate.
+`src/package/semver.ts` is where that lives. `parseConstraint` returns a `VersionConstraint`, not a `semver.Range`: `!=` has no `Range` to compile into. Treat the result as opaque and evaluate it with `versionSatisfies`, `selectMinimumVersion`, or `selectMinimumVersionForMultipleConstraints`.
+
+**The AND-ed clauses are recombined into one `semver.Range`, not evaluated one range at a time**, and that is load-bearing rather than tidy. npm's prerelease rule is a property of a whole comparator set: a prerelease satisfies a range only when some comparator *in that same range* names its `major.minor.patch`. Give each clause its own range and `">=1.0.0-beta.1, <2.0.0"` rejects `1.0.0-beta.1`, because the upper bound gets an eligibility check of its own and the lower bound's explicit opt-in is nowhere in it — while the equivalent npm form `">=1.0.0-beta.1 <2.0.0"` accepts it. Joining the included clauses with a space keeps them in one comparator set and makes the two forms agree. The `!=` clauses stay separate by necessity, so a prerelease can still slip past an exclusion (`"!=2.1.0"` does not exclude `2.1.0-rc.1`); the specification does not say what exclusion should mean for a prerelease, so this is left as npm reads it.
+
+A constraint is also **bounded** — a length and a clause ceiling in `semver.ts` — because a manifest is fetched from an arbitrary repository and every clause retains a compiled range. Any constraint the specification can express is far below both limits.
+
+`isValidVersionConstraint` (`schema.ts`) is the regex gate on the same grammar, and **the two acceptors are deliberately not identical**. The regex is looser in one direction: it admits a prerelease suffix on a partial version (`>=1.0-beta`, `1-alpha`), which npm's `Range` will not read. It is stricter in another: it rejects forms `parseConstraint` would accept from npm, such as the space-separated range `">=1.0.0 <2.0.0"` and a leading `v`. Callers gate on the regex first and then handle `parseConstraint`'s failure as the `malformed` verdict, so the gap is reported rather than thrown; `validate.ts` is the worked example.
 
 ## Following a cut
 
@@ -48,5 +56,7 @@ When the standard's repo cuts a new version:
 
 1. Read `mthds/docs/spec/versioning.md` to learn which of the two numbers moved.
 2. Edit the constant — one line, one file, per number.
-3. Run the suite. The `mthds_version` tests in `tests/unit/package/manifest/validate.test.ts` are written relative to `MTHDS_STANDARD_VERSION` rather than against a literal, so they follow the constant instead of breaking on it.
+3. Run the suite. The `mthds_version` tests in `tests/unit/package/manifest/validate.test.ts` are written relative to `MTHDS_STANDARD_VERSION` rather than against a literal, so they follow the constant instead of breaking on it — except the pre-cut cases, which are literals on purpose: they ask what became of the manifests already published against `1.0.0`, and that population does not move when the constant does.
 4. Record it in `CHANGELOG.md`. A standard-version bump is user-visible: it changes what `mthds package init` writes and which manifests the installer accepts.
+
+**A prerelease cut is not a one-line edit.** Under npm's rule a prerelease satisfies nothing that does not name it, so setting the constant to, say, `2.1.0-rc.1` makes *every* ordinary constraint unsatisfied — `>=1.0.0` and even `*` — and every method on every repository is refused. The suite fails loudly when you try it (the wildcard case is the one to read), so this cannot ship by accident, but the fix is a decision about what a prerelease standard version should mean to a manifest, not a second edit. Take it up before following such a cut.

@@ -12,8 +12,16 @@
  * delegated to it once the clause has been split off and its operator
  * normalized.
  *
- * A constraint is therefore evaluated clause by clause rather than compiled into
- * a single `semver.Range`: `!=` has no `Range` equivalent to compile into.
+ * The AND-ed clauses are recombined into **one** `semver.Range` rather than
+ * evaluated one range at a time, because npm's prerelease rule is a property of
+ * a whole comparator set: a prerelease satisfies a range only when some
+ * comparator *in that same range* names its `major.minor.patch`. Splitting
+ * `">=1.0.0-beta.1, <2.0.0"` into two ranges gives the upper bound its own
+ * eligibility check, which then rejects `1.0.0-beta.1` — the lower bound's
+ * explicit opt-in having been lost. Joining the clauses with a space (npm's own
+ * AND) keeps them in one comparator set and makes the comma form agree with the
+ * equivalent space form. Only `!=` stays separate: it has no `Range` to compile
+ * into, so each exclusion is its own range whose verdict is inverted.
  */
 
 import semver from "semver";
@@ -26,23 +34,26 @@ export class SemVerError extends Error {
 }
 
 /**
- * One AND-ed clause of a parsed constraint: an npm range, plus whether the
- * clause was written with `!=` and so must NOT match.
+ * A parsed MTHDS version constraint. Opaque: build one with `parseConstraint`
+ * and evaluate it with `versionSatisfies`.
  */
-interface ConstraintClause {
-  readonly negated: boolean;
-  readonly range: semver.Range;
+export interface VersionConstraint {
+  /** Every non-`!=` clause, as one comparator set. `null` when the constraint is exclusions only. */
+  readonly included: semver.Range | null;
+  /** One range per `!=` clause; a version matching any of them is excluded. */
+  readonly excluded: readonly semver.Range[];
 }
 
 /**
- * A parsed MTHDS version constraint — the AND of its clauses. Opaque: build one
- * with `parseConstraint` and evaluate it with `versionSatisfies`.
+ * Bounds on a constraint string. A manifest is fetched from an arbitrary
+ * repository, so its `mthds_version` is untrusted input, and every clause
+ * retains a compiled `semver.Range`: without a ceiling a small download
+ * amplifies into hundreds of megabytes of heap and takes the process down
+ * instead of producing a skipped-method error. A constraint the specification
+ * can express is far below both limits.
  */
-export interface VersionConstraint {
-  /** The constraint as written, for error messages. */
-  readonly source: string;
-  readonly clauses: readonly ConstraintClause[];
-}
+const MAX_CONSTRAINT_LENGTH = 256;
+const MAX_CONSTRAINT_CLAUSES = 16;
 
 /**
  * Parse a version string into a semver SemVer object.
@@ -64,50 +75,78 @@ export function parseVersion(versionStr: string): semver.SemVer {
  * `"==1.0.0"`, `"!=1.0.0"`, `"*"`, `"1.*"`, `"1.0"`.
  */
 export function parseConstraint(constraintStr: string): VersionConstraint {
-  const trimmed = constraintStr.trim();
-  if (trimmed === "") {
+  const invalid = (): never => {
     throw new SemVerError(`Invalid semver constraint: '${constraintStr}'`);
+  };
+
+  const trimmed = constraintStr.trim();
+  if (trimmed === "" || trimmed.length > MAX_CONSTRAINT_LENGTH) {
+    invalid();
   }
 
-  const clauses: ConstraintClause[] = [];
-  for (const rawClause of trimmed.split(",")) {
+  const rawClauses = trimmed.split(",");
+  if (rawClauses.length > MAX_CONSTRAINT_CLAUSES) {
+    invalid();
+  }
+
+  const included: string[] = [];
+  const excluded: semver.Range[] = [];
+
+  for (const rawClause of rawClauses) {
     const clause = rawClause.trim();
     if (clause === "") {
-      throw new SemVerError(`Invalid semver constraint: '${constraintStr}'`);
+      invalid();
     }
 
-    // `!=X` has no npm equivalent — strip it and negate the clause's verdict.
-    // `==X` is npm's `=X`. Both are two-character prefixes, so test them before
-    // the single-character `>` / `<`, which they would otherwise shadow.
-    const negated = clause.startsWith("!=");
-    let body = clause;
-    if (negated) {
-      body = clause.slice(2).trim();
+    // `!=X` has no npm equivalent — hold it aside and invert its verdict. `==X`
+    // is npm's `=X`. Both are two-character prefixes, so test them before the
+    // single-character `>` / `<`, which they would otherwise shadow. An
+    // operator with no operand is rejected rather than left to npm, which reads
+    // the empty body as `*` and would turn `"!="` into "matches nothing".
+    if (clause.startsWith("!=")) {
+      const body = clause.slice(2).trim();
+      if (body === "") {
+        invalid();
+      }
+      try {
+        excluded.push(new semver.Range(body));
+      } catch {
+        invalid();
+      }
     } else if (clause.startsWith("==")) {
-      body = `=${clause.slice(2).trim()}`;
+      const body = clause.slice(2).trim();
+      if (body === "") {
+        invalid();
+      }
+      included.push(`=${body}`);
+    } else {
+      included.push(clause);
     }
-
-    let range: semver.Range;
-    try {
-      range = new semver.Range(body);
-    } catch {
-      throw new SemVerError(`Invalid semver constraint: '${constraintStr}'`);
-    }
-    clauses.push({ negated, range });
   }
 
-  return { source: trimmed, clauses };
+  // One comparator set for every included clause — see the module comment on why
+  // this cannot be one range per clause.
+  let range: semver.Range | null = null;
+  if (included.length > 0) {
+    try {
+      range = new semver.Range(included.join(" "));
+    } catch {
+      invalid();
+    }
+  }
+
+  return { included: range, excluded };
 }
 
 /**
- * Check whether a version satisfies a constraint — every clause must hold, and a
- * `!=` clause holds when its range does NOT match.
+ * Check whether a version satisfies a constraint: it must match the included
+ * comparator set (if the constraint has one) and none of the `!=` exclusions.
  */
 export function versionSatisfies(version: semver.SemVer, constraint: VersionConstraint): boolean {
-  return constraint.clauses.every((clause) => {
-    const matches = semver.satisfies(version, clause.range);
-    return clause.negated ? !matches : matches;
-  });
+  if (constraint.included !== null && !semver.satisfies(version, constraint.included)) {
+    return false;
+  }
+  return !constraint.excluded.some((range) => semver.satisfies(version, range));
 }
 
 /**

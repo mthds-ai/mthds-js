@@ -4,7 +4,7 @@
 
 ### Changed
 
-- **`mthds-agent share` validates `--platform` before reading the repository:** An unknown platform is now rejected as an `ArgumentError` up front, without resolving methods or fetching a GitHub repository. The envelope is unchanged; only its precedence over a resolution failure is new, and an envelope raised before the read is the one kind that correctly carries no `skipped_methods`.
+- **`mthds-agent share` validates `--platform` before reading the repository (Breaking):** An unknown platform is now rejected as an `ArgumentError` up front, without resolving methods or fetching a GitHub repository. An invocation that is wrong in both ways — `share --local /missing --platform twitter` — now answers `error_type: "ArgumentError"` and `error_domain: "argument"` where it answered `ShareError` and `install`, so a consumer branching on either field sees a different value for that input. An envelope raised before the read is the one kind that correctly carries no `skipped_methods`.
 
 ### Fixed
 

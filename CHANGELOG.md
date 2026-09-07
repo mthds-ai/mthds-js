@@ -1,5 +1,15 @@
 # Changelog
 
+## [Unreleased]
+
+### Changed
+
+- **`mthds-agent share` validates `--platform` before reading the repository (Breaking):** An unknown platform is now rejected as an `ArgumentError` up front, without resolving methods or fetching a GitHub repository. An invocation that is wrong in both ways — `share --local /missing --platform twitter` — now answers `error_type: "ArgumentError"` and `error_domain: "argument"` where it answered `ShareError` and `install`, so a consumer branching on either field sees a different value for that input. An envelope raised before the read is the one kind that correctly carries no `skipped_methods`.
+
+### Fixed
+
+- **`skipped_methods` on failures raised after the repository read:** An `mthds-agent install` that reads a repository successfully and then fails — the pipelex runtime install failing, or the install flow failing on the filesystem — now carries the repository's `skipped_methods` on its error envelope instead of dropping it. A consumer handling that failure can tell that the repository was also partial, rather than retrying against refusals it never saw.
+
 ## [v0.26.0] - 2026-09-06
 
 ### Added

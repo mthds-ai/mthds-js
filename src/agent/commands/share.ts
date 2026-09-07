@@ -36,6 +36,20 @@ export async function agentShare(
     });
   }
 
+  // Checked here rather than after the resolve: an argument the caller spelled
+  // wrong is knowable without reading anything, and an error raised before the
+  // read is the one kind that carries no skip list to report.
+  const platforms = options.platform ?? VALID_PLATFORMS;
+  for (const platform of platforms) {
+    if (!VALID_PLATFORMS.includes(platform)) {
+      agentError(
+        `Invalid platform "${platform}". Valid platforms: ${VALID_PLATFORMS.join(", ")}`,
+        "ArgumentError",
+        { error_domain: AGENT_ERROR_DOMAINS.ARGUMENT },
+      );
+    }
+  }
+
   const methodFilter = options.method;
 
   // Resolve repo
@@ -95,18 +109,6 @@ export async function agentShare(
       error_domain: AGENT_ERROR_DOMAINS.INSTALL,
       skipped_methods: skippedMethodReports(resolved),
     });
-  }
-
-  // Validate --platform values
-  const platforms = options.platform ?? VALID_PLATFORMS;
-  for (const p of platforms) {
-    if (!VALID_PLATFORMS.includes(p)) {
-      agentError(
-        `Invalid platform "${p}". Valid platforms: ${VALID_PLATFORMS.join(", ")}`,
-        "ArgumentError",
-        { error_domain: AGENT_ERROR_DOMAINS.ARGUMENT },
-      );
-    }
   }
 
   const allUrls = buildShareUrls({

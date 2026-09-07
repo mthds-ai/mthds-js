@@ -96,6 +96,8 @@ export async function agentInstall(
     });
   }
 
+  // The repository has been read, so its refusals are known from here on and
+  // every envelope below carries them — see `skippedMethodReports`.
   if (methodFilter) {
     const match = resolved.methods.find((method) => method.name === methodFilter);
     if (!match) {
@@ -122,6 +124,7 @@ export async function agentInstall(
         agentError(`Failed to install pipelex runtime: ${(err as Error).message}`, "InstallError", {
           error_domain: AGENT_ERROR_DOMAINS.INSTALL,
           retryable: true,
+          skipped_methods: skippedMethodReports(resolved),
         });
       }
     }
@@ -133,6 +136,7 @@ export async function agentInstall(
   } catch (err) {
     agentError(`Install failed: ${(err as Error).message}`, "InstallError", {
       error_domain: AGENT_ERROR_DOMAINS.INSTALL,
+      skipped_methods: skippedMethodReports(resolved),
     });
   }
 

@@ -1,5 +1,15 @@
 # Changelog
 
+## [Unreleased]
+
+### Changed
+
+- **`mthds-agent share` validates `--platform` before reading the repository:** An unknown platform is now rejected as an `ArgumentError` up front, without resolving methods or fetching a GitHub repository. The envelope is unchanged; only its precedence over a resolution failure is new, and an envelope raised before the read is the one kind that correctly carries no `skipped_methods`.
+
+### Fixed
+
+- **`skipped_methods` on failures raised after the repository read:** An `mthds-agent install` that reads a repository successfully and then fails — the pipelex runtime install failing, or the install flow failing on the filesystem — now carries the repository's `skipped_methods` on its error envelope instead of dropping it. A consumer handling that failure can tell that the repository was also partial, rather than retrying against refusals it never saw.
+
 ## [v0.26.0] - 2026-09-06
 
 ### Added

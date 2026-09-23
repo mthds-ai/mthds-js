@@ -1,0 +1,60 @@
+src/version.ts
+  s_12b2af5fdd964a::t_cac1c069be9446 1-18
+src/runners/api/user-agent.ts
+  s_12b2af5fdd964a::t_9185eca2ab9fcd 1-182
+  s_12b2af5fdd964a::t_3f89a763f61608 183-201
+.claude/skills/release/SKILL.md
+  s_12b2af5fdd964a::t_4dafb0e1071634 39-40,55
+CHANGELOG.md
+  s_12b2af5fdd964a::t_dc1997b31b63e9 5-10
+README.md
+  s_12b2af5fdd964a::t_fbb87a649d783a 213-226
+docs/architecture.md
+  s_12b2af5fdd964a::t_f695cced4ce8d6 152
+docs/client-identification.md
+  s_12b2af5fdd964a::t_f5cd113ecd5703 1-61
+docs/versioning.md
+  s_12b2af5fdd964a::t_58efcc0aadd08f 9
+src/agent-cli.ts
+  s_12b2af5fdd964a::t_9cbb550aea3f00 468
+src/agent/commands/run.ts
+  s_12b2af5fdd964a::t_ad1b9082c700b4 54
+src/cli/commands/build.ts
+  s_12b2af5fdd964a::t_410be140d147e1 62,94,152,184,254,286
+src/cli/commands/install.ts
+  s_12b2af5fdd964a::t_c31f3c27461d3d 149
+src/cli/commands/run.ts
+  s_12b2af5fdd964a::t_cc9ad66c79fb55 77,111,143
+src/cli/commands/validate.ts
+  s_12b2af5fdd964a::t_4f4b4d7fb78ead 24,65
+src/index.ts
+  s_12b2af5fdd964a::t_7a290994a78c02 23-29
+src/runners/api/client.ts
+  s_12b2af5fdd964a::t_2bf56fe8660ddc 34-35,73,83-89,135-139,142-144,177-195,213,270
+src/runners/registry.ts
+  s_12b2af5fdd964a::t_cc026680a91a46 5,7,9-26,37
+tests/unit/client/client.test.ts
+  s_12b2af5fdd964a::t_4ae1ddd501137e 10,1014-1115
+tests/unit/runners/api/user-agent.test.ts
+  s_12b2af5fdd964a::t_336d7b4bc65b30 1-194
+tests/unit/runners/registry.test.ts
+  s_12b2af5fdd964a::t_bb16616bc3372d 1-4,8,26-27,39,45,60,75,81-83,93-94,100-101,106-183
+tests/unit/version.test.ts
+  s_12b2af5fdd964a::t_4921a47b683c4a 1-16
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "455f0567cf13ac0fa6fb2990a87198519d67c476",
+  "prompts": {},
+  "sessions": {
+    "s_12b2af5fdd964a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "bb75e847-abe4-4171-a2ff-2b263b391b14",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "thomashebrard <thomas@pipelex.com>"
+    }
+  }
+}

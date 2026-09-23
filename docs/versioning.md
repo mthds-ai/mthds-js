@@ -6,7 +6,7 @@ This package copies two version numbers that are cut elsewhere, and publishes on
 |---|---|---|
 | **MTHDS standard version** — `MTHDS_STANDARD_VERSION` | `src/package/manifest/schema.ts` | `mthds/docs/spec/versioning.md` § "The Standard Version" |
 | **MTHDS Protocol version** — `MTHDS_PROTOCOL_VERSION` | `src/protocol/models.ts` | `mthds/docs/spec/versioning.md` § "The Protocol Version" |
-| This package's own release — `version` | `package.json` | this repo's `/release` skill |
+| This package's own release — `version` | `package.json`, mirrored by `MTHDS_JS_VERSION` in `src/version.ts` (test-guarded) | this repo's `/release` skill |
 
 The first two are **copies of a cut made in the standard's repo**, not numbers this repo decides. They move only when the specification moves them, and they move independently of each other: a release of the standard that leaves the HTTP runner contract alone leaves the protocol version exactly where it was. Neither has anything to do with `package.json`'s `version`, which is this npm package's own release number.
 
@@ -33,9 +33,11 @@ A manifest's `mthds_version` declares which versions of the standard the package
 **A refusal is reported, never silent.** Because the refusal is wider than the split intends, the one thing that must not happen is a caller left unaware of it — an agent that publishes half a repository and is told it published a repository will not go looking. So the skip list is read at both places it reaches a caller:
 
 - `--method <name>` looks in `resolved.skipped` before reporting a name as unknown, and gives the reason the resolver produced. A method that exists, is spelled correctly and carries a valid manifest is never called "not found"; the available-methods list stays a correction for an actual typo.
-- Every `mthds-agent` envelope that reads a repository carries `skipped_methods`, an array of `{ name, errors }` — on the success envelopes of `install`, `publish` and `share`, and on their errors too, since "no valid methods to publish" is the case where the reason matters most. It is always present, empty when nothing was refused, and reports the whole repository's skip list even under `--method`, because a skip is a property of the repository rather than of the selection.
+- Every `mthds-agent` envelope emitted once a repository has been read carries `skipped_methods`, an array of `{ name, errors }` — the success envelopes of `install`, `publish` and `share`, and every failure raised after the read, whether or not it is about the refusals. "No valid methods to publish" is the case where the reason matters most, but the install flow failing on the filesystem is the case where a caller is already handling an error and would otherwise retry against a repository whose refusals it never saw. The field is empty rather than absent when nothing was refused, and reports the whole repository's skip list even under `--method`, because a skip is a property of the repository rather than of the selection.
 
-`success: true` still means the command did what it could, not that the repository was whole; `skipped_methods` is the field that answers the second question, and a machine consumer has to read it. `src/installer/resolver/skipped.ts` holds both helpers so the six call sites cannot drift apart.
+An envelope raised **before or during** the read carries no `skipped_methods` at all — an argument error checked up front, and the read itself failing — because there is no skip list yet, and that absence is the signal a consumer reads. Keeping the two apart is why a pure argument check belongs with the other argument checks at the top of a command rather than after the resolve — `mthds-agent share` validates `--platform` up front for that reason, and rejects a misspelled platform without fetching anything.
+
+`success: true` still means the command did what it could, not that the repository was whole; `skipped_methods` is the field that answers the second question, and a machine consumer has to read it. `src/installer/resolver/skipped.ts` holds both helpers, and states the rule, so the call sites cannot drift apart.
 
 The interactive CLI already printed its skip report and keeps it; the share text still counts only the methods actually published, which is accurate — a refused method was never published, so counting it would overstate.
 

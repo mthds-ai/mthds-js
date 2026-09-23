@@ -170,6 +170,43 @@ describe("mthds-agent and the methods it refuses (e2e)", () => {
     expect(result.message).toContain("new_tool");
   });
 
+  it("still names the refused method when the install itself fails afterwards", () => {
+    const box = sandbox();
+    // `.mthds` as a plain file makes the install flow's mkdir fail — a failure
+    // with nothing to do with the refusals, raised long after the read that
+    // produced them.
+    writeFileSync(join(box.cwd, ".mthds"), "not a directory\n");
+
+    const { stderr, status } = runAgent(
+      ["install", "--local", repoDir, "--location", "local", "--no-runner"],
+      box,
+    );
+
+    expect(status).toBe(1);
+    const result = parseJson(stderr);
+    expect(result.error).toBe(true);
+    expect(result.message).toContain("Install failed:");
+    expect(skippedNames(result)).toEqual(["legacy_tool"]);
+  });
+
+  it("rejects an unknown platform before it reads the repository", () => {
+    const { stderr, status } = runAgent([
+      "share",
+      "--local",
+      join(repoDir, "no-such-directory"),
+      "--platform",
+      "twitter",
+    ]);
+
+    expect(status).toBe(1);
+    const result = parseJson(stderr);
+    expect(result.error_type).toBe("ArgumentError");
+    expect(result.message).toContain('Invalid platform "twitter"');
+    // Nothing was read, so there is no skip list to report — the absence of the
+    // key is what tells a consumer this envelope precedes the read.
+    expect(result).not.toHaveProperty("skipped_methods");
+  });
+
   it("says why nothing survived, rather than only that nothing did", () => {
     rmSync(join(repoDir, "methods", "new_tool"), { recursive: true, force: true });
 

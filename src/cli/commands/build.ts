@@ -59,7 +59,7 @@ export async function buildRunnerMethod(
   p.intro("mthds build runner method");
 
   const libraryDirs = options.libraryDir?.length ? options.libraryDir : undefined;
-  const runner = createRunner(options.runner, libraryDirs);
+  const runner = createRunner("mthds-cli", options.runner, libraryDirs);
 
   if (isPipelexRunner(runner)) {
     p.log.step("Building via pipelex...");
@@ -91,7 +91,7 @@ export async function buildRunnerPipe(
   p.intro("mthds build runner pipe");
 
   const libraryDirs = options.libraryDir?.length ? options.libraryDir : undefined;
-  const runner = createRunner(options.runner, libraryDirs);
+  const runner = createRunner("mthds-cli", options.runner, libraryDirs);
 
   if (isPipelexRunner(runner)) {
     p.log.step("Building via pipelex...");
@@ -149,7 +149,7 @@ export async function buildInputsMethod(
   p.intro("mthds build inputs method");
 
   const libraryDirs = options.libraryDir?.length ? options.libraryDir : undefined;
-  const runner = createRunner(options.runner, libraryDirs);
+  const runner = createRunner("mthds-cli", options.runner, libraryDirs);
 
   if (isPipelexRunner(runner)) {
     p.log.step("Building via pipelex...");
@@ -181,7 +181,7 @@ export async function buildInputsPipe(
   p.intro("mthds build inputs pipe");
 
   const libraryDirs = options.libraryDir?.length ? options.libraryDir : undefined;
-  const runner = createRunner(options.runner, libraryDirs);
+  const runner = createRunner("mthds-cli", options.runner, libraryDirs);
 
   if (isPipelexRunner(runner)) {
     p.log.step("Building via pipelex...");
@@ -251,7 +251,7 @@ export async function buildOutputMethod(
   p.intro("mthds build output method");
 
   const libraryDirs = options.libraryDir?.length ? options.libraryDir : undefined;
-  const runner = createRunner(options.runner, libraryDirs);
+  const runner = createRunner("mthds-cli", options.runner, libraryDirs);
 
   if (isPipelexRunner(runner)) {
     p.log.step("Building via pipelex...");
@@ -283,7 +283,7 @@ export async function buildOutputPipe(
   p.intro("mthds build output pipe");
 
   const libraryDirs = options.libraryDir?.length ? options.libraryDir : undefined;
-  const runner = createRunner(options.runner, libraryDirs);
+  const runner = createRunner("mthds-cli", options.runner, libraryDirs);
 
   if (isPipelexRunner(runner)) {
     p.log.step("Building via pipelex...");

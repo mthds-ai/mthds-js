@@ -254,5 +254,9 @@ describe("agentShare", () => {
       "ArgumentError",
       expect.any(Object),
     );
+    // Raised before the repository is read: an envelope that precedes the read
+    // is the one kind that carries no skip list, and a misspelled flag is
+    // knowable without fetching anything.
+    expect(mockedResolveFromGitHub).not.toHaveBeenCalled();
   });
 });

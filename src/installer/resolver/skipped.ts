@@ -11,7 +11,8 @@
  *
  * The two helpers here are the two places the skip list has to reach: the
  * `--method` filter, which must not call a refused method missing, and the
- * agent envelopes, which must not report a partial result as a whole one.
+ * agent envelopes — every one emitted after the read, success or failure —
+ * which must not report a partial result as a whole one.
  */
 
 import type { ResolvedRepo, SkippedMethod } from "../../package/manifest/types.js";
@@ -52,6 +53,15 @@ export function describeUnusableMethod(resolved: ResolvedRepo, name: string): st
  * Reported whole even under `--method`, because a skip is a property of the
  * repository rather than of the selection: the caller asked this build to read
  * that repository, and this is what it could not read.
+ *
+ * Every envelope a command emits once the read has happened carries it: the
+ * success one, and every failure raised afterwards — including failures with
+ * no bearing on the refusals, such as the install flow hitting the filesystem.
+ * A caller already handling an error is exactly the caller that must not be
+ * left to retry against a repository whose refused methods it never saw.
+ * Envelopes raised before or during the read carry nothing, because there is
+ * no skip list yet; that is why a late argument check belongs up front with
+ * the other argument checks, not after the resolve.
  */
 export function skippedMethodReports(resolved: ResolvedRepo): SkippedMethodReport[] {
   return resolved.skipped.map((entry) => ({ name: entry.dirName, errors: [...entry.errors] }));

@@ -74,7 +74,7 @@ export async function runMethod(_name: string, options: RunOptions): Promise<voi
   printLogo();
   p.intro("mthds run method");
 
-  const runner = createRunner(options.runner, libraryDirs(options));
+  const runner = createRunner("mthds-cli", options.runner, libraryDirs(options));
 
   if (isPipelexRunner(runner)) {
     // `pipelex run method <name>` resolves an INSTALLED method by name (its
@@ -108,7 +108,7 @@ export async function runBundle(target: string, options: RunOptions): Promise<vo
   printLogo();
   p.intro("mthds run bundle");
 
-  const runner = createRunner(options.runner, libraryDirs(options));
+  const runner = createRunner("mthds-cli", options.runner, libraryDirs(options));
 
   let runOptions: StartOptions;
   try {
@@ -140,7 +140,7 @@ export async function runPipe(target: string, options: RunOptions): Promise<void
   printLogo();
   p.intro("mthds run pipe");
 
-  const runner = createRunner(options.runner, libraryDirs(options));
+  const runner = createRunner("mthds-cli", options.runner, libraryDirs(options));
 
   // A target is either a pipe code or a .mthds bundle file.
   const isBundlePath = target.endsWith(".mthds") || existsSync(target);

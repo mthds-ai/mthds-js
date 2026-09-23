@@ -82,7 +82,8 @@ export function agentError(
      * The methods the resolver refused, with the reasons. Rides an error the
      * same way it rides a success: an agent told "no valid methods" and nothing
      * else has no way to learn that the manifests were fine and addressed to
-     * another version of the standard.
+     * another version of the standard. Every failure raised once the read has
+     * happened carries it, whether or not the failure is about the refusals.
      */
     skipped_methods?: unknown[];
   },

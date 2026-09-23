@@ -31,6 +31,8 @@ import {
 } from "./exceptions.js";
 import { isValidBaseUrl } from "../../config/config.js";
 import { assertExclusiveRunSources, hasBundlePayload } from "../../protocol/options.js";
+import { buildUserAgent } from "./user-agent.js";
+import type { AppInfo } from "./user-agent.js";
 
 export interface MthdsFile {
   /** File contents to validate. */
@@ -68,7 +70,7 @@ export interface UploadFileResult {
   filename: string;
 }
 
-interface MthdsApiClientOptions {
+export interface MthdsApiClientOptions {
   /** API key (Bearer). Falls back to `MTHDS_API_KEY`. Optional for anonymous bare runners. */
   apiKey?: string;
   /**
@@ -78,6 +80,13 @@ interface MthdsApiClientOptions {
    * default.
    */
   baseUrl?: string;
+  /**
+   * The integrator's identity, placed in front of this library's tokens in the
+   * `User-Agent` header (`acme-invoicer/1.4.0 mthds-js/0.26.0 node/22.4.0 (darwin; arm64)`).
+   * Validated at construction: an invalid value throws `TypeError`.
+   * See `docs/client-identification.md`.
+   */
+  appInfo?: AppInfo;
 }
 
 /** Low-level transport over a generic fetch, before status interpretation. */
@@ -123,8 +132,16 @@ export class MthdsApiClient implements Runner {
   private readonly baseUrl: string;
   /** Origin root derived from the base URL — `/health` lives here, not under `/v1`. */
   private readonly originUrl: string;
+  /**
+   * `User-Agent` value computed once at construction; `undefined` in a browser,
+   * where the header must not be set.
+   */
+  private readonly userAgent: string | undefined;
 
   constructor(options: MthdsApiClientOptions = {}) {
+    // Validate appInfo first: a bad identity is an argument error regardless
+    // of what the base URL resolves to.
+    this.userAgent = buildUserAgent(options.appInfo);
     this.apiKey = options.apiKey ?? process.env.MTHDS_API_KEY;
     const normalizedBaseUrl = (
       options.baseUrl ??
@@ -158,6 +175,25 @@ export class MthdsApiClient implements Runner {
   // ── Transport ──────────────────────────────────────────────────────
 
   /**
+   * The ONE place request headers are built — both `requestRaw` and
+   * `requestJson` go through it, so no request path can miss the
+   * `User-Agent` (spec: client-identification, "Client obligations").
+   */
+  private buildHeaders(hasBody: boolean): Record<string, string> {
+    const headers: Record<string, string> = { Accept: "application/json" };
+    if (this.userAgent !== undefined) {
+      headers["User-Agent"] = this.userAgent;
+    }
+    if (this.apiKey) {
+      headers["Authorization"] = `Bearer ${this.apiKey}`;
+    }
+    if (hasBody) {
+      headers["Content-Type"] = "application/json";
+    }
+    return headers;
+  }
+
+  /**
    * Issue one HTTP request and return the raw status/headers/body. Wraps
    * DNS/connect/TLS/timeout failures as `ApiUnreachableError`; a caller-driven
    * abort (Ctrl-C / agent walk-away) propagates as-is so a caller can stop
@@ -173,14 +209,8 @@ export class MthdsApiClient implements Runner {
       signal?: AbortSignal;
     } = {},
   ): Promise<RawResponse> {
-    const headers: Record<string, string> = { Accept: "application/json" };
-    if (this.apiKey) {
-      headers["Authorization"] = `Bearer ${this.apiKey}`;
-    }
     const hasBody = options.body !== undefined;
-    if (hasBody) {
-      headers["Content-Type"] = "application/json";
-    }
+    const headers = this.buildHeaders(hasBody);
 
     const timeoutMs = options.timeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
     const controller = new AbortController();
@@ -237,13 +267,7 @@ export class MthdsApiClient implements Runner {
    * that don't need the protocol's structured error taxonomy.
    */
   private async requestJson<T>(method: "GET" | "POST", url: string, body?: unknown): Promise<T> {
-    const headers: Record<string, string> = { Accept: "application/json" };
-    if (this.apiKey) {
-      headers["Authorization"] = `Bearer ${this.apiKey}`;
-    }
-    if (body !== undefined) {
-      headers["Content-Type"] = "application/json";
-    }
+    const headers = this.buildHeaders(body !== undefined);
     const res = await fetch(url, {
       method,
       headers,

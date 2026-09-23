@@ -7,6 +7,7 @@ import {
   PipelineRequestError,
   RunStillRunningError,
 } from "../../../src/runners/api/exceptions.js";
+import { MTHDS_JS_VERSION } from "../../../src/version.js";
 
 const BASE_URL = "http://localhost:8081";
 
@@ -1008,5 +1009,107 @@ describe("MthdsApiClient.uploadFile", () => {
       status: 413,
       errorType: "PayloadTooLarge",
     });
+  });
+});
+
+describe("MthdsApiClient User-Agent (client-identification spec)", () => {
+  const LIBRARY_UA = `mthds-js/${MTHDS_JS_VERSION} node/${process.versions.node} (${process.platform}; ${process.arch})`;
+
+  function headersOf(fetchSpy: ReturnType<typeof vi.spyOn>, call = 0): Record<string, string> {
+    const init = fetchSpy.mock.calls[call]![1] as { headers: Record<string, string> };
+    return init.headers;
+  }
+
+  it("sends the library User-Agent on requestRaw paths (protocol routes)", async () => {
+    const client = makeClient();
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(jsonResponse(200, { pipeline_run_id: "x" }));
+    await client.execute({ pipe_code: "p" });
+    expect(headersOf(fetchSpy)["User-Agent"]).toBe(LIBRARY_UA);
+  });
+
+  it("sends the library User-Agent on requestJson paths (health and build routes)", async () => {
+    const client = makeClient();
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockImplementation(async () => jsonResponse(200, { ok: true }));
+    await client.health();
+    await client.buildRunner({ files: [{ content: "domain = 'smoke'" }] });
+    expect(headersOf(fetchSpy, 0)["User-Agent"]).toBe(LIBRARY_UA);
+    expect(headersOf(fetchSpy, 1)["User-Agent"]).toBe(LIBRARY_UA);
+  });
+
+  it("sends it on the upload convenience and GET routes too", async () => {
+    const client = makeClient();
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockImplementation(async () =>
+        jsonResponse(200, { uri: "pipelex-storage://x", filename: "a.png" }),
+      );
+    await client.uploadFile({ filename: "a.png", data: "AAAA" });
+    expect(headersOf(fetchSpy)["User-Agent"]).toBe(LIBRARY_UA);
+  });
+
+  it("puts appInfo in front of the library token", async () => {
+    const client = new MthdsApiClient({
+      baseUrl: BASE_URL,
+      apiKey: "t",
+      appInfo: {
+        name: "acme-invoicer",
+        version: "1.4.0",
+        details: ["batch"],
+        url: "https://acme.test",
+      },
+    });
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(jsonResponse(200, { pipeline_run_id: "x" }));
+    await client.execute({ pipe_code: "p" });
+    expect(headersOf(fetchSpy)["User-Agent"]).toBe(
+      `acme-invoicer/1.4.0 (batch; +https://acme.test) ${LIBRARY_UA}`,
+    );
+  });
+
+  it("keeps the other headers alongside it", async () => {
+    const client = makeClient();
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(jsonResponse(200, { pipeline_run_id: "x" }));
+    await client.execute({ pipe_code: "p" });
+    expect(headersOf(fetchSpy)).toEqual({
+      Accept: "application/json",
+      "User-Agent": LIBRARY_UA,
+      Authorization: "Bearer test-token",
+      "Content-Type": "application/json",
+    });
+  });
+
+  it("refuses an invalid appInfo at construction with a TypeError", () => {
+    expect(
+      () => new MthdsApiClient({ baseUrl: BASE_URL, appInfo: { name: "acme invoicer" } }),
+    ).toThrow(TypeError);
+    expect(
+      () =>
+        new MthdsApiClient({ baseUrl: BASE_URL, appInfo: { name: "acme", details: ["not ok"] } }),
+    ).toThrow(TypeError);
+  });
+
+  it("sets no User-Agent in a browser", async () => {
+    vi.stubGlobal("window", { document: {} });
+    vi.stubGlobal("process", { ...process, versions: {} });
+    let client: MthdsApiClient;
+    try {
+      client = new MthdsApiClient({ baseUrl: BASE_URL, apiKey: "t", appInfo: { name: "acme" } });
+    } finally {
+      vi.unstubAllGlobals();
+    }
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(jsonResponse(200, { pipeline_run_id: "x" }));
+    await client.execute({ pipe_code: "p" });
+    await client.health().catch(() => undefined);
+    expect(headersOf(fetchSpy, 0)).not.toHaveProperty("User-Agent");
+    expect(headersOf(fetchSpy, 1)).not.toHaveProperty("User-Agent");
   });
 });

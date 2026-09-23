@@ -465,7 +465,7 @@ if (isApiRunner) {
   const getLibraryDirs = () => (program.optsWithGlobals().libraryDir ?? []) as string[];
   registerApiRunnerCommands(program, (): Runner => {
     const libraryDirs = getLibraryDirs();
-    return createRunner(Runners.API, libraryDirs.length ? libraryDirs : undefined);
+    return createRunner("mthds-agent", Runners.API, libraryDirs.length ? libraryDirs : undefined);
   });
 } else {
   registerPipelexRunnerCommands(program, () => getAutoInstall(program));

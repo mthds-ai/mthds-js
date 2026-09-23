@@ -1,5 +1,15 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- **`DO_NOT_TRACK` opt-out**: setting `DO_NOT_TRACK` to a truthy value (`1`, `true`, `yes`, `on`) now disables telemetry whatever `DISABLE_TELEMETRY` or `~/.mthds/config` say, and `mthds telemetry status` reports it as disabled from the environment.
+
+### Fixed
+
+- **Telemetry identity for `method_install` and `method_publish`**: events no longer share the constant `distinct_id` `"anonymous"`, which merged every user into one PostHog person. With an API key configured, the CLI resolves the key's platform user id once through `GET /v1/auth/verify`, caches it in `~/.mthds/telemetry.json` under a digest of the key, and sends events under that id, attached to the `organization` group when the API returns an `org_id`; without one, events carry a random per-install id and `$process_person_profile: false`.
+
 ## [v0.27.0] - 2026-09-23
 
 ### Added

@@ -259,7 +259,19 @@ export function listConfig(): Array<{
 
 // ── Telemetry helpers (for PostHog module) ─────────────────────────
 
+/**
+ * The cross-tool opt-out (https://consoledonottrack.com): `DO_NOT_TRACK` set to a
+ * truthy value turns telemetry off whatever `DISABLE_TELEMETRY` or the config file say.
+ */
+export const DO_NOT_TRACK_ENV_NAME = "DO_NOT_TRACK";
+
+export function isDoNotTrack(): boolean {
+  const value = process.env[DO_NOT_TRACK_ENV_NAME];
+  return value !== undefined && TRUTHY_STRINGS.has(value.trim().toLowerCase());
+}
+
 export function isTelemetryEnabled(): boolean {
+  if (isDoNotTrack()) return false;
   return loadConfig().telemetry;
 }
 
@@ -268,5 +280,6 @@ export function setTelemetryEnabled(enabled: boolean): void {
 }
 
 export function getTelemetrySource(): ConfigSource {
+  if (isDoNotTrack()) return "env";
   return getConfigValue("telemetry").source;
 }

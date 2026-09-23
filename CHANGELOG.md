@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Added
+
+- **`User-Agent` client identification:** `MthdsApiClient` now sends a `User-Agent` on every request, built per the Pipelex workspace spec `docs/specs/client-identification.md` — `mthds-js/<version> node/<version> (<os>; <arch>)` (or `bun/…` / `deno/…`), and no header at all in a browser. All request helpers build their headers in one place, so no route can miss it. The version comes from a new `MTHDS_JS_VERSION` constant (`src/version.ts`), guarded by a test against `package.json`.
+- **`appInfo` client option:** `new MthdsApiClient({ appInfo: { name, version?, url?, details? } })` places the integrator's own product token in front of the SDK's, Stripe-style. An invalid value is refused at construction with a `TypeError`. `AppInfo`, `MthdsApiClientOptions` and `MTHDS_JS_VERSION` are exported from the package entry.
+- **The CLIs name themselves:** the `mthds` binary sends `mthds-cli/<version>` and `mthds-agent` sends `mthds-agent/<version>` in front of `mthds-js/<version>` when they use the API runner. `createRunner()` now takes the calling binary as a required first argument.
+
 ### Changed
 
 - **`mthds-agent share` validates `--platform` before reading the repository (Breaking):** An unknown platform is now rejected as an `ArgumentError` up front, without resolving methods or fetching a GitHub repository. An invocation that is wrong in both ways — `share --local /missing --platform twitter` — now answers `error_type: "ArgumentError"` and `error_domain: "argument"` where it answered `ShareError` and `install`, so a consumer branching on either field sees a different value for that input. An envelope raised before the read is the one kind that correctly carries no `skipped_methods`.

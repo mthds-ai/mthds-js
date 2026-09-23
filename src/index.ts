@@ -20,7 +20,13 @@ export * from "./protocol/index.js";
 
 // ── API runner / client (runners/api) ────────────────────────────────
 export { MthdsApiClient, DEFAULT_API_BASE_URL } from "./runners/api/client.js";
-export type { MthdsFile, ValidateFilesOptions } from "./runners/api/client.js";
+export type {
+  MthdsApiClientOptions,
+  MthdsFile,
+  ValidateFilesOptions,
+} from "./runners/api/client.js";
+export type { AppInfo } from "./runners/api/user-agent.js";
+export { MTHDS_JS_VERSION } from "./version.js";
 
 // ── API-runner errors (runners/api — the protocol-base `PipelineRequestError`
 //    rides the protocol barrel above) ──────────────────────────────────

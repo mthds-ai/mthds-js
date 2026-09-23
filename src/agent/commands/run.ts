@@ -51,7 +51,7 @@ async function agentRunTarget(options: AgentRunOptions, fallbackMsg: string): Pr
 
   let runner;
   try {
-    runner = createRunner(options.runner, libraryDirs);
+    runner = createRunner("mthds-agent", options.runner, libraryDirs);
   } catch (err) {
     agentError((err as Error).message, "RunnerError", {
       error_domain: AGENT_ERROR_DOMAINS.RUNNER,

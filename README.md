@@ -210,6 +210,20 @@ Use `execute` (blocking) or `start` (completion delivery is implementation-defin
 
 > Note: the bare-runner blocking path returns the runner's native `pipe_output`, whereas the Pipelex Hosted API durable path returns `main_stuff` + `graph_spec`. Cross-shape normalization is a v1 TODO.
 
+### Identifying your application
+
+Every request carries a `User-Agent` header (`mthds-js/<version> node/<version> (<os>; <arch>)`) so the hosted API can attribute traffic to the program that sent it; none is set in a browser. Put your own program's name in front of it with `appInfo`:
+
+```typescript
+const client = new MthdsApiClient({
+  apiKey: "your-api-key",
+  appInfo: { name: "acme-invoicer", version: "1.4.0", url: "https://acme.example" },
+});
+// User-Agent: acme-invoicer/1.4.0 (+https://acme.example) mthds-js/<version> node/<version> (<os>; <arch>)
+```
+
+`name` and `version` must be RFC 9110 tokens; an invalid value throws a `TypeError` at construction. See [docs/client-identification.md](docs/client-identification.md).
+
 ### Environment variables
 
 Instead of passing options to the constructor, you can set environment variables:

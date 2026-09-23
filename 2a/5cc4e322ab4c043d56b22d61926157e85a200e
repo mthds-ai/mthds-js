@@ -1,0 +1,23 @@
+docs/client-identification.md
+  s_12b2af5fdd964a::t_74bb7e3604512c 23,47,50
+src/runners/api/user-agent.ts
+  s_12b2af5fdd964a::t_ab06e7f9354f3c 42-45,60-61,73,79,82-83,86-87,130-134,138-144,177
+tests/unit/runners/api/user-agent.test.ts
+  s_12b2af5fdd964a::t_2959aae82949d2 57-60,85-88,97,145-153,198-207
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2a5cc4e322ab4c043d56b22d61926157e85a200e",
+  "prompts": {},
+  "sessions": {
+    "s_12b2af5fdd964a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "bb75e847-abe4-4171-a2ff-2b263b391b14",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "thomashebrard <thomas@pipelex.com>"
+    }
+  }
+}

@@ -188,12 +188,11 @@ export function buildUserAgent(
   libraryVersion: string = MTHDS_JS_VERSION,
 ): string | undefined {
   if (appInfo !== undefined) validateAppInfo(appInfo);
-  if (runtime.isBrowser) return undefined;
 
   const parts: string[] = [];
   if (appInfo !== undefined) parts.push(renderAppInfo(appInfo));
   parts.push(`${MTHDS_JS_TOKEN_NAME}/${libraryVersion}`);
-  if (runtime.name && runtime.version && isToken(runtime.version)) {
+  if (!runtime.isBrowser && runtime.name && runtime.version && isToken(runtime.version)) {
     let token = `${runtime.name}/${runtime.version}`;
     if (runtime.os && runtime.arch && isToken(runtime.os) && isToken(runtime.arch)) {
       token += ` (${runtime.os}; ${runtime.arch})`;
@@ -207,5 +206,8 @@ export function buildUserAgent(
         `${USER_AGENT_MAX_LENGTH}. Shorten appInfo.details or appInfo.url.`,
     );
   }
+  // Checked before the browser return, so an `appInfo` refused on a server is refused
+  // in a browser too: the refusal is a property of the `appInfo`, not of the runtime.
+  if (runtime.isBrowser) return undefined;
   return header;
 }

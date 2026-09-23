@@ -191,6 +191,13 @@ describe("buildUserAgent", () => {
     expect(() => buildUserAgent({ name: "bad name" }, { isBrowser: true })).toThrow(TypeError);
   });
 
+  it("refuses an over-long appInfo in a browser as it does on a server", () => {
+    const details = Array.from({ length: 80 }, (_, i) => `k${i}=value${i}`);
+    expect(() => buildUserAgent({ name: "acme", details }, { isBrowser: true })).toThrow(
+      RangeError,
+    );
+  });
+
   it("omits the runtime token when its version cannot be read", () => {
     expect(buildUserAgent(undefined, { isBrowser: false }, "1.0.0")).toBe("mthds-js/1.0.0");
   });

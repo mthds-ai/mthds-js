@@ -1,0 +1,25 @@
+src/agent/commands/bootstrap.ts
+  fd12a6067aba7ffd 43-46,63,189-190
+src/installer/runtime/installer.ts
+  fd12a6067aba7ffd 35-37
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.2.3",
+  "base_commit_sha": "d53cd1e06a3dbfad5928a1085ebb7cd9637a1a84",
+  "prompts": {
+    "fd12a6067aba7ffd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f1b2c3f8-d091-47e4-aaa3-21d7a0bac8c9",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Louis Choquel",
+      "messages": [],
+      "total_additions": 10,
+      "total_deletions": 1,
+      "accepted_lines": 10,
+      "overriden_lines": 0
+    }
+  }
+}

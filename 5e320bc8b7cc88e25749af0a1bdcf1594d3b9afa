@@ -1,0 +1,25 @@
+package.json
+  72e3630de9e75e9f 3
+CHANGELOG.md
+  72e3630de9e75e9f 3-12
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.2.5",
+  "base_commit_sha": "5e320bc8b7cc88e25749af0a1bdcf1594d3b9afa",
+  "prompts": {
+    "72e3630de9e75e9f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c7cff021-be3a-4ea0-abcc-08290d94ae73",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Louis Choquel",
+      "messages": [],
+      "total_additions": 11,
+      "total_deletions": 1,
+      "accepted_lines": 11,
+      "overriden_lines": 0
+    }
+  }
+}

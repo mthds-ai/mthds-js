@@ -1,0 +1,27 @@
+src/agent/commands/api-commands.ts
+  5218676a2aa3f893 371-372,473-474
+.claude/skills/cli-contract-check/SKILL.md
+  5218676a2aa3f893 16
+src/agent-cli.ts
+  5218676a2aa3f893 32,47,49,51,53-61,63-70
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.17",
+  "base_commit_sha": "89543300666236f434f24d5fa0a51da974629815",
+  "prompts": {
+    "5218676a2aa3f893": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8cdbfeed-985c-4d04-99dc-4ee65520d7e5",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Louis Choquel <lchoquel@users.noreply.github.com>",
+      "messages": [],
+      "total_additions": 26,
+      "total_deletions": 13,
+      "accepted_lines": 26,
+      "overriden_lines": 0
+    }
+  }
+}

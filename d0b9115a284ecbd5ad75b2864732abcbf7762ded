@@ -1,0 +1,36 @@
+src/agent/binaries.ts
+  08f82ee94a146b17 41
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.4",
+  "base_commit_sha": "d0b9115a284ecbd5ad75b2864732abcbf7762ded",
+  "prompts": {
+    "08f82ee94a146b17": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1982e7f8-2b34-45d7-8986-c1eb6e9c7c14",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Louis Choquel",
+      "messages": [],
+      "total_additions": 13,
+      "total_deletions": 5,
+      "accepted_lines": 13,
+      "overriden_lines": 0
+    },
+    "fe2d2d1bb64bbb90": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ce17a1fa-21f4-4fa8-9146-476131e3a4c7",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Louis Choquel",
+      "messages": [],
+      "total_additions": 4,
+      "total_deletions": 5,
+      "accepted_lines": 4,
+      "overriden_lines": 0
+    }
+  }
+}

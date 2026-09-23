@@ -1,0 +1,25 @@
+src/agent/plugin-version.ts
+  72e3630de9e75e9f 81-82
+tests/unit/agent/plugin-version.test.ts
+  72e3630de9e75e9f 66-88
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.2.5",
+  "base_commit_sha": "c933488c1febea40dd96e42ad207e7f654425a57",
+  "prompts": {
+    "72e3630de9e75e9f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c7cff021-be3a-4ea0-abcc-08290d94ae73",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Louis Choquel",
+      "messages": [],
+      "total_additions": 26,
+      "total_deletions": 0,
+      "accepted_lines": 26,
+      "overriden_lines": 0
+    }
+  }
+}

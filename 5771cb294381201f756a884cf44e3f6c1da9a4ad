@@ -1,0 +1,29 @@
+CHANGELOG.md
+  e7e95b4e80e7368c 7
+tests/unit/agent/plugin-version.test.ts
+  e7e95b4e80e7368c 116,119,140,144,174,177,205,214
+src/agent/plugin-version.ts
+  e7e95b4e80e7368c 21,60
+tests/unit/agent/update-check.test.ts
+  e7e95b4e80e7368c 48-54,75,285,382,388,397
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.4",
+  "base_commit_sha": "5771cb294381201f756a884cf44e3f6c1da9a4ad",
+  "prompts": {
+    "e7e95b4e80e7368c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "bda74de5-9724-46d4-8f65-6cbf9039936c",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Louis Choquel",
+      "messages": [],
+      "total_additions": 26,
+      "total_deletions": 21,
+      "accepted_lines": 23,
+      "overriden_lines": 0
+    }
+  }
+}

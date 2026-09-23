@@ -1,0 +1,27 @@
+.claude/skills/release/SKILL.md
+  790cf56c2335343b 1-132
+package.json
+  790cf56c2335343b 3
+CHANGELOG.md
+  790cf56c2335343b 3-12
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.15",
+  "base_commit_sha": "512c9fc48468e9787fccd30d345d300b1e16d767",
+  "prompts": {
+    "790cf56c2335343b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "79be366e-f365-4b5d-bbf2-7b4d750edd37",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Louis Choquel <lchoquel@users.noreply.github.com>",
+      "messages": [],
+      "total_additions": 143,
+      "total_deletions": 1,
+      "accepted_lines": 143,
+      "overriden_lines": 0
+    }
+  }
+}

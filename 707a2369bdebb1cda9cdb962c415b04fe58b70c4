@@ -1,0 +1,23 @@
+src/agent/binaries.ts
+  303757ea4686b7ce 24
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.5",
+  "base_commit_sha": "707a2369bdebb1cda9cdb962c415b04fe58b70c4",
+  "prompts": {
+    "303757ea4686b7ce": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f5b0c090-599a-4e98-9cc7-92d9e6ed2e9e",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Louis Choquel <lchoquel@users.noreply.github.com>",
+      "messages": [],
+      "total_additions": 1,
+      "total_deletions": 1,
+      "accepted_lines": 1,
+      "overriden_lines": 0
+    }
+  }
+}

@@ -1,0 +1,59 @@
+src/agent/commands/pipelex-commands.ts
+  1d9619ae0985b723 84-91
+CHANGELOG.md
+  3f1fe33b831066cc 3-13
+src/agent/commands/doctor.ts
+  02ddc4ddf8ecc8b3 12-19,56-119,122,208,210-219
+tests/unit/agent/doctor.test.ts
+  02ddc4ddf8ecc8b3 28,66,89,116,138,161,182,200,212-257,267
+src/agent-cli.ts
+  02ddc4ddf8ecc8b3 24,336,338-340
+package.json
+  3f1fe33b831066cc 3
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.2.5",
+  "base_commit_sha": "2c5afc9a3251803b115f98b0aae209e611ea7d60",
+  "prompts": {
+    "02ddc4ddf8ecc8b3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6986591c-ba50-48dc-8412-3c90ec739342",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Louis Choquel",
+      "messages": [],
+      "total_additions": 146,
+      "total_deletions": 21,
+      "accepted_lines": 144,
+      "overriden_lines": 0
+    },
+    "1d9619ae0985b723": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a6e95854-8b30-4046-a664-671e441cb1d4",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Louis Choquel",
+      "messages": [],
+      "total_additions": 8,
+      "total_deletions": 0,
+      "accepted_lines": 8,
+      "overriden_lines": 0
+    },
+    "3f1fe33b831066cc": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "36528ea3-8a05-4cfc-bbcb-2b23f2f71d5e",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Louis Choquel",
+      "messages": [],
+      "total_additions": 12,
+      "total_deletions": 1,
+      "accepted_lines": 12,
+      "overriden_lines": 0
+    }
+  }
+}

@@ -1,0 +1,23 @@
+src/installer/runtime/installer.ts
+  fd12a6067aba7ffd 30-33,35-37,40,48,50
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.2.3",
+  "base_commit_sha": "256a06257c162500cb6a8a7c2a3cf320fddb70a6",
+  "prompts": {
+    "fd12a6067aba7ffd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f1b2c3f8-d091-47e4-aaa3-21d7a0bac8c9",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Louis Choquel",
+      "messages": [],
+      "total_additions": 11,
+      "total_deletions": 6,
+      "accepted_lines": 11,
+      "overriden_lines": 0
+    }
+  }
+}

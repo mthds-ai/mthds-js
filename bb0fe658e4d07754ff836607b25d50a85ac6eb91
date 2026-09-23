@@ -1,0 +1,25 @@
+src/agent-cli.ts
+  867529db4684b88a 162,171,229
+src/agent/commands/install.ts
+  867529db4684b88a 30
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.4",
+  "base_commit_sha": "bb0fe658e4d07754ff836607b25d50a85ac6eb91",
+  "prompts": {
+    "867529db4684b88a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ce6a2c30-8272-4b04-9780-b49f6f7e53e6",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Louis Choquel <lchoquel@users.noreply.github.com>",
+      "messages": [],
+      "total_additions": 4,
+      "total_deletions": 12,
+      "accepted_lines": 4,
+      "overriden_lines": 0
+    }
+  }
+}

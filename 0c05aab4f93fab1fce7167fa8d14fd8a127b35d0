@@ -1,0 +1,23 @@
+src/agent/commands/api-commands.ts
+  0909ccc3fe5dbe19 72,78,98-107,109-113,116-117
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.17",
+  "base_commit_sha": "0c05aab4f93fab1fce7167fa8d14fd8a127b35d0",
+  "prompts": {
+    "0909ccc3fe5dbe19": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "162fe728-586a-44dd-b884-5c98ed3d2a49",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Louis Choquel <lchoquel@users.noreply.github.com>",
+      "messages": [],
+      "total_additions": 20,
+      "total_deletions": 5,
+      "accepted_lines": 20,
+      "overriden_lines": 0
+    }
+  }
+}

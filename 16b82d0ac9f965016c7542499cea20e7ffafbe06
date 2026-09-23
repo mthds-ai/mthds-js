@@ -1,0 +1,56 @@
+tests/unit/agent/codex-hook.test.ts
+  66d247e07454ca63 1-243
+src/agent/commands/codex-hook.ts
+  66d247e07454ca63 1-199
+package.json
+  66d247e07454ca63 3
+src/agent/commands/codex.ts
+  66d247e07454ca63 2-3,5-9,11-17,20-22,32-33,36-40,50,57,69,71,75,82-101,117,121,138,174-178,180-182,189-206,215-251
+tests/unit/agent/codex.test.ts
+  66d247e07454ca63 48-49,67-69,79-230,233,236-242,256-261,271,275-277,280-284,292-305,323-326,329,333-342,352-355,358-359,362-363,377,380-396,403,415,417,419-421,424,426,433,435
+TODOS.md
+  66d247e07454ca63 3,5,7-35,39-40
+  f07217445b727f16 1-2,4,6,36-38,41-147
+CHANGELOG.md
+  66d247e07454ca63 3-12
+src/agent-cli.ts
+  66d247e07454ca63 29,382,387,393-398
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.4",
+  "base_commit_sha": "16b82d0ac9f965016c7542499cea20e7ffafbe06",
+  "prompts": {
+    "66d247e07454ca63": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "3f44d233-d200-4f89-94c6-dc8a2127d88b",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Louis Choquel",
+      "messages": [],
+      "total_additions": 877,
+      "total_deletions": 92,
+      "accepted_lines": 866,
+      "overriden_lines": 0
+    },
+    "f07217445b727f16": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0297eb01-93b8-45c5-8832-61da8142fa26",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Louis Choquel",
+      "messages": [],
+      "total_additions": 116,
+      "total_deletions": 0,
+      "accepted_lines": 114,
+      "overriden_lines": 0
+    }
+  },
+  "humans": {
+    "h_ad2a9d0839b83e": {
+      "author": "Louis Choquel"
+    }
+  }
+}

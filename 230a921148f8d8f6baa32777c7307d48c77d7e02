@@ -1,0 +1,23 @@
+.claude/skills/bump-required-versions/SKILL.md
+  97d98dd978cbfd13 65
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.4",
+  "base_commit_sha": "230a921148f8d8f6baa32777c7307d48c77d7e02",
+  "prompts": {
+    "97d98dd978cbfd13": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5c2af4ee-c5dd-4f36-a25c-88ad69431d91",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Louis Choquel",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 169,
+      "overriden_lines": 0
+    }
+  }
+}

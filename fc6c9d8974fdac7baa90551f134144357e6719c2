@@ -1,0 +1,43 @@
+tests/unit/installer/methods/shim.test.ts
+  97d98dd978cbfd13 1-96
+src/agent/plugin-version.ts
+  97d98dd978cbfd13 21,60
+src/cli/commands/install.ts
+  97d98dd978cbfd13 1,3,8,13-15,18,66,96,98,121,125-126,134,225,230,242,244-258,260,265,269,272-273,277-278
+package.json
+  97d98dd978cbfd13 3
+src/agent/commands/install.ts
+  97d98dd978cbfd13 12-16,80,107,109,139,141,154,156-158
+tests/unit/installer/methods/writer.test.ts
+  97d98dd978cbfd13 1-75
+src/installer/methods/writer.ts
+  97d98dd978cbfd13 1-72
+README.md
+  97d98dd978cbfd13 49-51,63-64
+src/installer/methods/install-flow.ts
+  97d98dd978cbfd13 1-70
+src/installer/methods/types.ts
+  97d98dd978cbfd13 1-4
+tests/unit/agent/plugin-version.test.ts
+  97d98dd978cbfd13 116,119,140,144,174,177,205,214
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.4",
+  "base_commit_sha": "fc6c9d8974fdac7baa90551f134144357e6719c2",
+  "prompts": {
+    "97d98dd978cbfd13": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5c2af4ee-c5dd-4f36-a25c-88ad69431d91",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Louis Choquel",
+      "messages": [],
+      "total_additions": 400,
+      "total_deletions": 277,
+      "accepted_lines": 386,
+      "overriden_lines": 0
+    }
+  }
+}

@@ -1,0 +1,25 @@
+CHANGELOG.md
+  8a7deadd1fa12f9b 5-9,14-18
+src/agent/commands/api-commands.ts
+  8a7deadd1fa12f9b 336,338-344,378-379
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.17",
+  "base_commit_sha": "cd481bfcd6810a5f8aa87d02536d7991d6d598f3",
+  "prompts": {
+    "8a7deadd1fa12f9b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "7d614745-64f2-4c2d-9bdc-fc4b47f98f99",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Louis Choquel <lchoquel@users.noreply.github.com>",
+      "messages": [],
+      "total_additions": 21,
+      "total_deletions": 3,
+      "accepted_lines": 21,
+      "overriden_lines": 0
+    }
+  }
+}

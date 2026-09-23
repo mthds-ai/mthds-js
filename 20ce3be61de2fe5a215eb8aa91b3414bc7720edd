@@ -1,0 +1,31 @@
+tests/unit/installer/runtime/installer-uv.test.ts
+  20f504531351ad0c 38
+src/agent/commands/upgrade.ts
+  20f504531351ad0c 46
+src/installer/runtime/installer.ts
+  20f504531351ad0c 57
+tests/unit/agent/upgrade.test.ts
+  20f504531351ad0c 323
+src/agent/update-cache.ts
+  20f504531351ad0c 144-146
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.22",
+  "base_commit_sha": "20ce3be61de2fe5a215eb8aa91b3414bc7720edd",
+  "prompts": {
+    "20f504531351ad0c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8d260a56-50e3-4994-8368-2f059608f95a",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Louis Choquel <lchoquel@users.noreply.github.com>",
+      "messages": [],
+      "total_additions": 7,
+      "total_deletions": 6,
+      "accepted_lines": 7,
+      "overriden_lines": 0
+    }
+  }
+}

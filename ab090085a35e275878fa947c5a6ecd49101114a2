@@ -1,0 +1,29 @@
+src/agent-cli.ts
+  8f0d9156c1beec85 6-7,21,94,324-325,333-334,337-351
+src/agent/commands/pipelex-commands.ts
+  8f0d9156c1beec85 1-95
+.claude/skills/cli-contract-check/SKILL.md
+  8f0d9156c1beec85 50,112-120
+CHANGELOG.md
+  8f0d9156c1beec85 9-14
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.17",
+  "base_commit_sha": "ab090085a35e275878fa947c5a6ecd49101114a2",
+  "prompts": {
+    "8f0d9156c1beec85": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "62aff9de-26fe-4312-a299-6063aa44d88f",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Louis Choquel <lchoquel@users.noreply.github.com>",
+      "messages": [],
+      "total_additions": 137,
+      "total_deletions": 23,
+      "accepted_lines": 135,
+      "overriden_lines": 0
+    }
+  }
+}

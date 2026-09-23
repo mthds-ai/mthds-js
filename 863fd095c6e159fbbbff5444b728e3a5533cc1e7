@@ -1,0 +1,23 @@
+CHANGELOG.md
+  83e0a1a406a96933 3-23
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.5",
+  "base_commit_sha": "863fd095c6e159fbbbff5444b728e3a5533cc1e7",
+  "prompts": {
+    "83e0a1a406a96933": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "10f66d7a-291b-4d30-95b6-6c9c2bab5770",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Louis Choquel <lchoquel@users.noreply.github.com>",
+      "messages": [],
+      "total_additions": 21,
+      "total_deletions": 0,
+      "accepted_lines": 21,
+      "overriden_lines": 0
+    }
+  }
+}

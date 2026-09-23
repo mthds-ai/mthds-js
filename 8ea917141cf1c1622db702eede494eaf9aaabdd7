@@ -1,0 +1,61 @@
+src/installer/runtime/check.ts
+  40ccae9f63ea4741 3,5,11-17
+src/agent/binaries.ts
+  40ccae9f63ea4741 1-28
+src/agent/commands/doctor.ts
+  e07aafc809423814 49,75
+  40ccae9f63ea4741 1-48,50-74,76-129
+tests/unit/installer/runtime/check.test.ts
+  e07aafc809423814 1-53
+src/agent/commands/plxt.ts
+  40ccae9f63ea4741 12,28
+src/agent/output.ts
+  e07aafc809423814 9-10
+  40ccae9f63ea4741 39-41,57,70-71
+src/installer/runtime/installer.ts
+  40ccae9f63ea4741 16,21,31,45-70
+  e07aafc809423814 71
+tests/unit/agent/doctor.test.ts
+  e07aafc809423814 1-121
+tests/unit/agent/passthrough.test.ts
+  e07aafc809423814 1-165
+src/agent/commands/pipelex.ts
+  40ccae9f63ea4741 24-25,42-44,66-68
+src/agent/passthrough.ts
+  40ccae9f63ea4741 8-10,12-16,19-46,48-55,63-65,70-72
+src/agent-cli.ts
+  40ccae9f63ea4741 16,50-53,68,272,276-286
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.5",
+  "base_commit_sha": "8ea917141cf1c1622db702eede494eaf9aaabdd7",
+  "prompts": {
+    "40ccae9f63ea4741": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "590ff2cb-9d0f-41b0-9933-08a94f0dd639",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Louis Choquel <lchoquel@users.noreply.github.com>",
+      "messages": [],
+      "total_additions": 293,
+      "total_deletions": 14,
+      "accepted_lines": 281,
+      "overriden_lines": 0
+    },
+    "e07aafc809423814": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "53c3c383-32ba-484a-acaf-fa37e0af450d",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "Louis Choquel <lchoquel@users.noreply.github.com>",
+      "messages": [],
+      "total_additions": 378,
+      "total_deletions": 38,
+      "accepted_lines": 344,
+      "overriden_lines": 0
+    }
+  }
+}

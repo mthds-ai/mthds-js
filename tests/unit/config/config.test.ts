@@ -35,7 +35,7 @@ describe("config", () => {
     // stub each ambient config variable to undefined so it is deleted for the test
     // and restored afterwards.
     for (const name of Object.keys(process.env)) {
-      if (name.startsWith("MTHDS_") || name === "DISABLE_TELEMETRY") {
+      if (name.startsWith("MTHDS_") || name === "DISABLE_TELEMETRY" || name === "DO_NOT_TRACK") {
         vi.stubEnv(name, undefined);
       }
     }
@@ -410,6 +410,46 @@ describe("config", () => {
       expect(config.autoUpgrade).toBe(true);
       expect(config.updateCheck).toBe(true);
       expect(config.telemetry).toBe(false);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // DO_NOT_TRACK
+  // ---------------------------------------------------------------------------
+  describe("DO_NOT_TRACK", () => {
+    it("telemetry is enabled with its default source when DO_NOT_TRACK is unset", async () => {
+      const { isTelemetryEnabled, getTelemetrySource, isDoNotTrack } = await importConfig();
+      expect(isDoNotTrack()).toBe(false);
+      expect(isTelemetryEnabled()).toBe(true);
+      expect(getTelemetrySource()).toBe("default");
+    });
+
+    it.each(["1", "true", "YES", " on "])(
+      "DO_NOT_TRACK=%j disables telemetry from env",
+      async (value) => {
+        vi.stubEnv("DO_NOT_TRACK", value);
+        const { isTelemetryEnabled, getTelemetrySource, isDoNotTrack } = await importConfig();
+        expect(isDoNotTrack()).toBe(true);
+        expect(isTelemetryEnabled()).toBe(false);
+        expect(getTelemetrySource()).toBe("env");
+      },
+    );
+
+    it.each(["0", "false", ""])("DO_NOT_TRACK=%j leaves telemetry on", async (value) => {
+      vi.stubEnv("DO_NOT_TRACK", value);
+      const { isTelemetryEnabled, isDoNotTrack } = await importConfig();
+      expect(isDoNotTrack()).toBe(false);
+      expect(isTelemetryEnabled()).toBe(true);
+    });
+
+    it("DO_NOT_TRACK wins over a config file that enables telemetry", async () => {
+      const configDir = join(tempHome, ".mthds");
+      mkdirSync(configDir, { recursive: true });
+      writeFileSync(join(configDir, "config"), "DISABLE_TELEMETRY=0\n", "utf-8");
+      vi.stubEnv("DO_NOT_TRACK", "1");
+      const { isTelemetryEnabled, getTelemetrySource } = await importConfig();
+      expect(isTelemetryEnabled()).toBe(false);
+      expect(getTelemetrySource()).toBe("env");
     });
   });
 });

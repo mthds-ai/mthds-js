@@ -266,13 +266,14 @@ Either `pipe_code` or `mthds_contents` must be provided (or a server-specific ex
 
 ## Telemetry
 
-Anonymous usage data is collected to help rank methods on the leaderboard. Each `install` event includes the package address, name, version, and manifest metadata. No personal or device information is collected.
+Usage data is collected to help rank methods on the leaderboard. Each `install` and `publish` event of a public GitHub method includes the package address, name, version, and manifest metadata.
 
-To opt out:
+Who an event is attributed to depends on whether an API key is configured:
 
-```bash
-mthds telemetry disable
-```
+- **With an API key** (`MTHDS_API_KEY`), the CLI asks the API whose key it is (`GET /v1/auth/verify`) once, and sends events under that platform user id, and under the organization when the API names one. The answer is cached in `~/.mthds/telemetry.json` under a SHA-256 digest of the base URL and key; the key itself is never written there.
+- **Without one**, events carry a random install id minted once and kept in `~/.mthds/telemetry.json`, and PostHog creates no person profile for them. No personal or device information is collected.
+
+To opt out, run `mthds telemetry disable`, or set `DISABLE_TELEMETRY=1` or `DO_NOT_TRACK=1` in the environment. An opted-out CLI makes no identity request either.
 
 ## Development
 

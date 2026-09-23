@@ -1,0 +1,23 @@
+src/runners/api/user-agent.ts
+  s_12b2af5fdd964a::t_98e16ab9da5b92 209-211
+  s_12b2af5fdd964a::t_588a7b13f2a40d 195
+tests/unit/runners/api/user-agent.test.ts
+  s_12b2af5fdd964a::t_ccd2f3ee0be487 194-198
+  s_12b2af5fdd964a::t_8916911bbfb9c7 199-200
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "818b6ace5b24f7833580eefdefdf14dc04147da7",
+  "prompts": {},
+  "sessions": {
+    "s_12b2af5fdd964a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "bb75e847-abe4-4171-a2ff-2b263b391b14",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "thomashebrard <thomas@pipelex.com>"
+    }
+  }
+}

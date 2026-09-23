@@ -36,7 +36,8 @@ git fetch --tags --prune origin && git tag --list vX.Y.Z                        
 
 ## Version files and the lock
 
-- **`package.json`** — the top-level `"version"`, without a `v` prefix, and the only place the release number is written. Nothing under `src/` restates it.
+- **`package.json`** — the top-level `"version"`, without a `v` prefix.
+- **`src/version.ts`** — `MTHDS_JS_VERSION`, the same number as a literal, which the SDK reports in its `User-Agent` (see `docs/client-identification.md`). It is the one place under `src/` that restates the release number, because a bundled SDK cannot read `package.json` at runtime; `tests/unit/version.test.ts` fails `make all` when it differs from `package.json`, so a bump that misses it cannot pass the gates.
 - **The lock** — `npm install --package-lock-only` after the bump. `package-lock.json` carries the number twice, as its own top-level `"version"` and again in the root package entry, and this form of the command rewrites the lockfile without touching `node_modules/`. If it fails, stop and report it rather than committing a stale lock.
 - **`pnpm-lock.yaml`** is tracked as well, but a lockfileVersion 9 file records the root importer's dependencies and no package version of its own, so the bump leaves it alone.
 - **Also stamped:** nothing. There is no version badge and no version literal in the README or under `docs/`.
@@ -51,7 +52,7 @@ Run in the worktree, in this order, before the commit:
 
 ## The release commit
 
-`package.json`, `package-lock.json` and `CHANGELOG.md` — staged by name. Nothing else belongs in it: the gates rewrite no tracked file, `dist/` is gitignored, and a contract fix or a version-floor bump taken during the gates is its own earlier commit.
+`package.json`, `package-lock.json`, `src/version.ts` and `CHANGELOG.md` — staged by name. Nothing else belongs in it: the gates rewrite no tracked file, `dist/` is gitignored, and a contract fix or a version-floor bump taken during the gates is its own earlier commit.
 
 ## CI on the release pull request
 

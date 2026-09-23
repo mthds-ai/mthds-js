@@ -149,3 +149,4 @@ There is one class, not a client wrapped by a runner. `MthdsApiClient implements
 - [errors.md](./errors.md) — the full exception taxonomy (`mthds/errors`): each class, its fields, when it is thrown, and client-side classification.
 - [run-lifecycle.md](./run-lifecycle.md) — the `execute` / `start` run model these types back.
 - [api-runner.md](./api-runner.md) — pointing the client at a hosted or self-hosted runner.
+- [client-identification.md](./client-identification.md) — the `User-Agent` every request carries, the `appInfo` option, and how the two CLIs name themselves.

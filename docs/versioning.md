@@ -6,7 +6,7 @@ This package copies two version numbers that are cut elsewhere, and publishes on
 |---|---|---|
 | **MTHDS standard version** — `MTHDS_STANDARD_VERSION` | `src/package/manifest/schema.ts` | `mthds/docs/spec/versioning.md` § "The Standard Version" |
 | **MTHDS Protocol version** — `MTHDS_PROTOCOL_VERSION` | `src/protocol/models.ts` | `mthds/docs/spec/versioning.md` § "The Protocol Version" |
-| This package's own release — `version` | `package.json` | this repo's `/release` skill |
+| This package's own release — `version` | `package.json`, mirrored by `MTHDS_JS_VERSION` in `src/version.ts` (test-guarded) | this repo's `/release` skill |
 
 The first two are **copies of a cut made in the standard's repo**, not numbers this repo decides. They move only when the specification moves them, and they move independently of each other: a release of the standard that leaves the HTTP runner contract alone leaves the protocol version exactly where it was. Neither has anything to do with `package.json`'s `version`, which is this npm package's own release number.
 

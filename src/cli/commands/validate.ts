@@ -21,7 +21,7 @@ async function validateWithPipelexPassthrough(
   p.intro(introLabel);
 
   const libraryDirs = options.libraryDir?.length ? options.libraryDir : undefined;
-  const runner = createRunner(options.runner, libraryDirs);
+  const runner = createRunner("mthds-cli", options.runner, libraryDirs);
 
   if (isPipelexRunner(runner)) {
     p.log.step("Validating via pipelex...");
@@ -62,7 +62,7 @@ export async function validatePipe(target: string, options: ValidateOptions): Pr
   p.intro("mthds validate pipe");
 
   const libraryDirs = options.libraryDir?.length ? options.libraryDir : undefined;
-  const runner = createRunner(options.runner, libraryDirs);
+  const runner = createRunner("mthds-cli", options.runner, libraryDirs);
 
   if (isPipelexRunner(runner)) {
     p.log.step("Validating via pipelex...");

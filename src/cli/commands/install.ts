@@ -146,7 +146,7 @@ export async function installMethod(options: {
   const healthSpinner = p.spinner();
   try {
     healthSpinner.start("Checking runner health...");
-    runner = createRunner(options.runner);
+    runner = createRunner("mthds-cli", options.runner);
     await runner.health();
     const ver = await runner.version().catch(() => null);
     const versionStr = ver ? `${ver.implementation} ${ver.implementation_version}` : "unknown";

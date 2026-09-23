@@ -39,8 +39,10 @@ export interface AppInfo {
 const TOKEN_RE = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/;
 /** A detail's `value` = token / ( name "/" version ). */
 const DETAIL_VALUE_RE = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+(\/[!#$%&'*+\-.^_`|~0-9A-Za-z]+)?$/;
-/** Characters that would break the comment the URL is rendered into. */
-const URL_FORBIDDEN_RE = /[\s();]/;
+/** A URL inside a comment: visible ASCII only, which also excludes whitespace. */
+const URL_VISIBLE_ASCII_RE = /^[!-~]+$/;
+/** Characters that would close the comment or split it into another parameter. */
+const URL_COMMENT_BREAKERS_RE = /[()\\;]/;
 
 function isToken(value: unknown): value is string {
   return typeof value === "string" && TOKEN_RE.test(value);
@@ -55,7 +57,8 @@ function isValidDetail(detail: unknown): detail is string {
 
 /**
  * Refuse an `appInfo` the header grammar cannot carry. Throws `TypeError` —
- * a client never silently drops or rewrites an invalid value.
+ * a client never silently drops or rewrites an invalid value. An empty
+ * `version`, `url` or `details` counts as absent, not as invalid.
  */
 export function validateAppInfo(appInfo: AppInfo): void {
   if (appInfo === null || typeof appInfo !== "object") {
@@ -67,21 +70,21 @@ export function validateAppInfo(appInfo: AppInfo): void {
         "(letters, digits and !#$%&'*+-.^_`|~ only; no spaces or slashes).",
     );
   }
-  if (appInfo.version !== undefined && !isToken(appInfo.version)) {
+  if (appInfo.version !== undefined && appInfo.version !== "" && !isToken(appInfo.version)) {
     throw new TypeError(
       `Invalid appInfo.version ${JSON.stringify(appInfo.version)}: must be a non-empty RFC 9110 token ` +
         "(e.g. 1.4.0; no spaces or slashes).",
     );
   }
-  if (appInfo.url !== undefined) {
+  if (appInfo.url !== undefined && appInfo.url !== "") {
     if (
       typeof appInfo.url !== "string" ||
-      URL_FORBIDDEN_RE.test(appInfo.url) ||
-      !URL.canParse(appInfo.url)
+      !URL_VISIBLE_ASCII_RE.test(appInfo.url) ||
+      URL_COMMENT_BREAKERS_RE.test(appInfo.url)
     ) {
       throw new TypeError(
-        `Invalid appInfo.url ${JSON.stringify(appInfo.url)}: must be an absolute URL with no whitespace, ` +
-          "parentheses or semicolons.",
+        `Invalid appInfo.url ${JSON.stringify(appInfo.url)}: must be visible ASCII with no whitespace, ` +
+          "parentheses, backslash or semicolons.",
       );
     }
   }
@@ -124,10 +127,21 @@ interface DenoGlobal {
   build?: { os?: string; arch?: string };
 }
 
-/** Read the current runtime from globals. Never throws. */
+/**
+ * Read the current runtime from globals. Never throws. A browser (a window with
+ * a document, or a web worker) is detected first, because an Electron renderer
+ * or a bundle that polyfills `process` also exposes `process.versions.node`.
+ */
 export function detectRuntime(
   g: Record<string, unknown> = globalThis as Record<string, unknown>,
 ): RuntimeInfo {
+  const win = g.window as { document?: unknown } | undefined;
+  if (
+    (win !== undefined && win !== null && win.document !== undefined) ||
+    typeof g.importScripts === "function"
+  ) {
+    return { isBrowser: true };
+  }
   const deno = g.Deno as DenoGlobal | undefined;
   if (deno?.version?.deno) {
     return {
@@ -160,11 +174,7 @@ export function detectRuntime(
       isBrowser: false,
     };
   }
-  const win = g.window as { document?: unknown } | undefined;
-  const isBrowser =
-    (win !== undefined && win !== null && win.document !== undefined) ||
-    typeof g.importScripts === "function";
-  return { isBrowser };
+  return { isBrowser: false };
 }
 
 /**

@@ -54,6 +54,10 @@ describe("validateAppInfo", () => {
     { name: "acme", version: "0.2.16-rc.01" },
     { name: "acme", details: ["console", "host=openai", "host=claude-code/2.1.4"] },
     { name: "acme", url: "https://acme.test/path?q=1" },
+    { name: "acme", url: "acme.test/about" },
+    { name: "acme", version: "" },
+    { name: "acme", url: "" },
+    { name: "acme", details: [] },
   ])("accepts %j", (appInfo) => {
     expect(() => validateAppInfo(appInfo)).not.toThrow();
   });
@@ -66,7 +70,6 @@ describe("validateAppInfo", () => {
     ["missing name", {}],
     ["non-object", "acme"],
     ["null", null],
-    ["empty version", { name: "acme", version: "" }],
     ["version with a space", { name: "acme", version: "1.0 beta" }],
     ["version with parentheses", { name: "acme", version: "1.0(x)" }],
     ["detail with a space", { name: "acme", details: ["a b"] }],
@@ -76,10 +79,13 @@ describe("validateAppInfo", () => {
     ["detail value with two slashes", { name: "acme", details: ["host=a/b/c"] }],
     ["non-string detail", { name: "acme", details: [1] }],
     ["details not an array", { name: "acme", details: "workshop" }],
-    ["relative url", { name: "acme", url: "/about" }],
     ["url with a space", { name: "acme", url: "https://acme.test/a b" }],
     ["url with a parenthesis", { name: "acme", url: "https://acme.test/(x)" }],
     ["url with a semicolon", { name: "acme", url: "https://acme.test/a;b" }],
+    ["url with a backslash", { name: "acme", url: "https://acme.test/a\\b" }],
+    ["url with a tab", { name: "acme", url: "https://acme.test/a\tb" }],
+    ["url with non-ASCII", { name: "acme", url: "https://\u{1F600}.test" }],
+    ["non-string url", { name: "acme", url: 42 }],
   ])("refuses %s with a TypeError", (_label, appInfo) => {
     expect(() => validateAppInfo(appInfo as AppInfo)).toThrow(TypeError);
   });
@@ -88,7 +94,7 @@ describe("validateAppInfo", () => {
     expect(() => validateAppInfo({ name: "acme invoicer" })).toThrow(/appInfo\.name/);
     expect(() => validateAppInfo({ name: "a", version: "1 0" })).toThrow(/appInfo\.version/);
     expect(() => validateAppInfo({ name: "a", details: ["x y"] })).toThrow(/appInfo\.details/);
-    expect(() => validateAppInfo({ name: "a", url: "nope" })).toThrow(/appInfo\.url/);
+    expect(() => validateAppInfo({ name: "a", url: "a b" })).toThrow(/appInfo\.url/);
   });
 });
 
@@ -136,6 +142,15 @@ describe("detectRuntime", () => {
     expect(detectRuntime({ importScripts: () => undefined })).toEqual({ isBrowser: true });
   });
 
+  it("flags a browser that also exposes process.versions.node (Electron renderer)", () => {
+    expect(
+      detectRuntime({
+        window: { document: {} },
+        process: { versions: { node: "22.4.0" }, platform: "darwin", arch: "arm64" },
+      }),
+    ).toEqual({ isBrowser: true });
+  });
+
   it("reports an unknown server runtime as not a browser, with no version", () => {
     expect(detectRuntime({})).toEqual({ isBrowser: false });
   });
@@ -178,6 +193,16 @@ describe("buildUserAgent", () => {
 
   it("omits the runtime token when its version cannot be read", () => {
     expect(buildUserAgent(undefined, { isBrowser: false }, "1.0.0")).toBe("mthds-js/1.0.0");
+  });
+
+  it("treats an empty version, url and details as absent", () => {
+    expect(
+      buildUserAgent(
+        { name: "acme", version: "", url: "", details: [] },
+        { isBrowser: false },
+        "1.0.0",
+      ),
+    ).toBe("acme mthds-js/1.0.0");
   });
 
   it("keeps the runtime token but drops the os comment when os/arch are unknown", () => {

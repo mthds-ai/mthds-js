@@ -20,7 +20,7 @@ mthds-js/0.26.0 node/22.4.0 (darwin; arm64)
 
 - `mthds-js/<version>` is this package's own release number, read from the `MTHDS_JS_VERSION` constant in `src/version.ts`. A unit test (`tests/unit/version.test.ts`) fails the suite whenever that constant and `package.json` disagree, so the two cannot drift. A constant is used rather than a runtime read of `package.json` because consumers bundle this SDK (for example `pipelex-app` under Next.js), where resolving the manifest relative to the module does not work.
 - The runtime token is `node/<process.versions.node>`, `bun/<version>` or `deno/<version>`, followed by the `(<os>; <arch>)` comment. When the runtime version cannot be read, the runtime token is omitted.
-- **In a browser or a web worker, no `User-Agent` is set at all.** Browsers either ignore the header or turn the request into a CORS preflight the API refuses, so browser traffic is identified by the browser's own `User-Agent`.
+- **In a browser or a web worker, no `User-Agent` is set at all**, including an Electron renderer that also exposes `process.versions.node`. Browsers either ignore the header or turn the request into a CORS preflight the API refuses, so browser traffic is identified by the browser's own `User-Agent`.
 
 The header is computed once, when the client is constructed, and every request helper in the client builds its headers through one private method, so no request path — protocol routes, build routes, `health` or `uploadFile` — can miss it.
 
@@ -44,10 +44,10 @@ const client = new MthdsApiClient({
 |---|---|---|
 | `name` | yes | An RFC 9110 `token` — letters, digits and ``!#$%&'*+-.^_`|~`` only; lowercase kebab-case by convention |
 | `version` | no | A `token`, such as `1.4.0` |
-| `url` | no | An absolute URL, rendered in the comment as `+url` |
+| `url` | no | A URL, rendered in the comment as `+url`: visible ASCII with no whitespace, parenthesis, backslash or semicolon |
 | `details` | no | Comment parameters, each a `token` or `token=value` (the value a token or `name/version`), rendered before `+url` |
 
-It renders as `name/version (<details>; +url)`, dropping `/version` and the comment when they are empty. An invalid `name`, `version`, `url` or detail is refused at construction with a `TypeError` whose message names the field; a header that would exceed the spec's 512-character bound is refused with a `RangeError`. The client never silently drops or rewrites a value. The `AppInfo` type is exported from the package entry.
+It renders as `name/version (<details>; +url)`, dropping `/version` and the comment when they are empty. An empty `version`, `url` or `details` counts as absent, not as invalid. An invalid `name`, `version`, `url` or detail is refused at construction with a `TypeError` whose message names the field; a header that would exceed the spec's 512-character bound is refused with a `RangeError`. The client never silently drops or rewrites a value. The `AppInfo` type is exported from the package entry.
 
 ## The two CLIs
 

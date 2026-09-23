@@ -1,0 +1,35 @@
+src/installer/telemetry/identity.ts
+  s_44ae092d2fd100::t_02a5a079475d4a 1-205
+  s_44ae092d2fd100::t_b59facffa56a87 206-212
+tests/unit/installer/telemetry/identity.test.ts
+  s_44ae092d2fd100::t_15d777b24bfe75 1-228
+  s_44ae092d2fd100::t_1e714d95fc539b 229-304
+CHANGELOG.md
+  s_44ae092d2fd100::t_53d54b7573ab42 3-12
+README.md
+  s_44ae092d2fd100::t_7a433870ffcacf 269,271,273-276
+src/config/config.ts
+  s_44ae092d2fd100::t_a062b751fb3fac 262-272,274,283
+src/installer/telemetry/posthog.ts
+  s_44ae092d2fd100::t_c7a3e82f8171d0 8-9,15-18,54-76,79,81-82,86-97,107-108
+tests/unit/config/config.test.ts
+  s_44ae092d2fd100::t_e8366913e9ae8d 38,415-454
+tests/unit/installer/telemetry/posthog.test.ts
+  s_44ae092d2fd100::t_58bdc8a0b32ca1 22-29,37-41,43-44,62,64,68,87,89,98,100,111,114,136-210
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e58d1820ec7ca257988e4a67fa593e66d8ee4b36",
+  "prompts": {},
+  "sessions": {
+    "s_44ae092d2fd100": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "49ea81ca-2865-445c-beae-48d893dda44a",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "thomashebrard <thomas@pipelex.com>"
+    }
+  }
+}

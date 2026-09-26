@@ -99,7 +99,7 @@ export function agentError(
     /**
      * Structured per-error diagnostics, each item whole: on an invalid-bundle verdict (the
      * `/validate` 200 InvalidReport arm), and on a runner's refusal whose problem document
-     * lists them (a run or build route refusing an invalid method with a 422).
+     * lists them (a run route refusing an invalid method with a 422).
      */
     validation_errors?: unknown[];
     /**
@@ -168,7 +168,7 @@ export interface RunnerProblemExtras {
  * domain, its next step (`user_action.detail`) replaces the static `hint`,
  * `retryable: true` rides when the runner said a retry can succeed, its
  * `request_id` is carried for support, and its `validation_errors` ride whole
- * when it refused an invalid method (a run or build route's 422), so the agent
+ * when it refused an invalid method (a run route's 422), so the agent
  * reads which pipe, which field and what fix, as `validate` tells it. A member
  * the runner did not send leaves the command's own value in place, an empty
  * validation list is left out, and any other error yields nothing.

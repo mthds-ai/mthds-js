@@ -76,7 +76,7 @@ const NO_FIX_ITEM: ValidationErrorItem = {
   message: "Pipe 'demo.main' refers to 'summarise', which no bundle declares.",
   pipe_code: "main",
   source: "demo.mthds",
-  missing_pipe_code: "summarise",
+  missing_pipe_code: "demo.summarise",
 };
 
 const INVALID = {
@@ -205,7 +205,7 @@ describe("mthds run prints a refused run's validation items", () => {
         "API POST /v1/execute failed (422): The method is invalid and was not run.",
         `- [pipe_validation] ${UNKNOWN_MODEL_ITEM.message} (pipe: summarize, field: model, source: demo.mthds)`,
         `  Suggested fix: ${FIX_DESCRIPTION}`,
-        `- [pipe_validation] ${NO_FIX_ITEM.message} (pipe: main, missing pipe: summarise, source: demo.mthds)`,
+        `- [pipe_validation] ${NO_FIX_ITEM.message} (pipe: main, missing pipe: demo.summarise, source: demo.mthds)`,
         "Error domain: input (the request must change)",
       ].join("\n"),
     ]);

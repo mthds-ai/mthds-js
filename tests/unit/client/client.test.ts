@@ -1058,7 +1058,7 @@ describe("MthdsApiClient validation items keep their next step", () => {
     message: "Pipe 'demo.main' refers to 'summarise', which no bundle declares.",
     pipe_code: "main",
     domain_code: "demo",
-    missing_pipe_code: "summarise",
+    missing_pipe_code: "demo.summarise",
     field_path: "pipe.main",
   };
 
@@ -1087,7 +1087,7 @@ describe("MthdsApiClient validation items keep their next step", () => {
     });
     expect(modelItem!.model_reference).toBe("gpt-5.1");
     expect(modelItem!.suggestions).toEqual(["gpt-5"]);
-    expect(pipeItem!.missing_pipe_code).toBe("summarise");
+    expect(pipeItem!.missing_pipe_code).toBe("demo.summarise");
   });
 
   it("keeps the suggested fix and the missing pipe on a refusal's problem document", async () => {
@@ -1111,7 +1111,7 @@ describe("MthdsApiClient validation items keep their next step", () => {
     expect(items).toEqual([UNKNOWN_MODEL_ITEM, MISSING_PIPE_ITEM]);
     expect(items![0]!.suggested_fix?.fix_code).toBe("rename-model");
     expect(items![0]!.suggested_fix?.safety).toBe("safe");
-    expect(items![1]!.missing_pipe_code).toBe("summarise");
+    expect(items![1]!.missing_pipe_code).toBe("demo.summarise");
   });
 });
 

@@ -101,7 +101,11 @@ export interface ValidationErrorItem {
   field_name?: string;
   variable_names?: string[];
   missing_concept_code?: string;
-  /** The pipe a reference names that the bundle does not declare. */
+  /**
+   * The pipe dependency that did not resolve, fully qualified: the ref the runner
+   * attempted (`demo.summarise`), not the bare spelling the author typed. `pipe_code`
+   * on the same item stays bare, as it names the referencing pipe in its own domain.
+   */
   missing_pipe_code?: string;
   declared_concepts?: string[];
   /**

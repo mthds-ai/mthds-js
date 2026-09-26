@@ -233,7 +233,7 @@ When a runner refuses a bundle, each `ValidationErrorItem` says what is wrong an
 }
 ```
 
-A `SuggestedFix` has two readers. A person or an agent reads its `description`, a sentence they can act on. A program applying the fix reads its `ops`, semantic patches over the `.mthds` document addressed by TOML table path (`FixOp`, discriminated on `kind`), so an applier keeps the author's formatting. `fix_code` names the rule that produced the fix, `safety` says whether it is `safe` to apply without asking, and `source`, when present, is the only file the ops may touch. An item with no fix has no `suggested_fix` key, and a refused reference that names a pipe the bundle does not declare carries it in `missing_pipe_code`.
+A `SuggestedFix` has two readers. A person or an agent reads its `description`, a sentence they can act on. A program applying the fix reads its `ops`, semantic patches over the `.mthds` document addressed by TOML table path (`FixOp`, discriminated on `kind`), so an applier keeps the author's formatting. `fix_code` names the rule that produced the fix, `safety` says whether it is `safe` to apply without asking, and `source`, when present, is the only file the ops may touch. An item with no fix has no `suggested_fix` key, and a refused reference that names a pipe the bundle does not declare carries in `missing_pipe_code` the fully qualified ref the runner attempted (`demo.summarise`), not the bare spelling the author typed, while the item's `pipe_code`, the referencing pipe, stays bare.
 
 The items reach a caller the same way wherever they ride: on the `200` invalid verdict of a build route (`CrateInvalidReport.validation_errors`), on a refusal's problem document (`ApiResponseError.validationErrors`), and on the `200` invalid verdict of `validate`, whose neutral `ValidationError` type exposes only `category` and `message` but whose items keep every field at runtime, so a caller narrows them with `as ValidationErrorItem[]`.
 
@@ -257,7 +257,7 @@ When the runner refuses to run an invalid method, `mthds run` prints the refusal
 API POST /v1/execute failed (422): The method is invalid and was not run.
 - [pipe_validation] Model handle 'gpt-5.1' was not found in the model deck. (pipe: summarize, field: model, source: demo.mthds)
   Suggested fix: Replace model 'gpt-5.1' of pipe 'summarize' with 'gpt-5', its one close match in the model deck
-- [pipe_validation] Pipe 'demo.main' refers to 'summarise', which no bundle declares. (pipe: main, missing pipe: summarise, source: demo.mthds)
+- [pipe_validation] Pipe 'demo.main' refers to 'summarise', which no bundle declares. (pipe: main, missing pipe: demo.summarise, source: demo.mthds)
 Error domain: input (the request must change)
 ```
 

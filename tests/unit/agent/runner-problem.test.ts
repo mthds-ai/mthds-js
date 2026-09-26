@@ -67,7 +67,7 @@ describe("runnerProblemExtras", () => {
       {
         category: "pipe_validation" as const,
         message: "Pipe 'demo.main' refers to 'summarise', which no bundle declares.",
-        missing_pipe_code: "summarise",
+        missing_pipe_code: "demo.summarise",
         suggested_fix: {
           fix_code: "rename-pipe",
           description: "Rename 'summarise' to 'summarize'",

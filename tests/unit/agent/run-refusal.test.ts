@@ -42,7 +42,7 @@ const MISSING_PIPE_ITEM: ValidationErrorItem = {
   message: "Pipe 'demo.main' refers to 'summarise', which no bundle declares.",
   pipe_code: "main",
   domain_code: "demo",
-  missing_pipe_code: "summarise",
+  missing_pipe_code: "demo.summarise",
   field_path: "pipe.main",
 };
 

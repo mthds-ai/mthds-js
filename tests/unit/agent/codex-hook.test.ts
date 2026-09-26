@@ -488,7 +488,7 @@ describe("formatValidationReason", () => {
             category: "pipe_validation",
             message: "Pipe 'demo.main' refers to 'summarise', which no bundle declares.",
             pipe_code: "main",
-            missing_pipe_code: "summarise",
+            missing_pipe_code: "demo.summarise",
           },
         ],
       },
@@ -502,7 +502,7 @@ describe("formatValidationReason", () => {
         "",
         "- [pipe_validation] Model handle 'gpt-5.1' was not found in the model deck. (pipe: summarize, field: model, source: x.mthds)",
         "  Suggested fix: Replace model 'gpt-5.1' of pipe 'summarize' with 'gpt-5'",
-        "- [pipe_validation] Pipe 'demo.main' refers to 'summarise', which no bundle declares. (pipe: main, missing pipe: summarise)",
+        "- [pipe_validation] Pipe 'demo.main' refers to 'summarise', which no bundle declares. (pipe: main, missing pipe: demo.summarise)",
       ].join("\n"),
     );
   });

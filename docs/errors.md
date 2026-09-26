@@ -59,8 +59,18 @@ A non-2xx HTTP response **came back** from the runner. Raised by `MthdsApiClient
 | `errorType` | `string \| undefined` | Parsed `error_type` from an RFC 7807 problem body, when present. |
 | `serverMessage` | `string \| undefined` | Parsed human message from the problem body. Prefer this for display. |
 | `validationErrors` | `ValidationErrorItem[] \| undefined` | Structured per-error list — **only** on the **build routes'** (`POST /v1/build/*`) `422` bodies. `undefined` everywhere else. |
+| `type` | `string \| undefined` | The RFC 9457 `type`: the stable URI of the error class. |
+| `title` | `string \| undefined` | The RFC 9457 `title`: the short human label of the error class. |
+| `instance` | `string \| undefined` | The RFC 9457 `instance`: the occurrence, a request path or a request URN. |
+| `errorDomain` | `string \| undefined` | The body's `error_domain`, saying who can fix the failure: `input` (the caller — a malformed bundle, a bad argument, a missing input), `config` (the runner's operator — a missing secret, a misconfigured backend) or `runtime` (nobody beforehand — a provider outage during the run). |
+| `retryable` | `boolean \| undefined` | The body's `retryable`: whether retrying the same request can plausibly succeed. |
+| `userAction` | `UserAction \| undefined` | The body's `user_action`: what the caller should do next, as `{ kind, detail }`. `detail` is the advice in words; `kind` is the runner's category of advice (the reference runner emits `wait_and_retry`, `check_billing`, `check_credentials`, `change_input`, `change_model`, `contact_support` and `unknown`). |
+| `requestId` | `string \| undefined` | The request's correlation id: the body's `request_id`, or the `X-Request-ID` response header when the body carries none. It is the id to hand to support, because it finds the server's log lines for this request. |
 
 Notes:
+- **Branch on `errorDomain` and `type`, not on the status or the message.** `errorDomain` tells the caller's own mistake (`input`) from a fault it cannot fix, and `type` names the error class with a URI that stays the same on every occurrence. `errorType` is the runner's own class name, finer and open-ended.
+- **Every problem member is optional.** A runner sends what it knows, so each field is `undefined` when the response did not carry it, and a member of the wrong type (a numeric `type`, a `retryable` of `"no"`, a `user_action` without a `detail`) reads as absent rather than as a wrong value. `retryable: undefined` means unknown, which is not the same as `false`. A body that is not a problem document still yields `serverMessage` or the raw `responseBody`, and a gateway error page still yields the `requestId` from its header.
+- **Members specific to one runner stay in `responseBody`.** The standard's client types the members any runner can send under a neutral name. Members a particular runner adds — the Pipelex platform's `code` and field-level `errors[]`, the inference `error_category`, `model` and `provider` — are left untyped here; `@pipelex/sdk` types them for the Pipelex API.
 - **`validationErrors` is build-route-only.** `POST /v1/validate` no longer routes content errors here — an invalid bundle is the `200` invalid-arm verdict of `ValidationResult`, not an `ApiResponseError`. Do **not** assume a given `errorType` implies a populated `validationErrors`; fall back to `serverMessage` when it is empty.
 - `ValidationErrorItem` (from `mthds` / `src/runners/api/models.ts`) carries `category`, `message`, and per-category optionals (`pipe_code`, `concept_code`, `domain_code`, `source`, `field_path`, `field_name`, `variable_names`, `missing_concept_code`, `declared_concepts`). Only `category` and `message` are always present.
 
@@ -135,7 +145,12 @@ The point of `mthds/errors` is that the importing module stays free of `node:fs`
        return `Can't reach the runner (${err.code ?? "network error"}).`;
      }
      if (err instanceof ApiResponseError) {
-       return err.serverMessage ?? `Runner error ${err.status}.`;
+       const reason = err.serverMessage ?? `Runner error ${err.status}.`;
+       const nextStep = err.userAction ? ` ${err.userAction.detail}` : "";
+       // `input` is the caller's to fix; anything else is not, so give support the id.
+       const support =
+         err.errorDomain !== "input" && err.requestId ? ` (request id ${err.requestId})` : "";
+       return `${reason}${nextStep}${support}`;
      }
      if (err instanceof PipelineRequestError) {
        // catch-all for any other pipeline-request failure
@@ -161,6 +176,33 @@ If the importing module is server-only, you can import the same classes from `mt
 - **A `ClientAuthenticationError` slips past my `instanceof PipelineRequestError` catch.** Expected — it extends `Error` directly. Check it explicitly, or widen the catch-all to `instanceof Error`.
 - **`err.validationErrors` is `undefined` on a validation failure.** Validation failures from `POST /v1/validate` are not errors — read the `200` invalid arm's `validation_errors[]` off the returned value. `ApiResponseError.validationErrors` is populated only for the build routes' `422` bodies.
 - **`instanceof` fails across a Next.js Server Action boundary.** Errors thrown in a Server Action are serialized to the client and lose their class identity in production (Next.js replaces them with a generic `Error` + digest). Classify those by a stable field you propagate yourself (e.g. an error code in the message or a returned discriminant), not by `instanceof`. `mthds/errors` still earns its keep there: it lets the client module *import the types* for annotations and same-runtime checks without the bundler choking on `node:fs`.
+
+## What the CLIs print for a runner's refusal
+
+Both CLIs carry an `ApiResponseError`'s problem members to the reader, so a person or an agent can tell their own mistake from a fault they cannot fix, knows whether to retry, and has an id to hand to support. A member the runner did not send prints nothing.
+
+Both read the members off an `ApiResponseError`, which every protocol route raises (`execute`, `start`, `validate`, `models`, `version`) and `uploadFile` too. The build extensions (`/v1/build/*`) and `health` still throw a plain `Error` on a non-2xx, so their refusals print the message alone.
+
+**`mthds`** prints the error's message, then one line per member the runner sent (`src/cli/commands/error-output.ts`), on `run`, `validate`, `build` and the validation step of `install`:
+
+```text
+API POST /v1/execute failed (422): Model 'gpt-9' is not in the model deck.
+Error domain: input (the request must change)
+Next step: Pick a model listed by `mthds-agent models`.
+Retryable: no
+Request id: 9f2c1ab3 (quote it to support)
+```
+
+**`mthds-agent`** reads the problem document into its JSON error envelope the way the local `pipelex-agent` reads a report (`runnerProblemExtras` in `src/agent/output.ts`), on every command that calls the API runner:
+
+| Envelope field | From the problem document | When the runner did not send it |
+|---|---|---|
+| `error_domain` | `error_domain`, when it is `input`, `config` or `runtime` | the command's own domain (`runner`, or `validation` on a `validate` 422) |
+| `hint` | `user_action.detail` | the command's static hint for its `error_type` |
+| `retryable` | `true` when the runner said a retry can succeed | absent — the envelope only ever says `true`, as in `pipelex-agent` |
+| `request_id` | `requestId` (the body's `request_id`, else the `X-Request-ID` header) | absent |
+
+`error_type` and `message` keep each command's own choice. So a software consumer that treats `config` and `runtime` as an environment issue and `input` as the caller's (a validation hook, for instance) reads a runner's refusal correctly, where it used to see `runner` for every one of them.
 
 ## See also
 

@@ -1,5 +1,16 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- **`ApiResponseError` problem members:** a runner's refusal now exposes the RFC 9457 `type`, `title` and `instance`, the `errorDomain` (`input`, `config` or `runtime`), `retryable`, the next step as `userAction` (`{ kind, detail }`) and the `requestId`, read from the body's `request_id` or, failing that, the `X-Request-ID` response header. Each is `undefined` when the response did not carry it. The `UserAction`, `ProblemDetails` and `ApiResponseErrorOptions` types are exported from `mthds` and `mthds/errors`, and the constructor's last argument now also takes the parsed `problem`.
+- **`mthds` prints what the runner said:** when the API runner refuses `run`, `validate`, `build` or the validation step of `install`, the error message is followed by the error domain, the next step, whether a retry helps and the request id to quote to support, each when the runner sent it.
+
+### Changed
+
+- **`mthds-agent` error envelope carries the runner's classification (Breaking):** on a command that calls the API runner, a refusal whose problem document carries an `error_domain` of `input`, `config` or `runtime` now reports that domain instead of `runner` (or `validation` on a `validate` 422), the runner's next step replaces the static `hint`, `retryable: true` rides when the runner says a retry can succeed, and a new `request_id` field carries the request's correlation id. A consumer branching on `error_domain: "runner"` sees the runner's own domain whenever the runner classified the failure.
+
 ## [v0.27.0] - 2026-09-23
 
 ### Added

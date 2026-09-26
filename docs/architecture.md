@@ -44,7 +44,8 @@ src/runners/api/
   models.ts                   DictStuff/DictWorkingMemory/DictPipeOutput + DictRunResultExecute (default binding);
                               ValidationErrorItem/Category (the build routes' 422 error item) — the Pipelex
                               /v1/validate narrowing (PipelexValidationResult) now lives in @pipelex/sdk
-  exceptions.ts               ApiResponseError (+ validationErrors), ApiUnreachableError, ClientAuthenticationError,
+  exceptions.ts               ApiResponseError (+ validationErrors and the problem members: type, title, instance,
+                              requestId, errorDomain, retryable, userAction), ApiUnreachableError, ClientAuthenticationError,
                               RunStillRunningError, PipelineExecuteTimeoutError
 src/runners/pipelex/
   runner.ts                   PipelexRunner (local CLI runner)

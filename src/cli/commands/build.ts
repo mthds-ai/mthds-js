@@ -3,6 +3,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import * as p from "@clack/prompts";
 import { printLogo } from "./index.js";
 import { isPipelexRunner, extractPassthroughArgs } from "./utils.js";
+import { formatCliError } from "./error-output.js";
 import { createRunner } from "../../runners/registry.js";
 import type {
   ConceptRepresentationFormat,
@@ -133,7 +134,7 @@ export async function buildRunnerPipe(
     p.outro("Done");
   } catch (err) {
     s.stop("Build failed.");
-    p.log.error((err as Error).message);
+    p.log.error(formatCliError(err));
     p.outro("");
     process.exit(1);
   }
@@ -235,7 +236,7 @@ export async function buildInputsPipe(
     p.outro("Done");
   } catch (err) {
     s.stop("Build failed.");
-    p.log.error((err as Error).message);
+    p.log.error(formatCliError(err));
     p.outro("");
     process.exit(1);
   }
@@ -335,7 +336,7 @@ export async function buildOutputPipe(
     p.outro("Done");
   } catch (err) {
     s.stop("Build failed.");
-    p.log.error((err as Error).message);
+    p.log.error(formatCliError(err));
     p.outro("");
     process.exit(1);
   }

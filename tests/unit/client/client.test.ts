@@ -275,6 +275,135 @@ describe("MthdsApiClient HTTP error responses", () => {
   });
 });
 
+describe("MthdsApiClient problem document members", () => {
+  // A runner's RFC 9457 problem document, as the reference runner emits it for a
+  // caller's own mistake: the standard members plus the classification the
+  // runner adds (who can fix it, whether a retry helps, what to do next, and the
+  // correlation id, also echoed in the `X-Request-ID` header).
+  const PROBLEM = {
+    type: "https://docs.pipelex.com/latest/errors/model-choice-not-found-error/",
+    title: "Model choice not found",
+    status: 422,
+    detail: "Model 'gpt-9' is not in the model deck.",
+    instance: "/v1/execute",
+    request_id: "req-body-123",
+    error_type: "ModelChoiceNotFoundError",
+    error_domain: "input",
+    retryable: false,
+    user_action: { kind: "change_model", detail: "Pick a model listed by `mthds-agent models`." },
+  };
+
+  async function executeError(response: Response): Promise<ApiResponseError> {
+    const client = makeClient();
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(response);
+    const err = await client.execute({ pipe_code: "p" }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ApiResponseError);
+    return err as ApiResponseError;
+  }
+
+  it("exposes type, title, instance, the domain, retryability, the next step and the request id", async () => {
+    const e = await executeError(
+      jsonResponse(422, PROBLEM, {
+        "Content-Type": "application/problem+json",
+        "X-Request-ID": "req-body-123",
+      }),
+    );
+    expect(e.status).toBe(422);
+    expect(e.serverMessage).toBe("Model 'gpt-9' is not in the model deck.");
+    expect(e.errorType).toBe("ModelChoiceNotFoundError");
+    expect(e.type).toBe("https://docs.pipelex.com/latest/errors/model-choice-not-found-error/");
+    expect(e.title).toBe("Model choice not found");
+    expect(e.instance).toBe("/v1/execute");
+    expect(e.errorDomain).toBe("input");
+    expect(e.retryable).toBe(false);
+    expect(e.userAction).toEqual({
+      kind: "change_model",
+      detail: "Pick a model listed by `mthds-agent models`.",
+    });
+    expect(e.requestId).toBe("req-body-123");
+  });
+
+  it("reads retryable: true as true, not only its absence", async () => {
+    const e = await executeError(
+      jsonResponse(500, { ...PROBLEM, status: 500, error_domain: "runtime", retryable: true }),
+    );
+    expect(e.errorDomain).toBe("runtime");
+    expect(e.retryable).toBe(true);
+  });
+
+  it("takes the request id from the X-Request-ID header when the body carries none", async () => {
+    const e = await executeError(
+      jsonResponse(500, { detail: "An internal error occurred." }, { "X-Request-ID": "req-hdr-9" }),
+    );
+    expect(e.requestId).toBe("req-hdr-9");
+    expect(e.serverMessage).toBe("An internal error occurred.");
+  });
+
+  it("takes the request id from the header on a non-JSON body", async () => {
+    const e = await executeError(
+      new Response("Bad Gateway", {
+        status: 502,
+        statusText: "Bad Gateway",
+        headers: { "x-request-id": "req-gw-1" },
+      }),
+    );
+    expect(e.requestId).toBe("req-gw-1");
+    expect(e.responseBody).toBe("Bad Gateway");
+  });
+
+  it("prefers the body's request_id over the header", async () => {
+    const e = await executeError(
+      jsonResponse(422, PROBLEM, { "X-Request-ID": "req-header-other" }),
+    );
+    expect(e.requestId).toBe("req-body-123");
+  });
+
+  it("still yields the message when the body carries none of the members", async () => {
+    const e = await executeError(jsonResponse(401, { detail: "Invalid authentication token" }));
+    expect(e.serverMessage).toBe("Invalid authentication token");
+    expect(e.message).toContain("Invalid authentication token");
+    expect(e.type).toBeUndefined();
+    expect(e.title).toBeUndefined();
+    expect(e.instance).toBeUndefined();
+    expect(e.requestId).toBeUndefined();
+    expect(e.errorDomain).toBeUndefined();
+    expect(e.retryable).toBeUndefined();
+    expect(e.userAction).toBeUndefined();
+  });
+
+  it("reads a malformed member as absent rather than as a wrong value", async () => {
+    const e = await executeError(
+      jsonResponse(422, {
+        detail: "boom",
+        type: 42,
+        request_id: "",
+        error_domain: null,
+        retryable: "no",
+        user_action: { kind: "change_input" },
+      }),
+    );
+    expect(e.serverMessage).toBe("boom");
+    expect(e.type).toBeUndefined();
+    expect(e.requestId).toBeUndefined();
+    expect(e.errorDomain).toBeUndefined();
+    expect(e.retryable).toBeUndefined();
+    expect(e.userAction).toBeUndefined();
+  });
+
+  it("carries the members on every route that raises ApiResponseError (start)", async () => {
+    const client = makeClient();
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(jsonResponse(422, PROBLEM));
+    const err = await client.start({ pipe_code: "p" }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ApiResponseError);
+    expect(err).toMatchObject({
+      errorDomain: "input",
+      retryable: false,
+      requestId: "req-body-123",
+      userAction: { kind: "change_model" },
+    });
+  });
+});
+
 describe("MthdsApiClient.execute gateway 30s timeout", () => {
   it("translates a ~30s gateway 503 into a clear PipelineExecuteTimeoutError pointing at start", async () => {
     const client = makeClient();

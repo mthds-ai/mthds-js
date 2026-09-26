@@ -37,6 +37,11 @@ export {
   PipelineExecuteTimeoutError,
   RunStillRunningError,
 } from "./runners/api/exceptions.js";
+export type {
+  ApiResponseErrorOptions,
+  ProblemDetails,
+  UserAction,
+} from "./runners/api/exceptions.js";
 
 // ── Dict-serialized concretes + build-route validation-error item (runners/api) ──
 //

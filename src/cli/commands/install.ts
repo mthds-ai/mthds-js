@@ -7,6 +7,7 @@ import { isPipelexInstalled } from "../../installer/runtime/check.js";
 import { ensureRuntime } from "../../installer/runtime/installer.js";
 import { shutdown } from "../../installer/telemetry/posthog.js";
 import { printLogo } from "./index.js";
+import { formatCliError } from "./error-output.js";
 import { parseAddress } from "../../installer/resolver/address.js";
 import { resolveFromGitHub } from "../../installer/resolver/github.js";
 import { resolveFromLocal } from "../../installer/resolver/local.js";
@@ -190,7 +191,7 @@ export async function installMethod(options: {
       } catch (err) {
         // A no-verdict condition (a local CLI runner raising, or a transport fault).
         valSpinner.stop(`Validation failed: ${method.name}`);
-        p.log.error(`${method.name}: ${(err as Error).message}`);
+        p.log.error(`${method.name}: ${formatCliError(err)}`);
         allValid = false;
       }
     }

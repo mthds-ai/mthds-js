@@ -29,6 +29,7 @@ import {
   PipelineRequestError,
   RunStillRunningError,
 } from "./exceptions.js";
+import type { ProblemDetails, UserAction } from "./exceptions.js";
 import { isValidBaseUrl } from "../../config/config.js";
 import { assertExclusiveRunSources, hasBundlePayload } from "../../protocol/options.js";
 import { buildUserAgent } from "./user-agent.js";
@@ -285,7 +286,10 @@ export class MthdsApiClient implements Runner {
   }
 
   private throwApiResponseError(method: "GET" | "POST", endpoint: string, res: RawResponse): never {
-    const { errorType, serverMessage, validationErrors } = parseErrorBody(res.body);
+    const { errorType, serverMessage, validationErrors, problem } = parseErrorBody(res.body);
+    // The body's `request_id` wins; the header is the fallback for a response
+    // whose body carries none (a gateway error page, a non-problem body).
+    const requestId = problem.requestId ?? nonEmptyHeader(res.headers, "x-request-id");
     throw new ApiResponseError(
       `API ${method} /${API_PREFIX}/${endpoint} failed (${res.status}): ${serverMessage ?? (res.body || res.statusText)}`,
       this.baseUrl,
@@ -295,6 +299,7 @@ export class MthdsApiClient implements Runner {
       errorType,
       serverMessage,
       validationErrors,
+      { problem: { ...problem, requestId } },
     );
   }
 
@@ -694,13 +699,26 @@ function parseRetryAfter(headers: Headers): number | null {
  * additionally carries a top-level `validation_errors[]` list (the
  * `ValidateBundleError` extension projected onto the envelope). Falls through
  * silently on non-JSON bodies.
+ *
+ * The problem document's other members are read too — the RFC 9457 `type`,
+ * `title` and `instance`, and the extension members `request_id`,
+ * `error_domain`, `retryable` and `user_action` — each kept only when it has
+ * the type the problem document gives it, so a malformed member reads as
+ * absent rather than as a wrong value. Members a runner adds beyond these stay
+ * in the raw body (`ApiResponseError.responseBody`).
  */
 function parseErrorBody(body: string): {
   errorType: string | undefined;
   serverMessage: string | undefined;
   validationErrors: ValidationErrorItem[] | undefined;
+  problem: ProblemDetails;
 } {
-  const empty = { errorType: undefined, serverMessage: undefined, validationErrors: undefined };
+  const empty = {
+    errorType: undefined,
+    serverMessage: undefined,
+    validationErrors: undefined,
+    problem: {},
+  };
   if (!body) return empty;
   let parsed: unknown;
   try {
@@ -731,5 +749,33 @@ function parseErrorBody(body: string): {
   const validationErrors = Array.isArray(root.validation_errors)
     ? (root.validation_errors as ValidationErrorItem[])
     : undefined;
-  return { errorType, serverMessage, validationErrors };
+  const problem: ProblemDetails = {
+    type: nonEmptyStringMember(root.type),
+    title: nonEmptyStringMember(root.title),
+    instance: nonEmptyStringMember(root.instance),
+    requestId: nonEmptyStringMember(root.request_id),
+    errorDomain: nonEmptyStringMember(root.error_domain),
+    retryable: typeof root.retryable === "boolean" ? root.retryable : undefined,
+    userAction: parseUserAction(root.user_action),
+  };
+  return { errorType, serverMessage, validationErrors, problem };
+}
+
+function nonEmptyStringMember(value: unknown): string | undefined {
+  return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
+/** A `user_action` member is kept only whole: an object with a string `kind` and a non-empty `detail`. */
+function parseUserAction(value: unknown): UserAction | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const { kind, detail } = value as Record<string, unknown>;
+  if (typeof kind !== "string" || typeof detail !== "string" || detail.length === 0) {
+    return undefined;
+  }
+  return { kind, detail };
+}
+
+function nonEmptyHeader(headers: Headers, name: string): string | undefined {
+  const value = headers.get(name)?.trim();
+  return value ? value : undefined;
 }

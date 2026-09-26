@@ -10,7 +10,7 @@ import { join } from "node:path";
 
 // ── Mocks ────────────────────────────────────────────────────────────
 
-const spinner = { start: vi.fn(), stop: vi.fn(), message: vi.fn() };
+const spinner = { start: vi.fn(), stop: vi.fn(), error: vi.fn(), message: vi.fn() };
 
 vi.mock("@clack/prompts", () => ({
   intro: vi.fn(),
@@ -198,8 +198,10 @@ describe("mthds run prints a refused run's validation items", () => {
 
     await expect(runPipe("demo.main", {})).rejects.toThrow("__exit__");
 
-    // The spinner stops before the refusal prints, so the two never share a line.
-    expect(spinner.stop).toHaveBeenCalledWith("Run failed.");
+    // The spinner stops with its failure marker before the refusal prints, so the
+    // two never share a line and no success marker sits above the refusal.
+    expect(spinner.error).toHaveBeenCalledWith("Run failed.");
+    expect(spinner.stop).not.toHaveBeenCalled();
     expect(errorLines()).toEqual([
       [
         "API POST /v1/execute failed (422): The method is invalid and was not run.",

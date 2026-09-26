@@ -39,8 +39,8 @@ function withInputs(options: StartOptions, inputsFile?: string): StartOptions {
  * Both return a `DictRunResultExecute` carrying `pipe_output` — print that.
  */
 async function dispatchRun(runner: Runner, options: StartOptions, cli: RunOptions): Promise<void> {
-  // Stopped before a failure prints, so the error does not share a line with a
-  // still-spinning frame.
+  // Stopped with the failure marker before a failure prints, so the error neither
+  // shares a line with a still-spinning frame nor follows a success marker.
   let spinner: ReturnType<typeof p.spinner> | undefined;
   try {
     let result;
@@ -69,7 +69,7 @@ async function dispatchRun(runner: Runner, options: StartOptions, cli: RunOption
 
     p.outro("Done");
   } catch (err) {
-    spinner?.stop("Run failed.");
+    spinner?.error("Run failed.");
     p.log.error(formatCliError(err));
     p.outro("");
     process.exit(1);

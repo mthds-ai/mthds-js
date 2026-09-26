@@ -5,8 +5,8 @@ import { join } from "node:path";
 
 // When the runner refuses a bundle, the `mthds` CLI prints each validation item, and
 // an item that carries a suggested fix is followed by `Suggested fix: <description>`,
-// so the person sees what to do as well as what is wrong — on `validate`, `build`
-// and the validation step of `install`.
+// so the person sees what to do as well as what is wrong — on `validate`, `build`,
+// the validation step of `install`, and `run` when the runner refuses to run.
 
 // ── Mocks ────────────────────────────────────────────────────────────
 
@@ -40,6 +40,8 @@ import { resolveFromLocal } from "../../../src/installer/resolver/local.js";
 import { validatePipe } from "../../../src/cli/commands/validate.js";
 import { buildInputsPipe } from "../../../src/cli/commands/build.js";
 import { installMethod } from "../../../src/cli/commands/install.js";
+import { runPipe } from "../../../src/cli/commands/run.js";
+import { ApiResponseError } from "../../../src/runners/api/exceptions.js";
 import type { ValidationErrorItem } from "../../../src/runners/api/models.js";
 import type { ResolvedRepo } from "../../../src/package/manifest/types.js";
 import type { Runner } from "../../../src/runners/types.js";
@@ -168,5 +170,57 @@ describe("mthds CLI prints a validation item's suggested fix", () => {
       `  [pipe_validation] ${UNKNOWN_MODEL_ITEM.message}\n    Suggested fix: ${FIX_DESCRIPTION}`,
     );
     expect(errorLines()).toContain(`  [pipe_validation] ${NO_FIX_ITEM.message}`);
+  });
+});
+
+// A run route refuses an invalid method with a 422 problem document listing its items,
+// which the API runner raises as an `ApiResponseError` carrying `validationErrors`.
+function runRefusal(validationErrors: ValidationErrorItem[] | undefined): ApiResponseError {
+  return new ApiResponseError(
+    "API POST /v1/execute failed (422): The method is invalid and was not run.",
+    "http://localhost:8081",
+    422,
+    "Unprocessable Entity",
+    "{}",
+    "ValidateBundleError",
+    "The method is invalid and was not run.",
+    validationErrors,
+    { problem: { errorDomain: "input" } },
+  );
+}
+
+describe("mthds run prints a refused run's validation items", () => {
+  it("prints each item with its locators, and the fix under the item that has one", async () => {
+    useRunner({
+      type: "api",
+      execute: vi.fn().mockRejectedValue(runRefusal([UNKNOWN_MODEL_ITEM, NO_FIX_ITEM])),
+    });
+
+    await expect(runPipe("demo.main", {})).rejects.toThrow("__exit__");
+
+    // The spinner stops before the refusal prints, so the two never share a line.
+    expect(spinner.stop).toHaveBeenCalledWith("Run failed.");
+    expect(errorLines()).toEqual([
+      [
+        "API POST /v1/execute failed (422): The method is invalid and was not run.",
+        `- [pipe_validation] ${UNKNOWN_MODEL_ITEM.message} (pipe: summarize, field: model, source: demo.mthds)`,
+        `  Suggested fix: ${FIX_DESCRIPTION}`,
+        `- [pipe_validation] ${NO_FIX_ITEM.message} (pipe: main, missing pipe: summarise, source: demo.mthds)`,
+        "Error domain: input (the request must change)",
+      ].join("\n"),
+    ]);
+  });
+
+  it("prints a refusal with no items as the message and the problem members alone", async () => {
+    useRunner({ type: "api", execute: vi.fn().mockRejectedValue(runRefusal(undefined)) });
+
+    await expect(runPipe("demo.main", {})).rejects.toThrow("__exit__");
+
+    expect(errorLines()).toEqual([
+      [
+        "API POST /v1/execute failed (422): The method is invalid and was not run.",
+        "Error domain: input (the request must change)",
+      ].join("\n"),
+    ]);
   });
 });

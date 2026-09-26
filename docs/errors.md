@@ -193,6 +193,8 @@ Retryable: no
 Request id: 9f2c1ab3 (quote it to support)
 ```
 
+A refusal that lists validation items, a run route refusing an invalid method for one, prints each item between the message and the members, as [A validation item's next step](#a-validation-items-next-step) shows.
+
 **`mthds-agent`** reads the problem document into its JSON error envelope the way the local `pipelex-agent` reads a report (`runnerProblemExtras` in `src/agent/output.ts`), on every command that calls the API runner:
 
 | Envelope field | From the problem document | When the runner did not send it |
@@ -247,6 +249,16 @@ The items reach a caller the same way wherever they ride: on the `200` invalid v
 ```text
 demo.mthds: [pipe_validation] Model handle 'gpt-5.1' was not found in the model deck.
   Suggested fix: Replace model 'gpt-5.1' of pipe 'summarize' with 'gpt-5', its one close match in the model deck
+```
+
+When the runner refuses to run an invalid method, `mthds run` prints the refusal's items under its message, each with its locators and its fix, in the Codex hook's list form (`formatValidationItem`, in the same file), then the problem members:
+
+```text
+API POST /v1/execute failed (422): The method is invalid and was not run.
+- [pipe_validation] Model handle 'gpt-5.1' was not found in the model deck. (pipe: summarize, field: model, source: demo.mthds)
+  Suggested fix: Replace model 'gpt-5.1' of pipe 'summarize' with 'gpt-5', its one close match in the model deck
+- [pipe_validation] Pipe 'demo.main' refers to 'summarise', which no bundle declares. (pipe: main, missing pipe: summarise, source: demo.mthds)
+Error domain: input (the request must change)
 ```
 
 ## See also

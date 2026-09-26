@@ -39,6 +39,9 @@ function withInputs(options: StartOptions, inputsFile?: string): StartOptions {
  * Both return a `DictRunResultExecute` carrying `pipe_output` — print that.
  */
 async function dispatchRun(runner: Runner, options: StartOptions, cli: RunOptions): Promise<void> {
+  // Stopped before a failure prints, so the error does not share a line with a
+  // still-spinning frame.
+  let spinner: ReturnType<typeof p.spinner> | undefined;
   try {
     let result;
     if (isPipelexRunner(runner)) {
@@ -47,10 +50,11 @@ async function dispatchRun(runner: Runner, options: StartOptions, cli: RunOption
       p.log.step("Executing via pipelex...");
       result = await runner.execute(options);
     } else {
-      const s = p.spinner();
-      s.start("Executing and waiting for result...");
+      spinner = p.spinner();
+      spinner.start("Executing and waiting for result...");
       result = await runner.execute(options);
-      s.stop("Run completed.");
+      spinner.stop("Run completed.");
+      spinner = undefined;
     }
 
     if (cli.output) {
@@ -65,6 +69,7 @@ async function dispatchRun(runner: Runner, options: StartOptions, cli: RunOption
 
     p.outro("Done");
   } catch (err) {
+    spinner?.stop("Run failed.");
     p.log.error(formatCliError(err));
     p.outro("");
     process.exit(1);

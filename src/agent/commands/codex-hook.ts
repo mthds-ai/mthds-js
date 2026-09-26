@@ -20,7 +20,7 @@
 import { accessSync, constants as fsConstants, existsSync, readFileSync, statSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { posix as path } from "node:path";
-import { withSuggestedFix } from "../../cli/commands/error-output.js";
+import { formatValidationItem } from "../../cli/commands/error-output.js";
 
 const PLXT_INSTALL_HINT = "uv tool install pipelex-tools";
 const PIPELEX_AGENT_INSTALL_HINT = "uv tool install pipelex";
@@ -171,26 +171,9 @@ export function formatValidationReason(
     (item): item is AgentValidationErrorItem => typeof item === "object" && item !== null,
   );
   if (errors.length === 0) return `Validation failed for ${file}:\n\n${message}`;
-  const lines = errors.map((item) => {
-    const locators = [
-      item.pipe_code ? `pipe: ${item.pipe_code}` : undefined,
-      item.concept_code ? `concept: ${item.concept_code}` : undefined,
-      item.domain_code ? `domain: ${item.domain_code}` : undefined,
-      item.field_name ? `field: ${item.field_name}` : undefined,
-      item.missing_pipe_code ? `missing pipe: ${item.missing_pipe_code}` : undefined,
-      item.missing_concept_code ? `missing concept: ${item.missing_concept_code}` : undefined,
-      item.source ? `source: ${item.source}` : undefined,
-    ]
-      .filter(Boolean)
-      .join(", ");
-    const category = item.category ? `[${item.category}] ` : "";
-    // `withSuggestedFix` reads the item defensively, as `suggested_fix` may be anything on a
-    // version-skewed envelope.
-    return withSuggestedFix(
-      `- ${category}${item.message ?? ""}${locators ? ` (${locators})` : ""}`,
-      item,
-    );
-  });
+  // `formatValidationItem` reads each item loosely and its `suggested_fix` defensively, as
+  // either may be anything on a version-skewed envelope.
+  const lines = errors.map((item) => formatValidationItem(item));
   return `Validation failed for ${file}:\n\n${message}\n\n${lines.join("\n")}`;
 }
 

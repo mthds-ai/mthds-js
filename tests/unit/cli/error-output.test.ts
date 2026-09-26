@@ -4,12 +4,13 @@ import { formatCliError, withSuggestedFix } from "../../../src/cli/commands/erro
 // of the classes or of the problem types fails here.
 import { ApiResponseError, ApiUnreachableError } from "../../../src/errors.js";
 import type { ApiResponseErrorOptions, ProblemDetails, UserAction } from "../../../src/errors.js";
+import type { ValidationErrorItem } from "../../../src/runners/api/models.js";
 
 // `formatCliError` is what the `mthds` CLI prints when a command fails. A
 // runner's refusal must reach the person with who can fix it, the next step,
 // whether a retry helps and the request id to quote to support.
 
-function apiError(problem: ProblemDetails): ApiResponseError {
+function apiError(problem: ProblemDetails, validationErrors?: unknown[]): ApiResponseError {
   const options: ApiResponseErrorOptions = { problem };
   return new ApiResponseError(
     "API POST /v1/execute failed (422): Model 'gpt-9' is not in the model deck.",
@@ -19,7 +20,7 @@ function apiError(problem: ProblemDetails): ApiResponseError {
     "{}",
     "ModelChoiceNotFoundError",
     "Model 'gpt-9' is not in the model deck.",
-    undefined,
+    validationErrors as ValidationErrorItem[] | undefined,
     options,
   );
 }
@@ -73,6 +74,56 @@ describe("formatCliError", () => {
     expect(formatCliError(apiError({}))).toBe(
       "API POST /v1/execute failed (422): Model 'gpt-9' is not in the model deck.",
     );
+  });
+
+  it("prints a refusal's validation items between the message and the problem members", () => {
+    const text = formatCliError(
+      apiError({ errorDomain: "input", requestId: "req-7" }, [
+        {
+          category: "pipe_validation",
+          message: "Model handle 'gpt-9' was not found in the model deck.",
+          pipe_code: "summarize",
+          field_name: "model",
+          source: "demo.mthds",
+          suggested_fix: {
+            fix_code: "rename-model",
+            description: "Replace model 'gpt-9' of pipe 'summarize' with 'gpt-5'",
+            safety: "safe",
+            ops: [],
+          },
+        },
+        {
+          category: "blueprint_validation",
+          message: "Concept 'Invoice' refines 'Documnet', which no bundle declares.",
+          concept_code: "Invoice",
+          missing_concept_code: "Documnet",
+        },
+      ]),
+    );
+    expect(text.split("\n")).toEqual([
+      "API POST /v1/execute failed (422): Model 'gpt-9' is not in the model deck.",
+      "- [pipe_validation] Model handle 'gpt-9' was not found in the model deck. (pipe: summarize, field: model, source: demo.mthds)",
+      "  Suggested fix: Replace model 'gpt-9' of pipe 'summarize' with 'gpt-5'",
+      "- [blueprint_validation] Concept 'Invoice' refines 'Documnet', which no bundle declares. (concept: Invoice, missing concept: Documnet)",
+      "Error domain: input (the request must change)",
+      "Request id: req-7 (quote it to support)",
+    ]);
+  });
+
+  it("prints a refusal whose item list is empty as one without a list", () => {
+    expect(formatCliError(apiError({}, []))).toBe(
+      "API POST /v1/execute failed (422): Model 'gpt-9' is not in the model deck.",
+    );
+  });
+
+  it("skips an item that is not an object (version-skewed payload)", () => {
+    const text = formatCliError(
+      apiError({}, [null, "nope", { category: "pipe_validation", message: "real" }]),
+    );
+    expect(text.split("\n")).toEqual([
+      "API POST /v1/execute failed (422): Model 'gpt-9' is not in the model deck.",
+      "- [pipe_validation] real",
+    ]);
   });
 
   it("prints only the message for any other error", () => {

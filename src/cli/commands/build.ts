@@ -29,7 +29,7 @@ function readBundleFile(target: string): MthdsFileItem {
 /**
  * Render an invalid-closure VERDICT (the `is_valid: false` arm) and exit non-zero.
  *
- * The build routes answer a bad closure with a 200 carrying diagnostics, not an
+ * The per-pipe build routes answer a bad closure with a 200 carrying diagnostics, not an
  * exception — so a CLI that only caught throws would print a success message over
  * an unusable result. Returns true when the verdict is valid and the caller should
  * carry on. It never returns on the invalid arm (`process.exit`), but TypeScript

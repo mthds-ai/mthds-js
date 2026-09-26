@@ -49,8 +49,9 @@ export type {
 // arms) is NOT exported here — it lives in the runtime SDK (`@pipelex/sdk`).
 // `MthdsApiClient.validate()` returns the protocol's neutral `ValidationResult`
 // (re-exported via the protocol barrel above). `ValidationErrorItem` /
-// `ValidationErrorCategory` remain because they type the build routes' `200`
-// invalid verdicts and a run route's `422` refusal (`ApiResponseError.validationErrors`). `SuggestedFix` and its op
+// `ValidationErrorCategory` remain because they type the per-pipe build routes'
+// (`build/inputs`, `build/output`, `build/runner`) `200` invalid verdicts and a run
+// route's `422` refusal (`ApiResponseError.validationErrors`). `SuggestedFix` and its op
 // types are the next step an item carries.
 export type {
   DictStuff,

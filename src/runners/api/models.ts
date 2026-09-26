@@ -44,8 +44,8 @@ export type DictRunResultExecute = RunResultExecute<DictPipeOutput>;
 
 // ── Build-route validation errors (Pipelex-API layer 2 — `/v1/build/*`) ──
 //
-// What remains here is the structured error item the build routes' `200` invalid
-// verdicts (`CrateInvalidReport.validation_errors`) and a run route's `422` refusal
+// What remains here is the structured error item the per-pipe build routes' `200`
+// invalid verdicts (`CrateInvalidReport.validation_errors`) and a run route's `422` refusal
 // (`ApiResponseError.validationErrors`) carry — neutrally named, so no brand violation. `MthdsApiClient.validate()` returns the protocol's
 // neutral `ValidationResult` (its invalid arm exposes only the standard
 // `category` + `message`). The Pipelex-API narrowing of the `/v1/validate`

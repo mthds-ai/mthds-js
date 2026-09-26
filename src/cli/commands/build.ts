@@ -3,7 +3,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import * as p from "@clack/prompts";
 import { printLogo } from "./index.js";
 import { isPipelexRunner, extractPassthroughArgs } from "./utils.js";
-import { formatCliError } from "./error-output.js";
+import { formatCliError, withSuggestedFix } from "./error-output.js";
 import { createRunner } from "../../runners/registry.js";
 import type {
   ConceptRepresentationFormat,
@@ -44,7 +44,7 @@ function reportIfInvalid(
   p.log.error(result.message);
   for (const item of result.validation_errors) {
     const where = [item.source, item.pipe_code].filter(Boolean).join(" · ");
-    p.log.error(where ? `${where}: ${item.message}` : item.message);
+    p.log.error(withSuggestedFix(where ? `${where}: ${item.message}` : item.message, item));
   }
   p.outro("");
   process.exit(1);

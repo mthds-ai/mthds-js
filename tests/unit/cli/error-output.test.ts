@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatCliError } from "../../../src/cli/commands/error-output.js";
+import { formatCliError, withSuggestedFix } from "../../../src/cli/commands/error-output.js";
 // Imported through the client-safe `mthds/errors` entry, so a dropped re-export
 // of the classes or of the problem types fails here.
 import { ApiResponseError, ApiUnreachableError } from "../../../src/errors.js";
@@ -86,5 +86,42 @@ describe("formatCliError", () => {
     );
     expect(formatCliError(new Error("plain"))).toBe("plain");
     expect(formatCliError("a string")).toBe("a string");
+  });
+});
+
+// Every surface that prints a validation item puts the runner's suggested fix under
+// it the same way: `Suggested fix: <description>`, indented two spaces past the item.
+describe("withSuggestedFix", () => {
+  const fix = {
+    fix_code: "rename-model",
+    description: "Replace model 'gpt-5.1' of pipe 'summarize' with 'gpt-5'",
+    safety: "safe",
+    ops: [],
+  };
+
+  it("puts the fix's description under the item's line", () => {
+    expect(withSuggestedFix("- [pipe_validation] unknown model", { suggested_fix: fix })).toBe(
+      "- [pipe_validation] unknown model\n  Suggested fix: Replace model 'gpt-5.1' of pipe 'summarize' with 'gpt-5'",
+    );
+  });
+
+  it("indents the fix two spaces past an indented item", () => {
+    expect(withSuggestedFix("  [pipe_validation] unknown model", { suggested_fix: fix })).toBe(
+      "  [pipe_validation] unknown model\n    Suggested fix: Replace model 'gpt-5.1' of pipe 'summarize' with 'gpt-5'",
+    );
+  });
+
+  it("leaves the line alone when the item has no fix, or a malformed one", () => {
+    for (const item of [
+      {},
+      { suggested_fix: null },
+      { suggested_fix: "rename it" },
+      { suggested_fix: { description: 42 } },
+      { suggested_fix: { description: "   " } },
+      null,
+      "not an item",
+    ]) {
+      expect(withSuggestedFix("line", item)).toBe("line");
+    }
   });
 });

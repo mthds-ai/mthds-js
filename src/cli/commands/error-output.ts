@@ -31,3 +31,29 @@ export function formatCliError(err: unknown): string {
   if (err.requestId) lines.push(`Request id: ${err.requestId} (quote it to support)`);
   return lines.join("\n");
 }
+
+/**
+ * A printed validation item followed by its suggested fix: the item's `line`, then
+ * `Suggested fix: <description>` indented two spaces past it, when the item carries a
+ * `suggested_fix` with a description. It is the one way every surface prints a fix
+ * under an item — the `mthds` CLI's `validate`, `build` and `install`, and the Codex
+ * hook's blocking reason — so the person and the agent read the same next step.
+ *
+ * The item is read defensively, as it may come from a version-skewed payload: an item
+ * with no fix, a `suggested_fix` that is not an object, or a description that is not a
+ * non-blank string leaves the line alone.
+ */
+export function withSuggestedFix(line: string, item: unknown): string {
+  const description = suggestedFixDescription(item);
+  if (!description) return line;
+  const indent = /^\s*/.exec(line)?.[0] ?? "";
+  return `${line}\n${indent}  Suggested fix: ${description}`;
+}
+
+function suggestedFixDescription(item: unknown): string | undefined {
+  if (!item || typeof item !== "object") return undefined;
+  const fix = (item as { suggested_fix?: unknown }).suggested_fix;
+  if (!fix || typeof fix !== "object") return undefined;
+  const description = (fix as { description?: unknown }).description;
+  return typeof description === "string" && description.trim() ? description.trim() : undefined;
+}

@@ -20,6 +20,7 @@
 import { accessSync, constants as fsConstants, existsSync, readFileSync, statSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { posix as path } from "node:path";
+import { withSuggestedFix } from "../../cli/commands/error-output.js";
 
 const PLXT_INSTALL_HINT = "uv tool install pipelex-tools";
 const PIPELEX_AGENT_INSTALL_HINT = "uv tool install pipelex";
@@ -183,11 +184,12 @@ export function formatValidationReason(
       .filter(Boolean)
       .join(", ");
     const category = item.category ? `[${item.category}] ` : "";
-    const line = `- ${category}${item.message ?? ""}${locators ? ` (${locators})` : ""}`;
-    // `suggested_fix` may be anything on a version-skewed envelope: optional chaining on a
-    // non-object yields undefined, and `safeStr` turns a non-string description into "".
-    const fix = safeStr(item.suggested_fix?.description).trim();
-    return fix ? `${line}\n  Suggested fix: ${fix}` : line;
+    // `withSuggestedFix` reads the item defensively, as `suggested_fix` may be anything on a
+    // version-skewed envelope.
+    return withSuggestedFix(
+      `- ${category}${item.message ?? ""}${locators ? ` (${locators})` : ""}`,
+      item,
+    );
   });
   return `Validation failed for ${file}:\n\n${message}\n\n${lines.join("\n")}`;
 }

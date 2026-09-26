@@ -7,7 +7,7 @@ import { isPipelexInstalled } from "../../installer/runtime/check.js";
 import { ensureRuntime } from "../../installer/runtime/installer.js";
 import { shutdown } from "../../installer/telemetry/posthog.js";
 import { printLogo } from "./index.js";
-import { formatCliError } from "./error-output.js";
+import { formatCliError, withSuggestedFix } from "./error-output.js";
 import { parseAddress } from "../../installer/resolver/address.js";
 import { resolveFromGitHub } from "../../installer/resolver/github.js";
 import { resolveFromLocal } from "../../installer/resolver/local.js";
@@ -182,7 +182,7 @@ export async function installMethod(options: {
           valSpinner.stop(`Validation failed: ${method.name}`);
           p.log.error(`${method.name}: ${report.message}`);
           for (const item of report.validation_errors) {
-            p.log.error(`  [${item.category}] ${item.message}`);
+            p.log.error(withSuggestedFix(`  [${item.category}] ${item.message}`, item));
           }
           allValid = false;
           continue;

@@ -242,6 +242,13 @@ The items reach a caller the same way wherever they ride: on the `200` invalid v
   Suggested fix: Replace model 'gpt-5.1' of pipe 'summarize' with 'gpt-5', its one close match in the model deck
 ```
 
+**`mthds`** prints the same line for a person, under each item that has a fix, when the runner refuses a bundle on `validate`, `build` or the validation step of `install`. The line is built in one place (`withSuggestedFix` in `src/cli/commands/error-output.ts`), which the Codex hook uses too, and it sits two spaces past the item it belongs to:
+
+```text
+demo.mthds: [pipe_validation] Model handle 'gpt-5.1' was not found in the model deck.
+  Suggested fix: Replace model 'gpt-5.1' of pipe 'summarize' with 'gpt-5', its one close match in the model deck
+```
+
 ## See also
 
 - [architecture.md](./architecture.md) — the SDK's `protocol/ ⊥ runners/` split, the entry-point table, and the rationale for `mthds/errors`.

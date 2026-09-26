@@ -1,5 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { runProtocolValidate } from "../../../src/agent/commands/api-commands.js";
+import {
+  emitInputsTemplate,
+  runProtocolValidate,
+} from "../../../src/agent/commands/api-commands.js";
 import { runnerProblemExtras } from "../../../src/agent/output.js";
 import { ApiResponseError, ApiUnreachableError } from "../../../src/runners/api/exceptions.js";
 import type { ProblemDetails } from "../../../src/runners/api/exceptions.js";
@@ -125,6 +128,26 @@ describe("mthds-agent envelope for a runner's refusal", () => {
       request_id: "req-422",
     });
     expect(envelope).not.toHaveProperty("retryable");
+  });
+
+  it("prints the runner's classification on a build route's refusal (inputs)", async () => {
+    const runner = {
+      type: "api",
+      buildInputs: vi.fn().mockRejectedValue(
+        apiError(422, {
+          errorDomain: "input",
+          userAction: { kind: "change_input", detail: "Name a pipe the bundle declares." },
+          requestId: "req-build",
+        }),
+      ),
+    } as unknown as Runner;
+    await expect(emitInputsTemplate(runner, { content: "x" }, "nope")).rejects.toThrow("__exit__");
+    expect(firstEnvelope()).toMatchObject({
+      error_type: "RunnerError",
+      error_domain: "input",
+      hint: "Name a pipe the bundle declares.",
+      request_id: "req-build",
+    });
   });
 
   it("keeps the command's own domain and hint when the runner classified nothing", async () => {

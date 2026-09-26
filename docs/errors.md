@@ -181,7 +181,7 @@ If the importing module is server-only, you can import the same classes from `mt
 
 Both CLIs carry an `ApiResponseError`'s problem members to the reader, so a person or an agent can tell their own mistake from a fault they cannot fix, knows whether to retry, and has an id to hand to support. A member the runner did not send prints nothing.
 
-Both read the members off an `ApiResponseError`, which every protocol route raises (`execute`, `start`, `validate`, `models`, `version`) and `uploadFile` too. The build extensions (`/v1/build/*`) and `health` still throw a plain `Error` on a non-2xx, so their refusals print the message alone.
+Both read the members off an `ApiResponseError`, which every route of `MthdsApiClient` raises on a non-2xx: the protocol routes (`execute`, `start`, `validate`, `models`, `version`), `uploadFile`, the build extensions (`/v1/build/*`, and `concept` and `pipeSpec`) and `health`.
 
 **`mthds`** prints the error's message, then one line per member the runner sent (`src/cli/commands/error-output.ts`), on `run`, `validate`, `build` and the validation step of `install`:
 

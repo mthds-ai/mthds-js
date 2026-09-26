@@ -263,9 +263,11 @@ export class MthdsApiClient implements Runner {
   }
 
   /**
-   * Issue a request and parse the JSON body, throwing a plain `Error` on a
-   * non-2xx response. Used by the build extensions and `health` — surfaces
-   * that don't need the protocol's structured error taxonomy.
+   * Issue a request and parse the JSON body, throwing an `ApiResponseError`
+   * on a non-2xx response, so a refusal carries its problem members here as on
+   * the protocol routes. Used by the build extensions and `health`. Unlike
+   * `requestRaw`, it sets no timeout and does not wrap a network failure as
+   * `ApiUnreachableError`.
    */
   private async requestJson<T>(method: "GET" | "POST", url: string, body?: unknown): Promise<T> {
     const headers = this.buildHeaders(body !== undefined);
@@ -276,7 +278,12 @@ export class MthdsApiClient implements Runner {
     });
     if (!res.ok) {
       const text = await res.text().catch(() => "");
-      throw new Error(`API ${method} ${url} failed (${res.status}): ${text || res.statusText}`);
+      throw this.apiResponseError(`${method} ${url}`, {
+        status: res.status,
+        statusText: res.statusText,
+        headers: res.headers,
+        body: text,
+      });
     }
     return res.json() as Promise<T>;
   }
@@ -286,12 +293,17 @@ export class MthdsApiClient implements Runner {
   }
 
   private throwApiResponseError(method: "GET" | "POST", endpoint: string, res: RawResponse): never {
+    throw this.apiResponseError(`${method} /${API_PREFIX}/${endpoint}`, res);
+  }
+
+  /** Build the `ApiResponseError` for a non-2xx response; `request` names it in the message (`POST /v1/execute`). */
+  private apiResponseError(request: string, res: RawResponse): ApiResponseError {
     const { errorType, serverMessage, validationErrors, problem } = parseErrorBody(res.body);
     // The body's `request_id` wins; the header is the fallback for a response
     // whose body carries none (a gateway error page, a non-problem body).
     const requestId = problem.requestId ?? nonEmptyHeader(res.headers, "x-request-id");
-    throw new ApiResponseError(
-      `API ${method} /${API_PREFIX}/${endpoint} failed (${res.status}): ${serverMessage ?? (res.body || res.statusText)}`,
+    return new ApiResponseError(
+      `API ${request} failed (${res.status}): ${serverMessage ?? (res.body || res.statusText)}`,
       this.baseUrl,
       res.status,
       res.statusText,

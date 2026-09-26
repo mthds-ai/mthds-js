@@ -924,6 +924,65 @@ describe("MthdsApiClient build routes", () => {
     });
   });
 
+  // A build route's refusal is an ApiResponseError carrying the problem members,
+  // as on the protocol routes, so `mthds build` and `mthds-agent inputs` can print them.
+  it("raises a refusal as ApiResponseError with its problem members", async () => {
+    const client = makeClient();
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      jsonResponse(
+        500,
+        {
+          type: "https://docs.pipelex.com/latest/errors/pipelex-config-error/",
+          title: "Pipelex config error",
+          status: 500,
+          detail: "The model deck could not be loaded.",
+          error_type: "PipelexConfigError",
+          error_domain: "config",
+          retryable: false,
+          user_action: { kind: "contact_support", detail: "Ask the runner's operator." },
+          validation_errors: [{ category: "blueprint_validation", message: "boom" }],
+        },
+        { "X-Request-ID": "req-build-1" },
+      ),
+    );
+
+    const err = await client
+      .buildInputs({ files: [{ content: "domain = 'smoke'" }] })
+      .catch((e: unknown) => e);
+
+    expect(err).toBeInstanceOf(ApiResponseError);
+    const e = err as ApiResponseError;
+    expect(e.message).toBe(
+      "API POST http://localhost:8081/v1/build/inputs failed (500): The model deck could not be loaded.",
+    );
+    expect(e).toMatchObject({
+      status: 500,
+      errorType: "PipelexConfigError",
+      serverMessage: "The model deck could not be loaded.",
+      type: "https://docs.pipelex.com/latest/errors/pipelex-config-error/",
+      errorDomain: "config",
+      retryable: false,
+      userAction: { kind: "contact_support", detail: "Ask the runner's operator." },
+      requestId: "req-build-1",
+      validationErrors: [{ category: "blueprint_validation", message: "boom" }],
+    });
+  });
+
+  it("raises a health refusal as ApiResponseError too", async () => {
+    const client = makeClient();
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      textResponse(503, "Service Unavailable", "Service Unavailable"),
+    );
+
+    const err = await client.health().catch((e: unknown) => e);
+
+    expect(err).toBeInstanceOf(ApiResponseError);
+    expect((err as ApiResponseError).status).toBe(503);
+    expect((err as ApiResponseError).message).toBe(
+      "API GET http://localhost:8081/health failed (503): Service Unavailable",
+    );
+  });
+
   // An omitted `pipe_ref` is how a caller says "the closure's main_pipe" — it must
   // reach the server ABSENT, so the server does the defaulting, not the client.
   it("omits pipe_ref entirely when the caller does not select a pipe", async () => {

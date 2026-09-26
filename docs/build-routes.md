@@ -53,7 +53,7 @@ if (!result.is_valid) {
 console.log(result.inputs);
 ```
 
-Branch on `is_valid` — never on an HTTP status or a caught exception. A throw means _no verdict could be produced at all_: an unknown `pipe_ref`, an undefaultable selector, auth, a server fault.
+Branch on `is_valid` — never on an HTTP status or a caught exception. A throw means _no verdict could be produced at all_: an unknown `pipe_ref`, an undefaultable selector, auth, a server fault. Over the API it is an `ApiResponseError`, carrying the runner's error domain, next step and request id when the problem document names them (see [errors.md](./errors.md#apiresponseerror)).
 
 (The local `pipelex` runner satisfies the same union but never _returns_ the invalid arm — an unloadable closure makes the CLI exit non-zero, which surfaces as a throw. Callers still branch on `is_valid`; that branch is simply never taken there.)
 

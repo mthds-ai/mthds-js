@@ -9,6 +9,7 @@
 
 ### Changed
 
+- **Build routes and `health` raise `ApiResponseError`:** a non-2xx answer to `buildRunner`, `buildInputs`, `buildOutput`, `concept`, `pipeSpec` or `health` now throws an `ApiResponseError` carrying the parsed message, `errorType`, `validationErrors` and problem members, where it threw a plain `Error` whose message quoted the raw body. The message now quotes the server's message when the body carries one.
 - **`mthds-agent` error envelope carries the runner's classification (Breaking):** on a command that calls the API runner, a refusal whose problem document carries an `error_domain` of `input`, `config` or `runtime` now reports that domain instead of `runner` (or `validation` on a `validate` 422), the runner's next step replaces the static `hint`, `retryable: true` rides when the runner says a retry can succeed, and a new `request_id` field carries the request's correlation id. A consumer branching on `error_domain: "runner"` sees the runner's own domain whenever the runner classified the failure.
 
 ## [v0.27.0] - 2026-09-23

@@ -50,7 +50,8 @@ export type {
 // `MthdsApiClient.validate()` returns the protocol's neutral `ValidationResult`
 // (re-exported via the protocol barrel above). `ValidationErrorItem` /
 // `ValidationErrorCategory` remain because they type the build routes' `422`
-// problem bodies (`ApiResponseError.validationErrors`).
+// problem bodies (`ApiResponseError.validationErrors`). `SuggestedFix` and its op
+// types are the next step an item carries.
 export type {
   DictStuff,
   DictWorkingMemory,
@@ -58,4 +59,16 @@ export type {
   DictRunResultExecute,
   ValidationErrorItem,
   ValidationErrorCategory,
+  SuggestedFix,
+  FixSafety,
+  FixOpKind,
+  FixValue,
+  FixOp,
+  SetKeyOp,
+  EnsureTableOp,
+  DeleteKeyOp,
+  DeleteTableOp,
+  RenameTableKeyOp,
+  MoveKeyOp,
+  RemapValueOp,
 } from "./runners/api/models.js";

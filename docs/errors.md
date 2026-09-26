@@ -72,7 +72,7 @@ Notes:
 - **Every problem member is optional.** A runner sends what it knows, so each field is `undefined` when the response did not carry it, and a member of the wrong type (a numeric `type`, a `retryable` of `"no"`, a `user_action` without a `detail`) reads as absent rather than as a wrong value. `retryable: undefined` means unknown, which is not the same as `false`. A body that is not a problem document still yields `serverMessage` or the raw `responseBody`, and a gateway error page still yields the `requestId` from its header.
 - **Members specific to one runner stay in `responseBody`.** The standard's client types the members any runner can send under a neutral name. Members a particular runner adds — the Pipelex platform's `code` and field-level `errors[]`, the inference `error_category`, `model` and `provider` — are left untyped here; `@pipelex/sdk` types them for the Pipelex API.
 - **`validationErrors` is build-route-only.** `POST /v1/validate` no longer routes content errors here — an invalid bundle is the `200` invalid-arm verdict of `ValidationResult`, not an `ApiResponseError`. Do **not** assume a given `errorType` implies a populated `validationErrors`; fall back to `serverMessage` when it is empty.
-- `ValidationErrorItem` (from `mthds` / `src/runners/api/models.ts`) carries `category`, `message`, and per-category optionals (`pipe_code`, `concept_code`, `domain_code`, `source`, `field_path`, `field_name`, `variable_names`, `missing_concept_code`, `declared_concepts`). Only `category` and `message` are always present.
+- `ValidationErrorItem` (from `mthds` / `src/runners/api/models.ts`) carries `category`, `message`, and per-category optionals (`error_type`, `pipe_code`, `concept_code`, `domain_code`, `source`, `field_path`, `field_name`, `variable_names`, `missing_concept_code`, `missing_pipe_code`, `declared_concepts`, the unknown-model locators `model_reference`, `model_type` and `suggestions`, and `suggested_fix`). Only `category` and `message` are always present. See [A validation item's next step](#a-validation-items-next-step).
 
 ### `ApiUnreachableError`
 
@@ -203,6 +203,43 @@ Request id: 9f2c1ab3 (quote it to support)
 | `request_id` | `requestId` (the body's `request_id`, else the `X-Request-ID` header) | absent |
 
 `error_type` and `message` keep each command's own choice. So a software consumer that treats `config` and `runtime` as an environment issue and `input` as the caller's (a validation hook, for instance) reads a runner's refusal correctly, where it used to see `runner` for every one of them.
+
+## A validation item's next step
+
+When a runner refuses a bundle, each `ValidationErrorItem` says what is wrong and where, and, when the runner can derive one deterministic correction, what to do about it: its `suggested_fix`. The worked example is an unknown model. A pipe naming `model = "gpt-5.1"`, which the model deck does not define, comes back as an item with `error_type: "unknown_model"`, the pipe, the source file and the field, the reference as the author wrote it (`model_reference`), the kind of model the field takes (`model_type`) and the deck's close matches (`suggestions`). When there is exactly one close match, the item also carries the fix:
+
+```json
+{
+  "category": "pipe_validation",
+  "error_type": "unknown_model",
+  "message": "Model handle 'gpt-5.1' was not found in the model deck. Did you mean: gpt-5?",
+  "pipe_code": "summarize",
+  "field_name": "model",
+  "model_reference": "gpt-5.1",
+  "model_type": "llm",
+  "suggestions": ["gpt-5"],
+  "suggested_fix": {
+    "fix_code": "rename-model",
+    "description": "Replace model 'gpt-5.1' of pipe 'summarize' with 'gpt-5', its one close match in the model deck",
+    "safety": "safe",
+    "source": "demo.mthds",
+    "ops": [
+      { "kind": "remap_value", "table_path": ["pipe", "summarize"], "key": "model", "mapping": { "gpt-5.1": "gpt-5" } }
+    ]
+  }
+}
+```
+
+A `SuggestedFix` has two readers. A person or an agent reads its `description`, a sentence they can act on. A program applying the fix reads its `ops`, semantic patches over the `.mthds` document addressed by TOML table path (`FixOp`, discriminated on `kind`), so an applier keeps the author's formatting. `fix_code` names the rule that produced the fix, `safety` says whether it is `safe` to apply without asking, and `source`, when present, is the only file the ops may touch. An item with no fix has no `suggested_fix` key, and a refused reference that names a pipe the bundle does not declare carries it in `missing_pipe_code`.
+
+The items reach a caller the same way wherever they ride: on the `200` invalid verdict of a build route (`CrateInvalidReport.validation_errors`), on a refusal's problem document (`ApiResponseError.validationErrors`), and on the `200` invalid verdict of `validate`, whose neutral `ValidationError` type exposes only `category` and `message` but whose items keep every field at runtime, so a caller narrows them with `as ValidationErrorItem[]`.
+
+**`mthds-agent`** carries each item whole in its `ValidateBundleError` envelope (`validate` and `inputs` on the API runner), so the agent reads the `suggested_fix` next to the error. With the default Markdown format, `validate` prints the runner's own rendering, which has a `Suggested fix:` line under each item that has one. The Codex hook (`mthds-agent codex hook`) builds its blocking reason from `pipelex-agent`'s envelope and prints the same line, with the missing pipe or concept among the item's locators:
+
+```text
+- [pipe_validation] Model handle 'gpt-5.1' was not found in the model deck. (pipe: summarize, field: model, source: demo.mthds)
+  Suggested fix: Replace model 'gpt-5.1' of pipe 'summarize' with 'gpt-5', its one close match in the model deck
+```
 
 ## See also
 

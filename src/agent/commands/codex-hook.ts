@@ -103,6 +103,10 @@ interface AgentValidationErrorItem {
   domain_code?: string;
   field_name?: string;
   source?: string;
+  missing_pipe_code?: string;
+  missing_concept_code?: string;
+  /** The runner's correction for this error; the hook reads only its `description`. */
+  suggested_fix?: { description?: string };
 }
 
 /**
@@ -147,7 +151,11 @@ export function parseAgentErrorEnvelope(text: string): AgentErrorEnvelope | unde
   return parsed as AgentErrorEnvelope;
 }
 
-/** Build an agent-facing reason from the structured envelope: the message plus a compact error list. */
+/**
+ * Build an agent-facing reason from the structured envelope: the message plus a compact
+ * error list. An item carrying a suggested fix gets a `Suggested fix:` line under it with
+ * the fix's description, the next step the agent should take.
+ */
 export function formatValidationReason(
   file: string,
   envelope: AgentErrorEnvelope,
@@ -168,12 +176,18 @@ export function formatValidationReason(
       item.concept_code ? `concept: ${item.concept_code}` : undefined,
       item.domain_code ? `domain: ${item.domain_code}` : undefined,
       item.field_name ? `field: ${item.field_name}` : undefined,
+      item.missing_pipe_code ? `missing pipe: ${item.missing_pipe_code}` : undefined,
+      item.missing_concept_code ? `missing concept: ${item.missing_concept_code}` : undefined,
       item.source ? `source: ${item.source}` : undefined,
     ]
       .filter(Boolean)
       .join(", ");
     const category = item.category ? `[${item.category}] ` : "";
-    return `- ${category}${item.message ?? ""}${locators ? ` (${locators})` : ""}`;
+    const line = `- ${category}${item.message ?? ""}${locators ? ` (${locators})` : ""}`;
+    // `suggested_fix` may be anything on a version-skewed envelope: optional chaining on a
+    // non-object yields undefined, and `safeStr` turns a non-string description into "".
+    const fix = safeStr(item.suggested_fix?.description).trim();
+    return fix ? `${line}\n  Suggested fix: ${fix}` : line;
   });
   return `Validation failed for ${file}:\n\n${message}\n\n${lines.join("\n")}`;
 }

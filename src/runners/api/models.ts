@@ -84,6 +84,10 @@ export type ValidationErrorCategory =
  * `source` is the declaring file path (CLI) or the per-content `mthds_sources` name
  * the API threads onto the in-memory load path — the owning file for cross-file
  * diagnostics.
+ *
+ * `suggested_fix` is the next step of a refusal: when the runner can derive one
+ * deterministic correction for the error, it rides the item as structured patch
+ * operations plus a human-readable `description`. An item with no fix has no key.
  */
 export interface ValidationErrorItem {
   category: ValidationErrorCategory;
@@ -97,5 +101,129 @@ export interface ValidationErrorItem {
   field_name?: string;
   variable_names?: string[];
   missing_concept_code?: string;
+  /** The pipe a reference names that the bundle does not declare. */
+  missing_pipe_code?: string;
   declared_concepts?: string[];
+  /**
+   * On an `unknown_model` item: the model reference exactly as the author wrote it
+   * (`gpt-5.1`, `@best-sonet`, `$writting-factual`).
+   */
+  model_reference?: string;
+  /** On an `unknown_model` item: the kind of model the field takes (`llm`, `img_gen`, …). */
+  model_type?: string;
+  /**
+   * On an `unknown_model` item: the close matches of the same kind, each spelled as a
+   * reference the field accepts.
+   */
+  suggestions?: string[];
+  /** The runner's deterministic correction for this error, when it has one. */
+  suggested_fix?: SuggestedFix;
+}
+
+// ── Suggested fixes (the next step a validation item carries) ──
+//
+// Mirror of pipelex's `SuggestedFix` wire model. The ops are semantic patches over
+// the `.mthds` document, addressed by TOML table path, not a text diff — so an
+// applier keeps the author's formatting. Every name here is brand-neutral: a fix
+// is a language-level concept.
+
+/** Whether a {@link SuggestedFix} is safe to apply without asking, or needs explicit opt-in. */
+export type FixSafety = "safe" | "unsafe";
+
+/** The semantic patch operations a {@link SuggestedFix} is composed of. */
+export type FixOpKind =
+  | "set_key"
+  | "ensure_table"
+  | "delete_key"
+  | "delete_table"
+  | "rename_table_key"
+  | "move_key"
+  | "remap_value";
+
+/**
+ * What a `set_key` op writes: a TOML scalar, or a flat mapping of scalars for a fix
+ * that creates a whole table at once (written as an inline table).
+ */
+export type FixValue = string | number | boolean | Record<string, string | number | boolean>;
+
+/**
+ * What every fix op carries: the table it acts in. `table_path` addresses the
+ * containing table (e.g. `["pipe", "my_seq"]`), aligned with the `field_path`
+ * conventions of {@link ValidationErrorItem}, and is empty for the document root.
+ * The segment `"*"` stands for every entry of an open mapping; only `remap_value`
+ * accepts it as a `key`.
+ */
+interface FixOpBase {
+  table_path: string[];
+}
+
+/** Write `key = value` in the addressed table, whatever it currently holds. */
+export interface SetKeyOp extends FixOpBase {
+  kind: "set_key";
+  key: string;
+  value: FixValue;
+}
+
+/** Create the addressed table when it is absent. Here `table_path` is the table itself, never empty. */
+export interface EnsureTableOp extends FixOpBase {
+  kind: "ensure_table";
+}
+
+/** Remove `key` from the addressed table. */
+export interface DeleteKeyOp extends FixOpBase {
+  kind: "delete_key";
+  key: string;
+}
+
+/** Remove the addressed table. Here `table_path` is the table itself, never empty. */
+export interface DeleteTableOp extends FixOpBase {
+  kind: "delete_table";
+}
+
+/** Rename `key` to `new_key` in place within the addressed table. */
+export interface RenameTableKeyOp extends FixOpBase {
+  kind: "rename_table_key";
+  key: string;
+  new_key: string;
+}
+
+/** Move `key` out of the addressed table into `new_table_path`, under `new_key`. */
+export interface MoveKeyOp extends FixOpBase {
+  kind: "move_key";
+  key: string;
+  new_table_path: string[];
+  new_key: string;
+}
+
+/**
+ * Rewrite `key`'s value through `mapping`, leaving a value the mapping does not name
+ * untouched. The unknown-model fix is one: it maps the reference as written to its one
+ * close match, so it changes nothing once the author has edited the field.
+ */
+export interface RemapValueOp extends FixOpBase {
+  kind: "remap_value";
+  key: string;
+  mapping: Record<string, string>;
+}
+
+/** One patch operation of a {@link SuggestedFix}, discriminated on `kind`. */
+export type FixOp =
+  | SetKeyOp
+  | EnsureTableOp
+  | DeleteKeyOp
+  | DeleteTableOp
+  | RenameTableKeyOp
+  | MoveKeyOp
+  | RemapValueOp;
+
+/** A deterministic fix for one validation error, ready for a formatting-preserving applier. */
+export interface SuggestedFix {
+  /** The kebab-case rule id, e.g. `"rename-model"` or `"match-sequence-output"`. */
+  fix_code: string;
+  /** What the fix does, in a sentence a person or an agent can act on. */
+  description: string;
+  safety: FixSafety;
+  /** The file the ops target, when known (multi-file bundles). Apply the ops to that file only. */
+  source?: string;
+  ops: FixOp[];
 }

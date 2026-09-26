@@ -62,6 +62,39 @@ describe("runnerProblemExtras", () => {
     expect(runnerProblemExtras(apiError(500, { errorDomain: "elsewhere" }))).toEqual({});
   });
 
+  it("carries the refusal's validation items whole", () => {
+    const items = [
+      {
+        category: "pipe_validation" as const,
+        message: "Pipe 'demo.main' refers to 'summarise', which no bundle declares.",
+        missing_pipe_code: "summarise",
+        suggested_fix: {
+          fix_code: "rename-pipe",
+          description: "Rename 'summarise' to 'summarize'",
+          safety: "safe" as const,
+          ops: [],
+        },
+      },
+    ];
+    const err = new ApiResponseError(
+      "API POST /v1/start failed (422): invalid",
+      "http://localhost:8081",
+      422,
+      "",
+      "{}",
+      "ValidateBundleError",
+      "invalid",
+      items,
+      { problem: { errorDomain: "input" } },
+    );
+    expect(runnerProblemExtras(err)).toEqual({ error_domain: "input", validation_errors: items });
+  });
+
+  it("leaves an empty validation list out, as it names nothing to fix", () => {
+    const err = new ApiResponseError("x", "http://x", 422, "", "{}", undefined, undefined, []);
+    expect(runnerProblemExtras(err)).toEqual({});
+  });
+
   it("yields nothing for an error that is not a runner's refusal", () => {
     expect(
       runnerProblemExtras(new ApiUnreachableError("down", "http://x", "ECONNREFUSED")),

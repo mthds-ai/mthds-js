@@ -192,7 +192,9 @@ export class ApiResponseError extends PipelineRequestError {
   /**
    * Structured per-error diagnostics on a problem body that carries a top-level
    * `validation_errors[]` — the **build routes** (`POST /v1/build/*`), which still
-   * reject an invalid bundle with a 422.
+   * reject an invalid bundle with a 422, and the **run routes** (`POST /v1/execute`,
+   * `POST /v1/start`) when a runner refuses to run an invalid method with a 422
+   * instead of spending anything on it.
    *
    * `POST /v1/validate` no longer routes content errors here: an invalid bundle is
    * a produced verdict (a **200** `ValidationResult` invalid arm whose

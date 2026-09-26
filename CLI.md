@@ -661,7 +661,7 @@ mthds package list
 
 Machine-oriented CLI for AI agents. All output is structured JSON to stdout (success) and stderr (errors). No interactive prompts.
 
-When the API runner refuses a call, the error envelope carries what the runner's problem document said: its `error_domain` (`input`, `config` or `runtime`) in place of the command's own, its next step as the `hint`, `retryable: true` when a retry can succeed, and the `request_id` to hand to support. See [docs/errors.md → "What the CLIs print for a runner's refusal"](docs/errors.md#what-the-clis-print-for-a-runners-refusal).
+When the API runner refuses a call, the error envelope carries what the runner's problem document said: its `error_domain` (`input`, `config` or `runtime`) in place of the command's own, its next step as the `hint`, `retryable: true` when a retry can succeed, the `request_id` to hand to support, and, when the runner refused an invalid method (`run start` answered with a 422, for one), the bundle's `validation_errors`, each item whole with its locators and its `suggested_fix`. See [docs/errors.md → "What the CLIs print for a runner's refusal"](docs/errors.md#what-the-clis-print-for-a-runners-refusal).
 
 ### `mthds-agent runner setup pipelex`
 

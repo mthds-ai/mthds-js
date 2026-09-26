@@ -8,6 +8,7 @@
 
 import type { BinaryRecoveryInfo } from "./binaries.js";
 import { ApiResponseError } from "../runners/api/exceptions.js";
+import type { ValidationErrorItem } from "../runners/api/models.js";
 
 // ── Error domains ────────────────────────────────────────────────────
 
@@ -95,7 +96,11 @@ export function agentError(
     recovery?: BinaryRecoveryInfo;
     /** Verdict discriminant on a validate failure — `false` rides the envelope (mirrors the Python agent CLI). */
     is_valid?: boolean;
-    /** Structured per-error diagnostics on an invalid-bundle verdict (the `/validate` 200 InvalidReport arm). */
+    /**
+     * Structured per-error diagnostics, each item whole: on an invalid-bundle verdict (the
+     * `/validate` 200 InvalidReport arm), and on a runner's refusal whose problem document
+     * lists them (a run or build route refusing an invalid method with a 422).
+     */
     validation_errors?: unknown[];
     /**
      * The methods the resolver refused, with the reasons. Rides an error the
@@ -146,32 +151,35 @@ export function agentError(
 
 // ── What a runner's refusal says ─────────────────────────────────────
 
+/** The envelope fields `runnerProblemExtras` reads off a runner's refusal. */
+export interface RunnerProblemExtras {
+  error_domain?: RunnerErrorDomain;
+  hint?: string;
+  retryable?: true;
+  request_id?: string;
+  validation_errors?: ValidationErrorItem[];
+}
+
 /**
  * The envelope fields an error thrown by a runner call carries on, to spread
  * into `agentError`'s extras after the command's own ones. When the error is an
  * `ApiResponseError`, the runner's problem document is read the way the local
  * `pipelex-agent` reads a report: its `error_domain` replaces the command's
  * domain, its next step (`user_action.detail`) replaces the static `hint`,
- * `retryable: true` rides when the runner said a retry can succeed, and its
- * `request_id` is carried for support. A member the runner did not send leaves
- * the command's own value in place; any other error yields nothing.
+ * `retryable: true` rides when the runner said a retry can succeed, its
+ * `request_id` is carried for support, and its `validation_errors` ride whole
+ * when it refused an invalid method (a run or build route's 422), so the agent
+ * reads which pipe, which field and what fix, as `validate` tells it. A member
+ * the runner did not send leaves the command's own value in place, an empty
+ * validation list is left out, and any other error yields nothing.
  */
-export function runnerProblemExtras(err: unknown): {
-  error_domain?: RunnerErrorDomain;
-  hint?: string;
-  retryable?: true;
-  request_id?: string;
-} {
+export function runnerProblemExtras(err: unknown): RunnerProblemExtras {
   if (!(err instanceof ApiResponseError)) return {};
-  const extras: {
-    error_domain?: RunnerErrorDomain;
-    hint?: string;
-    retryable?: true;
-    request_id?: string;
-  } = {};
+  const extras: RunnerProblemExtras = {};
   if (isRunnerErrorDomain(err.errorDomain)) extras.error_domain = err.errorDomain;
   if (err.userAction) extras.hint = err.userAction.detail;
   if (err.retryable === true) extras.retryable = true;
   if (err.requestId) extras.request_id = err.requestId;
+  if (err.validationErrors?.length) extras.validation_errors = err.validationErrors;
   return extras;
 }

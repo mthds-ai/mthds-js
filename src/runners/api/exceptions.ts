@@ -191,16 +191,14 @@ export class ApiResponseError extends PipelineRequestError {
   public readonly userAction: UserAction | undefined;
   /**
    * Structured per-error diagnostics on a problem body that carries a top-level
-   * `validation_errors[]` — the **build routes** (`POST /v1/build/*`), which still
-   * reject an invalid bundle with a 422, and the **run routes** (`POST /v1/execute`,
-   * `POST /v1/start`) when a runner refuses to run an invalid method with a 422
-   * instead of spending anything on it.
+   * `validation_errors[]` — the **run routes** (`POST /v1/execute`, `POST /v1/start`)
+   * when a runner refuses to run an invalid method with a 422 instead of spending
+   * anything on it.
    *
-   * `POST /v1/validate` no longer routes content errors here: an invalid bundle is
-   * a produced verdict (a **200** `ValidationResult` invalid arm whose
+   * `POST /v1/validate` and the build routes (`POST /v1/build/*`) do not route content
+   * errors here: an invalid bundle is a produced verdict (a **200** invalid arm whose
    * `validation_errors[]` the caller reads off the returned value), not an
-   * `ApiResponseError`. This field
-   * stays for the build-route 422s and is `undefined` for any error that carries no
+   * `ApiResponseError`. This field is `undefined` for any error that carries no
    * per-error list (auth, transport, a request-shape 422). A consumer must NOT
    * assume a given `error_type` implies a populated list — fall back to
    * `serverMessage` when this is empty.

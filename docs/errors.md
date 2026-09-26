@@ -58,7 +58,7 @@ A non-2xx HTTP response **came back** from the runner. Raised by `MthdsApiClient
 | `responseBody` | `string` | Raw response body, verbatim. |
 | `errorType` | `string \| undefined` | Parsed `error_type` from an RFC 7807 problem body, when present. |
 | `serverMessage` | `string \| undefined` | Parsed human message from the problem body. Prefer this for display. |
-| `validationErrors` | `ValidationErrorItem[] \| undefined` | Structured per-error list — **only** on a `422` that refuses an invalid bundle: a **build route's** (`POST /v1/build/*`), or a **run route's** (`POST /v1/execute`, `POST /v1/start`) when the runner refuses to run an invalid method. `undefined` everywhere else. |
+| `validationErrors` | `ValidationErrorItem[] \| undefined` | Structured per-error list — **only** on a **run route's** `422` (`POST /v1/execute`, `POST /v1/start`) when the runner refuses to run an invalid method. `undefined` everywhere else. |
 | `type` | `string \| undefined` | The RFC 9457 `type`: the stable URI of the error class. |
 | `title` | `string \| undefined` | The RFC 9457 `title`: the short human label of the error class. |
 | `instance` | `string \| undefined` | The RFC 9457 `instance`: the occurrence, a request path or a request URN. |
@@ -71,7 +71,7 @@ Notes:
 - **Branch on `errorDomain` and `type`, not on the status or the message.** `errorDomain` tells the caller's own mistake (`input`) from a fault it cannot fix, and `type` names the error class with a URI that stays the same on every occurrence. `errorType` is the runner's own class name, finer and open-ended.
 - **Every problem member is optional.** A runner sends what it knows, so each field is `undefined` when the response did not carry it, and a member of the wrong type (a numeric `type`, a `retryable` of `"no"`, a `user_action` without a `detail`) reads as absent rather than as a wrong value. `retryable: undefined` means unknown, which is not the same as `false`. A body that is not a problem document still yields `serverMessage` or the raw `responseBody`, and a gateway error page still yields the `requestId` from its header.
 - **Members specific to one runner stay in `responseBody`.** The standard's client types the members any runner can send under a neutral name. Members a particular runner adds — the Pipelex platform's `code` and field-level `errors[]`, the inference `error_category`, `model` and `provider` — are left untyped here; `@pipelex/sdk` types them for the Pipelex API.
-- **`validationErrors` rides a refusal, never a verdict.** A build route refuses an invalid bundle with a `422` carrying it, and so does a run route when the runner refuses to run an invalid method. `POST /v1/validate` no longer routes content errors here — an invalid bundle is the `200` invalid-arm verdict of `ValidationResult`, not an `ApiResponseError`. Do **not** assume a given `errorType` implies a populated `validationErrors`; fall back to `serverMessage` when it is empty.
+- **`validationErrors` rides a refusal, never a verdict.** A run route refuses an invalid method with a `422` carrying it. `POST /v1/validate` and the build routes do not route content errors here — an invalid bundle is their `200` invalid-arm verdict (`ValidationResult`, `CrateInvalidReport`), not an `ApiResponseError`. Do **not** assume a given `errorType` implies a populated `validationErrors`; fall back to `serverMessage` when it is empty.
 - `ValidationErrorItem` (from `mthds` / `src/runners/api/models.ts`) carries `category`, `message`, and per-category optionals (`error_type`, `pipe_code`, `concept_code`, `domain_code`, `source`, `field_path`, `field_name`, `variable_names`, `missing_concept_code`, `missing_pipe_code`, `declared_concepts`, the unknown-model locators `model_reference`, `model_type` and `suggestions`, and `suggested_fix`). Only `category` and `message` are always present. See [A validation item's next step](#a-validation-items-next-step).
 
 ### `ApiUnreachableError`
@@ -174,7 +174,7 @@ If the importing module is server-only, you can import the same classes from `mt
 
 - **`Module not found: Can't resolve 'fs'` (or `node:fs`) in a client build.** You imported an error class from `mthds` instead of `mthds/errors`. The top-level barrel re-exports `MthdsApiClient`, whose graph reaches `node:fs`; switch the import to `mthds/errors`.
 - **A `ClientAuthenticationError` slips past my `instanceof PipelineRequestError` catch.** Expected — it extends `Error` directly. Check it explicitly, or widen the catch-all to `instanceof Error`.
-- **`err.validationErrors` is `undefined` on a validation failure.** Validation failures from `POST /v1/validate` are not errors — read the `200` invalid arm's `validation_errors[]` off the returned value. `ApiResponseError.validationErrors` is populated only on a build route's or a run route's `422` refusing an invalid bundle.
+- **`err.validationErrors` is `undefined` on a validation failure.** Validation failures from `POST /v1/validate` are not errors — read the `200` invalid arm's `validation_errors[]` off the returned value. `ApiResponseError.validationErrors` is populated only on a run route's `422` refusing an invalid method; a build route's invalid bundle is its `200` verdict too.
 - **`instanceof` fails across a Next.js Server Action boundary.** Errors thrown in a Server Action are serialized to the client and lose their class identity in production (Next.js replaces them with a generic `Error` + digest). Classify those by a stable field you propagate yourself (e.g. an error code in the message or a returned discriminant), not by `instanceof`. `mthds/errors` still earns its keep there: it lets the client module *import the types* for annotations and same-runtime checks without the bundler choking on `node:fs`.
 
 ## What the CLIs print for a runner's refusal
@@ -201,7 +201,7 @@ Request id: 9f2c1ab3 (quote it to support)
 | `hint` | `user_action.detail` | the command's static hint for its `error_type` |
 | `retryable` | `true` when the runner said a retry can succeed | absent — the envelope only ever says `true`, as in `pipelex-agent` |
 | `request_id` | `requestId` (the body's `request_id`, else the `X-Request-ID` header) | absent |
-| `validation_errors` | `validationErrors`, each item whole, when the refusal lists any (a run or build route refusing an invalid method with a `422`) | absent |
+| `validation_errors` | `validationErrors`, each item whole, when the refusal lists any (a run route refusing an invalid method with a `422`) | absent |
 
 `error_type` and `message` keep each command's own choice. So a software consumer that treats `config` and `runtime` as an environment issue and `input` as the caller's (a validation hook, for instance) reads a runner's refusal correctly, where it used to see `runner` for every one of them.
 

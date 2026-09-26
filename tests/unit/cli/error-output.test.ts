@@ -88,7 +88,7 @@ describe("formatCliError", () => {
           suggested_fix: {
             fix_code: "rename-model",
             description: "Replace model 'gpt-9' of pipe 'summarize' with 'gpt-5'",
-            safety: "safe",
+            safety: "unsafe",
             ops: [],
           },
         },
@@ -146,7 +146,7 @@ describe("withSuggestedFix", () => {
   const fix = {
     fix_code: "rename-model",
     description: "Replace model 'gpt-5.1' of pipe 'summarize' with 'gpt-5'",
-    safety: "safe",
+    safety: "unsafe",
     ops: [],
   };
 

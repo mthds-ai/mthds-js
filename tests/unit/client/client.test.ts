@@ -1040,7 +1040,7 @@ describe("MthdsApiClient validation items keep their next step", () => {
       fix_code: "rename-model",
       description:
         "Replace model 'gpt-5.1' of pipe 'summarize' with 'gpt-5', its one close match in the model deck",
-      safety: "safe",
+      safety: "unsafe",
       source: "demo.mthds",
       ops: [
         {
@@ -1110,7 +1110,7 @@ describe("MthdsApiClient validation items keep their next step", () => {
     const items = (err as ApiResponseError).validationErrors;
     expect(items).toEqual([UNKNOWN_MODEL_ITEM, MISSING_PIPE_ITEM]);
     expect(items![0]!.suggested_fix?.fix_code).toBe("rename-model");
-    expect(items![0]!.suggested_fix?.safety).toBe("safe");
+    expect(items![0]!.suggested_fix?.safety).toBe("unsafe");
     expect(items![1]!.missing_pipe_code).toBe("demo.summarise");
   });
 });

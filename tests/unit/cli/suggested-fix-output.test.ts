@@ -59,7 +59,7 @@ const UNKNOWN_MODEL_ITEM: ValidationErrorItem = {
   suggested_fix: {
     fix_code: "rename-model",
     description: FIX_DESCRIPTION,
-    safety: "safe",
+    safety: "unsafe",
     ops: [
       {
         kind: "remap_value",

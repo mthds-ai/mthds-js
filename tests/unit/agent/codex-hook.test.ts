@@ -632,7 +632,7 @@ describe("classifyStage3Result", () => {
             fix_code: "rename-model",
             description:
               "Replace model 'gpt-5.1' of pipe 'summarize' with 'gpt-5', its one close match in the model deck",
-            safety: "safe",
+            safety: "unsafe",
             source: "bundles/x.mthds",
             ops: [
               {

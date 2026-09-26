@@ -209,7 +209,7 @@ A refusal that lists validation items, a run route refusing an invalid method fo
 
 ## A validation item's next step
 
-When a runner refuses a bundle, each `ValidationErrorItem` says what is wrong and where, and, when the runner can derive one deterministic correction, what to do about it: its `suggested_fix`. The worked example is an unknown model. A pipe naming `model = "gpt-5.1"`, which the model deck does not define, comes back as an item with `error_type: "unknown_model"`, the pipe, the source file and the field, the reference as the author wrote it (`model_reference`), the kind of model the field takes (`model_type`) and the deck's close matches (`suggestions`). When there is exactly one close match, the item also carries the fix:
+When a runner refuses a bundle, each `ValidationErrorItem` says what is wrong and where, and, when the runner can derive one deterministic correction, what to do about it: its `suggested_fix`. The worked example is an unknown model. A pipe naming `model = "gpt-5.1"`, which the model deck does not define, comes back as an item with `error_type: "unknown_model"`, the pipe, the source file and the field, the reference as the author wrote it (`model_reference`), the kind of model the field takes (`model_type`) and the deck's close matches (`suggestions`). When there is exactly one close match, the item also carries the fix, marked `unsafe` because a close match by name can still be a different model, with its own provider, cost and behaviour, so it is applied deliberately rather than on its own:
 
 ```json
 {
@@ -224,7 +224,7 @@ When a runner refuses a bundle, each `ValidationErrorItem` says what is wrong an
   "suggested_fix": {
     "fix_code": "rename-model",
     "description": "Replace model 'gpt-5.1' of pipe 'summarize' with 'gpt-5', its one close match in the model deck",
-    "safety": "safe",
+    "safety": "unsafe",
     "source": "demo.mthds",
     "ops": [
       { "kind": "remap_value", "table_path": ["pipe", "summarize"], "key": "model", "mapping": { "gpt-5.1": "gpt-5" } }

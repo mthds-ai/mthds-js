@@ -24,7 +24,7 @@ const UNKNOWN_MODEL_ITEM: ValidationErrorItem = {
     fix_code: "rename-model",
     description:
       "Replace model 'gpt-5.1' of pipe 'summarize' with 'gpt-5', its one close match in the model deck",
-    safety: "safe",
+    safety: "unsafe",
     ops: [
       {
         kind: "remap_value",

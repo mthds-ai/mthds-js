@@ -50,6 +50,12 @@ describe("formatCliError", () => {
     expect(text).toContain("Retryable: yes");
   });
 
+  it("reads a runtime domain without assuming a run happened (validate and build start none)", () => {
+    expect(formatCliError(apiError({ errorDomain: "runtime" })).split("\n")).toContain(
+      "Error domain: runtime (a failure on the runner's side, not in the request)",
+    );
+  });
+
   it("prints a domain it has no reading for as it came", () => {
     expect(formatCliError(apiError({ errorDomain: "elsewhere" })).split("\n")).toContain(
       "Error domain: elsewhere",

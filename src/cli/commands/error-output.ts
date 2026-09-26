@@ -7,7 +7,7 @@ import { ApiResponseError } from "../../runners/api/exceptions.js";
 const ERROR_DOMAIN_READINGS: Record<string, string> = {
   input: "the request must change",
   config: "the runner's configuration must change, not the request",
-  runtime: "the run failed while executing",
+  runtime: "a failure on the runner's side, not in the request",
 };
 
 /**

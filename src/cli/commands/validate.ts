@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import * as p from "@clack/prompts";
 import { printLogo } from "./index.js";
 import { isPipelexRunner, isApiRunner, extractPassthroughArgs } from "./utils.js";
+import { formatCliError, withSuggestedFix } from "./error-output.js";
 import { createRunner } from "../../runners/registry.js";
 import type { RunnerType } from "../../runners/types.js";
 
@@ -123,7 +124,7 @@ export async function validatePipe(target: string, options: ValidateOptions): Pr
         // The server attributes `source` from `mthds_sources`; fall back to the
         // path the user passed so a diagnostic always names its file.
         const source = (item as { source?: string }).source ?? bundlePath;
-        p.log.error(`${source}: [${item.category}] ${item.message}`);
+        p.log.error(withSuggestedFix(`${source}: [${item.category}] ${item.message}`, item));
       }
       p.outro("");
       process.exit(1);
@@ -134,7 +135,7 @@ export async function validatePipe(target: string, options: ValidateOptions): Pr
   } catch (err) {
     // A no-verdict condition (a local CLI runner raising, or a transport fault).
     s.stop("Validation failed.");
-    p.log.error((err as Error).message);
+    p.log.error(formatCliError(err));
     p.outro("");
     process.exit(1);
   }

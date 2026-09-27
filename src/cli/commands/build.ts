@@ -3,6 +3,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import * as p from "@clack/prompts";
 import { printLogo } from "./index.js";
 import { isPipelexRunner, extractPassthroughArgs } from "./utils.js";
+import { formatCliError, withSuggestedFix } from "./error-output.js";
 import { createRunner } from "../../runners/registry.js";
 import type {
   ConceptRepresentationFormat,
@@ -28,7 +29,7 @@ function readBundleFile(target: string): MthdsFileItem {
 /**
  * Render an invalid-closure VERDICT (the `is_valid: false` arm) and exit non-zero.
  *
- * The build routes answer a bad closure with a 200 carrying diagnostics, not an
+ * The per-pipe build routes answer a bad closure with a 200 carrying diagnostics, not an
  * exception — so a CLI that only caught throws would print a success message over
  * an unusable result. Returns true when the verdict is valid and the caller should
  * carry on. It never returns on the invalid arm (`process.exit`), but TypeScript
@@ -43,7 +44,7 @@ function reportIfInvalid(
   p.log.error(result.message);
   for (const item of result.validation_errors) {
     const where = [item.source, item.pipe_code].filter(Boolean).join(" · ");
-    p.log.error(where ? `${where}: ${item.message}` : item.message);
+    p.log.error(withSuggestedFix(where ? `${where}: ${item.message}` : item.message, item));
   }
   p.outro("");
   process.exit(1);
@@ -133,7 +134,7 @@ export async function buildRunnerPipe(
     p.outro("Done");
   } catch (err) {
     s.stop("Build failed.");
-    p.log.error((err as Error).message);
+    p.log.error(formatCliError(err));
     p.outro("");
     process.exit(1);
   }
@@ -235,7 +236,7 @@ export async function buildInputsPipe(
     p.outro("Done");
   } catch (err) {
     s.stop("Build failed.");
-    p.log.error((err as Error).message);
+    p.log.error(formatCliError(err));
     p.outro("");
     process.exit(1);
   }
@@ -335,7 +336,7 @@ export async function buildOutputPipe(
     p.outro("Done");
   } catch (err) {
     s.stop("Build failed.");
-    p.log.error((err as Error).message);
+    p.log.error(formatCliError(err));
     p.outro("");
     process.exit(1);
   }

@@ -101,6 +101,56 @@ export class RunStillRunningError extends PipelineRequestError {
   }
 }
 
+/**
+ * What the runner says the caller should do next — the problem document's
+ * `user_action` member. `kind` is the runner's coarse category of advice (the
+ * reference runner emits `wait_and_retry`, `check_billing`, `check_credentials`,
+ * `change_input`, `change_model`, `contact_support` or `unknown`; the set is the
+ * runner's, so it is typed open), and `detail` is the advice itself, in words.
+ */
+export interface UserAction {
+  kind: string;
+  detail: string;
+}
+
+/**
+ * The members of an RFC 9457 problem document that `ApiResponseError` exposes
+ * beyond its message: the standard's own `type`, `title` and `instance`, and the
+ * extension members a runner adds to classify the failure. Every member is
+ * optional — a runner sends what it knows, and a body that is not a problem
+ * document carries none of them.
+ */
+export interface ProblemDetails {
+  /** RFC 9457 `type` — the stable URI of the error class. */
+  type?: string;
+  /** RFC 9457 `title` — the short human label of the error class. */
+  title?: string;
+  /** RFC 9457 `instance` — the occurrence (a request path or a request URN). */
+  instance?: string;
+  /** The request's correlation id: the body's `request_id`, else the `X-Request-ID` response header. */
+  requestId?: string;
+  /** The body's `error_domain` — `input`, `config` or `runtime` (see `ApiResponseError.errorDomain`). */
+  errorDomain?: string;
+  /** The body's `retryable` — whether retrying the same request can plausibly succeed. */
+  retryable?: boolean;
+  /** The body's `user_action` — what the caller should do next. */
+  userAction?: UserAction;
+}
+
+/** The last constructor argument of `ApiResponseError`: the error's `cause`, and the parsed problem members. */
+export interface ApiResponseErrorOptions {
+  cause?: unknown;
+  problem?: ProblemDetails;
+}
+
+/**
+ * A non-2xx HTTP response that DID come back from the runner. Carries the raw
+ * body, the message parsed out of it, and the typed members of its RFC 9457
+ * problem document: the class (`type`, `title`, `errorType`), who can fix it
+ * (`errorDomain`), whether a retry helps (`retryable`), what to do next
+ * (`userAction`) and the id to hand to support (`requestId`). A member the
+ * response did not carry is `undefined`.
+ */
 export class ApiResponseError extends PipelineRequestError {
   public readonly apiUrl: string;
   public readonly status: number;
@@ -109,16 +159,51 @@ export class ApiResponseError extends PipelineRequestError {
   public readonly errorType: string | undefined;
   public readonly serverMessage: string | undefined;
   /**
+   * RFC 9457 `type`: the stable URI naming the error class. With `errorDomain`,
+   * the field a machine consumer branches on — the same class carries the same
+   * URI on every occurrence.
+   */
+  public readonly type: string | undefined;
+  /** RFC 9457 `title`: the short human label of the error class. */
+  public readonly title: string | undefined;
+  /** RFC 9457 `instance`: the occurrence — the request path, or a request URN. */
+  public readonly instance: string | undefined;
+  /**
+   * The request's correlation id — the body's `request_id`, or the
+   * `X-Request-ID` response header when the body carries none. The id to hand
+   * to support: it finds the server's log lines for this request.
+   */
+  public readonly requestId: string | undefined;
+  /**
+   * The body's `error_domain`: who can fix the failure. `input` — the caller
+   * (a malformed bundle, a bad argument, a missing input); `config` — the
+   * runner's operator (a missing secret, a misconfigured backend); `runtime` —
+   * nobody beforehand (a provider outage during execution). Typed open, as the
+   * runner owns the vocabulary; `undefined` when the runner did not classify it.
+   */
+  public readonly errorDomain: string | undefined;
+  /**
+   * The body's `retryable`: whether retrying the same request can plausibly
+   * succeed. `undefined` means unknown, which is not the same as `false`.
+   */
+  public readonly retryable: boolean | undefined;
+  /** The body's `user_action`: what the caller should do next, when the runner can say. */
+  public readonly userAction: UserAction | undefined;
+  /**
    * Structured per-error diagnostics on a problem body that carries a top-level
-   * `validation_errors[]` — the **build routes** (`POST /v1/build/*`), which still
-   * reject an invalid bundle with a 422.
+   * `validation_errors[]` — the **run routes** (`POST /v1/execute`, `POST /v1/start`)
+   * when a runner refuses to run an invalid method with a 422 instead of spending
+   * anything on it.
    *
-   * `POST /v1/validate` no longer routes content errors here: an invalid bundle is
-   * a produced verdict (a **200** `ValidationResult` invalid arm whose
+   * `POST /v1/validate` and the per-pipe build routes (`POST /v1/build/inputs`,
+   * `/v1/build/output`, `/v1/build/runner`) do not route content errors here: an
+   * invalid bundle is a produced verdict (a **200** invalid arm whose
    * `validation_errors[]` the caller reads off the returned value), not an
-   * `ApiResponseError`. This field
-   * stays for the build-route 422s and is `undefined` for any error that carries no
-   * per-error list (auth, transport, a request-shape 422). A consumer must NOT
+   * `ApiResponseError`. The spec-to-TOML routes (`POST /v1/build/concept`,
+   * `/v1/build/pipe-spec`) have no verdict: they refuse an invalid spec with a 422
+   * whose message names the fault and which lists no items. This field is `undefined`
+   * for any error that carries no per-error list (auth, transport, a request-shape or
+   * spec 422). A consumer must NOT
    * assume a given `error_type` implies a populated list — fall back to
    * `serverMessage` when this is empty.
    */
@@ -133,9 +218,9 @@ export class ApiResponseError extends PipelineRequestError {
     errorType: string | undefined,
     serverMessage: string | undefined,
     validationErrors: ValidationErrorItem[] | undefined,
-    options?: { cause?: unknown },
+    options?: ApiResponseErrorOptions,
   ) {
-    super(message, options);
+    super(message, options?.cause === undefined ? undefined : { cause: options.cause });
     this.name = "ApiResponseError";
     this.apiUrl = apiUrl;
     this.status = status;
@@ -144,5 +229,13 @@ export class ApiResponseError extends PipelineRequestError {
     this.errorType = errorType;
     this.serverMessage = serverMessage;
     this.validationErrors = validationErrors;
+    const problem = options?.problem;
+    this.type = problem?.type;
+    this.title = problem?.title;
+    this.instance = problem?.instance;
+    this.requestId = problem?.requestId;
+    this.errorDomain = problem?.errorDomain;
+    this.retryable = problem?.retryable;
+    this.userAction = problem?.userAction;
   }
 }

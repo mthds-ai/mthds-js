@@ -1,5 +1,21 @@
 # Changelog
 
+## [v0.28.0] - 2026-09-27
+
+### Added
+
+- **`ApiResponseError` problem members:** a runner's refusal now exposes the RFC 9457 `type`, `title` and `instance`, the `errorDomain` (`input`, `config` or `runtime`), `retryable`, the next step as `userAction` (`{ kind, detail }`) and the `requestId`, read from the body's `request_id` or, failing that, the `X-Request-ID` response header. Each is `undefined` when the response did not carry it. The `UserAction`, `ProblemDetails` and `ApiResponseErrorOptions` types are exported from `mthds` and `mthds/errors`, and the constructor's last argument now also takes the parsed `problem`.
+- **`mthds` prints what the runner said:** when the API runner refuses `run`, `validate`, `build` or the validation step of `install`, the error message is followed by the error domain, the next step, whether a retry helps and the request id to quote to support, each when the runner sent it.
+- **`ValidationErrorItem` carries its next step:** an item now types the runner's `suggested_fix` (a `SuggestedFix`: `fix_code`, a `description` to act on, `safety`, the target `source` and the `ops`, semantic patches discriminated on `kind`), the `missing_pipe_code` a refused reference names, fully qualified as the runner attempted it, and the unknown-model locators `model_reference`, `model_type` and `suggestions`. `SuggestedFix`, `FixOp`, each op type, `FixOpKind`, `FixSafety` and `FixValue` are exported from `mthds`.
+- **`mthds-agent run start` carries a refused method's validation items:** when the runner refuses to run an invalid method with a 422 listing its validation errors, the error envelope now carries them as `validation_errors`, each item whole with its locators, `missing_pipe_code` and `suggested_fix`, as the `validate` envelope does. Every other command that calls the API runner carries them the same way when its refusal lists any.
+- **`mthds` prints a refusal's validation items and their suggested fixes:** when the runner refuses a bundle on `validate`, `build` or the validation step of `install`, each printed validation item that carries a suggested fix is followed by a `Suggested fix:` line with the fix's description, the same line the Codex hook prints. When the runner refuses to run an invalid method, `mthds run` now prints each of the refusal's items with the pipe, concept, field and file it names and its suggested fix, where it printed only the message, so the person sees what to do as well as what is wrong.
+- **`mthds-agent codex hook` prints the suggested fix:** when `pipelex-agent` refuses an edited bundle, the blocking reason shows a `Suggested fix:` line under each item that has one, and names the missing pipe or concept among the item's locators.
+
+### Changed
+
+- **Build routes and `health` raise `ApiResponseError`:** a non-2xx answer to `buildRunner`, `buildInputs`, `buildOutput`, `concept`, `pipeSpec` or `health` now throws an `ApiResponseError` carrying the parsed message, `errorType`, `validationErrors` and problem members, where it threw a plain `Error` whose message quoted the raw body. The message now quotes the server's message when the body carries one.
+- **`mthds-agent` error envelope carries the runner's classification (Breaking):** on a command that calls the API runner, a refusal whose problem document carries an `error_domain` of `input`, `config` or `runtime` now reports that domain instead of `runner` (or `validation` on a `validate` 422), the runner's next step replaces the static `hint`, `retryable: true` rides when the runner says a retry can succeed, and a new `request_id` field carries the request's correlation id. A consumer branching on `error_domain: "runner"` sees the runner's own domain whenever the runner classified the failure.
+
 ## [v0.27.0] - 2026-09-23
 
 ### Added

@@ -28,3 +28,8 @@ export {
   PipelineExecuteTimeoutError,
   RunStillRunningError,
 } from "./runners/api/exceptions.js";
+export type {
+  ApiResponseErrorOptions,
+  ProblemDetails,
+  UserAction,
+} from "./runners/api/exceptions.js";

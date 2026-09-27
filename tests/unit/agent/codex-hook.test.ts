@@ -467,6 +467,66 @@ describe("formatValidationReason", () => {
     expect(reason).toContain("[pipe_validation] real");
     expect(reason).not.toContain("nope");
   });
+
+  it("prints an item's suggested fix under it, and the pipe it found missing", () => {
+    const reason = formatValidationReason(
+      "x.mthds",
+      {
+        message: "Invalid",
+        validation_errors: [
+          {
+            category: "pipe_validation",
+            message: "Model handle 'gpt-5.1' was not found in the model deck.",
+            pipe_code: "summarize",
+            field_name: "model",
+            source: "x.mthds",
+            suggested_fix: {
+              description: "Replace model 'gpt-5.1' of pipe 'summarize' with 'gpt-5'",
+            },
+          },
+          {
+            category: "pipe_validation",
+            message: "Pipe 'demo.main' refers to 'summarise', which no bundle declares.",
+            pipe_code: "main",
+            missing_pipe_code: "demo.summarise",
+          },
+        ],
+      },
+      "fallback",
+    );
+    expect(reason).toBe(
+      [
+        "Validation failed for x.mthds:",
+        "",
+        "Invalid",
+        "",
+        "- [pipe_validation] Model handle 'gpt-5.1' was not found in the model deck. (pipe: summarize, field: model, source: x.mthds)",
+        "  Suggested fix: Replace model 'gpt-5.1' of pipe 'summarize' with 'gpt-5'",
+        "- [pipe_validation] Pipe 'demo.main' refers to 'summarise', which no bundle declares. (pipe: main, missing pipe: demo.summarise)",
+      ].join("\n"),
+    );
+  });
+
+  it("does not crash on a malformed suggested_fix (version-skewed envelope)", () => {
+    const reason = formatValidationReason(
+      "x.mthds",
+      {
+        message: "Invalid",
+        validation_errors: [
+          { category: "pipe_validation", message: "a", suggested_fix: null as never },
+          { category: "pipe_validation", message: "b", suggested_fix: "rename it" as never },
+          {
+            category: "pipe_validation",
+            message: "c",
+            suggested_fix: { description: 42 as never },
+          },
+        ],
+      },
+      "fallback",
+    );
+    expect(reason).not.toContain("Suggested fix");
+    expect(reason).toContain("[pipe_validation] c");
+  });
 });
 
 describe("truncateForAdditionalContext", () => {
@@ -547,6 +607,52 @@ describe("classifyStage3Result", () => {
     expect(out.reason).toContain("Validation error(s) in the bundle");
     expect(out.reason).toContain("Missing required field");
     expect(out.reason).toContain("pipe: extract_info");
+  });
+
+  it("blocks with the suggested fix of an unknown model, as pipelex-agent reports it", () => {
+    const stderr = errorEnvelope({
+      error_type: "ValidateBundleError",
+      is_valid: false,
+      error_domain: "input",
+      message: "Validation error(s) in the bundle",
+      validation_errors: [
+        {
+          category: "pipe_validation",
+          error_type: "unknown_model",
+          message: "Model handle 'gpt-5.1' was not found in the model deck. Did you mean: gpt-5?",
+          pipe_code: "summarize",
+          domain_code: "demo",
+          source: "bundles/x.mthds",
+          field_path: "pipe.summarize.model",
+          field_name: "model",
+          model_reference: "gpt-5.1",
+          model_type: "llm",
+          suggestions: ["gpt-5"],
+          suggested_fix: {
+            fix_code: "rename-model",
+            description:
+              "Replace model 'gpt-5.1' of pipe 'summarize' with 'gpt-5', its one close match in the model deck",
+            safety: "unsafe",
+            source: "bundles/x.mthds",
+            ops: [
+              {
+                kind: "remap_value",
+                table_path: ["pipe", "summarize"],
+                key: "model",
+                mapping: { "gpt-5.1": "gpt-5" },
+              },
+            ],
+          },
+        },
+      ],
+    });
+    const out = classifyStage3Result("bundles/x.mthds", { exitCode: 1, stderr });
+    expect(out.kind).toBe("block");
+    if (out.kind !== "block") return;
+    expect(out.reason).toContain("pipe: summarize");
+    expect(out.reason).toContain(
+      "Suggested fix: Replace model 'gpt-5.1' of pipe 'summarize' with 'gpt-5', its one close match in the model deck",
+    );
   });
 
   it("blocks (safety default) when error_domain is absent (no-verdict / unknown)", () => {

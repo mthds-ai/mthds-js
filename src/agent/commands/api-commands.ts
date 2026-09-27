@@ -14,6 +14,7 @@ import {
   agentMarkdownSuccess,
   agentMarkdownError,
   AGENT_ERROR_DOMAINS,
+  runnerProblemExtras,
 } from "../output.js";
 import { isApiRunner } from "../../cli/commands/utils.js";
 import { collectBundleFiles, pickMainBundleFile, resolveRunBundle } from "../../runners/bundle.js";
@@ -65,6 +66,7 @@ export function registerApiRunnerCommands(program: Command, makeRunner: () => Ru
       } catch (err) {
         agentError((err as Error).message, "RunnerError", {
           error_domain: AGENT_ERROR_DOMAINS.RUNNER,
+          ...runnerProblemExtras(err),
         });
       }
     });
@@ -127,6 +129,7 @@ export function registerApiRunnerCommands(program: Command, makeRunner: () => Ru
       } catch (err) {
         agentError((err as Error).message, "RunnerError", {
           error_domain: AGENT_ERROR_DOMAINS.RUNNER,
+          ...runnerProblemExtras(err),
         });
       }
     });
@@ -342,6 +345,7 @@ export function registerApiRunnerCommands(program: Command, makeRunner: () => Ru
         if (err instanceof ApiResponseError) {
           agentError(err.serverMessage ?? err.message, err.errorType ?? "RunnerError", {
             error_domain: AGENT_ERROR_DOMAINS.RUNNER,
+            ...runnerProblemExtras(err),
           });
         }
         agentError((err as Error).message, "RunnerError", {
@@ -422,6 +426,7 @@ export function registerApiRunnerCommands(program: Command, makeRunner: () => Ru
         } catch (err) {
           agentError((err as Error).message, "RunnerError", {
             error_domain: AGENT_ERROR_DOMAINS.RUNNER,
+            ...runnerProblemExtras(err),
           });
         }
       },
@@ -445,6 +450,7 @@ export function registerApiRunnerCommands(program: Command, makeRunner: () => Ru
       } catch (err) {
         agentError((err as Error).message, "RunnerError", {
           error_domain: AGENT_ERROR_DOMAINS.RUNNER,
+          ...runnerProblemExtras(err),
         });
       }
     });
@@ -673,8 +679,10 @@ export async function emitInputsTemplate(
       // A 200 `is_valid: false` is a PRODUCED verdict, not a transport/runtime
       // failure — the `ValidateBundleError` arm, same envelope as
       // `runProtocolValidate` (`ValidationError` is the no-verdict type; `is_valid`
-      // and `validation_errors` ride only a verdict). `error_domain` stays
-      // `validation` for machine triage — the catch below is the `runner` arm.
+      // rides only a verdict, while a refusal in the catch below may carry
+      // `validation_errors` through `runnerProblemExtras`, never `is_valid`).
+      // `error_domain` stays `validation` for machine triage — the catch below is
+      // the `runner` arm.
       agentError(result.message, "ValidateBundleError", {
         error_domain: AGENT_ERROR_DOMAINS.VALIDATION,
         is_valid: false,
@@ -685,6 +693,7 @@ export async function emitInputsTemplate(
   } catch (err) {
     agentError((err as Error).message, "RunnerError", {
       error_domain: AGENT_ERROR_DOMAINS.RUNNER,
+      ...runnerProblemExtras(err),
     });
   }
 }
@@ -860,15 +869,19 @@ export async function runProtocolValidate(
     agentSuccess({ success: true, ...report });
   } catch (err) {
     // Only no-verdict conditions reach here now: a request-shape 422 (malformed
-    // body / mthds_sources mismatch), auth, or a server fault.
+    // body / mthds_sources mismatch), auth, or a server fault. Their envelope never
+    // carries `is_valid`, though a refusal that lists items carries them as
+    // `validation_errors` through `runnerProblemExtras`.
     if (err instanceof ApiResponseError && err.status === 422) {
       agentError(err.serverMessage ?? err.message, "ValidationError", {
         error_domain: AGENT_ERROR_DOMAINS.VALIDATION,
+        ...runnerProblemExtras(err),
       });
       return;
     }
     agentError((err as Error).message, "RunnerError", {
       error_domain: AGENT_ERROR_DOMAINS.RUNNER,
+      ...runnerProblemExtras(err),
     });
   }
 }

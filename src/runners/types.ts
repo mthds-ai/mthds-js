@@ -110,9 +110,11 @@ export interface CheckModelRequest {
 // ── Response types ──────────────────────────────────────────────────
 
 /**
- * The `is_valid: false` arm shared by every `/v1/build/*` route.
+ * The `is_valid: false` arm shared by the per-pipe build routes (`/v1/build/inputs`,
+ * `/v1/build/output`, `/v1/build/runner`). The spec-to-TOML routes (`/v1/build/concept`,
+ * `/v1/build/pipe-spec`) have no such arm: they refuse an invalid spec with a 422.
  *
- * The build routes follow `/validate`'s discipline: an unresolvable closure is
+ * The per-pipe routes follow `/validate`'s discipline: an unresolvable closure is
  * the *successful product* of the call (the request was well-formed, the library
  * was not), so it rides a **200** discriminated on `is_valid` — never a 4xx.
  * Only a no-verdict condition (an unknown `pipe_ref`, auth, a server fault)

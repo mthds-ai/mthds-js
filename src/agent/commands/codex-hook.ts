@@ -20,6 +20,7 @@
 import { accessSync, constants as fsConstants, existsSync, readFileSync, statSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { posix as path } from "node:path";
+import { formatValidationItem } from "../../cli/commands/error-output.js";
 
 const PLXT_INSTALL_HINT = "uv tool install pipelex-tools";
 const PIPELEX_AGENT_INSTALL_HINT = "uv tool install pipelex";
@@ -103,6 +104,10 @@ interface AgentValidationErrorItem {
   domain_code?: string;
   field_name?: string;
   source?: string;
+  missing_pipe_code?: string;
+  missing_concept_code?: string;
+  /** The runner's correction for this error; the hook reads only its `description`. */
+  suggested_fix?: { description?: string };
 }
 
 /**
@@ -147,7 +152,11 @@ export function parseAgentErrorEnvelope(text: string): AgentErrorEnvelope | unde
   return parsed as AgentErrorEnvelope;
 }
 
-/** Build an agent-facing reason from the structured envelope: the message plus a compact error list. */
+/**
+ * Build an agent-facing reason from the structured envelope: the message plus a compact
+ * error list. An item carrying a suggested fix gets a `Suggested fix:` line under it with
+ * the fix's description, the next step the agent should take.
+ */
 export function formatValidationReason(
   file: string,
   envelope: AgentErrorEnvelope,
@@ -162,19 +171,9 @@ export function formatValidationReason(
     (item): item is AgentValidationErrorItem => typeof item === "object" && item !== null,
   );
   if (errors.length === 0) return `Validation failed for ${file}:\n\n${message}`;
-  const lines = errors.map((item) => {
-    const locators = [
-      item.pipe_code ? `pipe: ${item.pipe_code}` : undefined,
-      item.concept_code ? `concept: ${item.concept_code}` : undefined,
-      item.domain_code ? `domain: ${item.domain_code}` : undefined,
-      item.field_name ? `field: ${item.field_name}` : undefined,
-      item.source ? `source: ${item.source}` : undefined,
-    ]
-      .filter(Boolean)
-      .join(", ");
-    const category = item.category ? `[${item.category}] ` : "";
-    return `- ${category}${item.message ?? ""}${locators ? ` (${locators})` : ""}`;
-  });
+  // `formatValidationItem` reads each item loosely and its `suggested_fix` defensively, as
+  // either may be anything on a version-skewed envelope.
+  const lines = errors.map((item) => formatValidationItem(item));
   return `Validation failed for ${file}:\n\n${message}\n\n${lines.join("\n")}`;
 }
 

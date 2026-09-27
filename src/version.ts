@@ -15,4 +15,4 @@
  * This is NOT `MTHDS_STANDARD_VERSION` nor `MTHDS_PROTOCOL_VERSION` — see
  * `docs/versioning.md`.
  */
-export const MTHDS_JS_VERSION = "0.27.0";
+export const MTHDS_JS_VERSION = "0.28.0";

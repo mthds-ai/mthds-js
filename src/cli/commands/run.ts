@@ -3,6 +3,7 @@ import * as p from "@clack/prompts";
 import { printLogo } from "./index.js";
 import { resolveRunBundle } from "../../runners/bundle.js";
 import { isPipelexRunner, extractPassthroughArgs } from "./utils.js";
+import { formatCliError } from "./error-output.js";
 import { createRunner } from "../../runners/registry.js";
 import type { Runner, RunnerType } from "../../runners/types.js";
 import type { StartOptions } from "../../protocol/options.js";
@@ -64,7 +65,7 @@ async function dispatchRun(runner: Runner, options: StartOptions, cli: RunOption
 
     p.outro("Done");
   } catch (err) {
-    p.log.error((err as Error).message);
+    p.log.error(formatCliError(err));
     p.outro("");
     process.exit(1);
   }

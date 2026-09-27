@@ -14,6 +14,7 @@ import {
   agentMarkdownSuccess,
   agentMarkdownError,
   AGENT_ERROR_DOMAINS,
+  runnerProblemExtras,
 } from "../output.js";
 import { isApiRunner } from "../../cli/commands/utils.js";
 import { collectBundleFiles, pickMainBundleFile, resolveRunBundle } from "../../runners/bundle.js";
@@ -65,6 +66,7 @@ export function registerApiRunnerCommands(program: Command, makeRunner: () => Ru
       } catch (err) {
         agentError((err as Error).message, "RunnerError", {
           error_domain: AGENT_ERROR_DOMAINS.RUNNER,
+          ...runnerProblemExtras(err),
         });
       }
     });
@@ -127,6 +129,7 @@ export function registerApiRunnerCommands(program: Command, makeRunner: () => Ru
       } catch (err) {
         agentError((err as Error).message, "RunnerError", {
           error_domain: AGENT_ERROR_DOMAINS.RUNNER,
+          ...runnerProblemExtras(err),
         });
       }
     });
@@ -342,6 +345,7 @@ export function registerApiRunnerCommands(program: Command, makeRunner: () => Ru
         if (err instanceof ApiResponseError) {
           agentError(err.serverMessage ?? err.message, err.errorType ?? "RunnerError", {
             error_domain: AGENT_ERROR_DOMAINS.RUNNER,
+            ...runnerProblemExtras(err),
           });
         }
         agentError((err as Error).message, "RunnerError", {
@@ -422,6 +426,7 @@ export function registerApiRunnerCommands(program: Command, makeRunner: () => Ru
         } catch (err) {
           agentError((err as Error).message, "RunnerError", {
             error_domain: AGENT_ERROR_DOMAINS.RUNNER,
+            ...runnerProblemExtras(err),
           });
         }
       },
@@ -445,6 +450,7 @@ export function registerApiRunnerCommands(program: Command, makeRunner: () => Ru
       } catch (err) {
         agentError((err as Error).message, "RunnerError", {
           error_domain: AGENT_ERROR_DOMAINS.RUNNER,
+          ...runnerProblemExtras(err),
         });
       }
     });
@@ -685,6 +691,7 @@ export async function emitInputsTemplate(
   } catch (err) {
     agentError((err as Error).message, "RunnerError", {
       error_domain: AGENT_ERROR_DOMAINS.RUNNER,
+      ...runnerProblemExtras(err),
     });
   }
 }
@@ -864,11 +871,13 @@ export async function runProtocolValidate(
     if (err instanceof ApiResponseError && err.status === 422) {
       agentError(err.serverMessage ?? err.message, "ValidationError", {
         error_domain: AGENT_ERROR_DOMAINS.VALIDATION,
+        ...runnerProblemExtras(err),
       });
       return;
     }
     agentError((err as Error).message, "RunnerError", {
       error_domain: AGENT_ERROR_DOMAINS.RUNNER,
+      ...runnerProblemExtras(err),
     });
   }
 }

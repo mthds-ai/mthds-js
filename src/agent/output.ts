@@ -7,6 +7,7 @@
  */
 
 import type { BinaryRecoveryInfo } from "./binaries.js";
+import { ApiResponseError } from "../runners/api/exceptions.js";
 
 // ── Error domains ────────────────────────────────────────────────────
 
@@ -23,6 +24,22 @@ export const AGENT_ERROR_DOMAINS = {
 } as const;
 
 export type AgentErrorDomain = (typeof AGENT_ERROR_DOMAINS)[keyof typeof AGENT_ERROR_DOMAINS];
+
+/**
+ * The `error_domain` vocabulary of a runner's problem document — who can fix a
+ * failure the runner reported: `input` (the caller), `config` (the runner's
+ * operator) or `runtime` (nobody beforehand). When a runner's refusal carries
+ * one of these, it rides the envelope's `error_domain` in place of the
+ * command's own domain (see `runnerProblemExtras`), as it does in the local
+ * `pipelex-agent`.
+ */
+export const RUNNER_ERROR_DOMAINS = ["input", "config", "runtime"] as const;
+
+export type RunnerErrorDomain = (typeof RUNNER_ERROR_DOMAINS)[number];
+
+function isRunnerErrorDomain(value: string | undefined): value is RunnerErrorDomain {
+  return (RUNNER_ERROR_DOMAINS as readonly string[]).includes(value ?? "");
+}
 
 // ── Error hints ──────────────────────────────────────────────────────
 
@@ -71,8 +88,10 @@ export function agentError(
   errorType: string,
   extras?: {
     hint?: string;
-    error_domain?: AgentErrorDomain;
+    error_domain?: AgentErrorDomain | RunnerErrorDomain;
     retryable?: boolean;
+    /** The correlation id of the runner request that failed — the id to hand to support. */
+    request_id?: string;
     recovery?: BinaryRecoveryInfo;
     /** Verdict discriminant on a validate failure — `false` rides the envelope (mirrors the Python agent CLI). */
     is_valid?: boolean;
@@ -98,6 +117,9 @@ export function agentError(
   if (extras?.retryable) {
     payload.retryable = true;
   }
+  if (extras?.request_id) {
+    payload.request_id = extras.request_id;
+  }
   if (extras?.recovery) {
     payload.recovery = extras.recovery;
   }
@@ -120,4 +142,36 @@ export function agentError(
 
   process.stderr.write(JSON.stringify(payload, null, 2) + "\n");
   process.exit(1);
+}
+
+// ── What a runner's refusal says ─────────────────────────────────────
+
+/**
+ * The envelope fields an error thrown by a runner call carries on, to spread
+ * into `agentError`'s extras after the command's own ones. When the error is an
+ * `ApiResponseError`, the runner's problem document is read the way the local
+ * `pipelex-agent` reads a report: its `error_domain` replaces the command's
+ * domain, its next step (`user_action.detail`) replaces the static `hint`,
+ * `retryable: true` rides when the runner said a retry can succeed, and its
+ * `request_id` is carried for support. A member the runner did not send leaves
+ * the command's own value in place; any other error yields nothing.
+ */
+export function runnerProblemExtras(err: unknown): {
+  error_domain?: RunnerErrorDomain;
+  hint?: string;
+  retryable?: true;
+  request_id?: string;
+} {
+  if (!(err instanceof ApiResponseError)) return {};
+  const extras: {
+    error_domain?: RunnerErrorDomain;
+    hint?: string;
+    retryable?: true;
+    request_id?: string;
+  } = {};
+  if (isRunnerErrorDomain(err.errorDomain)) extras.error_domain = err.errorDomain;
+  if (err.userAction) extras.hint = err.userAction.detail;
+  if (err.retryable === true) extras.retryable = true;
+  if (err.requestId) extras.request_id = err.requestId;
+  return extras;
 }

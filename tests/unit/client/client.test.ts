@@ -1019,6 +1019,102 @@ describe("MthdsApiClient build routes", () => {
   });
 });
 
+describe("MthdsApiClient validation items keep their next step", () => {
+  // The two items a runner sends for a refused bundle, as the reference runner
+  // serializes them (`exclude_none`): an unknown model, whose one close match
+  // becomes a `rename-model` suggested fix, and an unresolved pipe dependency,
+  // which names the missing pipe.
+  const UNKNOWN_MODEL_ITEM = {
+    category: "pipe_validation",
+    error_type: "unknown_model",
+    message: "Model handle 'gpt-5.1' was not found in the model deck. Did you mean: gpt-5?",
+    pipe_code: "summarize",
+    domain_code: "demo",
+    source: "demo.mthds",
+    field_path: "pipe.summarize.model",
+    field_name: "model",
+    model_reference: "gpt-5.1",
+    model_type: "llm",
+    suggestions: ["gpt-5"],
+    suggested_fix: {
+      fix_code: "rename-model",
+      description:
+        "Replace model 'gpt-5.1' of pipe 'summarize' with 'gpt-5', its one close match in the model deck",
+      safety: "unsafe",
+      source: "demo.mthds",
+      ops: [
+        {
+          kind: "remap_value",
+          table_path: ["pipe", "summarize"],
+          key: "model",
+          mapping: { "gpt-5.1": "gpt-5" },
+        },
+      ],
+    },
+  };
+  const MISSING_PIPE_ITEM = {
+    category: "pipe_validation",
+    error_type: "unresolved_pipe_dependency",
+    message: "Pipe 'demo.main' refers to 'summarise', which no bundle declares.",
+    pipe_code: "main",
+    domain_code: "demo",
+    missing_pipe_code: "demo.summarise",
+    field_path: "pipe.main",
+  };
+
+  it("keeps the suggested fix and the missing pipe on a build route's invalid verdict", async () => {
+    const client = makeClient();
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      jsonResponse(200, {
+        is_valid: false,
+        validation_errors: [UNKNOWN_MODEL_ITEM, MISSING_PIPE_ITEM],
+        message: "MTHDS library could not be resolved",
+      }),
+    );
+
+    const result = await client.buildInputs({ files: [{ content: "domain = 'demo'" }] });
+
+    if (result.is_valid) throw new Error("expected the invalid arm");
+    const [modelItem, pipeItem] = result.validation_errors;
+    expect(modelItem).toEqual(UNKNOWN_MODEL_ITEM);
+    // Typed reads: these compile only because `ValidationErrorItem` declares the fields.
+    expect(modelItem!.suggested_fix?.description).toContain("with 'gpt-5'");
+    expect(modelItem!.suggested_fix?.ops[0]).toEqual({
+      kind: "remap_value",
+      table_path: ["pipe", "summarize"],
+      key: "model",
+      mapping: { "gpt-5.1": "gpt-5" },
+    });
+    expect(modelItem!.model_reference).toBe("gpt-5.1");
+    expect(modelItem!.suggestions).toEqual(["gpt-5"]);
+    expect(pipeItem!.missing_pipe_code).toBe("demo.summarise");
+  });
+
+  it("keeps the suggested fix and the missing pipe on a refusal's problem document", async () => {
+    const client = makeClient();
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      jsonResponse(422, {
+        type: "https://docs.pipelex.com/latest/errors/validate-bundle-error/",
+        title: "Bundle validation failed",
+        status: 422,
+        detail: "MTHDS validation found errors",
+        error_type: "ValidateBundleError",
+        error_domain: "input",
+        validation_errors: [UNKNOWN_MODEL_ITEM, MISSING_PIPE_ITEM],
+      }),
+    );
+
+    const err = await client.execute({ pipe_code: "summarize" }).catch((e: unknown) => e);
+
+    expect(err).toBeInstanceOf(ApiResponseError);
+    const items = (err as ApiResponseError).validationErrors;
+    expect(items).toEqual([UNKNOWN_MODEL_ITEM, MISSING_PIPE_ITEM]);
+    expect(items![0]!.suggested_fix?.fix_code).toBe("rename-model");
+    expect(items![0]!.suggested_fix?.safety).toBe("unsafe");
+    expect(items![1]!.missing_pipe_code).toBe("demo.summarise");
+  });
+});
+
 describe("MthdsApiClient.models", () => {
   it("GETs /v1/models and returns the deck", async () => {
     const client = makeClient();

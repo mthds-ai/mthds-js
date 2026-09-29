@@ -890,7 +890,7 @@ mthds-agent codegen types [paths...] --target <flavor> [OPTIONS]
 mthds-agent codegen check [root] [OPTIONS]
 ```
 
-All arguments are forwarded to `pipelex-agent codegen`; the output contract (two-stream `--format` / `--error-format` markdown|json envelopes, `0/1/2` verdict exit codes) is defined there. Requires the pipelex runner **and a pipelex install that ships `codegen`** (unreleased at the time of writing — an older `pipelex-agent` reports `UnknownCommandError`). On the API runner the commands error cleanly as `UnsupportedError` — there are no codegen routes yet.
+All arguments are forwarded to `pipelex-agent codegen`; the output contract (two-stream `--format` / `--error-format` markdown|json envelopes, `0/1/2` verdict exit codes) is defined there. Requires the pipelex runner. `codegen` shipped in pipelex 0.39.0, below the version floor mthds-agent already enforces on `pipelex-agent`, so an install old enough to lack it is upgraded or refused with an `InstallError` before the command is forwarded. On the API runner the commands error cleanly as `UnsupportedError` — there are no codegen routes yet.
 
 **Example:**
 

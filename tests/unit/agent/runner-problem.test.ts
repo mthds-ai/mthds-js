@@ -163,10 +163,10 @@ describe("mthds-agent envelope for a runner's refusal", () => {
     expect(envelope).not.toHaveProperty("retryable");
   });
 
-  it("prints the runner's classification on a build route's refusal (inputs)", async () => {
+  it("prints the runner's classification on the pipe I/O route's refusal (inputs)", async () => {
     const runner = {
       type: "api",
-      buildInputs: vi.fn().mockRejectedValue(
+      pipeIo: vi.fn().mockRejectedValue(
         apiError(422, {
           errorDomain: "input",
           userAction: { kind: "change_input", detail: "Name a pipe the bundle declares." },
@@ -174,7 +174,12 @@ describe("mthds-agent envelope for a runner's refusal", () => {
         }),
       ),
     } as unknown as Runner;
-    await expect(emitInputsTemplate(runner, { content: "x" }, "nope")).rejects.toThrow("__exit__");
+    await expect(
+      emitInputsTemplate(runner, { files: [{ content: "x" }] }, "demo.nope", {
+        format: "json",
+        explicit: false,
+      }),
+    ).rejects.toThrow("__exit__");
     expect(firstEnvelope()).toMatchObject({
       error_type: "RunnerError",
       error_domain: "input",

@@ -240,14 +240,15 @@ const client = new MthdsApiClient();
 
 ### Methods
 
-The client implements the MTHDS Protocol plus the Pipelex build extensions. (The durable run-lifecycle — poll a run by id — lives in `@pipelex/sdk` / `pipelex-agent`, not here.)
+The client implements the MTHDS Protocol plus the Pipelex API extensions (the build routes and pipe I/O). (The durable run-lifecycle — poll a run by id — lives in `@pipelex/sdk` / `pipelex-agent`, not here.)
 
 | Method | Route | Description |
 |--------|-------|-------------|
 | `execute(options)` | `POST /v1/execute` | Execute a method and wait for the result — returns a `RunResultExecute` (throws `RunStillRunningError` on the protocol's optional 202 degrade) |
 | `start(options)` | `POST /v1/start` | Start a method asynchronously — returns a `RunResultStart` with the authoritative `pipeline_run_id` |
-| `validate(mthdsContents, allowSignatures?, mthdsSources?)` | `POST /v1/validate` | Parse, validate, and dry-run a bundle — returns a typed `PipelexValidationResult` discriminated on `is_valid`; an invalid bundle is a produced verdict (`is_valid: false` with `validation_errors`), not a throw. Only a no-verdict non-2xx (malformed request, auth, server fault) throws `ApiResponseError`. `mthdsSources` (optional, parallel to `mthdsContents`) names each submitted file so cross-file diagnostics resolve the owning file |
+| `validate(mthdsContents, allowSignatures?, mthdsSources?)` | `POST /v1/validate` | Parse, validate, and dry-run a bundle — returns the protocol's `ValidationResult` discriminated on `is_valid`; an invalid bundle is a produced verdict (`is_valid: false` with `validation_errors`), not a throw. Only a no-verdict non-2xx (malformed request, auth, server fault) throws `ApiResponseError`. `mthdsSources` (optional, parallel to `mthdsContents`) names each submitted file so cross-file diagnostics resolve the owning file |
 | `models(category?)` | `GET /v1/models` | The model deck the runner routes to |
+| `pipeIo(request)` | `POST /v1/pipe-io` | A method's pipe I/O contracts, input form and output form in one call, with no dry run (a Pipelex API extension) — returns a `PipeIOResponse` discriminated on `is_valid`. The closure is `files`, a `method_ref` address or a hosted `method_id`; a refused pipe selection is a `422` whose `errorType` is one of `PIPE_SELECTION_ERROR_TYPES`. See [docs/pipe-io.md](docs/pipe-io.md) |
 | `version()` | `GET /v1/version` | Protocol + implementation versions (the feature-detection handshake) |
 
 ### Run options

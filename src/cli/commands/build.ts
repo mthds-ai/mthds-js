@@ -2,16 +2,17 @@ import { basename } from "node:path";
 import { readFileSync, writeFileSync } from "node:fs";
 import * as p from "@clack/prompts";
 import { printLogo } from "./index.js";
-import { isPipelexRunner, extractPassthroughArgs } from "./utils.js";
+import { isApiRunner, isPipelexRunner, extractPassthroughArgs } from "./utils.js";
 import { formatCliError, withSuggestedFix } from "./error-output.js";
 import { createRunner } from "../../runners/registry.js";
 import type {
   ConceptRepresentationFormat,
   CrateInvalidReport,
-  InputsTemplateFormat,
   MthdsFileItem,
   RunnerType,
 } from "../../runners/types.js";
+import { INPUTS_TEMPLATE_FORMATS, renderInputsTemplate } from "../../protocol/inputs_template.js";
+import type { InputsTemplateFormat } from "../../protocol/inputs_template.js";
 
 interface WithRunner {
   runner?: RunnerType;
@@ -197,10 +198,18 @@ export async function buildInputsPipe(
     return;
   }
 
-  const validFormats: InputsTemplateFormat[] = ["json", "toml"];
   const format = (options.format ?? "json") as InputsTemplateFormat;
-  if (!validFormats.includes(format)) {
-    p.log.error(`Invalid format "${format}". Must be one of: ${validFormats.join(", ")}`);
+  if (!(INPUTS_TEMPLATE_FORMATS as readonly string[]).includes(format)) {
+    p.log.error(
+      `Invalid format "${format}". Must be one of: ${INPUTS_TEMPLATE_FORMATS.join(", ")}`,
+    );
+    p.outro("");
+    process.exit(1);
+  }
+  // Every runner that is not the pipelex one is the API runner, whose `pipeIo` lives
+  // on the concrete client rather than on the shared `Runner` interface.
+  if (!isApiRunner(runner)) {
+    p.log.error("build inputs pipe needs the API runner or the pipelex runner.");
     p.outro("");
     process.exit(1);
   }
@@ -218,21 +227,26 @@ export async function buildInputsPipe(
   s.start("Generating example inputs...");
 
   try {
-    const result = await runner.buildInputs({
-      files: [file],
-      pipe_ref: options.pipe,
-      format,
-      explicit: options.explicit ?? false,
-    });
+    // The template is projected here from the pipe's input-form descriptor, which
+    // `POST /v1/pipe-io` returns, rather than fetched from a build route.
+    const result = await runner.pipeIo({ files: [file], pipe_ref: options.pipe });
     if (!reportIfInvalid(s, result)) return;
-    s.stop(`Inputs generated for ${result.pipe_ref}.`);
-    // The template rides the field its `format` names — print it as the caller
-    // asked for it, not as a re-encoded blob.
-    p.log.info(
-      result.format === "toml"
-        ? (result.inputs_toml ?? "")
-        : JSON.stringify(result.inputs, null, 2),
-    );
+    const pipeRef = result.pipe_ref;
+    const descriptor =
+      pipeRef !== null && Object.hasOwn(result.input_form, pipeRef)
+        ? result.input_form[pipeRef]
+        : undefined;
+    if (pipeRef === null || descriptor === undefined) {
+      throw new Error(
+        `The runner's pipe I/O answer selected ${pipeRef === null ? "no pipe" : `'${pipeRef}'`}, but its input_form does not describe it.`,
+      );
+    }
+    const rendered = renderInputsTemplate(descriptor, {
+      explicit: options.explicit ?? false,
+      format,
+    });
+    s.stop(`Inputs generated for ${pipeRef}.`);
+    p.log.info(rendered.length > 0 ? rendered : `# Pipe '${pipeRef}' declares no inputs.`);
     p.outro("Done");
   } catch (err) {
     s.stop("Build failed.");

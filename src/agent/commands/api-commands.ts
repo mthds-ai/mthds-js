@@ -19,7 +19,15 @@ import {
 import { isApiRunner } from "../../cli/commands/utils.js";
 import { collectBundleFiles, pickMainBundleFile, resolveRunBundle } from "../../runners/bundle.js";
 import { readBundleMeta } from "../../runners/pipe-ref.js";
-import type { MthdsFileItem, Runner } from "../../runners/types.js";
+import type { MthdsFileItem, PipeIORequest, PipeIOResponse, Runner } from "../../runners/types.js";
+import { PIPE_SELECTION_ERROR_TYPES } from "../../runners/types.js";
+import {
+  INPUTS_TEMPLATE_FORMATS,
+  projectInputsTemplate,
+  renderInputsTemplate,
+} from "../../protocol/inputs_template.js";
+import type { InputsTemplateFormat } from "../../protocol/inputs_template.js";
+import type { TemplateTable } from "../../protocol/toml_emitter.js";
 import type { StartOptions } from "../../protocol/options.js";
 import type { ModelCategory } from "../../protocol/models.js";
 import { MODEL_CATEGORIES } from "../../protocol/models.js";
@@ -251,6 +259,10 @@ export function registerApiRunnerCommands(program: Command, makeRunner: () => Ru
     });
 
   // ── inputs ──
+  // The template is PROJECTED here from the input-form descriptor `POST /v1/pipe-io`
+  // returns (`projectInputsTemplate` / `renderInputsTemplate` in `mthds/protocol`),
+  // so both rendering axes — `--format` and `--explicit` — are this CLI's own and
+  // agree byte-for-byte with the Python twin.
 
   const inputsGroup = program
     .command("inputs")
@@ -263,29 +275,40 @@ export function registerApiRunnerCommands(program: Command, makeRunner: () => Ru
     .argument("[target]", "Bundle file (.mthds) or directory")
     .option("--pipe <ref>", "Qualified pipe ref (domain.pipe_code); defaults to the main_pipe")
     .option("--content <mthds>", "Bundle content as a string")
+    .addOption(inputsFormatOption())
+    .option("--explicit", EXPLICIT_OPTION_DESCRIPTION)
     .description("Generate inputs from a bundle file or content")
     .allowUnknownOption()
     .allowExcessArguments(true)
     .exitOverride()
-    .action(async (target: string | undefined, options: { pipe?: string; content?: string }) => {
-      const runner = safeCreateRunner(makeRunner);
-      const content = resolveContent(target, options.content);
-      // Only a real file path names the source — `--content` overrides the target, so
-      // stamping diagnostics with `target` would point at a file we never submitted.
-      // Same guard as `validate bundle` above.
-      const source = !options.content && target ? target : undefined;
-      await emitInputsTemplate(runner, { content, source }, options.pipe);
-    });
+    .action(
+      async (target: string | undefined, options: InputsCommandOptions & { content?: string }) => {
+        const runner = safeCreateRunner(makeRunner);
+        const content = resolveContent(target, options.content);
+        // Only a real file path names the source — `--content` overrides the target, so
+        // stamping diagnostics with `target` would point at a file we never submitted.
+        // Same guard as `validate bundle` above.
+        const source = !options.content && target ? target : undefined;
+        await emitInputsTemplate(
+          runner,
+          { files: [{ content, source }] },
+          options.pipe,
+          inputsRendering(options),
+        );
+      },
+    );
 
   inputsGroup
     .command("pipe")
     .argument("<target>", "Bundle file (.mthds) or pipe code")
     .option("--pipe <ref>", "Qualified pipe ref (domain.pipe_code); defaults to the main_pipe")
+    .addOption(inputsFormatOption())
+    .option("--explicit", EXPLICIT_OPTION_DESCRIPTION)
     .description("Generate inputs for a pipe")
     .allowUnknownOption()
     .allowExcessArguments(true)
     .exitOverride()
-    .action(async (target: string, options: { pipe?: string }) => {
+    .action(async (target: string, options: InputsCommandOptions) => {
       const runner = safeCreateRunner(makeRunner);
       if (!target.endsWith(".mthds")) {
         agentError(
@@ -296,23 +319,37 @@ export function registerApiRunnerCommands(program: Command, makeRunner: () => Ru
       }
       await emitInputsTemplate(
         runner,
-        { content: readFileOrError(target), source: target },
+        { files: [{ content: readFileOrError(target), source: target }] },
         options.pipe,
+        inputsRendering(options),
       );
     });
 
+  // On the API runner a "method" is one the server can reach without a bundle on
+  // disk: a published method's address (`method_ref`) or, on a hosted API, a stored
+  // method's catalog id (`method_id`). An installed method's NAME is resolved only by
+  // the pipelex runner, which reads the local install.
   inputsGroup
     .command("method")
-    .argument("<name>", "Method name")
-    .option("--pipe <code>", "Pipe code to generate inputs for")
-    .description("Generate inputs for an installed method")
+    .argument(
+      "<target>",
+      "Published method address (github.com/owner/repo[/selector][@tag]) or catalog id (mt_…)",
+    )
+    .option("--pipe <ref>", "Qualified pipe ref (domain.pipe_code); defaults to the main_pipe")
+    .addOption(inputsFormatOption())
+    .option("--explicit", EXPLICIT_OPTION_DESCRIPTION)
+    .description("Generate inputs for a published or stored method")
     .allowUnknownOption()
     .allowExcessArguments(true)
     .exitOverride()
-    .action(async () => {
-      agentError("'inputs method' is not yet supported via the API runner.", "UnsupportedError", {
-        error_domain: AGENT_ERROR_DOMAINS.RUNNER,
-      });
+    .action(async (target: string, options: InputsCommandOptions) => {
+      const runner = safeCreateRunner(makeRunner);
+      await emitInputsTemplate(
+        runner,
+        methodSelector(target),
+        options.pipe,
+        inputsRendering(options),
+      );
     });
 
   // ── inputs upload ──
@@ -659,43 +696,182 @@ function resolvePipeCode(mthdsContent: string, pipeCodeOption: string | undefine
   throw new Error("unreachable");
 }
 
+// ── inputs: the pipe I/O read and the local projection ──
+
+/** The closure selector `inputs` sends: exactly one of the three `/v1/pipe-io` takes. */
+export type InputsSelector =
+  | { files: MthdsFileItem[] }
+  | { method_ref: string }
+  | { method_id: string };
+
+/** How `inputs` renders the projected template: the two axes of `renderInputsTemplate`. */
+export interface InputsRendering {
+  format: InputsTemplateFormat;
+  explicit: boolean;
+}
+
+interface InputsCommandOptions {
+  pipe?: string;
+  format?: string;
+  explicit?: boolean;
+}
+
+const EXPLICIT_OPTION_DESCRIPTION =
+  "Emit the ceremonial {concept, content} envelope on every input instead of the light values";
+
+// The catalog id prefix of a stored method on a hosted API (`mt_…`).
+const CATALOG_ID_PREFIX = "mt_";
+
+function inputsFormatOption(): Option {
+  return new Option(
+    "--format <fmt>",
+    "Template format: json (the result envelope, default) or toml (raw TOML on stdout)",
+  )
+    .choices([...INPUTS_TEMPLATE_FORMATS])
+    .default("json");
+}
+
+function inputsRendering(options: InputsCommandOptions): InputsRendering {
+  // Commander has already refused a value outside the choices, so this only narrows.
+  const format = (options.format ?? "json") as InputsTemplateFormat;
+  return { format, explicit: options.explicit ?? false };
+}
+
 /**
- * Run `/v1/build/inputs` for one bundle and emit the agent envelope.
+ * The selector `inputs method <target>` sends. A catalog id (`mt_…`) is a hosted
+ * `method_id`; anything with a path separator is a `method_ref`, whose address form
+ * the server resolves and whose registry form it answers `501`. A bare name is
+ * neither: it names an installed method, which only the pipelex runner can read.
+ */
+export function methodSelector(target: string): InputsSelector {
+  const trimmed = target.trim();
+  if (trimmed.startsWith(CATALOG_ID_PREFIX)) return { method_id: trimmed };
+  if (trimmed.includes("/")) return { method_ref: trimmed };
+  agentError(
+    `'${target}' is neither a published method's address nor a catalog id. On the API runner, 'inputs method' takes an address (github.com/<owner>/<repo>[/<selector>][@<tag>]) or a hosted catalog id (mt_…). An installed method's name is resolved only by the pipelex runner: re-run with --runner pipelex, or pass the bundle to 'inputs bundle'.`,
+    "ArgumentError",
+    { error_domain: AGENT_ERROR_DOMAINS.ARGUMENT },
+  );
+  throw new Error("unreachable");
+}
+
+/**
+ * Read a pipe's input form from `POST /v1/pipe-io`, project its fill-in template
+ * locally, and emit it.
  *
- * The route answers an unresolvable closure with a **200** carrying diagnostics
- * (`is_valid: false`), not a throw — so this branches on the verdict first and only
- * then treats a throw as a transport/no-verdict failure. `pipe_ref` in the success
- * envelope is the RESOLVED qualified ref the server picked, not the `--pipe` string
- * the caller may have omitted.
+ * - **A refused selection** — a `422` typed by one of `PIPE_SELECTION_ERROR_TYPES`
+ *   (an unknown `--pipe`, no entry pipe, several) — is an `ArgumentError` carrying
+ *   the runner's own sentence, which is where it lists the candidates. Every other
+ *   refusal is a `RunnerError` quoting it. Both carry the problem document's members.
+ * - **An invalid closure** is a PRODUCED verdict, a 200 `is_valid: false`, and is the
+ *   `ValidateBundleError` arm, the same envelope `validate` emits.
+ * - **A valid answer** is projected from `input_form[pipe_ref]`, the RESOLVED
+ *   qualified ref the server picked rather than the `--pipe` the caller may have
+ *   omitted. JSON prints the `{success, pipe_ref, inputs}` envelope; TOML prints the
+ *   raw template on stdout, as `pipelex-agent inputs --format toml` does.
  */
 export async function emitInputsTemplate(
   runner: Runner,
-  file: MthdsFileItem,
+  selector: InputsSelector,
   pipeRef: string | undefined,
+  rendering: InputsRendering,
 ): Promise<void> {
+  if (!isApiRunner(runner)) {
+    agentError("'inputs' on this path requires the API runner (--runner api).", "RunnerError", {
+      error_domain: AGENT_ERROR_DOMAINS.RUNNER,
+    });
+    return;
+  }
+  const request: PipeIORequest = pipeRef ? { ...selector, pipe_ref: pipeRef } : { ...selector };
+  let result: PipeIOResponse;
   try {
-    const result = await runner.buildInputs({ files: [file], pipe_ref: pipeRef });
-    if (!result.is_valid) {
-      // A 200 `is_valid: false` is a PRODUCED verdict, not a transport/runtime
-      // failure — the `ValidateBundleError` arm, same envelope as
-      // `runProtocolValidate` (`ValidationError` is the no-verdict type; `is_valid`
-      // rides only a verdict, while a refusal in the catch below may carry
-      // `validation_errors` through `runnerProblemExtras`, never `is_valid`).
-      // `error_domain` stays `validation` for machine triage — the catch below is
-      // the `runner` arm.
-      agentError(result.message, "ValidateBundleError", {
-        error_domain: AGENT_ERROR_DOMAINS.VALIDATION,
-        is_valid: false,
-        validation_errors: result.validation_errors,
-      });
-    }
-    agentSuccess({ success: true, pipe_ref: result.pipe_ref, inputs: result.inputs ?? {} });
+    result = await runner.pipeIo(request);
   } catch (err) {
+    if (isPipeSelectionRefusal(err)) {
+      agentError(err.serverMessage ?? err.message, "ArgumentError", {
+        error_domain: AGENT_ERROR_DOMAINS.ARGUMENT,
+        ...runnerProblemExtras(err),
+      });
+      return;
+    }
     agentError((err as Error).message, "RunnerError", {
       error_domain: AGENT_ERROR_DOMAINS.RUNNER,
       ...runnerProblemExtras(err),
     });
+    return;
   }
+
+  if (!result.is_valid) {
+    // A 200 `is_valid: false` is a PRODUCED verdict, not a transport/runtime
+    // failure — the `ValidateBundleError` arm, same envelope as
+    // `runProtocolValidate` (`ValidationError` is the no-verdict type; `is_valid`
+    // rides only a verdict, while a refusal above may carry `validation_errors`
+    // through `runnerProblemExtras`, never `is_valid`). `error_domain` stays
+    // `validation` for machine triage.
+    agentError(result.message, "ValidateBundleError", {
+      error_domain: AGENT_ERROR_DOMAINS.VALIDATION,
+      is_valid: false,
+      validation_errors: result.validation_errors,
+    });
+    return;
+  }
+
+  // A single-pipe answer keys `input_form` by exactly the ref it resolved, so a
+  // missing ref or key is the answer contradicting itself; projecting any other
+  // descriptor would template the wrong pipe.
+  const resolvedRef = result.pipe_ref;
+  const descriptor =
+    resolvedRef !== null && Object.hasOwn(result.input_form, resolvedRef)
+      ? result.input_form[resolvedRef]
+      : undefined;
+  if (resolvedRef === null || descriptor === undefined) {
+    const described = Object.keys(result.input_form).join(", ") || "none";
+    agentError(
+      `The runner's pipe I/O answer selected ${resolvedRef === null ? "no pipe" : `'${resolvedRef}'`}, but its input_form does not describe it (it describes: ${described}).`,
+      "RunnerError",
+      { error_domain: AGENT_ERROR_DOMAINS.RUNNER },
+    );
+    return;
+  }
+
+  let rendered: string | undefined;
+  let template: TemplateTable | undefined;
+  try {
+    if (rendering.format === "toml") {
+      rendered = renderInputsTemplate(descriptor, rendering);
+    } else {
+      template = projectInputsTemplate(descriptor, { explicit: rendering.explicit });
+    }
+  } catch (err) {
+    // The descriptor came from the runner, so a template it cannot yield (a concept
+    // ref a TOML comment cannot hold) is the runner's answer at fault.
+    agentError(
+      `Cannot render the inputs template of '${resolvedRef}': ${(err as Error).message}`,
+      "RunnerError",
+      { error_domain: AGENT_ERROR_DOMAINS.RUNNER },
+    );
+    return;
+  }
+
+  if (rendered !== undefined) {
+    // An input-less pipe renders as an empty document; say so in a comment, which
+    // still loads back as an empty table, rather than printing nothing.
+    process.stdout.write(
+      rendered.length > 0 ? rendered : `# Pipe '${resolvedRef}' declares no inputs.\n`,
+    );
+    return;
+  }
+  // `TemplateFloat` serializes through its `toJSON`, so the envelope carries plain numbers.
+  agentSuccess({ success: true, pipe_ref: resolvedRef, inputs: template ?? {} });
+}
+
+function isPipeSelectionRefusal(err: unknown): err is ApiResponseError {
+  return (
+    err instanceof ApiResponseError &&
+    err.status === 422 &&
+    err.errorType !== undefined &&
+    PIPE_SELECTION_ERROR_TYPES.has(err.errorType)
+  );
 }
 
 function resolveRunInputs(options: {

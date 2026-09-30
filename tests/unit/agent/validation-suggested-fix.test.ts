@@ -3,7 +3,7 @@ import {
   emitInputsTemplate,
   runProtocolValidate,
 } from "../../../src/agent/commands/api-commands.js";
-import type { BuildInputsResponse, Runner } from "../../../src/runners/types.js";
+import type { PipeIOResponse, Runner } from "../../../src/runners/types.js";
 import type { ValidationResult } from "../../../src/protocol/models.js";
 import type { ValidationErrorItem } from "../../../src/runners/api/models.js";
 
@@ -117,15 +117,18 @@ describe("mthds-agent invalid-verdict envelope keeps each item's next step", () 
   it("inputs prints the suggested fix and the missing pipe of an invalid closure", async () => {
     const runner = {
       type: "api",
-      buildInputs: vi.fn().mockResolvedValue({
+      pipeIo: vi.fn().mockResolvedValue({
         is_valid: false,
         message: "MTHDS library could not be resolved",
         validation_errors: [UNKNOWN_MODEL_ITEM, MISSING_PIPE_ITEM],
-      } satisfies BuildInputsResponse),
+      } satisfies PipeIOResponse),
     } as unknown as Runner;
 
     await expect(
-      emitInputsTemplate(runner, { content: 'domain = "demo"\n' }, undefined),
+      emitInputsTemplate(runner, { files: [{ content: 'domain = "demo"\n' }] }, undefined, {
+        format: "json",
+        explicit: false,
+      }),
     ).rejects.toThrow("__exit__");
 
     const envelope = stderrEnvelope();

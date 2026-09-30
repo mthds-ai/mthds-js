@@ -46,16 +46,16 @@ A throw means no verdict could be produced. Over HTTP it is an `ApiResponseError
 
 An unreachable server is an `ApiUnreachableError`.
 
-**A refused pipe selection is told apart by `errorType`, never by the message.** The runner types it `EntryPipeNotFoundError` (a `pipe_ref` that names no pipe, a manifest `main_pipe` the closure lacks, or no `pipe_ref` and no `main_pipe`) or `EntryPipeAmbiguousError` (a bare code matching pipes in several domains, or no `pipe_ref` and several `main_pipe` declarations), while a malformed request keeps `ValidationError`. The two strings are exported as `PIPE_SELECTION_ERROR_TYPES`. The candidates a caller could choose from appear only in the message. `pipelex-api` v0.33.0 still types a selection refusal `ValidationError`; the typed refusals ship in the patch release after it.
+**A refused pipe selection is told apart by `errorType`, never by the message.** The runner types it `EntryPipeNotFoundError` (a `pipe_ref` that names no pipe, a manifest `main_pipe` the closure lacks, or no `pipe_ref` and no `main_pipe`) or `EntryPipeAmbiguousError` (a bare code matching pipes in several domains, or no `pipe_ref` and several `main_pipe` declarations), while a malformed request keeps `ValidationError`. The two strings are exported as `PIPE_SELECTION_ERROR_TYPES`. The candidates a caller could choose from appear only in the message. `pipelex-api` v0.33.0 still types a selection refusal `ValidationError`; the typed refusals ship from v0.33.1.
 
 ## `mthds-agent inputs` reads it
 
 On the API runner, `mthds-agent inputs bundle|pipe|method` reads the pipe's input form from this route and projects the fill-in template locally with `projectInputsTemplate` and `renderInputsTemplate` from `mthds/protocol` (see [architecture.md](./architecture.md#the-inputs-template-is-projected-from-the-descriptor-not-fetched)). Both rendering axes are therefore the client's own: `--format json|toml` and `--explicit` are honoured on the API runner as `pipelex-agent` honours them on the pipelex runner, and the template's bytes are those of the projection corpus `mthds-python` shares. `mthds build inputs pipe` on the API runner reads it the same way. Neither calls `POST /v1/build/inputs` any more; `buildInputs()` stays on the client for other callers until that route is retired.
 
 - `inputs bundle` and `inputs pipe` send the bundle file as `files`.
-- `inputs method <target>` sends a `method_ref` when the target is an address (it contains a `/`) and a `method_id` when it is a catalog id (`mt_…`). A bare name is refused with an `ArgumentError`: it names an installed method, which only the pipelex runner can read.
+- `inputs method <target>` sends a `method_id` when the target is a catalog id (`mt_…`) and a `method_ref` when it is an address (it contains a `/`). A local path (one starting with `.`, `/` or `~`, ending in `.mthds`, or existing on disk) and a bare name are refused with an `ArgumentError`: the first belongs to `inputs bundle`, and the second names an installed method, which only the pipelex runner can read.
 
-A refused selection comes back as an `ArgumentError` whose message is the runner's own sentence; any other refusal is a `RunnerError`, and an invalid closure is the `ValidateBundleError` verdict, as on `validate`. The command reference is in [CLI.md](../CLI.md#mthds-agent-inputs-bundlepipemethod).
+A refused selection comes back as an `ArgumentError` whose message is the runner's own sentence, against a runner that types it (v0.33.1 or later; an older one's refusal is a `RunnerError`); any other refusal is a `RunnerError`, and an invalid closure is the `ValidateBundleError` verdict, as on `validate`. The command reference is in [CLI.md](../CLI.md#mthds-agent-inputs-bundlepipemethod).
 
 ## See also
 

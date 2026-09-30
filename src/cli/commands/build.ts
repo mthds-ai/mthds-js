@@ -13,6 +13,7 @@ import type {
 } from "../../runners/types.js";
 import { INPUTS_TEMPLATE_FORMATS, renderInputsTemplate } from "../../protocol/inputs_template.js";
 import type { InputsTemplateFormat } from "../../protocol/inputs_template.js";
+import { selectedInputDescriptor } from "../../runners/pipe-io.js";
 
 interface WithRunner {
   runner?: RunnerType;
@@ -231,16 +232,7 @@ export async function buildInputsPipe(
     // `POST /v1/pipe-io` returns, rather than fetched from a build route.
     const result = await runner.pipeIo({ files: [file], pipe_ref: options.pipe });
     if (!reportIfInvalid(s, result)) return;
-    const pipeRef = result.pipe_ref;
-    const descriptor =
-      pipeRef !== null && Object.hasOwn(result.input_form, pipeRef)
-        ? result.input_form[pipeRef]
-        : undefined;
-    if (pipeRef === null || descriptor === undefined) {
-      throw new Error(
-        `The runner's pipe I/O answer selected ${pipeRef === null ? "no pipe" : `'${pipeRef}'`}, but its input_form does not describe it.`,
-      );
-    }
+    const { pipeRef, descriptor } = selectedInputDescriptor(result);
     const rendered = renderInputsTemplate(descriptor, {
       explicit: options.explicit ?? false,
       format,

@@ -28,6 +28,8 @@ import {
 } from "../../protocol/inputs_template.js";
 import type { InputsTemplateFormat } from "../../protocol/inputs_template.js";
 import type { TemplateTable } from "../../protocol/toml_emitter.js";
+import type { PipeInputFormDescriptor } from "../../protocol/input_form.js";
+import { selectedInputDescriptor } from "../../runners/pipe-io.js";
 import type { StartOptions } from "../../protocol/options.js";
 import type { ModelCategory } from "../../protocol/models.js";
 import { MODEL_CATEGORIES } from "../../protocol/models.js";
@@ -746,6 +748,15 @@ function inputsRendering(options: InputsCommandOptions): InputsRendering {
 export function methodSelector(target: string): InputsSelector {
   const trimmed = target.trim();
   if (trimmed.startsWith(CATALOG_ID_PREFIX)) return { method_id: trimmed };
+  // A local path has a separator too, and sent as a `method_ref` it would come back
+  // as the runner's registry-form `501`, which says nothing about local files.
+  if (looksLikeLocalPath(trimmed)) {
+    agentError(
+      `'${target}' is a local path, not a published method's address. On the API runner, 'inputs method' takes an address (github.com/<owner>/<repo>[/<selector>][@<tag>]) or a hosted catalog id (mt_…): pass a local bundle to 'inputs bundle', or re-run with --runner pipelex.`,
+      "ArgumentError",
+      { error_domain: AGENT_ERROR_DOMAINS.ARGUMENT },
+    );
+  }
   if (trimmed.includes("/")) return { method_ref: trimmed };
   agentError(
     `'${target}' is neither a published method's address nor a catalog id. On the API runner, 'inputs method' takes an address (github.com/<owner>/<repo>[/<selector>][@<tag>]) or a hosted catalog id (mt_…). An installed method's name is resolved only by the pipelex runner: re-run with --runner pipelex, or pass the bundle to 'inputs bundle'.`,
@@ -816,21 +827,12 @@ export async function emitInputsTemplate(
     return;
   }
 
-  // A single-pipe answer keys `input_form` by exactly the ref it resolved, so a
-  // missing ref or key is the answer contradicting itself; projecting any other
-  // descriptor would template the wrong pipe.
-  const resolvedRef = result.pipe_ref;
-  const descriptor =
-    resolvedRef !== null && Object.hasOwn(result.input_form, resolvedRef)
-      ? result.input_form[resolvedRef]
-      : undefined;
-  if (resolvedRef === null || descriptor === undefined) {
-    const described = Object.keys(result.input_form).join(", ") || "none";
-    agentError(
-      `The runner's pipe I/O answer selected ${resolvedRef === null ? "no pipe" : `'${resolvedRef}'`}, but its input_form does not describe it (it describes: ${described}).`,
-      "RunnerError",
-      { error_domain: AGENT_ERROR_DOMAINS.RUNNER },
-    );
+  let resolvedRef: string;
+  let descriptor: PipeInputFormDescriptor;
+  try {
+    ({ pipeRef: resolvedRef, descriptor } = selectedInputDescriptor(result));
+  } catch (err) {
+    agentError((err as Error).message, "RunnerError", { error_domain: AGENT_ERROR_DOMAINS.RUNNER });
     return;
   }
 
@@ -863,6 +865,17 @@ export async function emitInputsTemplate(
   }
   // `TemplateFloat` serializes through its `toJSON`, so the envelope carries plain numbers.
   agentSuccess({ success: true, pipe_ref: resolvedRef, inputs: template ?? {} });
+}
+
+/** A target that names something on this machine: a relative or absolute path, a `.mthds` file, or anything that exists on disk. */
+function looksLikeLocalPath(target: string): boolean {
+  return (
+    target.startsWith(".") ||
+    target.startsWith("/") ||
+    target.startsWith("~") ||
+    target.endsWith(".mthds") ||
+    existsSync(target)
+  );
 }
 
 function isPipeSelectionRefusal(err: unknown): err is ApiResponseError {

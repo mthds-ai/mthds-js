@@ -317,4 +317,27 @@ describe("methodSelector", () => {
     expect(envelope.error_type).toBe("ArgumentError");
     expect(envelope.message).toContain("--runner pipelex");
   });
+
+  // A local path has a separator too; sent as a method_ref it would come back as the
+  // runner's registry-form 501, which says nothing about local files.
+  it.each([
+    "./methods/invoice",
+    "../shared/bundle",
+    "/abs/path",
+    "~/methods/x",
+    "dir/bundle.mthds",
+  ])("refuses the local path %s with an ArgumentError pointing at inputs bundle", (target) => {
+    expect(() => methodSelector(target)).toThrow("__exit__");
+    const envelope = JSON.parse(
+      vi.mocked(process.stderr.write).mock.calls[0]![0] as string,
+    ) as Record<string, unknown>;
+    expect(envelope.error_type).toBe("ArgumentError");
+    expect(envelope.message).toContain("is a local path");
+    expect(envelope.message).toContain("inputs bundle");
+  });
+
+  it("refuses a relative path that exists on disk", () => {
+    // `tests/unit` exists relative to the repository root the suite runs from.
+    expect(() => methodSelector("tests/unit")).toThrow("__exit__");
+  });
 });

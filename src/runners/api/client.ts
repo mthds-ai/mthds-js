@@ -103,7 +103,7 @@ export const DEFAULT_API_BASE_URL = "https://api.pipelex.com";
 
 // The SDK composes every endpoint from one origin (MTHDS_BASE_URL): `{base}/v1/{endpoint}`.
 // The same paths are served by the Pipelex Hosted API (api.pipelex.com) and by a bare
-// OSS pipelex-api runner (localhost:8081) — the protocol surface is identical.
+// self-hosted pipelex-api runner (localhost:8081) — the protocol surface is identical.
 const API_PREFIX = "v1";
 
 const DEFAULT_REQUEST_TIMEOUT_MS = 1_200_000; // 20 min — matches the runner's blocking execute ceiling.

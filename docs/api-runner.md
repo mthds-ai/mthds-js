@@ -5,7 +5,7 @@
 There are two common targets, and the same `MthdsApiClient` and `mthds` CLI drive both:
 
 - **Pipelex Hosted API** — the managed runner at `https://api.pipelex.com` (the default). Authenticated, with durable runs.
-- **Self-hosted** — a bare [OSS `pipelex-api`](https://github.com/Pipelex/pipelex-api) runner you boot yourself (MIT, stateless).
+- **Self-hosted** — a bare [`pipelex-api`](https://docs.pipelex.com/latest/api-server/) runner you boot yourself (source-available under the Elastic License 2.0, stateless).
 
 The MTHDS Protocol surface is identical on both. The only things that change are the **base URL** and whether you need a key.
 
@@ -16,7 +16,7 @@ flowchart LR
       sdk[MthdsApiClient]
     end
     mthds -->|"{base}/v1/*"| hosted["Pipelex Hosted API<br/>api.pipelex.com<br/>auth · durable runs"]
-    mthds -->|"{base}/v1/*"| self["Self-hosted pipelex-api<br/>localhost:8081<br/>MIT · stateless"]
+    mthds -->|"{base}/v1/*"| self["Self-hosted pipelex-api<br/>localhost:8081<br/>source-available · stateless"]
 ```
 
 ## One base URL
@@ -66,7 +66,7 @@ mthds config set runner api
 mthds config set base-url http://localhost:8081
 ```
 
-See [pipelex-api](https://github.com/Pipelex/pipelex-api) for how to run the server.
+See the [`pipelex-api` documentation](https://docs.pipelex.com/latest/api-server/) for how to run the server, and its [configuration page](https://docs.pipelex.com/latest/api-server/configuration/) for its settings.
 
 ## How runs behave against each
 
@@ -118,4 +118,4 @@ With no options, the constructor reads `MTHDS_BASE_URL` and `MTHDS_API_KEY` from
 - [build-routes.md](./build-routes.md) — the `/v1/build/*` projections: the shared `files[]` envelope, the qualified `pipe_ref` selector, and the `is_valid` verdict.
 - [architecture.md](./architecture.md) — the SDK's protocol/runner split and the `MthdsApiClient` surface.
 - [errors.md](./errors.md) — the exception taxonomy: `PipelineExecuteTimeoutError`, `ApiResponseError`, `ApiUnreachableError`, and the rest.
-- [pipelex-api](https://github.com/Pipelex/pipelex-api) — the OSS runner's own OpenAPI contract and quickstart (`docs/index.md`), plus the MTHDS Protocol spec (`mthds-protocol.openapi.yaml`) in the standard repo.
+- [`pipelex-api`](https://docs.pipelex.com/latest/api-server/) — the runner's documentation and its own [OpenAPI contract](https://docs.pipelex.com/latest/api-server/openapi/pipelex-api.openapi.yaml); its source is the [`api/` member of the pipelex repository](https://github.com/Pipelex/pipelex/tree/main/api). The MTHDS Protocol spec (`mthds-protocol.openapi.yaml`) lives in the standard repo.

@@ -125,7 +125,7 @@ To execute a method, you need a **runner**. A runner is the engine that takes a 
 | Runner | Description |
 |--------|-------------|
 | **[Pipelex](https://github.com/Pipelex/pipelex)** (local) | A Python-based runner you install on your machine. Install it with `npx mthds setup runner pipelex`. |
-| **Pipelex API** (remote) | An API server that runs methods remotely. You can self-host it using [OSS `pipelex-api`](https://github.com/Pipelex/pipelex-api). The Pipelex Hosted API lives at `https://api.pipelex.com`. |
+| **Pipelex API** (remote) | An API server that runs methods remotely. You can self-host it using [`pipelex-api`](https://docs.pipelex.com/latest/api-server/), the source-available API server released with Pipelex. The Pipelex Hosted API lives at `https://api.pipelex.com`. |
 
 These are the only runners that exist today. Feel free to create your own runner in a different language!
 
@@ -147,7 +147,7 @@ This prompts for the API base URL and an API key (masked input), and saves them 
 
 There is ONE base URL — the host only, with no version prefix. The SDK composes every endpoint as `{base}/v1/{endpoint}`:
 
-- **`base-url`** — Pipelex Hosted API: `https://api.pipelex.com` (the default). Self-hosted: `http://localhost:8081` (a bare [OSS `pipelex-api`](https://github.com/Pipelex/pipelex-api) runner).
+- **`base-url`** — Pipelex Hosted API: `https://api.pipelex.com` (the default). Self-hosted: `http://localhost:8081` (a bare [`pipelex-api`](https://docs.pipelex.com/latest/api-server/) runner).
 
 You can also set values directly:
 
@@ -197,7 +197,7 @@ The base URL is the host only — every endpoint composes as `{baseUrl}/v1/{endp
 
 ### Self-Hosted API
 
-Point the client at your own [OSS `pipelex-api`](https://github.com/Pipelex/pipelex-api) instance — the same `MTHDSProtocol` surface, same paths:
+Point the client at your own [`pipelex-api`](https://docs.pipelex.com/latest/api-server/) instance — the same `MTHDSProtocol` surface, same paths:
 
 ```typescript
 const client = new MthdsApiClient({

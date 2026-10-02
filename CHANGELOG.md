@@ -1,5 +1,11 @@
 # Changelog
 
+## [Unreleased]
+
+### Fixed
+
+- **Timeout and still-running messages name `@pipelex/sdk` alone**: the messages of `PipelineExecuteTimeoutError` and of the `RunStillRunningError` that `execute()` throws on a `202` send the caller to `@pipelex/sdk` for the durable run API, where they also named `pipelex-agent`, a CLI that cannot poll a run by id.
+
 ## [v0.28.0] - 2026-09-27
 
 ### Added

@@ -381,7 +381,7 @@ export function registerApiRunnerCommands(program: Command, makeRunner: () => Ru
   // Submit a run and return its id immediately (the protocol `POST /v1/start`).
   // The returned `pipeline_run_id` is authoritative; how completion is later
   // delivered is implementation-defined. The durable poll-by-id lifecycle now
-  // lives in `@pipelex/sdk` / `pipelex-agent`.
+  // lives in `@pipelex/sdk`.
 
   runGroup
     .command("start")

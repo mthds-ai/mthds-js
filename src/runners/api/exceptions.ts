@@ -6,7 +6,7 @@
  *
  * The durable run-lifecycle errors (`RunFailedError`, `RunTimeoutError`,
  * `RunLifecycleUnavailableError`) are gone — the durable run API now lives in
- * `@pipelex/sdk` / `pipelex-agent`.
+ * `@pipelex/sdk`.
  */
 
 import { PipelineRequestError } from "../../protocol/exceptions.js";
@@ -51,7 +51,7 @@ export class ApiUnreachableError extends PipelineRequestError {
  * Thrown when the blocking `execute` (`POST /v1/execute`) is killed by the
  * hosted gateway's ~30s synchronous-request limit. The blocking path cannot
  * run methods longer than 30s behind the hosted gateway — use the durable run
- * API (now provided by `@pipelex/sdk` / `pipelex-agent`) to start the run and
+ * API (now provided by `@pipelex/sdk`) to start the run and
  * poll its result by id instead.
  */
 export class PipelineExecuteTimeoutError extends PipelineRequestError {
@@ -63,7 +63,7 @@ export class PipelineExecuteTimeoutError extends PipelineRequestError {
       `The Pipelex Hosted API times out synchronous requests after ~30s — this run took ${seconds}s. ` +
         "The blocking execute path can't run methods longer than 30s behind the gateway. " +
         "Start the run and poll for its result by id instead, using the durable run API " +
-        "(now provided by `@pipelex/sdk` / `pipelex-agent`).",
+        "(now provided by `@pipelex/sdk`).",
       options,
     );
     this.name = "PipelineExecuteTimeoutError";
@@ -78,7 +78,7 @@ export class PipelineExecuteTimeoutError extends PipelineRequestError {
  * `/execute` into an accepted-async response (202 with a `Location` header)
  * when it cannot hold the connection open. The run keeps executing
  * server-side — resume by `runId` using the durable run API (now provided by
- * `@pipelex/sdk` / `pipelex-agent`, or the `location` status resource when
+ * `@pipelex/sdk`, or the `location` status resource when
  * provided).
  */
 export class RunStillRunningError extends PipelineRequestError {

@@ -206,7 +206,7 @@ const client = new MthdsApiClient({
 });
 ```
 
-Use `execute` (blocking) or `start` (completion delivery is implementation-defined — see your runner's API documentation). The durable run-lifecycle (poll a run by id) is not part of this client — it lives in the Pipelex runtime SDK (`@pipelex/sdk` / `pipelex-agent`).
+Use `execute` (blocking) or `start` (completion delivery is implementation-defined — see your runner's API documentation). The durable run-lifecycle (poll a run by id) is not part of this client — it lives in the Pipelex runtime SDK (`@pipelex/sdk`).
 
 > Note: the bare-runner blocking path returns the runner's native `pipe_output`, whereas the Pipelex Hosted API durable path returns `main_stuff` + `graph_spec`. Cross-shape normalization is a v1 TODO.
 
@@ -240,7 +240,7 @@ const client = new MthdsApiClient();
 
 ### Methods
 
-The client implements the MTHDS Protocol plus the Pipelex build extensions. (The durable run-lifecycle — poll a run by id — lives in `@pipelex/sdk` / `pipelex-agent`, not here.)
+The client implements the MTHDS Protocol plus the Pipelex build extensions. (The durable run-lifecycle — poll a run by id — lives in `@pipelex/sdk`, not here.)
 
 | Method | Route | Description |
 |--------|-------|-------------|

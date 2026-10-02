@@ -124,7 +124,7 @@ const VALIDATE_MARKDOWN_RENDER_FORMAT = "markdown";
  *
  * The durable run-lifecycle (poll a run by id: `getRunStatus` / `getRunResult` /
  * `waitForResult` / `startAndWaitForResult`) is NOT part of this client — it now
- * lives in the Pipelex runtime SDK (`@pipelex/sdk` / `pipelex-agent`).
+ * lives in the Pipelex runtime SDK (`@pipelex/sdk`).
  */
 export class MthdsApiClient implements Runner {
   readonly type: RunnerType = Runners.API;
@@ -336,7 +336,7 @@ export class MthdsApiClient implements Runner {
     throw new RunStillRunningError(
       `execute() was accepted asynchronously (202): run ${runId || "<unknown>"} is still ` +
         "running server-side. Resume by id via the durable run API " +
-        "(`@pipelex/sdk` / `pipelex-agent`), or use start().",
+        "(`@pipelex/sdk`), or use start().",
       runId,
       parseRetryAfter(res.headers),
       res.headers.get("location"),
@@ -417,7 +417,7 @@ export class MthdsApiClient implements Runner {
    * client-supplied run id where a server supports one). The returned
    * `pipeline_run_id` is always authoritative. How completion is later delivered
    * (durable polling, callbacks) is implementation-defined and outside this
-   * client — the durable run-lifecycle lives in `@pipelex/sdk` / `pipelex-agent`.
+   * client — the durable run-lifecycle lives in `@pipelex/sdk`.
    */
   async start(options: StartOptions): Promise<RunResultStart> {
     const extensions = buildExtensions(options.extra);

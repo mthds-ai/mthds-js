@@ -688,14 +688,15 @@ function validateSources(files: MthdsFileItem[]): string[] | undefined {
 
 /**
  * The pipe an inputs command asks for when `--pipe` is omitted. When the closure
- * gathered other files beside a file or content the caller named, it is that entry's
- * own `main_pipe`, qualified with its domain, so the answer is for what the caller
- * named rather than for whichever file of the closure declares a `main_pipe`. With
- * the named entry alone, or a directory target, or an entry declaring no
- * `main_pipe`, the choice is left to the runner's selection chain.
+ * holds several files, it is the entry's own `main_pipe`, qualified with its domain:
+ * the named file's, the inline content's, or a directory target's entry file's, the
+ * pipe the pipelex runner templates. Left to the runner's selection chain, a closure
+ * declaring a `main_pipe` in several domains would be refused as ambiguous, and one
+ * declaring it elsewhere than the entry would be answered for another pipe. With the
+ * entry alone, or an entry declaring no `main_pipe`, the choice is left to the chain.
  */
 function defaultPipeRef(closure: BundleClosure): string | undefined {
-  if (!closure.entryNamed || closure.files.length < 2) return undefined;
+  if (closure.files.length < 2) return undefined;
   const { domain, mainPipe } = readBundleMeta(closure.files[0]!.content);
   return domain && mainPipe ? `${domain}.${mainPipe}` : undefined;
 }

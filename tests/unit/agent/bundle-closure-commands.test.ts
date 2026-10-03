@@ -225,13 +225,23 @@ describe("API-runner validate and inputs send the whole bundle", () => {
   });
 
   describe("inputs bundle", () => {
-    it("sends every file of a directory target and leaves the pipe to the runner", async () => {
+    it("sends every file of a directory target and asks for its entry file's pipe", async () => {
       await agent("inputs", "bundle", method);
 
       expect(requests[0]!.url).toMatch(/\/v1\/build\/inputs$/);
       expect(requests[0]!.body.files).toEqual([
         { content: ROOT, source: join(method, "bundle.mthds") },
         { content: CHILD, source: join(method, "child.mthds") },
+      ]);
+      // The child declares a main_pipe too, so the runner's chain alone could not choose.
+      expect(requests[0]!.body.pipe_ref).toBe("demo.main");
+    });
+
+    it("leaves the pipe to the runner for a directory holding its entry alone", async () => {
+      await agent("inputs", "bundle", shared);
+
+      expect(requests[0]!.body.files).toEqual([
+        { content: SHARED, source: join(shared, "shared.mthds") },
       ]);
       expect(requests[0]!.body).not.toHaveProperty("pipe_ref");
     });

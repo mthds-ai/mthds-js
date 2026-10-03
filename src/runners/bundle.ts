@@ -23,6 +23,7 @@
  */
 
 import {
+  lstatSync,
   mkdirSync,
   readFileSync,
   readdirSync,
@@ -284,14 +285,42 @@ export type BundleTarget = { path: string } | { content: string };
  * receives for one command line: the closure the pipelex runner loads locally.
  */
 export interface BundleClosure {
-  /** Every `.mthds` file of the closure as `{ content, source }`, the entrypoint first. */
-  files: MthdsFileItem[];
   /**
-   * True when the caller gave the entrypoint itself, a `.mthds` file or inline
-   * content, and false when it is a directory target's main file, inferred by
-   * `pickMainBundleFile`.
+   * Every `.mthds` file of the closure as `{ content, source }`, the entry first:
+   * the named file, the inline content, or a directory target's entry file.
    */
-  entryNamed: boolean;
+  files: MthdsFileItem[];
+}
+
+/** The file the pipelex runner takes as a directory target's entry when it exists. */
+const DEFAULT_BUNDLE_FILE_NAME = "bundle.mthds";
+
+/**
+ * The entry file of a directory target, chosen as the pipelex runner chooses it
+ * (`resolve_bundle_target_core`), so the closure's first file, and the pipe an
+ * `inputs` template defaults to, are the ones the pipelex runner would use:
+ * `bundle.mthds` at the directory's root, else the only `.mthds` file there. Like
+ * the pipelex runner, it refuses a directory with no `.mthds` file at its root or
+ * several and no `bundle.mthds`, and a `bundle.mthds` that is a symbolic link,
+ * which it will not take as an entry it was not named.
+ */
+function pickDirectoryEntry(dir: string, contents: Record<string, string>): string {
+  if (lstatSync(join(dir, DEFAULT_BUNDLE_FILE_NAME), { throwIfNoEntry: false })?.isSymbolicLink()) {
+    throw new BundleTargetError(
+      `Refusing to take the symbolic link ${join(dir, DEFAULT_BUNDLE_FILE_NAME)} as the entry of a bundle directory. Name the entry file, with the directory as -L.`,
+    );
+  }
+  const rootFiles = Object.keys(contents).filter((rel) => !rel.includes("/"));
+  if (rootFiles.includes(DEFAULT_BUNDLE_FILE_NAME)) return DEFAULT_BUNDLE_FILE_NAME;
+  if (rootFiles.length === 0) {
+    throw new BundleTargetError(`No .mthds file found at the root of bundle directory: ${dir}`);
+  }
+  if (rootFiles.length > 1) {
+    throw new BundleTargetError(
+      `Several .mthds files at the root of bundle directory ${dir} and no ${DEFAULT_BUNDLE_FILE_NAME} (${rootFiles.join(", ")}). Name the entry file, with the directory as -L.`,
+    );
+  }
+  return rootFiles[0]!;
 }
 
 /**
@@ -299,8 +328,8 @@ export interface BundleClosure {
  * the closure the API runner sends, so a method split across several `.mthds`
  * files validates as it does on the pipelex runner:
  *
- * - a **directory** target contributes every `.mthds` file under it, its main file
- *   first;
+ * - a **directory** target contributes every `.mthds` file under it, its entry file
+ *   first, chosen by `pickDirectoryEntry` as the pipelex runner chooses it;
  * - a **`.mthds` file** target contributes itself, first. A sibling file joins the
  *   closure only through a library directory, as on the pipelex runner, so
  *   validating one method never drags in an unrelated method stored beside it;
@@ -310,16 +339,17 @@ export interface BundleClosure {
  * A directory walk skips the directories pipelex's library scan skips, its
  * virtual environments, caches and run outputs among them, and only those.
  *
- * The entrypoint goes first because the runner takes the first file declaring a
- * `main_pipe` as the closure's primary one. A file reached twice, as in the hook's
- * `validate bundle <file> -L <its dir>/`, is sent once, under the path it was first
- * reached by. Each `source` is the target or library directory as the caller wrote
- * it, joined with the file's place inside it, so a diagnostic names a file the
- * caller recognises.
+ * The entry goes first because `/v1/validate` takes the first file declaring a
+ * `main_pipe` as the closure's primary one; `/v1/build/inputs` takes no such cue,
+ * so the inputs commands also name the entry's own pipe. A file reached twice, as in
+ * the hook's `validate bundle <file> -L <its dir>/`, is sent once, under the path it
+ * was first reached by. Each `source` is the target or library directory as the
+ * caller wrote it, joined with the file's place inside it, so a diagnostic names a
+ * file the caller recognises.
  *
  * Throws `BundleTargetError` for a target that is neither a `.mthds` file nor a
- * directory holding one, and lets a filesystem error (a missing target, an
- * unreadable library directory) propagate.
+ * directory whose entry file can be chosen, and lets a filesystem error (a missing
+ * target, an unreadable library directory) propagate.
  */
 export function resolveBundleClosure(
   target: BundleTarget,
@@ -334,27 +364,19 @@ export function resolveBundleClosure(
     files.push({ content, source: path });
   };
 
-  let entryNamed: boolean;
   if ("content" in target) {
     files.push({ content: target.content });
-    entryNamed = true;
   } else if (statSync(target.path).isDirectory()) {
     const contents = collectFilesWhere(target.path, isMthdsFile, isSkippedLibraryDir);
-    const rels = Object.keys(contents);
-    if (rels.length === 0) {
-      throw new BundleTargetError(`No .mthds file found in bundle directory: ${target.path}`);
-    }
-    const main = pickMainBundleFile(contents);
-    for (const rel of [main, ...rels.filter((other) => other !== main)]) {
+    const entry = pickDirectoryEntry(target.path, contents);
+    for (const rel of [entry, ...Object.keys(contents).filter((other) => other !== entry)]) {
       add(join(target.path, rel), contents[rel]!);
     }
-    entryNamed = false;
   } else {
     if (!target.path.endsWith(".mthds")) {
       throw new BundleTargetError(`'${target.path}' is not a .mthds file or a directory.`);
     }
     add(target.path, readFileSync(target.path, "utf-8"));
-    entryNamed = true;
   }
 
   for (const dir of libraryDirs) {
@@ -363,5 +385,5 @@ export function resolveBundleClosure(
       add(join(dir, rel), content);
     }
   }
-  return { files, entryNamed };
+  return { files };
 }

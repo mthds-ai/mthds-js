@@ -16,11 +16,23 @@
  *
  * A plain `.mthds` file with no custom Python stays on the lighter
  * `mthds_contents` path — nothing changes for the common case.
+ *
+ * The validate and inputs commands need only the `.mthds` text, but all of it:
+ * `resolveBundleClosure` gathers every `.mthds` file of a target and its library
+ * directories, so a method split across files validates on the API runner.
  */
 
-import { mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  realpathSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { parse as parseToml } from "smol-toml";
+import type { MthdsFileItem } from "./types.js";
 
 /** File names (exact) that belong to a method bundle beyond the `.mthds`/`.py` set. */
 const BUNDLE_FILE_NAMES: ReadonlySet<string> = new Set(["requirements.txt"]);
@@ -55,6 +67,10 @@ function isBundleFile(name: string): boolean {
   return BUNDLE_FILE_EXTENSIONS.some((ext) => name.endsWith(ext));
 }
 
+function isMthdsFile(name: string): boolean {
+  return name.endsWith(".mthds");
+}
+
 /**
  * Walk a method-bundle directory and collect every bundle file as a
  * `{ relativePath: text }` map. Relative paths are POSIX-normalized (the wire
@@ -62,15 +78,32 @@ function isBundleFile(name: string): boolean {
  * skipped so they never travel with the method.
  */
 export function collectBundleFiles(bundleDir: string): Record<string, string> {
+  return collectFilesWhere(bundleDir, isBundleFile);
+}
+
+/**
+ * Walk a directory and collect every file whose name `wanted` accepts, as a
+ * `{ relativePath: text }` map with POSIX separators, skipping the same
+ * cache/deps/hidden directories as `collectBundleFiles`.
+ */
+function collectFilesWhere(
+  bundleDir: string,
+  wanted: (name: string) => boolean,
+): Record<string, string> {
   const root = resolve(bundleDir);
   const files: Record<string, string> = {};
   const walk = (dir: string): void => {
-    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    // Sorted, so the map's order (and with it `pickMainBundleFile`'s fallback to the
+    // first candidate) does not depend on the order the filesystem lists entries in.
+    const entries = readdirSync(dir, { withFileTypes: true }).sort((a, b) =>
+      a.name < b.name ? -1 : a.name > b.name ? 1 : 0,
+    );
+    for (const entry of entries) {
       const abs = join(dir, entry.name);
       if (entry.isDirectory()) {
         if (SKIP_DIR_NAMES.has(entry.name) || entry.name.startsWith(".")) continue;
         walk(abs);
-      } else if (entry.isFile() && isBundleFile(entry.name)) {
+      } else if (entry.isFile() && wanted(entry.name)) {
         const rel = relative(root, abs).split(sep).join("/");
         files[rel] = readFileSync(abs, "utf-8");
       }
@@ -198,4 +231,99 @@ export function resolveRunBundle(target: string): ResolvedRunBundle {
     return { files: siblingFiles, main };
   }
   return { mthds_contents: [readFileSync(resolved, "utf-8")] };
+}
+
+/** A target the bundle-closure resolver refuses: neither a `.mthds` file nor a directory holding one. */
+export class BundleTargetError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "BundleTargetError";
+  }
+}
+
+/** What a `validate` or `inputs` command names: a path, or inline `--content`. */
+export type BundleTarget = { path: string } | { content: string };
+
+/**
+ * The `.mthds` files a per-bundle API route (`/v1/validate`, `/v1/build/inputs`)
+ * receives for one command line: the closure the pipelex runner loads locally.
+ */
+export interface BundleClosure {
+  /** Every `.mthds` file of the closure as `{ content, source }`, the entrypoint first. */
+  files: MthdsFileItem[];
+  /**
+   * True when the caller gave the entrypoint itself, a `.mthds` file or inline
+   * content, and false when it is a directory target's main file, inferred by
+   * `pickMainBundleFile`.
+   */
+  entryNamed: boolean;
+}
+
+/**
+ * Resolve a `validate` or `inputs` target and its library directories (`-L`) into
+ * the closure the API runner sends, so a method split across several `.mthds`
+ * files validates as it does on the pipelex runner:
+ *
+ * - a **directory** target contributes every `.mthds` file under it, its main file
+ *   first;
+ * - a **`.mthds` file** target contributes itself, first. A sibling file joins the
+ *   closure only through a library directory, as on the pipelex runner, so
+ *   validating one method never drags in an unrelated method stored beside it;
+ * - **inline content** contributes itself, first, with no source;
+ * - each **library directory** contributes every `.mthds` file under it.
+ *
+ * The entrypoint goes first because the runner takes the first file declaring a
+ * `main_pipe` as the closure's primary one. A file reached twice, as in the hook's
+ * `validate bundle <file> -L <its dir>/`, is sent once, under the path it was first
+ * reached by. Each `source` is the target or library directory as the caller wrote
+ * it, joined with the file's place inside it, so a diagnostic names a file the
+ * caller recognises.
+ *
+ * Throws `BundleTargetError` for a target that is neither a `.mthds` file nor a
+ * directory holding one, and lets a filesystem error (a missing target, an
+ * unreadable library directory) propagate.
+ */
+export function resolveBundleClosure(
+  target: BundleTarget,
+  libraryDirs: readonly string[] = [],
+): BundleClosure {
+  const files: MthdsFileItem[] = [];
+  const seen = new Set<string>();
+  const add = (path: string, content: string): void => {
+    const key = realpathSync(path);
+    if (seen.has(key)) return;
+    seen.add(key);
+    files.push({ content, source: path });
+  };
+
+  let entryNamed: boolean;
+  if ("content" in target) {
+    files.push({ content: target.content });
+    entryNamed = true;
+  } else if (statSync(target.path).isDirectory()) {
+    const contents = collectFilesWhere(target.path, isMthdsFile);
+    const rels = Object.keys(contents);
+    if (rels.length === 0) {
+      throw new BundleTargetError(`No .mthds file found in bundle directory: ${target.path}`);
+    }
+    const main = pickMainBundleFile(contents);
+    for (const rel of [main, ...rels.filter((other) => other !== main)]) {
+      add(join(target.path, rel), contents[rel]!);
+    }
+    entryNamed = false;
+  } else {
+    if (!target.path.endsWith(".mthds")) {
+      throw new BundleTargetError(`'${target.path}' is not a .mthds file or a directory.`);
+    }
+    add(target.path, readFileSync(target.path, "utf-8"));
+    entryNamed = true;
+  }
+
+  for (const dir of libraryDirs) {
+    const contents = collectFilesWhere(dir, isMthdsFile);
+    for (const [rel, content] of Object.entries(contents)) {
+      add(join(dir, rel), content);
+    }
+  }
+  return { files, entryNamed };
 }

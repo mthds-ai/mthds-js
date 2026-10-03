@@ -17,7 +17,14 @@ import {
   runnerProblemExtras,
 } from "../output.js";
 import { isApiRunner } from "../../cli/commands/utils.js";
-import { collectBundleFiles, pickMainBundleFile, resolveRunBundle } from "../../runners/bundle.js";
+import {
+  BundleTargetError,
+  collectBundleFiles,
+  pickMainBundleFile,
+  resolveBundleClosure,
+  resolveRunBundle,
+} from "../../runners/bundle.js";
+import type { BundleClosure } from "../../runners/bundle.js";
 import { readBundleMeta } from "../../runners/pipe-ref.js";
 import type { MthdsFileItem, Runner } from "../../runners/types.js";
 import type { StartOptions } from "../../protocol/options.js";
@@ -30,6 +37,15 @@ import { ApiResponseError } from "../../runners/api/exceptions.js";
  * Only called when --runner=api.
  */
 export function registerApiRunnerCommands(program: Command, makeRunner: () => Runner): void {
+  // `-L` is a global option, which `enablePositionalOptions` parses only before the
+  // subcommand. The validate and inputs subcommands declare it too, so the usual
+  // `validate bundle <file> -L <dir>/` reaches them instead of being swallowed by
+  // `allowUnknownOption`. Directories given in either position all count.
+  const libraryDirsWith = (local: string[] | undefined): string[] => [
+    ...((program.opts().libraryDir as string[] | undefined) ?? []),
+    ...(local ?? []),
+  ];
+
   // ── concept ──
 
   program
@@ -147,6 +163,11 @@ export function registerApiRunnerCommands(program: Command, makeRunner: () => Ru
     .argument("[target]", "Bundle file (.mthds) or directory")
     .option("--allow-signatures", "Tolerate unimplemented pipe signatures")
     .option("--content <mthds>", "Bundle content as a string")
+    .option(LIBRARY_DIR_FLAGS, LIBRARY_DIR_HELP, collectLibraryDir, [] as string[])
+    .option("-g, --graph", "Save graph HTML files (pipelex runner only)")
+    .option("-f, --graph-format <fmt>", "Graph format to generate (pipelex runner only)")
+    .option("--view", "Include a GraphSpec in the output (pipelex runner only)")
+    .option("--direction <dir>", "Flowchart direction (pipelex runner only)")
     .addOption(
       new Option("--format <fmt>", "Success output format: markdown (default) or json").choices([
         "markdown",
@@ -159,7 +180,7 @@ export function registerApiRunnerCommands(program: Command, makeRunner: () => Ru
         "Error output format (defaults to --format): markdown or json",
       ).choices(["markdown", "json"]),
     )
-    .description("Validate a bundle file or content")
+    .description("Validate a bundle file, directory or content")
     .allowUnknownOption()
     .allowExcessArguments(true)
     .exitOverride()
@@ -169,19 +190,27 @@ export function registerApiRunnerCommands(program: Command, makeRunner: () => Ru
         options: {
           allowSignatures?: boolean;
           content?: string;
+          libraryDir?: string[];
+          graph?: boolean;
+          graphFormat?: string;
+          view?: boolean;
+          direction?: string;
           format?: string;
           errorFormat?: string;
         },
       ) => {
+        refuseGraphOptions(options);
         const runner = safeCreateRunner(makeRunner);
-        const mthdsContent = resolveContent(target, options.content);
-        // A real file path (not inline --content) names the source for diagnostics.
-        const mthdsSources = !options.content && target ? [target] : undefined;
+        const closure = resolveClosureOrError(
+          target,
+          options.content,
+          libraryDirsWith(options.libraryDir),
+        );
         await runProtocolValidate(
           runner,
-          [mthdsContent],
+          closure.files.map((file) => file.content),
           options.allowSignatures ?? false,
-          mthdsSources,
+          validateSources(closure.files),
           options.format,
           options.errorFormat,
         );
@@ -192,6 +221,7 @@ export function registerApiRunnerCommands(program: Command, makeRunner: () => Ru
     .command("pipe")
     .argument("<target>", ".mthds bundle file")
     .option("--allow-signatures", "Tolerate unimplemented pipe signatures")
+    .option(LIBRARY_DIR_FLAGS, LIBRARY_DIR_HELP, collectLibraryDir, [] as string[])
     .addOption(
       new Option("--format <fmt>", "Success output format: markdown (default) or json").choices([
         "markdown",
@@ -211,7 +241,12 @@ export function registerApiRunnerCommands(program: Command, makeRunner: () => Ru
     .action(
       async (
         target: string,
-        options: { allowSignatures?: boolean; format?: string; errorFormat?: string },
+        options: {
+          allowSignatures?: boolean;
+          libraryDir?: string[];
+          format?: string;
+          errorFormat?: string;
+        },
       ) => {
         const runner = safeCreateRunner(makeRunner);
         if (!target.endsWith(".mthds")) {
@@ -222,12 +257,16 @@ export function registerApiRunnerCommands(program: Command, makeRunner: () => Ru
           );
           return;
         }
-        const mthdsContent = readFileOrError(target);
+        const closure = resolveClosureOrError(
+          target,
+          undefined,
+          libraryDirsWith(options.libraryDir),
+        );
         await runProtocolValidate(
           runner,
-          [mthdsContent],
+          closure.files.map((file) => file.content),
           options.allowSignatures ?? false,
-          [target],
+          validateSources(closure.files),
           options.format,
           options.errorFormat,
         );
@@ -263,29 +302,38 @@ export function registerApiRunnerCommands(program: Command, makeRunner: () => Ru
     .argument("[target]", "Bundle file (.mthds) or directory")
     .option("--pipe <ref>", "Qualified pipe ref (domain.pipe_code); defaults to the main_pipe")
     .option("--content <mthds>", "Bundle content as a string")
-    .description("Generate inputs from a bundle file or content")
+    .option(LIBRARY_DIR_FLAGS, LIBRARY_DIR_HELP, collectLibraryDir, [] as string[])
+    .description("Generate inputs from a bundle file, directory or content")
     .allowUnknownOption()
     .allowExcessArguments(true)
     .exitOverride()
-    .action(async (target: string | undefined, options: { pipe?: string; content?: string }) => {
-      const runner = safeCreateRunner(makeRunner);
-      const content = resolveContent(target, options.content);
-      // Only a real file path names the source — `--content` overrides the target, so
-      // stamping diagnostics with `target` would point at a file we never submitted.
-      // Same guard as `validate bundle` above.
-      const source = !options.content && target ? target : undefined;
-      await emitInputsTemplate(runner, { content, source }, options.pipe);
-    });
+    .action(
+      async (
+        target: string | undefined,
+        options: { pipe?: string; content?: string; libraryDir?: string[] },
+      ) => {
+        const runner = safeCreateRunner(makeRunner);
+        // `--content` overrides the target, so the inline item carries no source:
+        // stamping diagnostics with `target` would point at a file we never submitted.
+        const closure = resolveClosureOrError(
+          target,
+          options.content,
+          libraryDirsWith(options.libraryDir),
+        );
+        await emitInputsTemplate(runner, closure.files, options.pipe ?? defaultPipeRef(closure));
+      },
+    );
 
   inputsGroup
     .command("pipe")
     .argument("<target>", "Bundle file (.mthds) or pipe code")
     .option("--pipe <ref>", "Qualified pipe ref (domain.pipe_code); defaults to the main_pipe")
+    .option(LIBRARY_DIR_FLAGS, LIBRARY_DIR_HELP, collectLibraryDir, [] as string[])
     .description("Generate inputs for a pipe")
     .allowUnknownOption()
     .allowExcessArguments(true)
     .exitOverride()
-    .action(async (target: string, options: { pipe?: string }) => {
+    .action(async (target: string, options: { pipe?: string; libraryDir?: string[] }) => {
       const runner = safeCreateRunner(makeRunner);
       if (!target.endsWith(".mthds")) {
         agentError(
@@ -294,11 +342,8 @@ export function registerApiRunnerCommands(program: Command, makeRunner: () => Ru
           { error_domain: AGENT_ERROR_DOMAINS.ARGUMENT },
         );
       }
-      await emitInputsTemplate(
-        runner,
-        { content: readFileOrError(target), source: target },
-        options.pipe,
-      );
+      const closure = resolveClosureOrError(target, undefined, libraryDirsWith(options.libraryDir));
+      await emitInputsTemplate(runner, closure.files, options.pipe ?? defaultPipeRef(closure));
     });
 
   inputsGroup
@@ -592,15 +637,91 @@ function guessContentType(filename: string): string | undefined {
   return CONTENT_TYPE_BY_EXT[ext];
 }
 
-// TODO: resolveContent() doesn't handle directory targets (unlike resolveContentForRun()).
-// validate bundle and inputs bundle use this function and will fail when passed a directory.
-function resolveContent(target: string | undefined, content: string | undefined): string {
-  if (content) return content;
-  if (target) return readFileOrError(target);
-  agentError("Either <target> or --content is required.", "ArgumentError", {
-    error_domain: AGENT_ERROR_DOMAINS.ARGUMENT,
-  });
-  throw new Error("unreachable");
+const LIBRARY_DIR_FLAGS = "-L, --library-dir <dir>";
+const LIBRARY_DIR_HELP = "Library directory whose .mthds files join the bundle (can be repeated)";
+
+/** Commander collector for the repeatable `-L, --library-dir`. */
+function collectLibraryDir(value: string, previous: string[]): string[] {
+  return [...previous, value];
+}
+
+/**
+ * Resolve what a validate or inputs command sends: the inline `--content` or the
+ * target, with every `.mthds` file of the library directories, as one closure
+ * (`resolveBundleClosure`). A bad target is an `ArgumentError`, an unreadable file
+ * or directory an `IOError`.
+ */
+function resolveClosureOrError(
+  target: string | undefined,
+  content: string | undefined,
+  libraryDirs: readonly string[],
+): BundleClosure {
+  if (!content && !target) {
+    agentError("Either <target> or --content is required.", "ArgumentError", {
+      error_domain: AGENT_ERROR_DOMAINS.ARGUMENT,
+    });
+  }
+  try {
+    return resolveBundleClosure(content ? { content } : { path: target! }, libraryDirs);
+  } catch (err) {
+    if (err instanceof BundleTargetError) {
+      agentError(err.message, "ArgumentError", { error_domain: AGENT_ERROR_DOMAINS.ARGUMENT });
+    }
+    agentError(`Cannot read file: ${(err as Error).message}`, "IOError", {
+      error_domain: AGENT_ERROR_DOMAINS.IO,
+    });
+    throw err;
+  }
+}
+
+/**
+ * The `mthds_sources` of a validate request, parallel to its contents. Inline
+ * `--content` alone sends none, as before. Beside named files, it is labelled the
+ * way `MthdsApiClient.validateFiles` labels an inline file, since the server takes a
+ * source for every content or for none.
+ */
+function validateSources(files: MthdsFileItem[]): string[] | undefined {
+  if (!files.some((file) => file.source !== undefined)) return undefined;
+  return files.map((file, index) => file.source ?? `inline://file-${index + 1}.mthds`);
+}
+
+/**
+ * The pipe an inputs command asks for when `--pipe` is omitted. When the closure
+ * gathered other files beside a file or content the caller named, it is that entry's
+ * own `main_pipe`, qualified with its domain, so the answer is for what the caller
+ * named rather than for whichever file of the closure declares a `main_pipe`. With
+ * the named entry alone, or a directory target, or an entry declaring no
+ * `main_pipe`, the choice is left to the runner's selection chain.
+ */
+function defaultPipeRef(closure: BundleClosure): string | undefined {
+  if (!closure.entryNamed || closure.files.length < 2) return undefined;
+  const { domain, mainPipe } = readBundleMeta(closure.files[0]!.content);
+  return domain && mainPipe ? `${domain}.${mainPipe}` : undefined;
+}
+
+/** The `validate bundle` options of `pipelex-agent` that draw the method's graph locally. */
+const GRAPH_OPTIONS = [
+  ["graph", "--graph"],
+  ["graphFormat", "--graph-format"],
+  ["view", "--view"],
+  ["direction", "--direction"],
+] as const;
+
+/**
+ * Refuse the graph options of `validate bundle`, which the API runner cannot honour:
+ * the graph files and the GraphSpec view are drawn locally by the pipelex runner.
+ * Declaring them keeps them from being swallowed by `allowUnknownOption`, which
+ * would print a verdict as if the graph had been drawn.
+ */
+function refuseGraphOptions(options: Record<string, unknown>): void {
+  const given = GRAPH_OPTIONS.filter(([key]) => options[key] !== undefined).map(([, flag]) => flag);
+  if (given.length === 0) return;
+  const one = given.length === 1;
+  agentError(
+    `${given.join(", ")} ${one ? "is" : "are"} not available on the API runner: the method's graph is drawn locally, by the pipelex runner only. Drop ${one ? "it" : "them"}, or re-run with --runner pipelex. On the API runner, the JSON verdict (--format json) carries the method's graph as graph_spec.`,
+    "UnsupportedError",
+    { error_domain: AGENT_ERROR_DOMAINS.RUNNER },
+  );
 }
 
 function resolveContentForRun(
@@ -670,11 +791,11 @@ function resolvePipeCode(mthdsContent: string, pipeCodeOption: string | undefine
  */
 export async function emitInputsTemplate(
   runner: Runner,
-  file: MthdsFileItem,
+  files: MthdsFileItem[],
   pipeRef: string | undefined,
 ): Promise<void> {
   try {
-    const result = await runner.buildInputs({ files: [file], pipe_ref: pipeRef });
+    const result = await runner.buildInputs({ files, pipe_ref: pipeRef });
     if (!result.is_valid) {
       // A 200 `is_valid: false` is a PRODUCED verdict, not a transport/runtime
       // failure — the `ValidateBundleError` arm, same envelope as

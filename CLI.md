@@ -53,7 +53,7 @@ When `--runner` is omitted, the CLI uses the runner configured via `mthds config
 
 When using the **pipelex** runner, the `run`, `build`, and `validate` commands act as thin wrappers: they forward all arguments directly to the `pipelex` CLI. This means any pipelex-specific flags (e.g. `--dry-run`, `--mock-inputs`, `--output-dir`) are passed through transparently.
 
-The `--runner` flag is consumed by mthds and not forwarded. The `-L/--library-dir` flags are forwarded to pipelex.
+The `--runner` flag is consumed by mthds and not forwarded. The `-L/--library-dir` flags are forwarded to pipelex. With the API runner, `validate pipe` sends every `.mthds` file of each `-L` directory beside the bundle file, so a method split across files validates as it does on the pipelex runner.
 
 ---
 
@@ -192,6 +192,8 @@ mthds validate pipe <target> [OPTIONS]
 | `target` | string | yes | -- | `.mthds` bundle file or pipe code |
 | `--pipe <code>` | string | no | -- | Pipe code that must exist in the bundle |
 | `--bundle <file>` | string | no | -- | Bundle file path (alternative to positional) |
+
+With the API runner, the bundle file is sent first, followed by every `.mthds` file of each `-L` directory, and `--pipe` is ignored, since the runner validates every pipe of what it receives.
 
 ### `mthds validate bundle`
 
@@ -862,22 +864,41 @@ mthds-agent run bundle ./bundle.mthds --pipe my_pipe
 
 ### `mthds-agent validate bundle`
 
-Validate a `.mthds` bundle file via the pipelex runner.
+Validate a method bundle: a `.mthds` file, a directory, or inline content.
 
 ```bash
-mthds-agent validate bundle <target> [OPTIONS]
+mthds-agent validate bundle [target] [OPTIONS]
 ```
 
 | Argument / Option | Type | Required | Default | Description |
 |---|---|---|---|---|
-| `target` | string | yes | -- | `.mthds` bundle file |
-| `--pipe <code>` | string | no | -- | Pipe code to validate within the bundle |
+| `target` | string | unless `--content` | -- | `.mthds` bundle file or directory |
+| `--content <mthds>` | string | no | -- | Bundle content as a string, in place of `target` |
+| `-L, --library-dir <dir>` | path, repeatable | no | -- | Directory whose `.mthds` files join the bundle; may be written before or after the subcommand |
+| `--allow-signatures` | flag | no | -- | Tolerate unimplemented pipe signatures |
+| `--format <fmt>` | string | no | `markdown` | Success output format: `markdown` or `json` |
+| `--error-format <fmt>` | string | no | `--format` | Failure output format: `markdown` or `json` |
+| `--pipe <code>` | string | no | -- | Pipe code to validate within the bundle (pipelex runner only) |
+| `-g, --graph`, `-f, --graph-format <fmt>`, `--view`, `--direction <dir>` | | no | -- | Draw the method's graph (pipelex runner only) |
 
-All arguments are forwarded to `pipelex validate`. Requires the pipelex runner.
+With the **pipelex runner**, every argument is forwarded to `pipelex-agent validate bundle`.
 
-**Example:**
+With the **API runner**, the command posts the whole bundle to `POST /v1/validate`, the way the pipelex runner loads it, so a method split across several `.mthds` files validates there too:
+
+- a directory target sends every `.mthds` file under it, its main file first (a root-level file declaring `main_pipe`, then any root-level file);
+- a `.mthds` file target sends that file first, and its sibling files only through `-L`, as on the pipelex runner;
+- each `-L` directory adds every `.mthds` file under it, and a file reached twice, as in `validate bundle <file> -L <its dir>/`, is sent once;
+- each file is named by its path, so a diagnostic's `source` says which file it is about.
+
+The graph options are refused with an `UnsupportedError` before anything is sent, because the graph is drawn locally by the pipelex runner. The JSON verdict (`--format json`) carries the method's graph as `graph_spec` instead. `--pipe` is ignored, since the runner validates every pipe it receives. A target that is neither a `.mthds` file nor a directory holding one is an `ArgumentError`, and an unreadable file or directory is an `IOError`.
+
+`validate pipe <file>`, `inputs bundle` and `inputs pipe` send the same closure on the API runner, and take `-L` in the same two positions. When `inputs` names a file and `-L` brings in others, the template is for the named file's own `main_pipe` unless `--pipe` says otherwise.
+
+**Examples:**
 
 ```bash
+mthds-agent validate bundle ./my_method/
+mthds-agent validate bundle ./my_method/child.mthds -L ./my_method/ --allow-signatures
 mthds-agent validate bundle ./bundle.mthds --pipe my_pipe
 ```
 

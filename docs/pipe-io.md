@@ -4,7 +4,7 @@
 
 It is a **Pipelex API extension, not an MTHDS Protocol route**, so it lives in `src/runners/` beside the build wrappers and never in `src/protocol/`. The artifacts it carries are the standard's own types, imported from `mthds/protocol` (`PipeIOContracts`, `InputForm`, `OutputForm`). Like `uploadFile`, it is a method of the concrete client and not of the `Runner` interface: the local pipelex runner shells out to `pipelex-agent` and has no use for it. `@pipelex/sdk` has its own `pipeIo()` with the same wire shape, because that SDK builds on `mthds/protocol` alone and not on this client.
 
-A runner serves the route from `pipelex-api` v0.33.0; the hosted API serves it once its platform proxy lists it.
+A runner serves the route from `pipelex-api` v0.33.0, and the hosted API proxies it to its runner.
 
 ## Request
 

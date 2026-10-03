@@ -123,7 +123,7 @@ export interface PipeIORequest extends CrateRequestBase {
    * server's selection chain decides: a fetched package's manifest `main_pipe`,
    * else the closure's single `main_pipe` declaration. A ref that names no pipe,
    * and (without `all_pipes`) a chain that finds no entry pipe or several, are
-   * request-shape `422`s typed by {@link PIPE_SELECTION_ERROR_TYPES}.
+   * input `422`s typed by {@link PIPE_SELECTION_ERROR_TYPES}, not malformed requests.
    */
   pipe_ref?: string;
   /**

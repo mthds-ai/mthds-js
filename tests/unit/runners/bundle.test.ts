@@ -48,9 +48,22 @@ describe("bundle collection", () => {
     writeFileSync(join(dir, "__pycache__", "junk.py"), "x", "utf-8");
     mkdirSync(join(dir, ".git"));
     writeFileSync(join(dir, ".git", "config.py"), "x", "utf-8");
+    mkdirSync(join(dir, ".methods"));
+    writeFileSync(join(dir, ".methods", "private.mthds"), MTHDS, "utf-8");
 
     const files = collectBundleFiles(dir);
     expect(Object.keys(files).sort()).toEqual(["m.mthds", "requirements.txt"]);
+  });
+
+  it("skips virtual environments and run outputs, as pipelex's library scan does", () => {
+    writeFileSync(join(dir, "m.mthds"), MTHDS, "utf-8");
+    for (const skipped of ["venv", "env", "virtualenv", "results"]) {
+      mkdirSync(join(dir, skipped, "lib"), { recursive: true });
+      writeFileSync(join(dir, skipped, "lib", "site.py"), "x", "utf-8");
+      writeFileSync(join(dir, skipped, "lib", "corpus.mthds"), MTHDS, "utf-8");
+    }
+
+    expect(Object.keys(collectBundleFiles(dir))).toEqual(["m.mthds"]);
   });
 
   it("excludes non-bundle files (json, md, images)", () => {

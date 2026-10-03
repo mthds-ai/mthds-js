@@ -38,8 +38,41 @@ import type { MthdsFileItem } from "./types.js";
 const BUNDLE_FILE_NAMES: ReadonlySet<string> = new Set(["requirements.txt"]);
 /** File extensions that belong to a method bundle. */
 const BUNDLE_FILE_EXTENSIONS: readonly string[] = [".mthds", ".py"];
-/** Directories never shipped as part of a bundle (caches, deps, hidden/VCS). */
-const SKIP_DIR_NAMES: ReadonlySet<string> = new Set(["__pycache__", "node_modules"]);
+/**
+ * Directories pipelex's library scan leaves out, its default `[interpreter.scan]
+ * excluded_dirs`: virtual environments, caches, VCS data, dependencies and run
+ * outputs. A virtual environment holding pipelex holds `.mthds` files of its own,
+ * some deliberately invalid, so walking into one would send a method that is not
+ * the caller's.
+ */
+const LIBRARY_SKIP_DIR_NAMES: ReadonlySet<string> = new Set([
+  ".venv",
+  "venv",
+  "env",
+  ".env",
+  "virtualenv",
+  ".virtualenv",
+  ".git",
+  "__pycache__",
+  ".pytest_cache",
+  ".mypy_cache",
+  ".ruff_cache",
+  "node_modules",
+  "results",
+]);
+
+/**
+ * The closure the API runner validates skips exactly what pipelex's library scan
+ * skips, so it holds the files the pipelex runner loads from the same directories.
+ */
+function isSkippedLibraryDir(name: string): boolean {
+  return LIBRARY_SKIP_DIR_NAMES.has(name);
+}
+
+/** A run bundle skips those and every other hidden directory, so nothing private travels with the method. */
+function isSkippedBundleDir(name: string): boolean {
+  return LIBRARY_SKIP_DIR_NAMES.has(name) || name.startsWith(".");
+}
 
 /** How a run target resolved: either an inline `.mthds` or a full bundle map. */
 export interface ResolvedRunBundle {
@@ -74,21 +107,23 @@ function isMthdsFile(name: string): boolean {
 /**
  * Walk a method-bundle directory and collect every bundle file as a
  * `{ relativePath: text }` map. Relative paths are POSIX-normalized (the wire
- * form a runner materializes back to disk). Cache/deps/hidden directories are
- * skipped so they never travel with the method.
+ * form a runner materializes back to disk). Virtual environments, caches,
+ * dependencies, run outputs and hidden directories are skipped so they never
+ * travel with the method.
  */
 export function collectBundleFiles(bundleDir: string): Record<string, string> {
-  return collectFilesWhere(bundleDir, isBundleFile);
+  return collectFilesWhere(bundleDir, isBundleFile, isSkippedBundleDir);
 }
 
 /**
  * Walk a directory and collect every file whose name `wanted` accepts, as a
- * `{ relativePath: text }` map with POSIX separators, skipping the same
- * cache/deps/hidden directories as `collectBundleFiles`.
+ * `{ relativePath: text }` map with POSIX separators, never entering a directory
+ * whose name `skipped` accepts.
  */
 function collectFilesWhere(
   bundleDir: string,
   wanted: (name: string) => boolean,
+  skipped: (dirName: string) => boolean,
 ): Record<string, string> {
   const root = resolve(bundleDir);
   const files: Record<string, string> = {};
@@ -101,7 +136,7 @@ function collectFilesWhere(
     for (const entry of entries) {
       const abs = join(dir, entry.name);
       if (entry.isDirectory()) {
-        if (SKIP_DIR_NAMES.has(entry.name) || entry.name.startsWith(".")) continue;
+        if (skipped(entry.name)) continue;
         walk(abs);
       } else if (entry.isFile() && wanted(entry.name)) {
         const rel = relative(root, abs).split(sep).join("/");
@@ -272,6 +307,9 @@ export interface BundleClosure {
  * - **inline content** contributes itself, first, with no source;
  * - each **library directory** contributes every `.mthds` file under it.
  *
+ * A directory walk skips the directories pipelex's library scan skips, its
+ * virtual environments, caches and run outputs among them, and only those.
+ *
  * The entrypoint goes first because the runner takes the first file declaring a
  * `main_pipe` as the closure's primary one. A file reached twice, as in the hook's
  * `validate bundle <file> -L <its dir>/`, is sent once, under the path it was first
@@ -301,7 +339,7 @@ export function resolveBundleClosure(
     files.push({ content: target.content });
     entryNamed = true;
   } else if (statSync(target.path).isDirectory()) {
-    const contents = collectFilesWhere(target.path, isMthdsFile);
+    const contents = collectFilesWhere(target.path, isMthdsFile, isSkippedLibraryDir);
     const rels = Object.keys(contents);
     if (rels.length === 0) {
       throw new BundleTargetError(`No .mthds file found in bundle directory: ${target.path}`);
@@ -320,7 +358,7 @@ export function resolveBundleClosure(
   }
 
   for (const dir of libraryDirs) {
-    const contents = collectFilesWhere(dir, isMthdsFile);
+    const contents = collectFilesWhere(dir, isMthdsFile, isSkippedLibraryDir);
     for (const [rel, content] of Object.entries(contents)) {
       add(join(dir, rel), content);
     }

@@ -41,16 +41,33 @@ describe("resolveBundleClosure", () => {
     expect(closure.files[0]!.content).toBe(ROOT);
   });
 
-  it("skips hidden and dependency directories, as the run bundle does", () => {
-    mkdirSync(join(dir, ".git"));
-    mkdirSync(join(dir, "node_modules"));
+  it("skips the directories pipelex's library scan skips, and only those", () => {
     writeFileSync(join(dir, "bundle.mthds"), ROOT);
-    writeFileSync(join(dir, ".git", "stray.mthds"), CHILD);
-    writeFileSync(join(dir, "node_modules", "stray.mthds"), CHILD);
+    for (const skipped of [".git", ".venv", "venv", "env", "node_modules", "results"]) {
+      mkdirSync(join(dir, skipped, "lib"), { recursive: true });
+      writeFileSync(join(dir, skipped, "lib", "stray.mthds"), CHILD);
+    }
+    // Pipelex loads a hidden directory its list does not name, so the closure sends it too.
+    mkdirSync(join(dir, ".methods"));
+    writeFileSync(join(dir, ".methods", "kept.mthds"), CHILD);
 
     const closure = resolveBundleClosure({ path: dir });
 
-    expect(closure.files.map((file) => file.source)).toEqual([join(dir, "bundle.mthds")]);
+    expect(closure.files.map((file) => file.source)).toEqual([
+      join(dir, "bundle.mthds"),
+      join(dir, ".methods", "kept.mthds"),
+    ]);
+  });
+
+  it("skips them under a library directory too", () => {
+    const method = join(dir, "method");
+    mkdirSync(join(method, "venv"), { recursive: true });
+    writeFileSync(join(method, "bundle.mthds"), ROOT);
+    writeFileSync(join(method, "venv", "stray.mthds"), CHILD);
+
+    const closure = resolveBundleClosure({ path: join(method, "bundle.mthds") }, [method]);
+
+    expect(closure.files.map((file) => file.source)).toEqual([join(method, "bundle.mthds")]);
   });
 
   it("sends a named file alone, leaving its siblings to the library directories", () => {

@@ -26,7 +26,7 @@
  * is the `info.version` of `mthds-protocol.openapi.yaml` and what a runner reports
  * as `protocol_version` from `GET /version`.
  */
-export const MTHDS_PROTOCOL_VERSION = "0.6.0";
+export const MTHDS_PROTOCOL_VERSION = "0.7.0";
 
 // ── Run responses (`POST /execute` 200, `POST /start` 202) ───────────
 
@@ -65,15 +65,37 @@ export interface RunResultStart {
 
 // ── Discovery + validation (`POST /validate`, `GET /models`, `GET /version`) ──
 
-/** Model categories accepted by the protocol's `GET /models?type=` filter. */
-export type ModelCategory = "llm" | "extract" | "img_gen" | "search";
+/**
+ * The protocol's model categories, in the order its "Discovery" section lists
+ * them. A category is a settings family of the language — the inline settings a
+ * model serves, and so the pipes that can name it: `llm` (`LLMSetting`:
+ * `PipeLLM`, `PipeStructure`), `extract` (`ExtractSetting`: `PipeExtract`),
+ * `img_gen` (`ImgGenSetting`: `PipeImgGen`), `search` (`SearchSetting`:
+ * `PipeSearch`) and `judgment` (`JudgmentSetting`: `PipeJudge`).
+ *
+ * A `const` tuple so that the {@link ModelCategory} union is derived from it and
+ * the runtime list and the type cannot drift. It is the closed set a runner may
+ * emit in a deck entry's `type` and accept on the `GET /models?type=` filter;
+ * what a client reads is wider (see {@link ModelInfo}).
+ */
+export const MODEL_CATEGORIES = ["llm", "extract", "img_gen", "search", "judgment"] as const;
 
-export const MODEL_CATEGORIES: readonly ModelCategory[] = ["llm", "extract", "img_gen", "search"];
+/** A model category the protocol defines — the closed set of {@link MODEL_CATEGORIES}. */
+export type ModelCategory = (typeof MODEL_CATEGORIES)[number];
 
 /** One entry of the model deck (`ModelDeck.models[]`) — base fields + extensions. */
 export interface ModelInfo {
   name: string;
-  type?: ModelCategory | null;
+  /**
+   * The entry's model category. Open on purpose: "A client reading a model list
+   * MUST NOT fail it because an entry carries a category it does not recognize;
+   * it keeps that entry with its raw value or leaves it out." This SDK keeps it,
+   * so a runner of a later protocol minor that reports a category this version
+   * has never heard of reaches the caller as the raw string. `string & {}` keeps
+   * the editor's completion on the known values; a consumer that indexes a table
+   * by this field has to say what an unknown category does.
+   */
+  type?: ModelCategory | (string & {}) | null;
 }
 
 /**

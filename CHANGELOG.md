@@ -1,5 +1,21 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- **`MthdsApiClient.pipeIo()`**: reads a method's pipe I/O contracts, input form and output form from `POST /v1/pipe-io` in one call, with no dry run. The closure is inline `files`, a `method_ref` address or a hosted catalog `method_id`, and a `method_ref` request gets a three-minute budget for the server's fetch. `PipeIORequest`, `PipeIOResponse`, `PipeIOValidReport`, `CrateInvalidReport`, `CrateRequestBase`, `MthdsFileItem` and `PIPE_SELECTION_ERROR_TYPES`, the two `error_type` values of a refused pipe selection, are exported from `mthds`.
+- **`mthds-agent inputs method` on the API runner**: takes a published method's address (`github.com/<owner>/<repo>[/<selector>][@<tag>]`) or a hosted catalog id (`mt_…`) and prints the method's inputs template, where it answered `UnsupportedError`. A bare installed-method name or a local path is refused with an `ArgumentError` that points at `inputs bundle` and the pipelex runner.
+
+### Changed
+
+- **`mthds-agent inputs` on the API runner reads `POST /v1/pipe-io` (Breaking)**: `inputs bundle` and `inputs pipe` project the template locally from the pipe's input form instead of calling `POST /v1/build/inputs`, so they need a runner serving the new route (`pipelex-api` v0.33.0 or later). They now honour `--format json|toml`, printing TOML raw on stdout, and `--explicit`, which the API runner used to ignore. Against `pipelex-api` v0.33.1 or later, which types these refusals, a refused pipe selection (a `--pipe` the method does not declare, or no `--pipe` when it declares no entry pipe or several) is an `ArgumentError` carrying the runner's message, where it was a `RunnerError`.
+- **`mthds build inputs pipe` on the API runner reads `POST /v1/pipe-io` (Breaking)**: it projects the template locally from the pipe's input form instead of calling `POST /v1/build/inputs`, so it needs a runner serving the new route.
+
+### Fixed
+
+- **`mthds build inputs pipe` on the API runner sends the whole method**: it now sends every `.mthds` file of each `-L` directory after the bundle file, as `mthds validate pipe` does, and when those are several and `--pipe` is omitted it asks for the bundle file's own `main_pipe`, so a method split across files gets its inputs template there as it does on the pipelex runner. `-L` was ignored before.
+
 ## [v0.29.0] - 2026-10-03
 
 ### Added

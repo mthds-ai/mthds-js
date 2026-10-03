@@ -1019,6 +1019,133 @@ describe("MthdsApiClient build routes", () => {
   });
 });
 
+describe("MthdsApiClient.pipeIo", () => {
+  function bodyOf(fetchSpy: ReturnType<typeof vi.spyOn>): Record<string, unknown> {
+    const init = fetchSpy.mock.calls[0]![1] as { body?: string };
+    return JSON.parse(init.body ?? "{}") as Record<string, unknown>;
+  }
+
+  /** The delay of every timer the client armed, which is how its request budget shows. */
+  function armedTimeouts(timeoutSpy: ReturnType<typeof vi.spyOn>): unknown[] {
+    return timeoutSpy.mock.calls.map((call: unknown[]) => call[1]);
+  }
+
+  const VALID = {
+    is_valid: true,
+    pipe_ref: "smoke.echo",
+    pipe_io_contracts: {},
+    input_form: { "smoke.echo": { fields: [] } },
+    output_form: {},
+    default_pipe_ref: "smoke.echo",
+    pending_signatures: [],
+    is_runnable: true,
+  };
+
+  it("posts the request verbatim to /v1/pipe-io and returns the valid arm", async () => {
+    const client = makeClient();
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(jsonResponse(200, VALID));
+
+    const result = await client.pipeIo({
+      files: [{ content: "domain = 'smoke'", source: "smoke.mthds" }],
+      pipe_ref: "smoke.echo",
+      all_pipes: true,
+      include_files: true,
+    });
+
+    expect(fetchSpy.mock.calls[0]![0]).toBe("http://localhost:8081/v1/pipe-io");
+    expect(bodyOf(fetchSpy)).toEqual({
+      files: [{ content: "domain = 'smoke'", source: "smoke.mthds" }],
+      pipe_ref: "smoke.echo",
+      all_pipes: true,
+      include_files: true,
+    });
+    expect(result).toEqual(VALID);
+  });
+
+  // The hosted catalog selector is a pass-through: the platform resolves it, so the
+  // client neither expands it nor checks the selector XOR.
+  it("passes a method_id through untouched", async () => {
+    const client = makeClient();
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(jsonResponse(200, VALID));
+
+    await client.pipeIo({ method_id: "mt_abc123" });
+
+    expect(bodyOf(fetchSpy)).toEqual({ method_id: "mt_abc123" });
+  });
+
+  it("returns the invalid arm as a value, not an exception", async () => {
+    const client = makeClient();
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      jsonResponse(200, {
+        is_valid: false,
+        validation_errors: [{ category: "blueprint_validation", message: "boom" }],
+        message: "MTHDS library could not be resolved",
+      }),
+    );
+
+    const result = await client.pipeIo({ files: [{ content: "domain = 'smoke'" }] });
+
+    expect(result.is_valid).toBe(false);
+  });
+
+  it("raises a selection refusal as ApiResponseError carrying its error_type", async () => {
+    const client = makeClient();
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      jsonResponse(422, {
+        type: "https://docs.pipelex.com/latest/errors/entry-pipe-not-found-error/",
+        status: 422,
+        detail: "Pipe 'smoke.nope' not found in the submitted closure.",
+        error_type: "EntryPipeNotFoundError",
+        error_domain: "input",
+        request_id: "req-io-1",
+      }),
+    );
+
+    const err = await client
+      .pipeIo({ files: [{ content: "domain = 'smoke'" }], pipe_ref: "smoke.nope" })
+      .catch((e: unknown) => e);
+
+    expect(err).toBeInstanceOf(ApiResponseError);
+    expect(err).toMatchObject({
+      status: 422,
+      errorType: "EntryPipeNotFoundError",
+      serverMessage: "Pipe 'smoke.nope' not found in the submitted closure.",
+      errorDomain: "input",
+      requestId: "req-io-1",
+    });
+    expect((err as ApiResponseError).message).toBe(
+      "API POST /v1/pipe-io failed (422): Pipe 'smoke.nope' not found in the submitted closure.",
+    );
+  });
+
+  it("wraps a network failure as ApiUnreachableError", async () => {
+    const client = makeClient();
+    vi.spyOn(globalThis, "fetch").mockRejectedValue(networkError("ECONNREFUSED"));
+
+    await expect(client.pipeIo({ files: [{ content: "x" }] })).rejects.toBeInstanceOf(
+      ApiUnreachableError,
+    );
+  });
+
+  // A `method_ref` can make the server clone a repository first, so it gets the
+  // fetch-sized budget; inline files get the static-route one.
+  it("gives a method_ref the fetch-sized budget and inline files the static one", async () => {
+    const client = makeClient();
+    vi.spyOn(globalThis, "fetch").mockImplementation(() =>
+      Promise.resolve(jsonResponse(200, VALID)),
+    );
+    const timeoutSpy = vi.spyOn(globalThis, "setTimeout");
+
+    await client.pipeIo({ method_ref: "github.com/acme/methods@v1.0.0" });
+    expect(armedTimeouts(timeoutSpy)).toContain(180_000);
+
+    timeoutSpy.mockClear();
+    await client.pipeIo({ files: [{ content: "x" }] });
+    expect(armedTimeouts(timeoutSpy)).toContain(30_000);
+    expect(armedTimeouts(timeoutSpy)).not.toContain(180_000);
+  });
+});
+
 describe("MthdsApiClient validation items keep their next step", () => {
   // The two items a runner sends for a refused bundle, as the reference runner
   // serializes them (`exclude_none`): an unknown model, whose one close match

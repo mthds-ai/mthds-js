@@ -4,6 +4,8 @@ The three per-pipe projections: `buildInputs`, `buildOutput`, `buildRunner`. Giv
 
 These are **Pipelex API extensions, not MTHDS Protocol routes.** The protocol fixes `execute` / `start` / `validate` / `models` / `version`; everything here is Pipelex's own surface, which is why the request types live in `src/runners/types.ts` (the runner layer) rather than in `src/protocol/`. A third-party MTHDS runner is not obliged to serve them.
 
+**This package's CLIs no longer call `buildInputs`.** `mthds-agent inputs` and `mthds build inputs` on the API runner read the pipe's input form from `POST /v1/pipe-io` and project the template locally (see [pipe-io.md](./pipe-io.md)). `buildInputs()` stays on the client for other callers until the route is retired. `pipeIo()` shares the closure envelope below, `files[]` XOR `method_ref`, and adds a hosted `method_id`.
+
 ## The shared envelope
 
 All three take the same closure + pipe selector:
@@ -86,5 +88,6 @@ The local runner **rejects** a request that sets the flag rather than dropping i
 
 ## See also
 
+- [pipe-io.md](./pipe-io.md) — `pipeIo()`: a method's three I/O artifacts in one call, which the inputs template is now projected from.
 - [api-runner.md](./api-runner.md) — base URL, hosted vs. self-hosted.
 - [errors.md](./errors.md) — the exception taxonomy, and `ValidationErrorItem`'s fields.

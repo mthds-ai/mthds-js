@@ -53,7 +53,7 @@ When `--runner` is omitted, the CLI uses the runner configured via `mthds config
 
 When using the **pipelex** runner, the `run`, `build`, and `validate` commands act as thin wrappers: they forward all arguments directly to the `pipelex` CLI. This means any pipelex-specific flags (e.g. `--dry-run`, `--mock-inputs`, `--output-dir`) are passed through transparently.
 
-The `--runner` flag is consumed by mthds and not forwarded. The `-L/--library-dir` flags are forwarded to pipelex. With the API runner, `validate pipe` sends every `.mthds` file of each `-L` directory beside the bundle file, so a method split across files validates as it does on the pipelex runner.
+The `--runner` flag is consumed by mthds and not forwarded. The `-L/--library-dir` flags are forwarded to pipelex. With the API runner, `validate pipe` and `build inputs pipe` send every `.mthds` file of each `-L` directory beside the bundle file, so a method split across files validates and gets its inputs template as it does on the pipelex runner.
 
 ---
 
@@ -264,7 +264,7 @@ mthds build runner pipe ./bundle.mthds --pipe my_pipe --output runner.py
 
 ### `mthds build inputs method|pipe`
 
-Generate example input JSON for a pipe.
+Generate an example inputs template for a pipe.
 
 ```bash
 mthds build inputs method <name> [OPTIONS]
@@ -274,13 +274,17 @@ mthds build inputs pipe <target> [OPTIONS]
 | Argument / Option | Type | Required | Default | Description |
 |---|---|---|---|---|
 | `name` / `target` | string | yes | -- | Method name or bundle file path |
-| `--pipe <code>` | string | no | -- | Pipe code to generate inputs for (required for API runner) |
+| `--pipe <ref>` | string | no | the closure's `main_pipe` | Qualified pipe ref (`domain.pipe_code`) to generate inputs for |
+| `--format <format>` | string | no | `json` | Template format: `json` or `toml` (`pipe` only) |
+| `--explicit` | flag | no | -- | Keep the `{concept, content}` envelope on every input (`pipe` only) |
+
+With the API runner, `build inputs pipe` reads the pipe's input form from `POST /v1/pipe-io` and projects the template locally, and `build inputs method` is not available. It sends the bundle file first, followed by every `.mthds` file of each `-L` directory, and when those are several and `--pipe` is omitted it asks for the bundle file's own `main_pipe`, the pipe the pipelex runner templates. With the pipelex runner, both forward to `pipelex`.
 
 **Examples:**
 
 ```bash
 mthds build inputs method my-method
-mthds build inputs pipe ./bundle.mthds --pipe my_pipe
+mthds build inputs pipe ./bundle.mthds --pipe my_domain.my_pipe --format toml
 ```
 
 ### `mthds build output method|pipe`
@@ -901,6 +905,44 @@ The graph options are not applied, because the graph is drawn locally by the pip
 mthds-agent validate bundle ./my_method/
 mthds-agent validate bundle ./my_method/child.mthds -L ./my_method/ --allow-signatures
 mthds-agent validate bundle ./bundle.mthds --pipe my_pipe
+```
+
+### `mthds-agent inputs bundle|pipe|method`
+
+Generate an example inputs template for a pipe: the fill-in document a person or an agent completes and hands back as the pipe's inputs.
+
+```bash
+mthds-agent inputs bundle [target] [OPTIONS]
+mthds-agent inputs pipe <target> [OPTIONS]
+mthds-agent inputs method <target> [OPTIONS]
+```
+
+| Argument / Option | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `target` | string | see below | -- | A `.mthds` bundle file or a method directory (`bundle`), a `.mthds` bundle file (`pipe`), or a method (`method`) |
+| `--pipe <ref>` | string | no | the method's entry pipe | Qualified pipe ref (`domain.pipe_code`) |
+| `--content <mthds>` | string | no | -- | Bundle content as a string, in place of a file (`bundle` only) |
+| `-L, --library-dir <dir>` | string | no | -- | Library directory whose `.mthds` files join the bundle, repeatable (`bundle`, `pipe`) |
+| `--format <fmt>` | string | no | `json` | `json` prints the result envelope; `toml` prints the raw TOML template on stdout |
+| `--explicit` | flag | no | -- | Keep the `{concept, content}` envelope on every input instead of the light values |
+
+With the **API runner**, the command reads the pipe's input form from `POST /v1/pipe-io` and projects the template locally with the `mthds` package's projection, whose TOML output `mthds-python` reproduces byte for byte. `bundle` and `pipe` send the bundle's whole closure, as `validate bundle` does above, and pick the entry's own `main_pipe` when `--pipe` is omitted and the closure holds several files. The `method` target is a published method's address (`github.com/<owner>/<repo>[/<selector>][@<tag>]`), which the runner fetches, or a hosted catalog id (`mt_…`), which only a hosted API resolves; a bare name or a local path is refused with an `ArgumentError`. With the **pipelex runner**, every subcommand forwards to `pipelex-agent inputs`, where the `method` target is an installed method's name.
+
+The JSON output is `{ "success": true, "pipe_ref": "<domain.pipe_code>", "inputs": { … } }`, where `pipe_ref` is the pipe the runner resolved. A pipe that declares no inputs prints `inputs: {}`, or a TOML comment saying so.
+
+Failures print the JSON error envelope on stderr and exit 1:
+
+- a `--pipe` the method does not declare, or no `--pipe` when the method declares no entry pipe or several, is an `ArgumentError` carrying the runner's message, which lists the candidates (against `pipelex-api` v0.33.1 or later; an older runner's refusal is a `RunnerError`);
+- an invalid method is a `ValidateBundleError` carrying `is_valid: false` and `validation_errors`, as on `validate`;
+- any other refusal from the runner, or a runner that cannot be reached, is a `RunnerError`.
+
+**Examples:**
+
+```bash
+mthds-agent --runner api inputs bundle ./bundle.mthds --pipe my_domain.my_pipe
+mthds-agent --runner api inputs pipe ./bundle.mthds --format toml --explicit
+mthds-agent --runner api inputs bundle ./my_method/child.mthds -L ./my_method/
+mthds-agent --runner api inputs method github.com/Pipelex/methods/documents@v0.1.0
 ```
 
 ### `mthds-agent codegen types|check`

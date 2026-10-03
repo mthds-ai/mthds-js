@@ -2,16 +2,20 @@ import { basename } from "node:path";
 import { readFileSync, writeFileSync } from "node:fs";
 import * as p from "@clack/prompts";
 import { printLogo } from "./index.js";
-import { isPipelexRunner, extractPassthroughArgs } from "./utils.js";
+import { isApiRunner, isPipelexRunner, extractPassthroughArgs } from "./utils.js";
 import { formatCliError, withSuggestedFix } from "./error-output.js";
 import { createRunner } from "../../runners/registry.js";
 import type {
   ConceptRepresentationFormat,
   CrateInvalidReport,
-  InputsTemplateFormat,
   MthdsFileItem,
   RunnerType,
 } from "../../runners/types.js";
+import { INPUTS_TEMPLATE_FORMATS, renderInputsTemplate } from "../../protocol/inputs_template.js";
+import type { InputsTemplateFormat } from "../../protocol/inputs_template.js";
+import { selectedInputDescriptor } from "../../runners/pipe-io.js";
+import { closureEntryPipeRef, resolveBundleClosure } from "../../runners/bundle.js";
+import type { BundleClosure } from "../../runners/bundle.js";
 
 interface WithRunner {
   runner?: RunnerType;
@@ -197,17 +201,27 @@ export async function buildInputsPipe(
     return;
   }
 
-  const validFormats: InputsTemplateFormat[] = ["json", "toml"];
   const format = (options.format ?? "json") as InputsTemplateFormat;
-  if (!validFormats.includes(format)) {
-    p.log.error(`Invalid format "${format}". Must be one of: ${validFormats.join(", ")}`);
+  if (!(INPUTS_TEMPLATE_FORMATS as readonly string[]).includes(format)) {
+    p.log.error(
+      `Invalid format "${format}". Must be one of: ${INPUTS_TEMPLATE_FORMATS.join(", ")}`,
+    );
+    p.outro("");
+    process.exit(1);
+  }
+  // Every runner that is not the pipelex one is the API runner, whose `pipeIo` lives
+  // on the concrete client rather than on the shared `Runner` interface.
+  if (!isApiRunner(runner)) {
+    p.log.error("build inputs pipe needs the API runner or the pipelex runner.");
     p.outro("");
     process.exit(1);
   }
 
-  let file: MthdsFileItem;
+  // The bundle file first, then every `.mthds` file of the `-L` directories, so a
+  // method split across files gets its template as it does on the pipelex runner.
+  let closure: BundleClosure;
   try {
-    file = readBundleFile(target);
+    closure = resolveBundleClosure({ path: target }, options.libraryDir ?? []);
   } catch (err) {
     p.log.error((err as Error).message);
     p.outro("");
@@ -218,21 +232,20 @@ export async function buildInputsPipe(
   s.start("Generating example inputs...");
 
   try {
-    const result = await runner.buildInputs({
-      files: [file],
-      pipe_ref: options.pipe,
-      format,
-      explicit: options.explicit ?? false,
+    // The template is projected here from the pipe's input-form descriptor, which
+    // `POST /v1/pipe-io` returns, rather than fetched from a build route.
+    const result = await runner.pipeIo({
+      files: closure.files,
+      pipe_ref: options.pipe ?? closureEntryPipeRef(closure),
     });
     if (!reportIfInvalid(s, result)) return;
-    s.stop(`Inputs generated for ${result.pipe_ref}.`);
-    // The template rides the field its `format` names — print it as the caller
-    // asked for it, not as a re-encoded blob.
-    p.log.info(
-      result.format === "toml"
-        ? (result.inputs_toml ?? "")
-        : JSON.stringify(result.inputs, null, 2),
-    );
+    const { pipeRef, descriptor } = selectedInputDescriptor(result);
+    const rendered = renderInputsTemplate(descriptor, {
+      explicit: options.explicit ?? false,
+      format,
+    });
+    s.stop(`Inputs generated for ${pipeRef}.`);
+    p.log.info(rendered.length > 0 ? rendered : `# Pipe '${pipeRef}' declares no inputs.`);
     p.outro("Done");
   } catch (err) {
     s.stop("Build failed.");

@@ -10,6 +10,8 @@ import type {
   BuildRunnerResponse,
   ConceptRequest,
   ConceptResponse,
+  PipeIORequest,
+  PipeIOResponse,
   PipeSpecRequest,
   PipeSpecResponse,
 } from "../types.js";
@@ -108,6 +110,11 @@ const API_PREFIX = "v1";
 
 const DEFAULT_REQUEST_TIMEOUT_MS = 1_200_000; // 20 min — matches the runner's blocking execute ceiling.
 const POLL_REQUEST_TIMEOUT_MS = 30_000; // single GETs (models/version/start); the hosted gateway caps responses at ~30s.
+// A `method_ref` can make the server CLONE a repository before it answers, and on a
+// cold cache that runs well past the static-route budget above. The same budget
+// `@pipelex/sdk` gives its crate routes; inert on the hosted path, where the gateway
+// caps a response at ~30s whatever the client allows.
+const METHOD_REF_FETCH_TIMEOUT_MS = 180_000; // 3 min — covers the server's clone + resolve
 const VALIDATE_MARKDOWN_RENDER_FORMAT = "markdown";
 
 /**
@@ -121,6 +128,9 @@ const VALIDATE_MARKDOWN_RENDER_FORMAT = "markdown";
  *   against any MTHDS-compliant runner, hosted or bare.
  * - **build extensions** (`/v1/build/*`) — the Pipelex API's spec-to-TOML / runner
  *   / inputs / output helpers.
+ * - **`pipeIo`** (`/v1/pipe-io`) — a Pipelex API extension carrying the standard's
+ *   I/O artifacts. Like `uploadFile`, it lives on this class and not on `Runner`:
+ *   the local pipelex runner shells out and has no use for it.
  *
  * The durable run-lifecycle (poll a run by id: `getRunStatus` / `getRunResult` /
  * `waitForResult` / `startAndWaitForResult`) is NOT part of this client — it now
@@ -583,6 +593,41 @@ export class MthdsApiClient implements Runner {
     return this.postApi("build/pipe-spec", request);
   }
 
+  // ── Pipe I/O (Pipelex API extension — `POST /v1/pipe-io`) ─────────
+
+  /**
+   * Read a method's three I/O artifacts — `POST /v1/pipe-io`.
+   *
+   * Resolves the closure through the server's static core, selects a pipe, and
+   * returns its pipe I/O contracts, input form and output form (the MTHDS standard's
+   * artifacts, typed from `mthds/protocol`) beside the resolved `pipe_ref`, the
+   * method's own `default_pipe_ref` and the runnability facts. It runs no dry run, so
+   * it costs one load and one derivation where `validate` dry-runs every pipe.
+   *
+   * Returns a **200 verdict**: pattern-match `is_valid` before reading the arm. A
+   * closure that does not load comes back as `is_valid: false` with
+   * `validation_errors[]`, never as a throw. Only a no-verdict condition throws an
+   * `ApiResponseError`: a malformed selector, an over-limit file and a refused pipe
+   * selection are `422`s (a selection refusal is typed by one of
+   * `PIPE_SELECTION_ERROR_TYPES`), a registry-form `method_ref` is a `501`, and an
+   * artifact that cannot be derived is a `500`. An unreachable server is an
+   * `ApiUnreachableError`.
+   *
+   * The request is posted as given, `method_id` included, and the selector XOR is the
+   * server's to enforce. A `method_ref` gets the fetch-sized budget; every other
+   * request gets the static-route one.
+   */
+  async pipeIo(request: PipeIORequest): Promise<PipeIOResponse> {
+    const res = await this.requestRaw("POST", this.url("pipe-io"), {
+      body: request,
+      timeoutMs: crateRequestTimeoutMs(request),
+    });
+    if (res.status < 200 || res.status >= 300) {
+      this.throwApiResponseError("POST", "pipe-io", res);
+    }
+    return JSON.parse(res.body) as PipeIOResponse;
+  }
+
   // ── Storage convenience (NON-CONTRACT — `POST /v1/upload`) ─────────
 
   /**
@@ -661,6 +706,17 @@ function nonEmptyFiles(
 
 function nonEmptyString(value: string | null | undefined): string | undefined {
   return value != null && value.length > 0 ? value : undefined;
+}
+
+/**
+ * The request budget for a crate-route call: the fetch-sized one when the closure
+ * is a `method_ref` the server may have to clone first, the static-route one
+ * otherwise.
+ */
+function crateRequestTimeoutMs(request: { method_ref?: string }): number {
+  return nonEmptyString(request.method_ref) !== undefined
+    ? METHOD_REF_FETCH_TIMEOUT_MS
+    : POLL_REQUEST_TIMEOUT_MS;
 }
 
 function withValidateMarkdownRender(render: string[] | undefined): string[] {

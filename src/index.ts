@@ -28,6 +28,17 @@ export type {
 export type { AppInfo } from "./runners/api/user-agent.js";
 export { MTHDS_JS_VERSION } from "./version.js";
 
+// ── Pipe I/O (runners — `MthdsApiClient.pipeIo`, a Pipelex API extension) ──
+export { PIPE_SELECTION_ERROR_TYPES } from "./runners/types.js";
+export type {
+  CrateInvalidReport,
+  CrateRequestBase,
+  MthdsFileItem,
+  PipeIORequest,
+  PipeIOResponse,
+  PipeIOValidReport,
+} from "./runners/types.js";
+
 // ── API-runner errors (runners/api — the protocol-base `PipelineRequestError`
 //    rides the protocol barrel above) ──────────────────────────────────
 export {

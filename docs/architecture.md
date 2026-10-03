@@ -134,7 +134,7 @@ Two shapes, and the difference is what the runtime's own input shaper can take b
 
 `tests/fixtures/protocol/inputs_template/` is the corpus that holds the two sides to it: one file per pipe, shape and format, committed identically in both repos. The rules the captured bundles do not reach are stated on their own — each TOML layout rule as bytes in `toml-emitter.test.ts`, and the forms no capture produced (an input-less pipe, a plural native slot, an unknown format) in `inputs-template-rendering.test.ts`.
 
-Wiring `mthds-agent inputs` on the API runner onto this projection — and off `POST /v1/build/inputs` — is the second half of `L-260829-f50e2b`, and waits on the descriptor's own route.
+`mthds-agent inputs` and `mthds build inputs` on the API runner use this projection: they read the pipe's descriptor from `POST /v1/pipe-io` through `MthdsApiClient.pipeIo()` and render the template here, so `--format` and `--explicit` are honoured on the API runner as on the pipelex one, and neither command calls `POST /v1/build/inputs` any more. See [pipe-io.md](./pipe-io.md).
 
 ### Token precedence
 

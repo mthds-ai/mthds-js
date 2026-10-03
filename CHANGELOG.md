@@ -2,7 +2,17 @@
 
 ## [Unreleased]
 
+### Added
+
+- **`judgment` model category (Breaking)**: `MODEL_CATEGORIES` and `ModelCategory` carry `judgment`, the category of the models a `PipeJudge` names, so `models("judgment")` and `mthds-agent models --type judgment` list them, and `MTHDS_PROTOCOL_VERSION` is `0.7.0`, the MTHDS Protocol release that defines it. `ModelCategory` is now derived from the `MODEL_CATEGORIES` tuple, so the two cannot drift, and a table typed `Record<ModelCategory, …>` needs a `judgment` entry.
+
+### Changed
+
+- **`ModelInfo.type` reads any category (Breaking)**: a model deck entry's `type` is now `ModelCategory | (string & {}) | null`, so an entry whose category this version does not define reaches the caller with its raw value, as the protocol requires of a client reading a model list. Code that indexes a table by an entry's `type` must now say what an unknown category does.
+
 ### Fixed
+
+- **`PipelexRunner.models` keeps every alias (Breaking)**: the `aliases` and `waterfalls` of the deck the pipelex runner returns stay keyed by category, the shape the API runner already returns, where they were merged into one map that kept a single entry for an alias name defined in several categories. A consumer that read `deck.aliases[name]` reads `deck.aliases[category][name]`.
 
 - **API-runner validate and inputs send the whole method**: on the API runner, `mthds-agent validate bundle|pipe`, `mthds-agent inputs bundle|pipe` and `mthds validate pipe` now send every `.mthds` file of a directory target and of each `-L` directory, outside the folders pipelex's library scan skips, a folder the user may not list among them, with the named file or the directory's entry file first (`bundle.mthds`, else the only root file, as the pipelex runner chooses it), so a method split across files validates and gets its entry pipe's inputs template there as it does on the pipelex runner. A directory target no longer fails with `EISDIR`, and `-L` is read whether it is written before or after the subcommand, where it was ignored. The graph options of `validate bundle` (`--graph`, `--graph-format`, `--view`, `--direction`), which only the pipelex runner can honour, are no longer silently ignored either: after a valid verdict, a stderr warning says no graph was drawn.
 - **Method bundles leave out virtual environments and run outputs**: a method directory that `mthds run` and `mthds-agent run` send whole, with its custom Python, no longer carries the `venv/`, `env/`, `virtualenv/` or `results/` folders inside it, which pipelex never loads, and a folder inside it that the user may not list is skipped as pipelex skips it, where it failed the run with `EACCES`.

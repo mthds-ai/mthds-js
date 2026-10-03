@@ -483,7 +483,7 @@ export function registerApiRunnerCommands(program: Command, makeRunner: () => Ru
   program
     .command("models")
     .description("List the model deck (models, aliases, waterfalls)")
-    .option("--type <type>", "Filter by model category (llm, extract, img_gen, search)")
+    .option("--type <type>", `Filter by model category (${MODEL_CATEGORIES.join(", ")})`)
     .allowUnknownOption()
     .allowExcessArguments(true)
     .exitOverride()
@@ -510,7 +510,7 @@ export function registerApiRunnerCommands(program: Command, makeRunner: () => Ru
     .command("check-model")
     .description("Validate a model reference with fuzzy suggestions (pipelex runner only)")
     .argument("<reference>", "Model reference to check")
-    .option("--type <type>", "Model category (llm, extract, img_gen, search)")
+    .option("--type <type>", `Model category (${MODEL_CATEGORIES.join(", ")})`)
     .allowUnknownOption()
     .allowExcessArguments(true)
     .exitOverride()

@@ -37,7 +37,7 @@ describe("emitInputsTemplate — invalid closure verdict envelope", () => {
     } as BuildInputsResponse);
 
     await expect(
-      emitInputsTemplate(runner, { content: 'domain = "x"\n' }, undefined),
+      emitInputsTemplate(runner, [{ content: 'domain = "x"\n' }], undefined),
     ).rejects.toThrow("__exit__");
 
     expect(exitSpy).toHaveBeenCalledWith(1);

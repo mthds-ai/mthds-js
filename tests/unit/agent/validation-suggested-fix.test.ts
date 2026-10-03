@@ -125,7 +125,7 @@ describe("mthds-agent invalid-verdict envelope keeps each item's next step", () 
     } as unknown as Runner;
 
     await expect(
-      emitInputsTemplate(runner, { content: 'domain = "demo"\n' }, undefined),
+      emitInputsTemplate(runner, [{ content: 'domain = "demo"\n' }], undefined),
     ).rejects.toThrow("__exit__");
 
     const envelope = stderrEnvelope();

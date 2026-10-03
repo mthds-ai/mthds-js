@@ -299,6 +299,13 @@ describe("API-runner validate and inputs send the whole bundle", () => {
       expect(requests[0]!.body.pipe_ref).toBe("demo.main");
     });
 
+    it("sends an empty --pipe as given instead of the entry's main pipe", async () => {
+      const child = join(method, "child.mthds");
+      await agent("inputs", "bundle", child, "-L", method, "--pipe", "");
+
+      expect(requests[0]!.body).toHaveProperty("pipe_ref", "");
+    });
+
     it("sends a named file alone, with no pipe_ref, when no library directory is given", async () => {
       const root = join(method, "bundle.mthds");
       await agent("inputs", "bundle", root);

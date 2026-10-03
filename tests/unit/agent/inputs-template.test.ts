@@ -103,6 +103,14 @@ describe("emitInputsTemplate", () => {
       expect(pipeIo).toHaveBeenCalledWith(FILES);
     });
 
+    // An empty `--pipe ""` (an unset shell variable) is a selection the runner refuses;
+    // dropped, it would template the default pipe and report success.
+    it("sends an empty pipe ref as given rather than leaving it out", async () => {
+      const pipeIo = vi.fn().mockResolvedValue(validReport());
+      await emitInputsTemplate(apiRunner(pipeIo), FILES, "", JSON_COMPACT);
+      expect(pipeIo.mock.calls[0]![0]).toHaveProperty("pipe_ref", "");
+    });
+
     it("sends a method_ref or method_id selector as given", async () => {
       const pipeIo = vi.fn().mockResolvedValue(validReport());
       await emitInputsTemplate(

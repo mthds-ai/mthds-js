@@ -304,8 +304,9 @@ export function registerApiRunnerCommands(program: Command, makeRunner: () => Ru
   // ── inputs ──
   // The template is PROJECTED here from the input-form descriptor `POST /v1/pipe-io`
   // returns (`projectInputsTemplate` / `renderInputsTemplate` in `mthds/protocol`),
-  // so both rendering axes — `--format` and `--explicit` — are this CLI's own and
-  // agree byte-for-byte with the Python twin.
+  // so both rendering axes — `--format` and `--explicit` — are this CLI's own. The
+  // TOML output is byte-for-byte the Python twin's; the JSON envelope carries the
+  // same template as a value, a decimal placeholder printing as `0` rather than `0.0`.
 
   const inputsGroup = program
     .command("inputs")
@@ -909,7 +910,10 @@ export async function emitInputsTemplate(
     });
     return;
   }
-  const request: PipeIORequest = pipeRef ? { ...selector, pipe_ref: pipeRef } : { ...selector };
+  // An empty `--pipe ""` is still a selection: sent as given, the runner refuses it,
+  // where dropping it would template the default pipe and report success.
+  const request: PipeIORequest =
+    pipeRef !== undefined ? { ...selector, pipe_ref: pipeRef } : { ...selector };
   let result: PipeIOResponse;
   try {
     result = await runner.pipeIo(request);

@@ -12,6 +12,27 @@
 - **`mthds-agent inputs` on the API runner reads `POST /v1/pipe-io` (Breaking)**: `inputs bundle` and `inputs pipe` project the template locally from the pipe's input form instead of calling `POST /v1/build/inputs`, so they need a runner serving the new route (`pipelex-api` v0.33.0 or later). They now honour `--format json|toml`, printing TOML raw on stdout, and `--explicit`, which the API runner used to ignore. Against `pipelex-api` v0.33.1 or later, which types these refusals, a refused pipe selection (a `--pipe` the method does not declare, or no `--pipe` when it declares no entry pipe or several) is an `ArgumentError` carrying the runner's message, where it was a `RunnerError`.
 - **`mthds build inputs pipe` on the API runner reads `POST /v1/pipe-io` (Breaking)**: it projects the template locally from the pipe's input form instead of calling `POST /v1/build/inputs`, so it needs a runner serving the new route.
 
+### Fixed
+
+- **`mthds build inputs pipe` on the API runner sends the whole method**: it now sends every `.mthds` file of each `-L` directory after the bundle file, as `mthds validate pipe` does, and when those are several and `--pipe` is omitted it asks for the bundle file's own `main_pipe`, so a method split across files gets its inputs template there as it does on the pipelex runner. `-L` was ignored before.
+
+## [v0.29.0] - 2026-10-03
+
+### Added
+
+- **`judgment` model category (Breaking)**: `MODEL_CATEGORIES` and `ModelCategory` carry `judgment`, the category of the models a `PipeJudge` names, so `models("judgment")` and `mthds-agent models --type judgment` list them, and `MTHDS_PROTOCOL_VERSION` is `0.7.0`, the MTHDS Protocol release that defines it. `ModelCategory` is now derived from the `MODEL_CATEGORIES` tuple, so the two cannot drift, and a table typed `Record<ModelCategory, …>` needs a `judgment` entry.
+
+### Changed
+
+- **`ModelInfo.type` reads any category (Breaking)**: a model deck entry's `type` is now `ModelCategory | (string & {}) | null`, so an entry whose category this version does not define reaches the caller with its raw value, as the protocol requires of a client reading a model list. Code that indexes a table by an entry's `type` must now say what an unknown category does.
+
+### Fixed
+
+- **`PipelexRunner.models` keeps every alias (Breaking)**: the `aliases` and `waterfalls` of the deck the pipelex runner returns stay keyed by category, the shape the API runner already returns, where they were merged into one map that kept a single entry for an alias name defined in several categories. A consumer that read `deck.aliases[name]` reads `deck.aliases[category][name]`.
+- **API-runner validate and inputs send the whole method**: on the API runner, `mthds-agent validate bundle|pipe`, `mthds-agent inputs bundle|pipe` and `mthds validate pipe` now send every `.mthds` file of a directory target and of each `-L` directory, outside the folders pipelex's library scan skips, a folder the user may not list among them, with the named file or the directory's entry file first (`bundle.mthds`, else the only root file, as the pipelex runner chooses it), so a method split across files validates and gets its entry pipe's inputs template there as it does on the pipelex runner. A directory target no longer fails with `EISDIR`, and `-L` is read whether it is written before or after the subcommand, where it was ignored. The graph options of `validate bundle` (`--graph`, `--graph-format`, `--view`, `--direction`), which only the pipelex runner can honour, are no longer silently ignored either: after a valid verdict, a stderr warning says no graph was drawn.
+- **Method bundles leave out virtual environments and run outputs**: a method directory that `mthds run` and `mthds-agent run` send whole, with its custom Python, no longer carries the `venv/`, `env/`, `virtualenv/` or `results/` folders inside it, which pipelex never loads, and a folder inside it that the user may not list is skipped as pipelex skips it, where it failed the run with `EACCES`.
+- **Timeout and still-running messages name `@pipelex/sdk` alone**: the messages of `PipelineExecuteTimeoutError` and of the `RunStillRunningError` that `execute()` throws on a `202` send the caller to `@pipelex/sdk` for the durable run API, where they also named `pipelex-agent`, a CLI that cannot poll a run by id.
+
 ## [v0.28.0] - 2026-09-27
 
 ### Added

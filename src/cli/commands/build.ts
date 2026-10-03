@@ -14,6 +14,8 @@ import type {
 import { INPUTS_TEMPLATE_FORMATS, renderInputsTemplate } from "../../protocol/inputs_template.js";
 import type { InputsTemplateFormat } from "../../protocol/inputs_template.js";
 import { selectedInputDescriptor } from "../../runners/pipe-io.js";
+import { closureEntryPipeRef, resolveBundleClosure } from "../../runners/bundle.js";
+import type { BundleClosure } from "../../runners/bundle.js";
 
 interface WithRunner {
   runner?: RunnerType;
@@ -215,9 +217,11 @@ export async function buildInputsPipe(
     process.exit(1);
   }
 
-  let file: MthdsFileItem;
+  // The bundle file first, then every `.mthds` file of the `-L` directories, so a
+  // method split across files gets its template as it does on the pipelex runner.
+  let closure: BundleClosure;
   try {
-    file = readBundleFile(target);
+    closure = resolveBundleClosure({ path: target }, options.libraryDir ?? []);
   } catch (err) {
     p.log.error((err as Error).message);
     p.outro("");
@@ -230,7 +234,10 @@ export async function buildInputsPipe(
   try {
     // The template is projected here from the pipe's input-form descriptor, which
     // `POST /v1/pipe-io` returns, rather than fetched from a build route.
-    const result = await runner.pipeIo({ files: [file], pipe_ref: options.pipe });
+    const result = await runner.pipeIo({
+      files: closure.files,
+      pipe_ref: options.pipe ?? closureEntryPipeRef(closure),
+    });
     if (!reportIfInvalid(s, result)) return;
     const { pipeRef, descriptor } = selectedInputDescriptor(result);
     const rendered = renderInputsTemplate(descriptor, {

@@ -91,7 +91,7 @@ The blocking `execute` (`POST /v1/execute`) was killed by the hosted gateway's ~
 |---|---|---|
 | `elapsedMs` | `number` | How long the request ran before the timeout fired. |
 
-The message tells the caller to start the run and poll its result by id instead, using the durable run API now provided by [`@pipelex/sdk` / `pipelex-agent`](./run-lifecycle.md). Against a **self-hosted** runner there is no gateway cap — a long run is bounded only by your own reverse proxy's idle timeout (see [api-runner.md](./api-runner.md)).
+The message tells the caller to start the run and poll its result by id instead, using the durable run API now provided by [`@pipelex/sdk`](./run-lifecycle.md). Against a **self-hosted** runner there is no gateway cap — a long run is bounded only by your own reverse proxy's idle timeout (see [api-runner.md](./api-runner.md)).
 
 ### `RunStillRunningError`
 

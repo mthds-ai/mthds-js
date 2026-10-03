@@ -89,6 +89,12 @@ See [errors.md](./errors.md) for the full taxonomy — each class's fields, when
 
 Both are **extension-open** (an index signature): anything more an implementation returns (`state`, `created_at`, `main_stuff_name`, …) is preserved but never named by the SDK. The discovery models (`ModelDeck`, `VersionInfo`) and the valid arm `ValidationReport` are slim + extension-open the same way.
 
+### A model deck entry's category is read open
+
+The protocol's model categories are `MODEL_CATEGORIES`, a `const` tuple from which the `ModelCategory` union is derived, so the runtime list and the type cannot drift. It is the closed set a runner emits and the `models(category?)` filter accepts, and every place that names the categories to a person — the agent CLI's `--type` help and its error, the pipelex runner's `checkModel` error — reads it rather than restating it.
+
+What a client *reads* is wider. The protocol says that "a client reading a model list MUST NOT fail it because an entry carries a category it does not recognize; it keeps that entry with its raw value or leaves it out", and this SDK keeps it: `ModelInfo.type` is `ModelCategory | (string & {}) | null`, so an entry from a runner of a later protocol minor reaches the caller with its raw category, while the `string & {}` keeps the editor's completion on the known values. A consumer that indexes a table by an entry's `type` therefore has to say what an unknown category does. Both runners keep such an entry: the API client returns the deck as the runner served it, and the pipelex runner carries each category of `pipelex-agent models` through as it came. The routing extensions the pipelex runner maps, `aliases` and `waterfalls`, stay keyed by category, the shape pipelex's own protocol runner serves, because one alias name can name a different model in each category.
+
 ### `/validate` is a 200-diagnostic surface
 
 `POST /validate` is a diagnostic endpoint: **every produced verdict rides a `200`**, discriminated in the body on the mandatory `is_valid` field. A non-2xx is reserved for *no-verdict* conditions — a malformed request, an `mthds_sources` length mismatch, auth, a server fault — which throw `ApiResponseError`. A consumer pattern-matches `is_valid`; it never branches on a status code or a caught exception body.
@@ -143,7 +149,7 @@ There is one class, not a client wrapped by a runner. `MthdsApiClient implements
 
 ## Run lifecycle lives in `@pipelex/sdk`
 
-`mthds-js` implements the protocol's `start` (`POST /v1/start`), which hands back the authoritative `pipeline_run_id`. The **durable run-lifecycle** — polling a run by id until it reaches a terminal state — is a hosted-API extension, not part of `MTHDSProtocol`, and lives in the Pipelex runtime SDK (`@pipelex/sdk` / `pipelex-agent`). That keeps this package scoped to the protocol surface. See [run-lifecycle.md](./run-lifecycle.md).
+`mthds-js` implements the protocol's `start` (`POST /v1/start`), which hands back the authoritative `pipeline_run_id`. The **durable run-lifecycle** — polling a run by id until it reaches a terminal state — is a hosted-API extension, not part of `MTHDSProtocol`, and lives in the Pipelex runtime SDK (`@pipelex/sdk`). That keeps this package scoped to the protocol surface. See [run-lifecycle.md](./run-lifecycle.md).
 
 ## See also
 

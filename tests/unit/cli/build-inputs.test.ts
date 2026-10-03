@@ -1,5 +1,5 @@
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -91,14 +91,37 @@ function errorLines(): string[] {
 }
 
 describe("mthds build inputs pipe on the API runner", () => {
-  it("sends the bundle and the pipe ref to pipeIo, labelled with its filename", async () => {
+  it("sends the bundle and the pipe ref to pipeIo, labelled with its path", async () => {
     const pipeIo = vi.fn().mockResolvedValue(validReport());
     useApiRunner(pipeIo);
 
     await buildInputsPipe(bundlePath, { pipe: PIPE_REF });
 
     expect(pipeIo).toHaveBeenCalledWith({
-      files: [{ content: BUNDLE, source: "probe.mthds" }],
+      files: [{ content: BUNDLE, source: bundlePath }],
+      pipe_ref: PIPE_REF,
+    });
+  });
+
+  it("sends the -L directory's files after the bundle and asks for the bundle's main pipe", async () => {
+    const libraryDir = join(workDir, "library");
+    mkdirSync(libraryDir, { recursive: true });
+    const sibling = 'domain = "other"\nmain_pipe = "elsewhere"\n';
+    writeFileSync(join(libraryDir, "other.mthds"), sibling);
+    const entry = join(workDir, "entry.mthds");
+    const entryBundle = 'domain = "input_semantics_probe"\nmain_pipe = "probe_markers"\n';
+    writeFileSync(entry, entryBundle);
+    const pipeIo = vi.fn().mockResolvedValue(validReport());
+    useApiRunner(pipeIo);
+
+    await buildInputsPipe(entry, { libraryDir: [libraryDir] });
+
+    // Both files declare a main_pipe, so the runner's chain alone could not choose.
+    expect(pipeIo).toHaveBeenCalledWith({
+      files: [
+        { content: entryBundle, source: entry },
+        { content: sibling, source: join(libraryDir, "other.mthds") },
+      ],
       pipe_ref: PIPE_REF,
     });
   });

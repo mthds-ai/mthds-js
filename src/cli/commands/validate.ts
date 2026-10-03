@@ -1,9 +1,11 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import * as p from "@clack/prompts";
 import { printLogo } from "./index.js";
 import { isPipelexRunner, isApiRunner, extractPassthroughArgs } from "./utils.js";
 import { formatCliError, withSuggestedFix } from "./error-output.js";
 import { createRunner } from "../../runners/registry.js";
+import { resolveBundleClosure } from "../../runners/bundle.js";
+import type { MthdsFileItem } from "../../runners/types.js";
 import type { RunnerType } from "../../runners/types.js";
 
 interface ValidateOptions {
@@ -96,9 +98,11 @@ export async function validatePipe(target: string, options: ValidateOptions): Pr
     p.log.warning("--pipe is not yet supported by the API runner and will be ignored.");
   }
 
-  let mthdsContent: string;
+  // The bundle file first, then every `.mthds` file of the `-L` directories, so a
+  // method split across files validates as it does on the pipelex runner.
+  let files: MthdsFileItem[];
   try {
-    mthdsContent = readFileSync(bundlePath, "utf-8");
+    files = resolveBundleClosure({ path: bundlePath }, options.libraryDir ?? []).files;
   } catch (err) {
     p.log.error((err as Error).message);
     p.outro("");
@@ -109,12 +113,17 @@ export async function validatePipe(target: string, options: ValidateOptions): Pr
   s.start("Validating...");
 
   try {
-    // Name the submitted file so cross-file diagnostics resolve the owning file.
+    // Name each submitted file so cross-file diagnostics resolve the owning file.
     // `mthds_sources` is a Pipelex-API extension carried only by the concrete
     // client (not the pure protocol) — reach it through `isApiRunner`.
+    const mthdsContents = files.map((file) => file.content);
     const report = isApiRunner(runner)
-      ? await runner.validate([mthdsContent], false, [bundlePath])
-      : await runner.validate([mthdsContent]);
+      ? await runner.validate(
+          mthdsContents,
+          false,
+          files.map((file) => file.source ?? bundlePath),
+        )
+      : await runner.validate(mthdsContents);
     if (report.is_valid === false) {
       // A produced "invalid" verdict (the 200 InvalidReport arm) — report the
       // diagnostics and exit non-zero, rather than mistaking a 200 for success.

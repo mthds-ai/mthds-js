@@ -37,7 +37,7 @@ import type {
   ValidationResult,
   VersionInfo,
 } from "../../protocol/models.js";
-import { MTHDS_PROTOCOL_VERSION } from "../../protocol/models.js";
+import { MODEL_CATEGORIES, MTHDS_PROTOCOL_VERSION } from "../../protocol/models.js";
 import { conceptRef } from "../../protocol/concept.js";
 import type { DictPipeOutput, DictRunResultExecute } from "../api/models.js";
 
@@ -476,7 +476,7 @@ export class PipelexRunner implements Runner {
   // default), so we guard here for SDK consumers that bypass the agent CLI's parser.
   async checkModel(request: CheckModelRequest): Promise<CheckModelResponse> {
     if (!request.type) {
-      throw new Error("checkModel requires `type` (one of: llm, extract, img_gen, search)");
+      throw new Error(`checkModel requires \`type\` (one of: ${MODEL_CATEGORIES.join(", ")})`);
     }
     const args = ["check-model", request.reference, "--type", request.type, "--format", "json"];
     const { stdout } = await execFileAsync("pipelex-agent", args, {
@@ -668,18 +668,22 @@ const ASYNC_START_UNSUPPORTED =
  * Normalize the local CLI's models output into the protocol `ModelDeck`.
  *
  * Accepts the deck shape verbatim (`{ models, aliases, waterfalls }`) and maps
- * the legacy `pipelex-agent models` shape (`presets` / nested `aliases` /
- * nested `waterfalls`, keyed by category) by flattening it.
+ * the legacy `pipelex-agent models` shape, whose `presets`, `aliases` and
+ * `waterfalls` are each keyed by category. The presets project into the
+ * protocol's flat `models` list, each entry carrying its category as `type`,
+ * raw: a category this version of the protocol does not define is kept, under
+ * the protocol's reader rule (see `ModelInfo.type`). The aliases and waterfalls
+ * stay keyed by category, as the routing extensions pipelex's own protocol
+ * runner serves: the same alias name exists in several categories pointing at
+ * different models, so flattening them would keep only one of them.
  */
 function toModelDeck(parsed: unknown): ModelDeck {
   const root = (parsed && typeof parsed === "object" ? parsed : {}) as Record<string, unknown>;
+  const aliases = root.aliases ?? {};
+  const waterfalls = root.waterfalls ?? {};
 
   if (Array.isArray(root.models)) {
-    return {
-      models: root.models as ModelInfo[],
-      aliases: (root.aliases as Record<string, string> | undefined) ?? {},
-      waterfalls: (root.waterfalls as Record<string, string[]> | undefined) ?? {},
-    };
+    return { models: root.models as ModelInfo[], aliases, waterfalls };
   }
 
   const models: ModelInfo[] = [];
@@ -688,21 +692,9 @@ function toModelDeck(parsed: unknown): ModelDeck {
     if (!Array.isArray(entries)) continue;
     for (const entry of entries) {
       if (entry && typeof entry.name === "string") {
-        models.push({ name: entry.name, type: category as ModelInfo["type"] });
+        models.push({ name: entry.name, type: category });
       }
     }
-  }
-
-  const aliases: Record<string, string> = {};
-  const rawAliases = (root.aliases ?? {}) as Record<string, Record<string, string>>;
-  for (const group of Object.values(rawAliases)) {
-    if (group && typeof group === "object") Object.assign(aliases, group);
-  }
-
-  const waterfalls: Record<string, string[]> = {};
-  const rawWaterfalls = (root.waterfalls ?? {}) as Record<string, Record<string, string[]>>;
-  for (const group of Object.values(rawWaterfalls)) {
-    if (group && typeof group === "object") Object.assign(waterfalls, group);
   }
 
   return { models, aliases, waterfalls };

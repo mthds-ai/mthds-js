@@ -53,7 +53,7 @@ When `--runner` is omitted, the CLI uses the runner configured via `mthds config
 
 When using the **pipelex** runner, the `run`, `build`, and `validate` commands act as thin wrappers: they forward all arguments directly to the `pipelex` CLI. This means any pipelex-specific flags (e.g. `--dry-run`, `--mock-inputs`, `--output-dir`) are passed through transparently.
 
-The `--runner` flag is consumed by mthds and not forwarded. The `-L/--library-dir` flags are forwarded to pipelex.
+The `--runner` flag is consumed by mthds and not forwarded. The `-L/--library-dir` flags are forwarded to pipelex. With the API runner, `validate pipe` sends every `.mthds` file of each `-L` directory beside the bundle file, so a method split across files validates as it does on the pipelex runner.
 
 ---
 
@@ -192,6 +192,8 @@ mthds validate pipe <target> [OPTIONS]
 | `target` | string | yes | -- | `.mthds` bundle file or pipe code |
 | `--pipe <code>` | string | no | -- | Pipe code that must exist in the bundle |
 | `--bundle <file>` | string | no | -- | Bundle file path (alternative to positional) |
+
+With the API runner, the bundle file is sent first, followed by every `.mthds` file of each `-L` directory, and `--pipe` is ignored, since the runner validates every pipe of what it receives.
 
 ### `mthds validate bundle`
 
@@ -862,22 +864,42 @@ mthds-agent run bundle ./bundle.mthds --pipe my_pipe
 
 ### `mthds-agent validate bundle`
 
-Validate a `.mthds` bundle file via the pipelex runner.
+Validate a method bundle: a `.mthds` file, a directory, or inline content.
 
 ```bash
-mthds-agent validate bundle <target> [OPTIONS]
+mthds-agent validate bundle [target] [OPTIONS]
 ```
 
 | Argument / Option | Type | Required | Default | Description |
 |---|---|---|---|---|
-| `target` | string | yes | -- | `.mthds` bundle file |
-| `--pipe <code>` | string | no | -- | Pipe code to validate within the bundle |
+| `target` | string | unless `--content` | -- | `.mthds` bundle file or directory |
+| `--content <mthds>` | string | no | -- | Bundle content as a string, in place of `target` |
+| `-L, --library-dir <dir>` | path, repeatable | no | -- | Directory whose `.mthds` files join the bundle; may be written before or after the subcommand |
+| `--allow-signatures` | flag | no | -- | Tolerate unimplemented pipe signatures |
+| `--format <fmt>` | string | no | `markdown` | Success output format: `markdown` or `json` |
+| `--error-format <fmt>` | string | no | `--format` | Failure output format: `markdown` or `json` |
+| `--pipe <code>` | string | no | -- | Pipe code to validate within the bundle (pipelex runner only) |
+| `-g, --graph`, `-f, --graph-format <fmt>`, `--view`, `--direction <dir>` | | no | -- | Draw the method's graph (pipelex runner only) |
 
-All arguments are forwarded to `pipelex validate`. Requires the pipelex runner.
+With the **pipelex runner**, every argument is forwarded to `pipelex-agent validate bundle`.
 
-**Example:**
+With the **API runner**, the command posts the whole bundle to `POST /v1/validate`, the way the pipelex runner loads it, so a method split across several `.mthds` files validates there too:
+
+- a directory target sends every `.mthds` file under it, its entry file first, chosen as the pipelex runner chooses it: `bundle.mthds` at its root, else the only `.mthds` file there. A directory with several root files and no `bundle.mthds`, or none at its root, is refused, as it is by the pipelex runner;
+- a `.mthds` file target sends that file first, and its sibling files only through `-L`, as on the pipelex runner;
+- each `-L` directory adds every `.mthds` file under it, and a file reached twice, as in `validate bundle <file> -L <its dir>/`, is sent once;
+- a directory walk skips the folders pipelex's library scan skips (`venv/`, `.venv/`, `env/`, `virtualenv/`, `results/`, `node_modules/`, `.git/` and the Python caches), so a virtual environment holding pipelex's own `.mthds` files is never sent, and it skips a folder you may not list, as pipelex does;
+- each file is named by its path, so a diagnostic's `source` says which file it is about.
+
+The graph options are not applied, because the graph is drawn locally by the pipelex runner. The bundle is still validated, and after a valid verdict a warning on stderr (`{"warning": true, "message": …}`) names the options that were not applied; the JSON verdict (`--format json`) carries the method's graph as `graph_spec`. `--pipe` is ignored, since the runner validates every pipe it receives. A target that is neither a `.mthds` file nor a directory whose entry file can be chosen is an `ArgumentError`, and an unreadable file, target directory or `-L` directory is an `IOError`.
+
+`validate pipe <file>`, `inputs bundle` and `inputs pipe` send the same closure on the API runner, and take `-L` in the same two positions. When the closure holds several files, the template is for the entry's own `main_pipe` (the named file's, or the directory's entry file's) unless `--pipe` says otherwise, which is the pipe the pipelex runner templates.
+
+**Examples:**
 
 ```bash
+mthds-agent validate bundle ./my_method/
+mthds-agent validate bundle ./my_method/child.mthds -L ./my_method/ --allow-signatures
 mthds-agent validate bundle ./bundle.mthds --pipe my_pipe
 ```
 
@@ -890,7 +912,7 @@ mthds-agent codegen types [paths...] --target <flavor> [OPTIONS]
 mthds-agent codegen check [root] [OPTIONS]
 ```
 
-All arguments are forwarded to `pipelex-agent codegen`; the output contract (two-stream `--format` / `--error-format` markdown|json envelopes, `0/1/2` verdict exit codes) is defined there. Requires the pipelex runner **and a pipelex install that ships `codegen`** (unreleased at the time of writing — an older `pipelex-agent` reports `UnknownCommandError`). On the API runner the commands error cleanly as `UnsupportedError` — there are no codegen routes yet.
+All arguments are forwarded to `pipelex-agent codegen`; the output contract (two-stream `--format` / `--error-format` markdown|json envelopes, `0/1/2` verdict exit codes) is defined there. Requires the pipelex runner. `codegen` shipped in pipelex 0.39.0, below the version floor mthds-agent already enforces on `pipelex-agent`, so an install old enough to lack it is upgraded or refused with an `InstallError` before the command is forwarded. On the API runner the commands error cleanly as `UnsupportedError` — there are no codegen routes yet.
 
 **Example:**
 

@@ -27,6 +27,7 @@ vi.mock("node:os", () => ({
 import { readFileSync, readdirSync, existsSync, writeFileSync } from "node:fs";
 import { spawn } from "node:child_process";
 import { PipelexRunner } from "../../../src/runners/pipelex/runner.js";
+import { MODEL_CATEGORIES } from "../../../src/protocol/models.js";
 
 const mockedReadFileSync = vi.mocked(readFileSync);
 const mockedReaddirSync = vi.mocked(readdirSync);
@@ -98,6 +99,12 @@ describe("PipelexRunner", () => {
       );
       expect(execFileAsync).not.toHaveBeenCalled();
     });
+
+    it("names every protocol category when type is omitted", async () => {
+      await expect(runner.checkModel({ reference: "gpt-4o" } as any)).rejects.toThrow(
+        `(one of: ${MODEL_CATEGORIES.join(", ")})`,
+      );
+    });
   });
 
   describe("models", () => {
@@ -132,15 +139,73 @@ describe("PipelexRunner", () => {
         { name: "gpt-4o", type: "llm" },
         { name: "flux", type: "img_gen" },
       ]);
-      expect(deck.aliases).toEqual({ best: "gpt-4o" });
-      expect(deck.waterfalls).toEqual({ default: ["gpt-4o"] });
+      expect(deck.aliases).toEqual({ llm: { best: "gpt-4o" } });
+      expect(deck.waterfalls).toEqual({ llm: { default: ["gpt-4o"] } });
+    });
+
+    // The same alias name exists in several categories pointing at different
+    // models (a default per family), so the routing extensions stay keyed by
+    // category, as pipelex's own protocol runner serves them: flattening them
+    // kept only the category iterated last.
+    it("keeps an alias name defined in two categories under each of them", async () => {
+      execFileAsync.mockResolvedValue({
+        stdout: JSON.stringify({
+          success: true,
+          presets: { llm: [{ name: "gpt-4o" }], img_gen: [{ name: "flux" }] },
+          aliases: { llm: { default: "gpt-4o" }, img_gen: { default: "flux" } },
+          waterfalls: { llm: { cheap: ["gpt-4o-mini"] }, img_gen: { cheap: ["flux-schnell"] } },
+        }),
+        stderr: "",
+      });
+
+      const deck = await runner.models();
+
+      expect(deck.aliases).toEqual({ llm: { default: "gpt-4o" }, img_gen: { default: "flux" } });
+      expect(deck.waterfalls).toEqual({
+        llm: { cheap: ["gpt-4o-mini"] },
+        img_gen: { cheap: ["flux-schnell"] },
+      });
+    });
+
+    it("keeps a judgment preset and a category it does not know with their raw type", async () => {
+      execFileAsync.mockResolvedValue({
+        stdout: JSON.stringify({
+          success: true,
+          presets: {
+            llm: [{ name: "gpt-4o" }],
+            judgment: [{ name: "judge-small" }],
+            vendor_family: [{ name: "future-model" }],
+          },
+          aliases: { judgment: { default: "judge-small" } },
+          waterfalls: {},
+        }),
+        stderr: "",
+      });
+
+      const deck = await runner.models();
+
+      expect(deck.models).toEqual([
+        { name: "gpt-4o", type: "llm" },
+        { name: "judge-small", type: "judgment" },
+        { name: "future-model", type: "vendor_family" },
+      ]);
+      expect(deck.aliases).toEqual({ judgment: { default: "judge-small" } });
+    });
+
+    it("forwards the judgment filter to pipelex-agent", async () => {
+      execFileAsync.mockResolvedValue({ stdout: '{"success":true,"presets":{}}', stderr: "" });
+
+      await runner.models("judgment");
+
+      const args = execFileAsync.mock.calls[0]![1] as string[];
+      expect(args[args.indexOf("--type") + 1]).toBe("judgment");
     });
 
     it("passes a protocol-shaped ModelDeck through verbatim", async () => {
       execFileAsync.mockResolvedValue({
         stdout: JSON.stringify({
           models: [{ name: "gpt-4o", type: "llm" }],
-          aliases: { best: "gpt-4o" },
+          aliases: { llm: { best: "gpt-4o" } },
           waterfalls: {},
         }),
         stderr: "",
@@ -148,7 +213,23 @@ describe("PipelexRunner", () => {
 
       const deck = await runner.models();
       expect(deck.models).toEqual([{ name: "gpt-4o", type: "llm" }]);
-      expect(deck.aliases).toEqual({ best: "gpt-4o" });
+      expect(deck.aliases).toEqual({ llm: { best: "gpt-4o" } });
+    });
+
+    it("passes a protocol-shaped deck carrying an unknown category through unchanged", async () => {
+      const served = {
+        models: [
+          { name: "judge-small", type: "judgment" },
+          { name: "future-model", type: "vendor_family" },
+        ],
+        aliases: { vendor_family: { default: "future-model" } },
+        waterfalls: {},
+      };
+      execFileAsync.mockResolvedValue({ stdout: JSON.stringify(served), stderr: "" });
+
+      const deck = await runner.models();
+
+      expect(deck).toEqual(served);
     });
   });
 

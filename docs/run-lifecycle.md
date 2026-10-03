@@ -71,9 +71,9 @@ const { pipeline_run_id } = await client.start({
 
 ## Collecting an async result by id (durable runs)
 
-Polling a run by its `pipeline_run_id` until it reaches a terminal state — against a self-healing endpoint that survives restarts — is a **hosted-API feature layered on top of the protocol**, not part of it. It lives in the Pipelex runtime SDK, **[`@pipelex/sdk`](https://github.com/Pipelex/pipelex-sdk-js)** (and the `pipelex-agent` CLI), whose client adds `getRunStatus`, `getRunResult`, `waitForResult`, and `startAndWaitForResult` over the `/v1/runs/*` routes.
+Polling a run by its `pipeline_run_id` until it reaches a terminal state — against a self-healing endpoint that survives restarts — is a **hosted-API feature layered on top of the protocol**, not part of it. It lives in the Pipelex runtime SDK, **[`@pipelex/sdk`](https://github.com/Pipelex/pipelex-sdk/tree/main/js)**, whose client adds `getRunStatus`, `getRunResult`, `waitForResult`, and `startAndWaitForResult` over the `/v1/runs/*` routes.
 
-Reach for that SDK when you want a durable, resumable handle on a run — its client takes the `pipeline_run_id` that `start` hands you and polls it to a terminal state. See the [`@pipelex/sdk` docs](https://github.com/Pipelex/pipelex-sdk-js#readme) for usage; those examples live with the SDK, not here.
+Reach for that SDK when you want a durable, resumable handle on a run — its client takes the `pipeline_run_id` that `start` hands you and polls it to a terminal state. See the [`@pipelex/sdk` docs](https://github.com/Pipelex/pipelex-sdk/blob/main/js/README.md) for usage; those examples live with the SDK, not here.
 
 `mthds-js` stays focused on the protocol surface: `start` hands you the id, and everything after that is the runtime SDK's job.
 
@@ -81,11 +81,11 @@ Reach for that SDK when you want a durable, resumable handle on a run — its cl
 
 - **Short run, want the answer inline** → `execute` (or any `mthds run …` command).
 - **Long run, fire-and-forget** → `start`, then receive completion out-of-band (e.g. a webhook).
-- **Long run, want a durable handle to poll or resume** → `@pipelex/sdk` / `pipelex-agent`.
+- **Long run, want a durable handle to poll or resume** → `@pipelex/sdk`.
 
 ## See also
 
-- [`@pipelex/sdk`](https://github.com/Pipelex/pipelex-sdk-js) — the Pipelex runtime SDK that provides the durable run-lifecycle (poll-by-id) and the `pipelex-agent` CLI.
+- [`@pipelex/sdk`](https://github.com/Pipelex/pipelex-sdk/tree/main/js) — the Pipelex runtime SDK that provides the durable run-lifecycle (poll-by-id).
 - [api-runner.md](./api-runner.md) — pointing `mthds-js` at a hosted or self-hosted runner, and the timeout/run-store differences between them.
 - [architecture.md](./architecture.md) — the `RunResultExecute` / `RunResultStart` types and why the run response is split.
 - [errors.md](./errors.md) — `PipelineExecuteTimeoutError` and `RunStillRunningError` (the `202` degrade) in full, with the rest of the exception taxonomy.

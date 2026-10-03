@@ -888,9 +888,10 @@ With the **API runner**, the command posts the whole bundle to `POST /v1/validat
 - a directory target sends every `.mthds` file under it, its main file first (a root-level file declaring `main_pipe`, then any root-level file);
 - a `.mthds` file target sends that file first, and its sibling files only through `-L`, as on the pipelex runner;
 - each `-L` directory adds every `.mthds` file under it, and a file reached twice, as in `validate bundle <file> -L <its dir>/`, is sent once;
+- a directory walk skips the folders pipelex's library scan skips (`venv/`, `.venv/`, `env/`, `virtualenv/`, `results/`, `node_modules/`, `.git/` and the Python caches), so a virtual environment holding pipelex's own `.mthds` files is never sent;
 - each file is named by its path, so a diagnostic's `source` says which file it is about.
 
-The graph options are refused with an `UnsupportedError` before anything is sent, because the graph is drawn locally by the pipelex runner. The JSON verdict (`--format json`) carries the method's graph as `graph_spec` instead. `--pipe` is ignored, since the runner validates every pipe it receives. A target that is neither a `.mthds` file nor a directory holding one is an `ArgumentError`, and an unreadable file or directory is an `IOError`.
+The graph options are not applied, because the graph is drawn locally by the pipelex runner. The bundle is still validated, and after a valid verdict a warning on stderr (`{"warning": true, "message": …}`) names the options that were not applied; the JSON verdict (`--format json`) carries the method's graph as `graph_spec`. `--pipe` is ignored, since the runner validates every pipe it receives. A target that is neither a `.mthds` file nor a directory holding one is an `ArgumentError`, and an unreadable file or directory is an `IOError`.
 
 `validate pipe <file>`, `inputs bundle` and `inputs pipe` send the same closure on the API runner, and take `-L` in the same two positions. When `inputs` names a file and `-L` brings in others, the template is for the named file's own `main_pipe` unless `--pipe` says otherwise.
 

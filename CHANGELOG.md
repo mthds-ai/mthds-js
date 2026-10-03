@@ -2,13 +2,10 @@
 
 ## [Unreleased]
 
-### Changed
-
-- **`mthds-agent validate bundle` refuses the graph options on the API runner (Breaking)**: `--graph`, `--graph-format`, `--view` and `--direction`, which only the pipelex runner can honour, now answer an `UnsupportedError` before anything is sent, where they were silently ignored. Drop them, or read the method's graph from the `graph_spec` of the JSON verdict (`--format json`).
-
 ### Fixed
 
-- **API-runner validate and inputs send the whole method**: on the API runner, `mthds-agent validate bundle|pipe`, `mthds-agent inputs bundle|pipe` and `mthds validate pipe` now send every `.mthds` file of a directory target and of each `-L` directory, the named file first, so a method split across files validates and gets its inputs template there as it does on the pipelex runner. A directory target no longer fails with `EISDIR`, and `-L` is read whether it is written before or after the subcommand, where it was ignored.
+- **API-runner validate and inputs send the whole method**: on the API runner, `mthds-agent validate bundle|pipe`, `mthds-agent inputs bundle|pipe` and `mthds validate pipe` now send every `.mthds` file of a directory target and of each `-L` directory, outside the folders pipelex's library scan skips, the named file first, so a method split across files validates and gets its inputs template there as it does on the pipelex runner. A directory target no longer fails with `EISDIR`, and `-L` is read whether it is written before or after the subcommand, where it was ignored. The graph options of `validate bundle` (`--graph`, `--graph-format`, `--view`, `--direction`), which only the pipelex runner can honour, are no longer silently ignored either: after a valid verdict, a stderr warning says no graph was drawn.
+- **Method bundles leave out virtual environments and run outputs**: a method directory that `mthds run` and `mthds-agent run` send whole, with its custom Python, no longer carries the `venv/`, `env/`, `virtualenv/` or `results/` folders inside it, which pipelex never loads.
 - **Timeout and still-running messages name `@pipelex/sdk` alone**: the messages of `PipelineExecuteTimeoutError` and of the `RunStillRunningError` that `execute()` throws on a `202` send the caller to `@pipelex/sdk` for the durable run API, where they also named `pipelex-agent`, a CLI that cannot poll a run by id.
 
 ## [v0.28.0] - 2026-09-27

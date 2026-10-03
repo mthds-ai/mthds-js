@@ -10,7 +10,8 @@ import { MthdsApiClient } from "../../../src/runners/api/client.js";
 // across files whole, as the pipelex runner loads it: every `.mthds` file of a
 // directory target and of each `-L` directory, the entrypoint first. `-L` must reach
 // the subcommand when written after it, and the graph options, which only the
-// pipelex runner can honour, must be refused rather than swallowed.
+// pipelex runner can honour, must be named in a warning rather than swallowed,
+// without keeping the bundle from being validated.
 
 const ROOT = 'domain = "demo"\nmain_pipe = "main"\n';
 const CHILD = 'domain = "demo"\nmain_pipe = "step"\n[pipe.step]\ntype = "PipeLLM"\n';
@@ -83,7 +84,7 @@ describe("API-runner validate and inputs send the whole bundle", () => {
     await program.parseAsync(args, { from: "user" });
   }
 
-  function errorEnvelope(): Record<string, unknown> {
+  function firstStderrJson(): Record<string, unknown> {
     return JSON.parse(String(stderrSpy.mock.calls[0]![0])) as Record<string, unknown>;
   }
 
@@ -143,20 +144,52 @@ describe("API-runner validate and inputs send the whole bundle", () => {
     });
 
     it.each([
-      [["--graph"], "--graph is"],
-      [["-g", "--direction", "LR"], "--graph, --direction are"],
-      [["--view"], "--view is"],
-      [["--graph-format", "reactflow"], "--graph-format is"],
-    ])("refuses %j before calling the runner", async (flags, named) => {
-      await expect(agent("validate", "bundle", method, ...flags)).rejects.toThrow("__exit__");
+      [["--graph"], "--graph was"],
+      [["-g", "--direction", "LR"], "--graph, --direction were"],
+      [["--view"], "--view was"],
+      [["--graph-format", "reactflow"], "--graph-format was"],
+    ])("validates with %j and warns that no graph was drawn", async (flags, named) => {
+      await agent("validate", "bundle", method, "-L", shared, ...flags, "--format", "json");
 
-      expect(requests).toHaveLength(0);
-      expect(errorEnvelope()).toMatchObject({
-        error: true,
-        error_type: "UnsupportedError",
-        error_domain: "runner",
-      });
-      expect(String(errorEnvelope().message)).toContain(`${named} not available on the API runner`);
+      expect(requests).toHaveLength(1);
+      expect(requests[0]!.body.mthds_contents).toEqual([ROOT, CHILD, SHARED]);
+      expect(JSON.parse(String(stdoutSpy.mock.calls[0]![0]))).toMatchObject({ is_valid: true });
+      expect(stderrSpy).toHaveBeenCalledTimes(1);
+      const warning = firstStderrJson();
+      expect(warning).toMatchObject({ warning: true });
+      expect(String(warning.message)).toContain(`${named} not applied`);
+    });
+
+    it("adds no warning to an invalid verdict's error envelope", async () => {
+      vi.mocked(globalThis.fetch).mockImplementation(
+        async () =>
+          new Response(
+            JSON.stringify({
+              is_valid: false,
+              message: "bad bundle",
+              validation_errors: [{ category: "concept", message: "undeclared" }],
+              pending_signatures: [],
+              is_runnable: false,
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          ),
+      );
+
+      await expect(
+        agent("validate", "bundle", method, "--graph", "--format", "json"),
+      ).rejects.toThrow("__exit__");
+
+      // The stubbed exit throws, so later writes are the stub's echo; the first is the envelope.
+      expect(firstStderrJson()).toMatchObject({ error: true, error_type: "ValidateBundleError" });
+      for (const [written] of stderrSpy.mock.calls) {
+        expect(String(written)).not.toContain('"warning"');
+      }
+    });
+
+    it("writes nothing to stderr without a graph option", async () => {
+      await agent("validate", "bundle", method, "--format", "json");
+
+      expect(stderrSpy).not.toHaveBeenCalled();
     });
 
     it("refuses a target that is not a .mthds file or a directory", async () => {
@@ -166,7 +199,7 @@ describe("API-runner validate and inputs send the whole bundle", () => {
       await expect(agent("validate", "bundle", notes)).rejects.toThrow("__exit__");
 
       expect(requests).toHaveLength(0);
-      expect(errorEnvelope()).toMatchObject({
+      expect(firstStderrJson()).toMatchObject({
         error_type: "ArgumentError",
         error_domain: "argument",
       });
@@ -178,7 +211,7 @@ describe("API-runner validate and inputs send the whole bundle", () => {
       );
 
       expect(requests).toHaveLength(0);
-      expect(errorEnvelope()).toMatchObject({ error_type: "IOError", error_domain: "io" });
+      expect(firstStderrJson()).toMatchObject({ error_type: "IOError", error_domain: "io" });
     });
   });
 

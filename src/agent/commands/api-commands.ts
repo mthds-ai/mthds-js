@@ -199,13 +199,13 @@ export function registerApiRunnerCommands(program: Command, makeRunner: () => Ru
           errorFormat?: string;
         },
       ) => {
-        refuseGraphOptions(options);
         const runner = safeCreateRunner(makeRunner);
         const closure = resolveClosureOrError(
           target,
           options.content,
           libraryDirsWith(options.libraryDir),
         );
+        // Returns only on a valid verdict: every other outcome exits through agentError.
         await runProtocolValidate(
           runner,
           closure.files.map((file) => file.content),
@@ -214,6 +214,7 @@ export function registerApiRunnerCommands(program: Command, makeRunner: () => Ru
           options.format,
           options.errorFormat,
         );
+        warnGraphNotDrawn(options);
       },
     );
 
@@ -708,19 +709,24 @@ const GRAPH_OPTIONS = [
 ] as const;
 
 /**
- * Refuse the graph options of `validate bundle`, which the API runner cannot honour:
- * the graph files and the GraphSpec view are drawn locally by the pipelex runner.
- * Declaring them keeps them from being swallowed by `allowUnknownOption`, which
- * would print a verdict as if the graph had been drawn.
+ * Say that the graph options of `validate bundle` were not applied, which the API
+ * runner cannot do: the graph files and the GraphSpec view are drawn locally by the
+ * pipelex runner. The bundle is still validated, because the skills that pass
+ * `--graph` rely on the verdict above all. Declaring the options keeps them from
+ * being swallowed by `allowUnknownOption`, which would print the verdict as if the
+ * graph had been drawn. Called once the verdict is a success, as the pipelex runner
+ * draws the graph only then, so an invalid verdict's error envelope stays the one
+ * JSON document on stderr. The warning takes the CLI's stderr warning shape.
  */
-function refuseGraphOptions(options: Record<string, unknown>): void {
+function warnGraphNotDrawn(options: Record<string, unknown>): void {
   const given = GRAPH_OPTIONS.filter(([key]) => options[key] !== undefined).map(([, flag]) => flag);
   if (given.length === 0) return;
   const one = given.length === 1;
-  agentError(
-    `${given.join(", ")} ${one ? "is" : "are"} not available on the API runner: the method's graph is drawn locally, by the pipelex runner only. Drop ${one ? "it" : "them"}, or re-run with --runner pipelex. On the API runner, the JSON verdict (--format json) carries the method's graph as graph_spec.`,
-    "UnsupportedError",
-    { error_domain: AGENT_ERROR_DOMAINS.RUNNER },
+  process.stderr.write(
+    JSON.stringify({
+      warning: true,
+      message: `${given.join(", ")} ${one ? "was" : "were"} not applied: the API runner validated the method but cannot draw its graph, which only the pipelex runner draws. Re-run with --runner pipelex for the graph. On the API runner, the JSON verdict (--format json) carries the method's graph as graph_spec.`,
+    }) + "\n",
   );
 }
 

@@ -23,6 +23,7 @@
  */
 
 import {
+  type Dirent,
   lstatSync,
   mkdirSync,
   readFileSync,
@@ -110,16 +111,22 @@ function isMthdsFile(name: string): boolean {
  * `{ relativePath: text }` map. Relative paths are POSIX-normalized (the wire
  * form a runner materializes back to disk). Virtual environments, caches,
  * dependencies, run outputs and hidden directories are skipped so they never
- * travel with the method.
+ * travel with the method, and so is a folder this user may not list.
  */
 export function collectBundleFiles(bundleDir: string): Record<string, string> {
   return collectFilesWhere(bundleDir, isBundleFile, isSkippedBundleDir);
 }
 
+/** Errors meaning this user may not list a directory. */
+const UNREADABLE_DIR_ERRORS: ReadonlySet<string> = new Set(["EACCES", "EPERM"]);
+
 /**
  * Walk a directory and collect every file whose name `wanted` accepts, as a
  * `{ relativePath: text }` map with POSIX separators, never entering a directory
- * whose name `skipped` accepts.
+ * whose name `skipped` accepts. A folder below the root that this user may not
+ * list is skipped, as pipelex's library scan (`Path.rglob`) skips it, so one
+ * root-owned folder in a project does not fail every walk of it; the root's own
+ * error still reaches the caller.
  */
 function collectFilesWhere(
   bundleDir: string,
@@ -129,11 +136,17 @@ function collectFilesWhere(
   const root = resolve(bundleDir);
   const files: Record<string, string> = {};
   const walk = (dir: string): void => {
+    let dirents: Dirent[];
+    try {
+      dirents = readdirSync(dir, { withFileTypes: true });
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code;
+      if (dir !== root && code !== undefined && UNREADABLE_DIR_ERRORS.has(code)) return;
+      throw err;
+    }
     // Sorted, so the map's order (and with it `pickMainBundleFile`'s fallback to the
     // first candidate) does not depend on the order the filesystem lists entries in.
-    const entries = readdirSync(dir, { withFileTypes: true }).sort((a, b) =>
-      a.name < b.name ? -1 : a.name > b.name ? 1 : 0,
-    );
+    const entries = dirents.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
     for (const entry of entries) {
       const abs = join(dir, entry.name);
       if (entry.isDirectory()) {

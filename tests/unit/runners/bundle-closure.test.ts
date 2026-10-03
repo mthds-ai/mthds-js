@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, symlinkSync } from "node:fs";
+import { chmodSync, mkdtempSync, mkdirSync, writeFileSync, rmSync, symlinkSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { BundleTargetError, resolveBundleClosure } from "../../../src/runners/bundle.js";
@@ -9,6 +9,9 @@ import { BundleTargetError, resolveBundleClosure } from "../../../src/runners/bu
 const ROOT = 'domain = "demo"\nmain_pipe = "main"\n';
 const CHILD = 'domain = "demo"\n[pipe.step]\ntype = "PipeLLM"\n';
 const SHARED = 'domain = "shared"\n';
+
+// A folder its owner cannot list stays listable by root, and Windows has no such mode.
+const canLockFolders = process.platform !== "win32" && process.getuid?.() !== 0;
 
 describe("resolveBundleClosure", () => {
   let dir: string;
@@ -120,6 +123,45 @@ describe("resolveBundleClosure", () => {
 
     expect(closure.files.map((file) => file.source)).toEqual([join(method, "bundle.mthds")]);
   });
+
+  it.skipIf(!canLockFolders)(
+    "skips a folder below a target or library directory that this user may not list",
+    () => {
+      const method = join(dir, "method");
+      mkdirSync(join(method, "pgdata"), { recursive: true });
+      writeFileSync(join(method, "bundle.mthds"), ROOT);
+      writeFileSync(join(method, "child.mthds"), CHILD);
+      writeFileSync(join(method, "pgdata", "stray.mthds"), CHILD);
+      chmodSync(join(method, "pgdata"), 0o000);
+      try {
+        const expected = [join(method, "bundle.mthds"), join(method, "child.mthds")];
+        // The hook's shape, and a directory target: pipelex's scan skips the folder in both.
+        const fromLibrary = resolveBundleClosure({ path: join(method, "bundle.mthds") }, [method]);
+        expect(fromLibrary.files.map((file) => file.source)).toEqual(expected);
+        const fromDirectory = resolveBundleClosure({ path: method });
+        expect(fromDirectory.files.map((file) => file.source)).toEqual(expected);
+      } finally {
+        chmodSync(join(method, "pgdata"), 0o755);
+      }
+    },
+  );
+
+  it.skipIf(!canLockFolders)(
+    "lets a library directory this user may not list fail as a filesystem error",
+    () => {
+      const shared = join(dir, "shared");
+      mkdirSync(shared);
+      writeFileSync(join(dir, "bundle.mthds"), ROOT);
+      chmodSync(shared, 0o000);
+      try {
+        expect(() => resolveBundleClosure({ path: join(dir, "bundle.mthds") }, [shared])).toThrow(
+          /EACCES/,
+        );
+      } finally {
+        chmodSync(shared, 0o755);
+      }
+    },
+  );
 
   it("sends a named file alone, leaving its siblings to the library directories", () => {
     writeFileSync(join(dir, "bundle.mthds"), ROOT);

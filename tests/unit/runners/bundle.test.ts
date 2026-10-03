@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from "node:fs";
+import { chmodSync, mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import {
@@ -19,6 +19,9 @@ const MTHDS = [
 ].join("\n");
 
 const FUNC = "@pipe_func(name='probe_host')\nasync def probe_host(): ...\n";
+
+// A folder its owner cannot list stays listable by root, and Windows has no such mode.
+const canLockFolders = process.platform !== "win32" && process.getuid?.() !== 0;
 
 describe("bundle collection", () => {
   let dir: string;
@@ -65,6 +68,21 @@ describe("bundle collection", () => {
 
     expect(Object.keys(collectBundleFiles(dir))).toEqual(["m.mthds"]);
   });
+
+  it.skipIf(!canLockFolders)(
+    "skips a folder this user may not list, as pipelex's library scan does",
+    () => {
+      writeFileSync(join(dir, "m.mthds"), MTHDS, "utf-8");
+      mkdirSync(join(dir, "pgdata"));
+      writeFileSync(join(dir, "pgdata", "stray.py"), "x", "utf-8");
+      chmodSync(join(dir, "pgdata"), 0o000);
+      try {
+        expect(Object.keys(collectBundleFiles(dir))).toEqual(["m.mthds"]);
+      } finally {
+        chmodSync(join(dir, "pgdata"), 0o755);
+      }
+    },
+  );
 
   it("excludes non-bundle files (json, md, images)", () => {
     writeFileSync(join(dir, "m.mthds"), MTHDS, "utf-8");

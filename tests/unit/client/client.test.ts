@@ -892,40 +892,9 @@ describe("MthdsApiClient.validateFiles", () => {
   });
 });
 
-// The `/v1/build/*` routes are Pipelex API extensions (never MTHDS Protocol), and
-// they share one envelope: `files[]` XOR `method_ref`, plus an optional QUALIFIED
-// `pipe_ref`. Their request types ARE the wire body — the client posts them
-// verbatim — so these tests pin the body, not just the call.
-describe("MthdsApiClient build routes", () => {
-  function bodyOf(fetchSpy: ReturnType<typeof vi.spyOn>): Record<string, unknown> {
-    const init = fetchSpy.mock.calls[0]![1] as { body?: string };
-    return JSON.parse(init.body ?? "{}") as Record<string, unknown>;
-  }
-
-  it("posts the files[] envelope with per-file source labels to build/inputs", async () => {
-    const client = makeClient();
-    const fetchSpy = vi
-      .spyOn(globalThis, "fetch")
-      .mockResolvedValue(jsonResponse(200, { is_valid: true, pipe_ref: "smoke.echo" }));
-
-    await client.buildInputs({
-      files: [{ content: "domain = 'smoke'", source: "smoke.mthds" }],
-      pipe_ref: "smoke.echo",
-      format: "toml",
-      explicit: true,
-    });
-
-    expect(fetchSpy.mock.calls[0]![0]).toBe("http://localhost:8081/v1/build/inputs");
-    expect(bodyOf(fetchSpy)).toEqual({
-      files: [{ content: "domain = 'smoke'", source: "smoke.mthds" }],
-      pipe_ref: "smoke.echo",
-      format: "toml",
-      explicit: true,
-    });
-  });
-
-  // A build route's refusal is an ApiResponseError carrying the problem members,
-  // as on the protocol routes, so `mthds build` and `mthds-agent inputs` can print them.
+// `/health` is origin-level, outside the `/v1` prefix, and its refusal is an
+// ApiResponseError carrying the problem members, as on the protocol routes.
+describe("MthdsApiClient.health", () => {
   it("raises a refusal as ApiResponseError with its problem members", async () => {
     const client = makeClient();
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
@@ -940,20 +909,17 @@ describe("MthdsApiClient build routes", () => {
           error_domain: "config",
           retryable: false,
           user_action: { kind: "contact_support", detail: "Ask the runner's operator." },
-          validation_errors: [{ category: "blueprint_validation", message: "boom" }],
         },
-        { "X-Request-ID": "req-build-1" },
+        { "X-Request-ID": "req-health-1" },
       ),
     );
 
-    const err = await client
-      .buildInputs({ files: [{ content: "domain = 'smoke'" }] })
-      .catch((e: unknown) => e);
+    const err = await client.health().catch((e: unknown) => e);
 
     expect(err).toBeInstanceOf(ApiResponseError);
     const e = err as ApiResponseError;
     expect(e.message).toBe(
-      "API POST http://localhost:8081/v1/build/inputs failed (500): The model deck could not be loaded.",
+      "API GET http://localhost:8081/health failed (500): The model deck could not be loaded.",
     );
     expect(e).toMatchObject({
       status: 500,
@@ -963,12 +929,11 @@ describe("MthdsApiClient build routes", () => {
       errorDomain: "config",
       retryable: false,
       userAction: { kind: "contact_support", detail: "Ask the runner's operator." },
-      requestId: "req-build-1",
-      validationErrors: [{ category: "blueprint_validation", message: "boom" }],
+      requestId: "req-health-1",
     });
   });
 
-  it("raises a health refusal as ApiResponseError too", async () => {
+  it("raises a plain-text refusal as ApiResponseError too", async () => {
     const client = makeClient();
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
       textResponse(503, "Service Unavailable", "Service Unavailable"),
@@ -982,40 +947,132 @@ describe("MthdsApiClient build routes", () => {
       "API GET http://localhost:8081/health failed (503): Service Unavailable",
     );
   });
+});
 
-  // An omitted `pipe_ref` is how a caller says "the closure's main_pipe" — it must
-  // reach the server ABSENT, so the server does the defaulting, not the client.
-  it("omits pipe_ref entirely when the caller does not select a pipe", async () => {
+describe("MthdsApiClient.pipeIo", () => {
+  function bodyOf(fetchSpy: ReturnType<typeof vi.spyOn>): Record<string, unknown> {
+    const init = fetchSpy.mock.calls[0]![1] as { body?: string };
+    return JSON.parse(init.body ?? "{}") as Record<string, unknown>;
+  }
+
+  /** The delay of every timer the client armed, which is how its request budget shows. */
+  function armedTimeouts(timeoutSpy: ReturnType<typeof vi.spyOn>): unknown[] {
+    return timeoutSpy.mock.calls.map((call: unknown[]) => call[1]);
+  }
+
+  const VALID = {
+    is_valid: true,
+    pipe_ref: "smoke.echo",
+    pipe_io_contracts: {},
+    input_form: { "smoke.echo": { fields: [] } },
+    output_form: {},
+    default_pipe_ref: "smoke.echo",
+    pending_signatures: [],
+    is_runnable: true,
+  };
+
+  it("posts the request verbatim to /v1/pipe-io and returns the valid arm", async () => {
     const client = makeClient();
-    const fetchSpy = vi
-      .spyOn(globalThis, "fetch")
-      .mockResolvedValue(jsonResponse(200, { is_valid: true, pipe_ref: "smoke.echo" }));
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(jsonResponse(200, VALID));
 
-    await client.buildOutput({ files: [{ content: "domain = 'smoke'" }] });
+    const result = await client.pipeIo({
+      files: [{ content: "domain = 'smoke'", source: "smoke.mthds" }],
+      pipe_ref: "smoke.echo",
+      all_pipes: true,
+      include_files: true,
+    });
 
-    expect(fetchSpy.mock.calls[0]![0]).toBe("http://localhost:8081/v1/build/output");
-    expect(bodyOf(fetchSpy)).toEqual({ files: [{ content: "domain = 'smoke'" }] });
+    expect(fetchSpy.mock.calls[0]![0]).toBe("http://localhost:8081/v1/pipe-io");
+    expect(bodyOf(fetchSpy)).toEqual({
+      files: [{ content: "domain = 'smoke'", source: "smoke.mthds" }],
+      pipe_ref: "smoke.echo",
+      all_pipes: true,
+      include_files: true,
+    });
+    expect(result).toEqual(VALID);
   });
 
-  // The invalid arm is a 200 VERDICT, not a transport failure: the client must
-  // return it for the caller to branch on, never throw it.
-  it("returns the invalid arm of build/runner as a value, not an exception", async () => {
+  // The hosted catalog selector is a pass-through: the platform resolves it, so the
+  // client neither expands it nor checks the selector XOR.
+  it("passes a method_id through untouched", async () => {
+    const client = makeClient();
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(jsonResponse(200, VALID));
+
+    await client.pipeIo({ method_id: "mt_abc123" });
+
+    expect(bodyOf(fetchSpy)).toEqual({ method_id: "mt_abc123" });
+  });
+
+  it("returns the invalid arm as a value, not an exception", async () => {
     const client = makeClient();
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
       jsonResponse(200, {
         is_valid: false,
-        validation_errors: [
-          { category: "pipe_validation", message: "unknown concept", source: "smoke.mthds" },
-        ],
+        validation_errors: [{ category: "blueprint_validation", message: "boom" }],
         message: "MTHDS library could not be resolved",
       }),
     );
 
-    const result = await client.buildRunner({ files: [{ content: "domain = 'smoke'" }] });
+    const result = await client.pipeIo({ files: [{ content: "domain = 'smoke'" }] });
 
     expect(result.is_valid).toBe(false);
-    if (result.is_valid) throw new Error("expected the invalid arm");
-    expect(result.validation_errors[0]!.source).toBe("smoke.mthds");
+  });
+
+  it("raises a selection refusal as ApiResponseError carrying its error_type", async () => {
+    const client = makeClient();
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      jsonResponse(422, {
+        type: "https://docs.pipelex.com/latest/errors/entry-pipe-not-found-error/",
+        status: 422,
+        detail: "Pipe 'smoke.nope' not found in the submitted closure.",
+        error_type: "EntryPipeNotFoundError",
+        error_domain: "input",
+        request_id: "req-io-1",
+      }),
+    );
+
+    const err = await client
+      .pipeIo({ files: [{ content: "domain = 'smoke'" }], pipe_ref: "smoke.nope" })
+      .catch((e: unknown) => e);
+
+    expect(err).toBeInstanceOf(ApiResponseError);
+    expect(err).toMatchObject({
+      status: 422,
+      errorType: "EntryPipeNotFoundError",
+      serverMessage: "Pipe 'smoke.nope' not found in the submitted closure.",
+      errorDomain: "input",
+      requestId: "req-io-1",
+    });
+    expect((err as ApiResponseError).message).toBe(
+      "API POST /v1/pipe-io failed (422): Pipe 'smoke.nope' not found in the submitted closure.",
+    );
+  });
+
+  it("wraps a network failure as ApiUnreachableError", async () => {
+    const client = makeClient();
+    vi.spyOn(globalThis, "fetch").mockRejectedValue(networkError("ECONNREFUSED"));
+
+    await expect(client.pipeIo({ files: [{ content: "x" }] })).rejects.toBeInstanceOf(
+      ApiUnreachableError,
+    );
+  });
+
+  // A `method_ref` can make the server clone a repository first, so it gets the
+  // fetch-sized budget; inline files get the static-route one.
+  it("gives a method_ref the fetch-sized budget and inline files the static one", async () => {
+    const client = makeClient();
+    vi.spyOn(globalThis, "fetch").mockImplementation(() =>
+      Promise.resolve(jsonResponse(200, VALID)),
+    );
+    const timeoutSpy = vi.spyOn(globalThis, "setTimeout");
+
+    await client.pipeIo({ method_ref: "github.com/acme/methods@v1.0.0" });
+    expect(armedTimeouts(timeoutSpy)).toContain(180_000);
+
+    timeoutSpy.mockClear();
+    await client.pipeIo({ files: [{ content: "x" }] });
+    expect(armedTimeouts(timeoutSpy)).toContain(30_000);
+    expect(armedTimeouts(timeoutSpy)).not.toContain(180_000);
   });
 });
 
@@ -1062,7 +1119,7 @@ describe("MthdsApiClient validation items keep their next step", () => {
     field_path: "pipe.main",
   };
 
-  it("keeps the suggested fix and the missing pipe on a build route's invalid verdict", async () => {
+  it("keeps the suggested fix and the missing pipe on pipe-io's invalid verdict", async () => {
     const client = makeClient();
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
       jsonResponse(200, {
@@ -1072,7 +1129,7 @@ describe("MthdsApiClient validation items keep their next step", () => {
       }),
     );
 
-    const result = await client.buildInputs({ files: [{ content: "domain = 'demo'" }] });
+    const result = await client.pipeIo({ files: [{ content: "domain = 'demo'" }] });
 
     if (result.is_valid) throw new Error("expected the invalid arm");
     const [modelItem, pipeItem] = result.validation_errors;
@@ -1214,88 +1271,6 @@ describe("MthdsApiClient.validate render extra", () => {
   });
 });
 
-describe("MthdsApiClient.uploadFile", () => {
-  function bodyOf(fetchSpy: ReturnType<typeof vi.spyOn>): Record<string, unknown> {
-    const init = fetchSpy.mock.calls[0]![1] as { body?: string };
-    return JSON.parse(init.body ?? "{}") as Record<string, unknown>;
-  }
-
-  it("POSTs to /v1/upload with filename, data and content_type", async () => {
-    const client = makeClient();
-    const fetchSpy = vi
-      .spyOn(globalThis, "fetch")
-      .mockResolvedValue(
-        jsonResponse(200, { uri: "pipelex-storage://u/assets/x.png", filename: "x.png" }),
-      );
-
-    await client.uploadFile({
-      filename: "x.png",
-      data: "YmFzZTY0",
-      contentType: "image/png",
-    });
-
-    expect(fetchSpy.mock.calls[0]![0]).toBe("http://localhost:8081/v1/upload");
-    expect(bodyOf(fetchSpy)).toEqual({
-      filename: "x.png",
-      data: "YmFzZTY0",
-      content_type: "image/png",
-    });
-  });
-
-  it("returns the pipelex-storage:// URI from the response verbatim", async () => {
-    const client = makeClient();
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      jsonResponse(200, { uri: "pipelex-storage://u/assets/abc.pdf", filename: "abc.pdf" }),
-    );
-
-    const result = await client.uploadFile({ filename: "abc.pdf", data: "ZGF0YQ==" });
-
-    expect(result.uri).toBe("pipelex-storage://u/assets/abc.pdf");
-    expect(result.filename).toBe("abc.pdf");
-  });
-
-  it("omits content_type when not provided", async () => {
-    const client = makeClient();
-    const fetchSpy = vi
-      .spyOn(globalThis, "fetch")
-      .mockResolvedValue(
-        jsonResponse(200, { uri: "pipelex-storage://u/assets/x.bin", filename: "x.bin" }),
-      );
-
-    await client.uploadFile({ filename: "x.bin", data: "AAAA" });
-
-    expect(bodyOf(fetchSpy)).toEqual({ filename: "x.bin", data: "AAAA" });
-  });
-
-  it("raises ApiResponseError on a 401 (unauthenticated)", async () => {
-    const client = makeClient();
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      jsonResponse(401, { detail: "Authentication required" }, {}),
-    );
-
-    await expect(client.uploadFile({ filename: "a.txt", data: "AA" })).rejects.toMatchObject({
-      name: "ApiResponseError",
-      status: 401,
-      serverMessage: "Authentication required",
-    });
-  });
-
-  it("raises ApiResponseError on a 413 (payload too large)", async () => {
-    const client = makeClient();
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      jsonResponse(413, {
-        detail: { error_type: "PayloadTooLarge", message: "Decoded file exceeds 50 MiB limit" },
-      }),
-    );
-
-    await expect(client.uploadFile({ filename: "big.bin", data: "AA" })).rejects.toMatchObject({
-      name: "ApiResponseError",
-      status: 413,
-      errorType: "PayloadTooLarge",
-    });
-  });
-});
-
 describe("MthdsApiClient User-Agent (client-identification spec)", () => {
   const LIBRARY_UA = `mthds-js/${MTHDS_JS_VERSION} node/${process.versions.node} (${process.platform}; ${process.arch})`;
 
@@ -1313,26 +1288,24 @@ describe("MthdsApiClient User-Agent (client-identification spec)", () => {
     expect(headersOf(fetchSpy)["User-Agent"]).toBe(LIBRARY_UA);
   });
 
-  it("sends the library User-Agent on requestJson paths (health and build routes)", async () => {
+  it("sends the library User-Agent on the requestJson path (health)", async () => {
     const client = makeClient();
     const fetchSpy = vi
       .spyOn(globalThis, "fetch")
       .mockImplementation(async () => jsonResponse(200, { ok: true }));
     await client.health();
-    await client.buildRunner({ files: [{ content: "domain = 'smoke'" }] });
-    expect(headersOf(fetchSpy, 0)["User-Agent"]).toBe(LIBRARY_UA);
-    expect(headersOf(fetchSpy, 1)["User-Agent"]).toBe(LIBRARY_UA);
+    expect(headersOf(fetchSpy)["User-Agent"]).toBe(LIBRARY_UA);
   });
 
-  it("sends it on the upload convenience and GET routes too", async () => {
+  it("sends it on the pipe I/O extension and GET routes too", async () => {
     const client = makeClient();
     const fetchSpy = vi
       .spyOn(globalThis, "fetch")
-      .mockImplementation(async () =>
-        jsonResponse(200, { uri: "pipelex-storage://x", filename: "a.png" }),
-      );
-    await client.uploadFile({ filename: "a.png", data: "AAAA" });
-    expect(headersOf(fetchSpy)["User-Agent"]).toBe(LIBRARY_UA);
+      .mockImplementation(async () => jsonResponse(200, { is_valid: true }));
+    await client.pipeIo({ method_id: "mt_abc123" });
+    await client.version();
+    expect(headersOf(fetchSpy, 0)["User-Agent"]).toBe(LIBRARY_UA);
+    expect(headersOf(fetchSpy, 1)["User-Agent"]).toBe(LIBRARY_UA);
   });
 
   it("puts appInfo in front of the library token", async () => {

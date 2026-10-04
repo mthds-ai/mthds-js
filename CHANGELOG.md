@@ -1,5 +1,26 @@
 # Changelog
 
+## [v0.30.0] - 2026-10-04
+
+### Added
+
+- **`MthdsApiClient.pipeIo()`**: reads a method's pipe I/O contracts, input form and output form from `POST /v1/pipe-io` in one call, with no dry run. The closure is inline `files`, a `method_ref` address or a hosted catalog `method_id`, and a `method_ref` request gets a three-minute budget for the server's fetch. `PipeIORequest`, `PipeIOResponse`, `PipeIOValidReport`, `CrateInvalidReport`, `CrateRequestBase`, `MthdsFileItem` and `PIPE_SELECTION_ERROR_TYPES`, the two `error_type` values of a refused pipe selection, are exported from `mthds`.
+- **`mthds-agent inputs method` on the API runner**: takes a published method's address (`github.com/<owner>/<repo>[/<selector>][@<tag>]`) or a hosted catalog id (`mt_…`) and prints the method's inputs template, where it answered `UnsupportedError`. A bare installed-method name or a local path is refused with an `ArgumentError` that points at `inputs bundle` and the pipelex runner.
+
+### Changed
+
+- **`mthds-agent inputs` and `mthds build inputs pipe` on the API runner read `POST /v1/pipe-io` (Breaking)**: `mthds-agent inputs bundle`, `mthds-agent inputs pipe` and `mthds build inputs pipe` project the template locally from the pipe's input form instead of calling `POST /v1/build/inputs`, so they need a runner serving the new route (`pipelex-api` v0.33.0 or later). The `mthds-agent` commands now honour `--format json|toml`, printing TOML raw on stdout, and `--explicit`, which the API runner used to ignore. Against `pipelex-api` v0.33.1 or later, which types these refusals, `mthds-agent` reports a refused pipe selection (a `--pipe` the method does not declare, or no `--pipe` when it declares no entry pipe or several) as an `ArgumentError` carrying the runner's message, where it was a `RunnerError`.
+
+### Fixed
+
+- **`mthds build inputs pipe` on the API runner sends the whole method**: it now sends every `.mthds` file of each `-L` directory after the bundle file, as `mthds validate pipe` does, and when those are several and `--pipe` is omitted it asks for the bundle file's own `main_pipe`, so a method split across files gets its inputs template there as it does on the pipelex runner. `-L` was ignored before.
+- **Both CLIs refuse an unknown subcommand by name**: a path naming a subcommand that does not exist, such as `mthds build output --help` or `mthds-agent concept --spec …`, now fails, `mthds` with `unknown command` and `mthds-agent` with an `ArgumentError` reading `Unknown command: <word>` on either runner, whether it is run or asked for its help. Under `--help` both printed the banner or the root help and exited 0 as if the command existed, and `mthds-agent` refused a run of one as an unknown option or an excess argument.
+
+### Removed
+
+- **`mthds build output`, `mthds build runner`, `mthds-agent concept` and `mthds-agent pipe` (Breaking)**: these commands are gone on both runners, together with `MthdsApiClient.buildOutput()`, `buildRunner()`, `buildInputs()`, `concept()` and `pipeSpec()`, the `Runner` interface's methods of the same names and the pipelex runner's implementations, so `mthds` no longer calls any `/v1/build/*` route and `mthds build inputs` is the one command left under `mthds build`. A pipe's output representation and its Python runner script are generated with `pipelex build output` and `pipelex build runner`. In place of the spec-to-TOML commands, write a method's concepts and pipes as TOML and check them with `mthds-agent validate bundle`; `pipelex-agent concept` and `pipe` remain `pipelex`'s own commands.
+- **`MthdsApiClient.uploadFile()` and `mthds-agent inputs upload` (Breaking)**: file storage is a Pipelex capability, not part of the MTHDS Protocol, so `mthds` no longer calls `POST /v1/upload`. The method, its `UploadFileRequest` and `UploadFileResult` types and the command are gone, and `mthds-agent inputs upload` now fails as an unknown command on either runner. Upload a file with `uploadFile()` in `@pipelex/sdk` or `upload_file()` in `pipelex-sdk`.
+
 ## [v0.29.0] - 2026-10-03
 
 ### Added

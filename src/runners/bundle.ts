@@ -34,6 +34,7 @@ import {
 } from "node:fs";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { parse as parseToml } from "smol-toml";
+import { readBundleMeta } from "./pipe-ref.js";
 import type { MthdsFileItem } from "./types.js";
 
 /** File names (exact) that belong to a method bundle beyond the `.mthds`/`.py` set. */
@@ -294,7 +295,7 @@ export class BundleTargetError extends Error {
 export type BundleTarget = { path: string } | { content: string };
 
 /**
- * The `.mthds` files a per-bundle API route (`/v1/validate`, `/v1/build/inputs`)
+ * The `.mthds` files a per-bundle API route (`/v1/validate`, `/v1/pipe-io`)
  * receives for one command line: the closure the pipelex runner loads locally.
  */
 export interface BundleClosure {
@@ -353,8 +354,8 @@ function pickDirectoryEntry(dir: string, contents: Record<string, string>): stri
  * virtual environments, caches and run outputs among them, and only those.
  *
  * The entry goes first because `/v1/validate` takes the first file declaring a
- * `main_pipe` as the closure's primary one; `/v1/build/inputs` takes no such cue,
- * so the inputs commands also name the entry's own pipe. A file reached twice, as in
+ * `main_pipe` as the closure's primary one; `/v1/pipe-io` takes no such cue, so the
+ * inputs commands also name the entry's own pipe (`closureEntryPipeRef`). A file reached twice, as in
  * the hook's `validate bundle <file> -L <its dir>/`, is sent once, under the path it
  * was first reached by. Each `source` is the target or library directory as the
  * caller wrote it, joined with the file's place inside it, so a diagnostic names a
@@ -399,4 +400,19 @@ export function resolveBundleClosure(
     }
   }
   return { files };
+}
+
+/**
+ * The pipe an inputs command asks for when `--pipe` is omitted. When the closure
+ * holds several files, it is the entry's own `main_pipe`, qualified with its domain:
+ * the named file's, the inline content's, or a directory target's entry file's, the
+ * pipe the pipelex runner templates. Left to the runner's selection chain, a closure
+ * declaring a `main_pipe` in several domains would be refused as ambiguous, and one
+ * declaring it elsewhere than the entry would be answered for another pipe. With the
+ * entry alone, or an entry declaring no `main_pipe`, the choice is left to the chain.
+ */
+export function closureEntryPipeRef(closure: BundleClosure): string | undefined {
+  if (closure.files.length < 2) return undefined;
+  const { domain, mainPipe } = readBundleMeta(closure.files[0]!.content);
+  return domain && mainPipe ? `${domain}.${mainPipe}` : undefined;
 }

@@ -130,7 +130,7 @@ describe("mthds CLI prints a validation item's suggested fix", () => {
   });
 
   it("build prints the fix under the item that has one", async () => {
-    useRunner({ type: "api", buildInputs: vi.fn().mockResolvedValue(INVALID) });
+    useRunner({ type: "api", pipeIo: vi.fn().mockResolvedValue(INVALID) });
 
     await expect(buildInputsPipe(bundlePath, {})).rejects.toThrow("__exit__");
 

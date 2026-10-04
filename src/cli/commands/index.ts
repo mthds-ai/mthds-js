@@ -50,9 +50,7 @@ export function showBanner(): void {
   console.log(
     `    ${chalk.yellow("run pipe <target>")}           Run a pipe by code or bundle file`,
   );
-  console.log(`    ${chalk.yellow("build runner method|pipe")}    Generate Python runner code`);
   console.log(`    ${chalk.yellow("build inputs method|pipe")}    Generate example input JSON`);
-  console.log(`    ${chalk.yellow("build output method|pipe")}    Generate output schema`);
   console.log(`    ${chalk.yellow("validate method <name>")}      Validate an installed method`);
   console.log(`    ${chalk.yellow("validate pipe <target>")}      Validate a pipe or bundle\n`);
 

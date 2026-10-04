@@ -22,6 +22,42 @@ interface Captured {
   body: Record<string, unknown>;
 }
 
+const VALIDATE_ANSWER = {
+  is_valid: true,
+  message: "ok",
+  pending_signatures: [],
+  is_runnable: true,
+};
+
+/** A valid `/v1/pipe-io` answer for the pipe the request named, else `demo.main`, with one text input. */
+function pipeIoAnswer(body: Record<string, unknown>): Record<string, unknown> {
+  const pipeRef = typeof body.pipe_ref === "string" ? body.pipe_ref : "demo.main";
+  return {
+    is_valid: true,
+    pipe_ref: pipeRef,
+    pipe_io_contracts: {},
+    input_form: {
+      [pipeRef]: {
+        fields: [
+          {
+            kind: "prose",
+            name: "topic",
+            concept_ref: "native.Text",
+            description: "A topic",
+            required: true,
+            presence: "plain",
+            gating: true,
+          },
+        ],
+      },
+    },
+    output_form: {},
+    default_pipe_ref: pipeRef,
+    pending_signatures: [],
+    is_runnable: true,
+  };
+}
+
 describe("API-runner validate and inputs send the whole bundle", () => {
   let dir: string;
   let method: string;
@@ -50,10 +86,9 @@ describe("API-runner validate and inputs send the whole bundle", () => {
     requests = [];
     vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
       const url = String(input);
-      requests.push({ url, body: JSON.parse(String(init?.body)) as Record<string, unknown> });
-      const answer = url.endsWith("/build/inputs")
-        ? { is_valid: true, pipe_ref: "demo.main", inputs: {} }
-        : { is_valid: true, message: "ok", pending_signatures: [], is_runnable: true };
+      const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      requests.push({ url, body });
+      const answer = url.endsWith("/pipe-io") ? pipeIoAnswer(body) : VALIDATE_ANSWER;
       return new Response(JSON.stringify(answer), {
         status: 200,
         headers: { "Content-Type": "application/json" },
@@ -228,7 +263,7 @@ describe("API-runner validate and inputs send the whole bundle", () => {
     it("sends every file of a directory target and asks for its entry file's pipe", async () => {
       await agent("inputs", "bundle", method);
 
-      expect(requests[0]!.url).toMatch(/\/v1\/build\/inputs$/);
+      expect(requests[0]!.url).toMatch(/\/v1\/pipe-io$/);
       expect(requests[0]!.body.files).toEqual([
         { content: ROOT, source: join(method, "bundle.mthds") },
         { content: CHILD, source: join(method, "child.mthds") },
@@ -264,6 +299,13 @@ describe("API-runner validate and inputs send the whole bundle", () => {
       expect(requests[0]!.body.pipe_ref).toBe("demo.main");
     });
 
+    it("sends an empty --pipe as given instead of the entry's main pipe", async () => {
+      const child = join(method, "child.mthds");
+      await agent("inputs", "bundle", child, "-L", method, "--pipe", "");
+
+      expect(requests[0]!.body).toHaveProperty("pipe_ref", "");
+    });
+
     it("sends a named file alone, with no pipe_ref, when no library directory is given", async () => {
       const root = join(method, "bundle.mthds");
       await agent("inputs", "bundle", root);
@@ -283,6 +325,21 @@ describe("API-runner validate and inputs send the whole bundle", () => {
         { content: ROOT, source: join(method, "bundle.mthds") },
       ]);
       expect(requests[0]!.body.pipe_ref).toBe("demo.step");
+      expect(JSON.parse(String(stdoutSpy.mock.calls[0]![0]))).toEqual({
+        success: true,
+        pipe_ref: "demo.step",
+        inputs: { topic: "text_value" },
+      });
+    });
+
+    it("renders the closure's template in TOML beside -L", async () => {
+      const child = join(method, "child.mthds");
+      await agent("inputs", "pipe", child, "-L", method, "--format", "toml");
+
+      expect(requests[0]!.body.pipe_ref).toBe("demo.step");
+      expect(String(stdoutSpy.mock.calls[0]![0])).toBe(
+        '# concept: native.Text\ntopic = "text_value"\n',
+      );
     });
   });
 });

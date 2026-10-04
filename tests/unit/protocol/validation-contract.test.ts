@@ -177,8 +177,9 @@ describe("validate contract round-trip", () => {
   });
 
   it("admits dry_run in the closed ValidationErrorCategory vocabulary", () => {
-    // `ValidationErrorCategory` / `ValidationErrorItem` remain in `mthds` because
-    // they type the build routes' 422 problem bodies (`ApiResponseError.validationErrors`).
+    // `ValidationErrorCategory` / `ValidationErrorItem` remain in `mthds` because they
+    // type pipe-io's invalid verdict and a run route's 422 problem body
+    // (`ApiResponseError.validationErrors`).
     const categories: ValidationErrorCategory[] = [
       "blueprint_validation",
       "pipe_factory",

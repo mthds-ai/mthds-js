@@ -28,6 +28,17 @@ export type {
 export type { AppInfo } from "./runners/api/user-agent.js";
 export { MTHDS_JS_VERSION } from "./version.js";
 
+// ── Pipe I/O (runners — `MthdsApiClient.pipeIo`, a Pipelex API extension) ──
+export { PIPE_SELECTION_ERROR_TYPES } from "./runners/types.js";
+export type {
+  CrateInvalidReport,
+  CrateRequestBase,
+  MthdsFileItem,
+  PipeIORequest,
+  PipeIOResponse,
+  PipeIOValidReport,
+} from "./runners/types.js";
+
 // ── API-runner errors (runners/api — the protocol-base `PipelineRequestError`
 //    rides the protocol barrel above) ──────────────────────────────────
 export {
@@ -43,16 +54,15 @@ export type {
   UserAction,
 } from "./runners/api/exceptions.js";
 
-// ── Dict-serialized concretes + build-route validation-error item (runners/api) ──
+// ── Dict-serialized concretes + validation-error item (runners/api) ──
 //
 // The Pipelex-API `/v1/validate` narrowing (`PipelexValidationResult` and its
 // arms) is NOT exported here — it lives in the runtime SDK (`@pipelex/sdk`).
 // `MthdsApiClient.validate()` returns the protocol's neutral `ValidationResult`
 // (re-exported via the protocol barrel above). `ValidationErrorItem` /
-// `ValidationErrorCategory` remain because they type the per-pipe build routes'
-// (`build/inputs`, `build/output`, `build/runner`) `200` invalid verdicts and a run
-// route's `422` refusal (`ApiResponseError.validationErrors`). `SuggestedFix` and its op
-// types are the next step an item carries.
+// `ValidationErrorCategory` remain because they type the `200` invalid verdict of
+// `pipe-io` and a run route's `422` refusal (`ApiResponseError.validationErrors`).
+// `SuggestedFix` and its op types are the next step an item carries.
 export type {
   DictStuff,
   DictWorkingMemory,

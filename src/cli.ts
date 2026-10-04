@@ -11,14 +11,8 @@ import { shareMethod } from "./cli/commands/share-cli.js";
 import { configSet, configGet, configList } from "./cli/commands/config.js";
 import { login } from "./cli/commands/login.js";
 import { runMethod, runPipe, runBundle } from "./cli/commands/run.js";
-import {
-  buildRunnerMethod,
-  buildRunnerPipe,
-  buildInputsMethod,
-  buildInputsPipe,
-  buildOutputMethod,
-  buildOutputPipe,
-} from "./cli/commands/build.js";
+import { buildInputsMethod, buildInputsPipe } from "./cli/commands/build.js";
+import { findUnknownSubcommand } from "./cli/commands/unknown-subcommand.js";
 import { validateMethod, validatePipe, validateBundle } from "./cli/commands/validate.js";
 import { packageInit } from "./cli/commands/package/init.js";
 import { packageList } from "./cli/commands/package/list.js";
@@ -153,53 +147,8 @@ run
 // ── mthds build <subcommand> ────────────────────────────────────────
 const build = program
   .command("build")
-  .description("Generate runner code, inputs, and output schemas")
+  .description("Generate example inputs for a pipe")
   .exitOverride();
-
-const buildRunnerCmd = build
-  .command("runner")
-  .description("Generate Python runner code for a pipe")
-  .exitOverride();
-
-buildRunnerCmd
-  .command("method")
-  .argument("<name>", "Name of the installed method")
-  .option(
-    "--pipe <ref>",
-    "Qualified pipe ref (domain.pipe_code). Defaults to the closure's main_pipe.",
-  )
-  .option("-o, --output <file>", "Path to save the generated Python file")
-  .description("Generate runner for an installed method")
-  .allowUnknownOption()
-  .allowExcessArguments(true)
-  .exitOverride()
-  .action(async (name: string, options: { pipe?: string; output?: string }, cmd: Cmd) => {
-    await buildRunnerMethod(name, {
-      ...options,
-      runner: getRunner(cmd),
-      libraryDir: getLibraryDirs(cmd),
-    });
-  });
-
-buildRunnerCmd
-  .command("pipe")
-  .argument("<target>", "Bundle file path")
-  .option(
-    "--pipe <ref>",
-    "Qualified pipe ref (domain.pipe_code). Defaults to the closure's main_pipe.",
-  )
-  .option("-o, --output <file>", "Path to save the generated Python file")
-  .description("Generate runner for a pipe by bundle path")
-  .allowUnknownOption()
-  .allowExcessArguments(true)
-  .exitOverride()
-  .action(async (target: string, options: { pipe?: string; output?: string }, cmd: Cmd) => {
-    await buildRunnerPipe(target, {
-      ...options,
-      runner: getRunner(cmd),
-      libraryDir: getLibraryDirs(cmd),
-    });
-  });
 
 const buildInputsCmd = build
   .command("inputs")
@@ -251,51 +200,6 @@ buildInputsCmd
       });
     },
   );
-
-const buildOutputCmd = build
-  .command("output")
-  .description("Generate output representation for a pipe")
-  .exitOverride();
-
-buildOutputCmd
-  .command("method")
-  .argument("<name>", "Name of the installed method")
-  .option(
-    "--pipe <ref>",
-    "Qualified pipe ref (domain.pipe_code). Defaults to the closure's main_pipe.",
-  )
-  .option("--format <format>", "Output format (json, python, schema)", "schema")
-  .description("Generate output for an installed method")
-  .allowUnknownOption()
-  .allowExcessArguments(true)
-  .exitOverride()
-  .action(async (name: string, options: { pipe?: string; format?: string }, cmd: Cmd) => {
-    await buildOutputMethod(name, {
-      ...options,
-      runner: getRunner(cmd),
-      libraryDir: getLibraryDirs(cmd),
-    });
-  });
-
-buildOutputCmd
-  .command("pipe")
-  .argument("<target>", "Bundle file path")
-  .option(
-    "--pipe <ref>",
-    "Qualified pipe ref (domain.pipe_code). Defaults to the closure's main_pipe.",
-  )
-  .option("--format <format>", "Output format (json, python, schema)", "schema")
-  .description("Generate output for a pipe by bundle path")
-  .allowUnknownOption()
-  .allowExcessArguments(true)
-  .exitOverride()
-  .action(async (target: string, options: { pipe?: string; format?: string }, cmd: Cmd) => {
-    await buildOutputPipe(target, {
-      ...options,
-      runner: getRunner(cmd),
-      libraryDir: getLibraryDirs(cmd),
-    });
-  });
 
 // ── mthds validate method|pipe ────────────────────────────────────────
 const validate = program
@@ -591,8 +495,11 @@ program.parseAsync(process.argv).catch((err: unknown) => {
       process.exit(0);
     }
 
-    // --help: show banner and exit
-    if (err.exitCode === 0) {
+    // --help: show banner and exit, unless the path names a subcommand that does not
+    // exist, which Commander would otherwise answer with the help as if it did.
+    const unknownSubcommand =
+      err.exitCode === 0 ? findUnknownSubcommand(program, process.argv.slice(2)) : undefined;
+    if (err.exitCode === 0 && unknownSubcommand === undefined) {
       showBanner();
       process.exit(0);
     }
@@ -600,7 +507,10 @@ program.parseAsync(process.argv).catch((err: unknown) => {
     printLogo();
     p.intro("mthds");
 
-    const message = err.message.replace(/^error: /, "").replace(/^Error: /, "");
+    const message =
+      unknownSubcommand !== undefined
+        ? `unknown command '${unknownSubcommand}'`
+        : err.message.replace(/^error: /, "").replace(/^Error: /, "");
 
     p.log.error(message);
     p.log.info("Run mthds --help to see usage.");

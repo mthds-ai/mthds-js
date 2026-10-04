@@ -1,34 +1,13 @@
 import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
-import { existsSync, writeFileSync, readFileSync, readdirSync, mkdtempSync, rmSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { existsSync, writeFileSync, readFileSync, mkdtempSync, rmSync } from "node:fs";
+import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { Runners } from "../types.js";
 import { materializeBundleFiles } from "../bundle.js";
 import { assertExclusiveRunSources } from "../../protocol/options.js";
 import { PipelineRequestError } from "../../protocol/exceptions.js";
-import type {
-  Runner,
-  RunnerType,
-  BuildInputsRequest,
-  BuildInputsResponse,
-  BuildOutputRequest,
-  BuildOutputResponse,
-  BuildRequestBase,
-  BuildRunnerRequest,
-  BuildRunnerResponse,
-  ConceptRequest,
-  ConceptResponse,
-  MthdsFileItem,
-  PipeSpecRequest,
-  PipeSpecResponse,
-  RunnerStructures,
-  CheckModelRequest,
-  CheckModelResponse,
-  ConceptRepresentationFormat,
-  InputsTemplateFormat,
-} from "../types.js";
-import { resolveQualifiedPipeRef } from "../pipe-ref.js";
+import type { Runner, RunnerType, CheckModelRequest, CheckModelResponse } from "../types.js";
 import type { RunOptions, StartOptions } from "../../protocol/options.js";
 import type {
   ModelCategory,
@@ -47,134 +26,22 @@ function makeTmpDir(): string {
   return mkdtempSync(join(tmpdir(), "mthds-"));
 }
 
-// Extract the canonical code from the first `[concept.X]` / `[pipe.X]` section of a TOML
-// string. pipelex normalizes these names (ASCII fold, PascalCase / snake_case, namespace
-// strip) before emitting TOML, so the section header is the source of truth — not the
-// caller-supplied spec.
-function extractSectionKey(toml: string, kind: "concept" | "pipe"): string | null {
-  const m = toml.match(new RegExp(`\\[${kind}\\.([^\\]\\s]+)\\]`));
-  return m && m[1] ? m[1] : null;
-}
-
 /**
- * A file's `source` label is a free-form provenance string (a path, a URI). Keep
- * only what is safe to use as a temp filename: a plain `*.mthds` basename. Any
- * other label falls back to a positional name rather than escaping the temp dir.
- */
-function safeFileName(source: string | undefined, index: number): string {
-  const fallback = index === 0 ? "bundle.mthds" : `extra_${index}.mthds`;
-  if (!source) return fallback;
-  const base = source.split(/[/\\]/).pop();
-  if (!base || !base.endsWith(".mthds") || base.startsWith(".")) return fallback;
-  return base;
-}
-
-/**
- * Materialize a closure into a temp directory so the local CLI can load it.
- * Returns the path of the first file — the bundle the CLI is pointed at; the rest
- * sit beside it and are picked up via `-L <tmp>`.
- *
- * Each file is written under its own `source` label when that label is a usable
- * `.mthds` basename, so the CLI's diagnostics name the file the CALLER named —
- * the whole point of carrying `source` on the wire.
- */
-function writeMthdsFiles(tmp: string, files: MthdsFileItem[]): string {
-  if (files.length === 0) {
-    throw new Error("At least one MTHDS file is required.");
-  }
-  const used = new Set<string>();
-  let bundlePath: string | null = null;
-  files.forEach((file, index) => {
-    let name = safeFileName(file.source, index);
-    // Two files may legitimately carry the same basename (different directories
-    // upstream). Never let one silently overwrite the other.
-    while (used.has(name)) name = `extra_${used.size}_${name}`;
-    used.add(name);
-    const path = join(tmp, name);
-    writeFileSync(path, file.content, "utf-8");
-    bundlePath ??= path;
-  });
-  return bundlePath!;
-}
-
-/**
- * The `mthds_contents` variant, for the routes that still ride bare strings —
- * `execute` / `start` / `validate`. Those are MTHDS Protocol routes: their
- * envelope is owned by the standard, so only the Pipelex-extension `/build/*`
- * routes moved to `files[]`.
+ * Materialize bare `.mthds` contents into a temp directory so the local CLI can load
+ * them, for the MTHDS Protocol routes that ride bare strings (`execute` / `start` /
+ * `validate`). Returns the path of the first file, `bundle.mthds`, which the CLI is
+ * pointed at; the rest sit beside it as `extra_<n>.mthds` and are picked up via
+ * `-L <tmp>`.
  */
 function writeMthdsContents(tmp: string, contents: string[]): string {
-  return writeMthdsFiles(
-    tmp,
-    contents.map((content) => ({ content })),
-  );
-}
-
-/**
- * Materialize a `/v1/build/*` closure, rejecting the selector this runner does not serve.
- *
- * The refusal is about THIS runner, not about the selector: it shells out to
- * `pipelex-agent <projection> bundle <path>`, which reads a closure already on disk, so
- * there is nothing here to resolve a reference against. The API runner does resolve the
- * address form, from pipelex-api 0.21.0 — only its registry form is still a `501`.
- */
-function writeBuildFiles(tmp: string, request: BuildRequestBase): string {
-  if (request.method_ref) {
-    throw new Error(
-      "method_ref is not supported by the local pipelex runner — pass the closure as files[], " +
-        "or send this request to an API runner on pipelex-api 0.21.0 or newer, which resolves " +
-        "the address form (github.com/<owner>/<repo>[/<selector>][@<tag>]). Only a registry-form " +
-        "reference is refused there, with a 501, until a method registry exists.",
-    );
+  if (contents.length === 0) {
+    throw new Error("At least one MTHDS file is required.");
   }
-  return writeMthdsFiles(tmp, request.files ?? []);
-}
-
-const STRUCTURES_DIR = "structures";
-const CODEGEN_LOCK_FILENAME = "codegen.lock";
-
-/**
- * Walk a projection directory and collect every file under its path RELATIVE to the
- * root, "/"-separated regardless of platform — the wire shape `GeneratedArtifact.path`
- * carries. pipelex's lock layer validates artifact paths as (possibly multi-part)
- * relative paths, so nested files are part of the projection, not noise: skipping
- * them would hand `codegen check` a silently halved artifact set.
- */
-function collectArtifactFiles(root: string, rel = ""): { path: string; content: string }[] {
-  return readdirSync(join(root, rel), { withFileTypes: true }).flatMap((entry) => {
-    const relPath = rel ? `${rel}/${entry.name}` : entry.name;
-    if (entry.isDirectory()) return collectArtifactFiles(root, relPath);
-    if (!entry.isFile()) return [];
-    return [{ path: relPath, content: readFileSync(join(root, relPath), "utf-8") }];
+  contents.forEach((content, index) => {
+    const name = index === 0 ? "bundle.mthds" : `extra_${index}.mthds`;
+    writeFileSync(join(tmp, name), content, "utf-8");
   });
-}
-
-/**
- * Collect the typed-structures projection `pipelex build runner` scaffolds beside
- * the script it emits, so the local runner returns the same `structures` payload
- * the API does — the stamped artifacts plus the lock that tracks them.
- *
- * Returns `undefined` when the CLI emitted no projection. That is not a failure: a
- * closure that resolves to no crate yields no `structures/`, and the `runner.py` we
- * just generated is valid regardless, so treating a missing lock as fatal would throw
- * away good output over an absent sidecar. The lock is still all-or-nothing: a
- * projection without one cannot be offline-checked, so we never report a half one.
- */
-function readRunnerStructures(runnerPath: string): RunnerStructures | undefined {
-  const dir = join(dirname(runnerPath), STRUCTURES_DIR);
-  const lockPath = join(dir, CODEGEN_LOCK_FILENAME);
-  if (!existsSync(lockPath)) return undefined;
-
-  const artifacts = collectArtifactFiles(dir)
-    .filter((artifact) => artifact.path !== CODEGEN_LOCK_FILENAME)
-    .sort((a, b) => (a.path < b.path ? -1 : 1));
-
-  return {
-    directory: STRUCTURES_DIR,
-    artifacts,
-    lock: readFileSync(lockPath, "utf-8"),
-    lock_filename: CODEGEN_LOCK_FILENAME,
-  };
+  return join(tmp, "bundle.mthds");
 }
 
 export class PipelexRunner implements Runner {
@@ -253,216 +120,6 @@ export class PipelexRunner implements Runner {
       implementation: "pipelex",
       implementation_version: pipelexVersion,
       runtime_version: pipelexVersion,
-    };
-  }
-
-  // ── Build ───────────────────────────────────────────────────────
-  //
-  // The local runner speaks the same discriminated verdict as the API
-  // (`is_valid` + a qualified `pipe_ref`), but it reaches it by shelling out to
-  // the CLI rather than by loading a library. Two consequences, both deliberate:
-  //
-  //  * It never RETURNS the invalid arm — an unloadable closure makes the CLI
-  //    exit non-zero, which surfaces as a thrown error. The union's invalid arm
-  //    is therefore API-only in practice. Callers still branch on `is_valid`;
-  //    that branch is simply never taken here.
-  //  * It resolves the qualified `pipe_ref` ITSELF (see `resolveQualifiedPipeRef`)
-  //    and passes it to `--pipe` explicitly, so the ref it echoes back is exactly
-  //    the ref it asked for — never a bare code dressed up as a resolved one.
-
-  // pipelex-agent inputs bundle <bundle.mthds> --pipe <ref> --format <fmt> [--explicit]
-  async buildInputs(request: BuildInputsRequest): Promise<BuildInputsResponse> {
-    const tmp = makeTmpDir();
-    try {
-      const bundlePath = writeBuildFiles(tmp, request);
-      const pipeRef = resolveQualifiedPipeRef(request.files ?? [], request.pipe_ref);
-      const format: InputsTemplateFormat = request.format ?? "json";
-      const explicit = request.explicit ?? false;
-
-      const { stdout } = await execFileAsync(
-        "pipelex-agent",
-        [
-          "inputs",
-          "bundle",
-          bundlePath,
-          "--pipe",
-          pipeRef,
-          "--format",
-          format,
-          ...(explicit ? ["--explicit"] : []),
-          "-L",
-          tmp,
-          ...this.libraryArgs(),
-        ],
-        { encoding: "utf-8" },
-      );
-
-      const base = {
-        is_valid: true as const,
-        pipe_ref: pipeRef,
-        ...(request.pipe_ref ? { requested_pipe_ref: request.pipe_ref } : {}),
-        explicit,
-        message: "Inputs template generated via local CLI",
-      };
-
-      // `--format toml` prints the raw template to stdout; `--format json` prints
-      // the agent CLI's own `{success, pipe_code, inputs}` envelope, whose `inputs`
-      // is the template. Unwrap it so both runners return the SAME thing under
-      // `inputs` — the bare template, as the API does.
-      if (format === "toml") {
-        return { ...base, format, inputs_toml: stdout };
-      }
-      const envelope = JSON.parse(stdout) as { inputs?: Record<string, unknown> };
-      // The envelope always carries `inputs` — `{}` for an input-less pipe. Its
-      // absence means the CLI contract changed under us; surface that as a
-      // no-verdict rather than an `is_valid: true` with a hollowed-out template.
-      if (envelope.inputs === undefined) {
-        throw new Error("pipelex-agent inputs returned no `inputs` field in its JSON envelope.");
-      }
-      return { ...base, format, inputs: envelope.inputs };
-    } finally {
-      rmSync(tmp, { recursive: true, force: true });
-    }
-  }
-
-  // pipelex build output bundle <bundle.mthds> --pipe <ref> -o <file> --format <fmt>
-  // Output format determines the file content: 'json'/'schema' produce JSON, 'python' produces Python code.
-  // We always pass --format explicitly so the parsing branch below does not rely on
-  // pipelex's CLI default, which is outside our contract.
-  async buildOutput(request: BuildOutputRequest): Promise<BuildOutputResponse> {
-    const tmp = makeTmpDir();
-    try {
-      const bundlePath = writeBuildFiles(tmp, request);
-      const pipeRef = resolveQualifiedPipeRef(request.files ?? [], request.pipe_ref);
-      const outPath = join(tmp, "output.json");
-      const format: ConceptRepresentationFormat = request.format ?? "schema";
-
-      const args = [
-        "build",
-        "output",
-        "bundle",
-        bundlePath,
-        "--pipe",
-        pipeRef,
-        "-o",
-        outPath,
-        "-L",
-        tmp,
-        "--format",
-        format,
-        ...this.libraryArgs(),
-      ];
-
-      const { stderr } = await execFileAsync("pipelex", args, {
-        encoding: "utf-8",
-      });
-
-      // pipelex can exit 0 without writing the file (e.g. render_output raises ValueError
-      // and the CLI does `typer.Exit(0)` after printing the message to stderr). Surface
-      // that diagnostic instead of an opaque ENOENT.
-      if (!existsSync(outPath)) {
-        throw new Error(
-          `pipelex build output produced no file at ${outPath}.` +
-            (stderr ? ` Output:\n${stderr.trim()}` : ""),
-        );
-      }
-      const raw = readFileSync(outPath, "utf-8");
-
-      const base = {
-        is_valid: true as const,
-        pipe_ref: pipeRef,
-        ...(request.pipe_ref ? { requested_pipe_ref: request.pipe_ref } : {}),
-        message: "Output representation generated via local CLI",
-      };
-
-      // Same two-field split as the API: 'python' is source text, the rest are objects.
-      if (format === "python") {
-        return { ...base, format, output_python: raw };
-      }
-      return { ...base, format, output: JSON.parse(raw) as Record<string, unknown> };
-    } finally {
-      rmSync(tmp, { recursive: true, force: true });
-    }
-  }
-
-  // pipelex build runner bundle <bundle.mthds> --pipe <ref> -o <file>
-  async buildRunner(request: BuildRunnerRequest): Promise<BuildRunnerResponse> {
-    // `pipelex build runner` has no --allow-signatures flag, so there is nothing to
-    // forward. Silently dropping it would make the same request mean two different
-    // things depending on the runner — the API would accept a closure with unresolved
-    // signatures that we'd then reject. Say so instead of guessing.
-    if (request.allow_signatures) {
-      throw new Error(
-        "allow_signatures is not supported by the local pipelex runner: " +
-          "`pipelex build runner` exposes no --allow-signatures flag. Send this request " +
-          "through an MthdsApiClient (the API runner) instead.",
-      );
-    }
-
-    const tmp = makeTmpDir();
-    try {
-      const bundlePath = writeBuildFiles(tmp, request);
-      const pipeRef = resolveQualifiedPipeRef(request.files ?? [], request.pipe_ref);
-
-      const outPath = join(tmp, "runner.py");
-      await this.execStreaming([
-        "build",
-        "runner",
-        "bundle",
-        bundlePath,
-        "--pipe",
-        pipeRef,
-        "-o",
-        outPath,
-        "-L",
-        tmp,
-        ...this.libraryArgs(),
-      ]);
-
-      const pythonCode = readFileSync(outPath, "utf-8");
-      const structures = readRunnerStructures(outPath);
-      return {
-        is_valid: true,
-        pipe_ref: pipeRef,
-        ...(request.pipe_ref ? { requested_pipe_ref: request.pipe_ref } : {}),
-        python_code: pythonCode,
-        ...(structures ? { structures } : {}),
-        message: "Runner code generated via local CLI",
-      };
-    } finally {
-      rmSync(tmp, { recursive: true, force: true });
-    }
-  }
-
-  // ── Spec-to-TOML ────────────────────────────────────────────────
-
-  // pipelex-agent concept --spec <json>
-  async concept(request: ConceptRequest): Promise<ConceptResponse> {
-    const { stdout } = await execFileAsync(
-      "pipelex-agent",
-      ["concept", "--spec", JSON.stringify(request.spec)],
-      { encoding: "utf-8" },
-    );
-    return {
-      success: true,
-      concept_code:
-        extractSectionKey(stdout, "concept") ?? (request.spec.concept_code as string) ?? "",
-      toml: stdout,
-    };
-  }
-
-  // pipelex-agent pipe --type <type> --spec <json>
-  async pipeSpec(request: PipeSpecRequest): Promise<PipeSpecResponse> {
-    const { stdout } = await execFileAsync(
-      "pipelex-agent",
-      ["pipe", "--type", request.pipe_type, "--spec", JSON.stringify(request.spec)],
-      { encoding: "utf-8" },
-    );
-    return {
-      success: true,
-      pipe_code: extractSectionKey(stdout, "pipe") ?? (request.spec.pipe_code as string) ?? "",
-      pipe_type: request.pipe_type,
-      toml: stdout,
     };
   }
 

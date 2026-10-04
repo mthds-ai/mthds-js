@@ -21,6 +21,7 @@
 
 - **`mthds build output` and `mthds build runner` (Breaking)**: both commands are gone on both runners, together with `MthdsApiClient.buildOutput()` and `buildRunner()`, the `Runner` interface's `buildOutput` and `buildRunner` and the pipelex runner's implementations, so `mthds` no longer calls `POST /v1/build/output` or `POST /v1/build/runner`. `mthds build inputs` is the one command left under `mthds build`; a pipe's output representation and its Python runner script are generated with `pipelex build output` and `pipelex build runner`.
 - **`mthds-agent concept` and `mthds-agent pipe` (Breaking)**: both spec-to-TOML commands are gone on both runners, together with `MthdsApiClient.concept()`, `pipeSpec()` and `buildInputs()`, the `Runner` interface's `concept`, `pipeSpec` and `buildInputs` and the pipelex runner's implementations, so `mthds` no longer calls any `/v1/build/*` route. Write a method's concepts and pipes as TOML and check them with `mthds-agent validate bundle`; `pipelex-agent concept` and `pipe` remain `pipelex`'s own commands.
+- **`MthdsApiClient.uploadFile()` and `mthds-agent inputs upload` (Breaking)**: file storage is a Pipelex capability, not part of the MTHDS Protocol, so `mthds` no longer calls `POST /v1/upload`. The method, its `UploadFileRequest` and `UploadFileResult` types and the command are gone, and `mthds-agent inputs upload` now fails as an unknown command on either runner. Upload a file with `uploadFile()` in `@pipelex/sdk` or `upload_file()` in `pipelex-sdk`.
 
 ## [v0.29.0] - 2026-10-03
 

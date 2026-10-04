@@ -36,28 +36,6 @@ export interface ValidateFilesOptions {
   render?: string[];
 }
 
-/**
- * Request for `uploadFile` — the NON-CONTRACT `POST /v1/upload` convenience.
- * Not part of the MTHDS Protocol nor of the pipe I/O extension, which is why
- * it lives on the concrete client, not the shared `Runner` interface.
- */
-export interface UploadFileRequest {
-  /** Original filename with extension (e.g. `synthetic.png`). */
-  filename: string;
-  /** File content as a base64-encoded string. */
-  data: string;
-  /** Optional MIME type; the server falls back to a provider default when absent. */
-  contentType?: string;
-}
-
-/** Result of `uploadFile` — the `pipelex-storage://` URI pipelex resolves at runtime. */
-export interface UploadFileResult {
-  /** `pipelex-storage://` URI for the uploaded file. */
-  uri: string;
-  /** Original filename echoed back by the server. */
-  filename: string;
-}
-
 export interface MthdsApiClientOptions {
   /** API key (Bearer). Falls back to `MTHDS_API_KEY`. Optional for anonymous bare runners. */
   apiKey?: string;
@@ -112,8 +90,8 @@ const VALIDATE_MARKDOWN_RENDER_FORMAT = "markdown";
  * - **protocol** (`execute` / `start` / `validate` / `models` / `version`) — works
  *   against any MTHDS-compliant runner, hosted or bare.
  * - **`pipeIo`** (`/v1/pipe-io`) — a Pipelex API extension carrying the standard's
- *   I/O artifacts. Like `uploadFile`, it lives on this class and not on `Runner`:
- *   the local pipelex runner shells out and has no use for it.
+ *   I/O artifacts. It lives on this class and not on `Runner`: the local pipelex
+ *   runner shells out and has no use for it.
  *
  * The durable run-lifecycle (poll a run by id: `getRunStatus` / `getRunResult` /
  * `waitForResult` / `startAndWaitForResult`) is NOT part of this client — it now
@@ -583,34 +561,6 @@ export class MthdsApiClient implements Runner {
       this.throwApiResponseError("POST", "pipe-io", res);
     }
     return JSON.parse(res.body) as PipeIOResponse;
-  }
-
-  // ── Storage convenience (NON-CONTRACT — `POST /v1/upload`) ─────────
-
-  /**
-   * Upload a file and get back the `pipelex-storage://` URI pipelex resolves at
-   * runtime — `POST /v1/upload`.
-   *
-   * NON-CONTRACT: not part of the MTHDS Protocol nor of the pipe I/O extension; a
-   * deployment convenience slated for replacement by the storage redesign. Kept
-   * off the `Runner` interface for that reason (a local pipelex runner has no
-   * upload route). Goes through `requestRaw` + `throwApiResponseError` so an
-   * auth/size/server failure surfaces as the same typed `ApiResponseError` the
-   * protocol surface uses, not a bare `Error`.
-   */
-  async uploadFile(request: UploadFileRequest): Promise<UploadFileResult> {
-    const body: Record<string, unknown> = {
-      filename: request.filename,
-      data: request.data,
-    };
-    if (request.contentType !== undefined) {
-      body.content_type = request.contentType;
-    }
-    const res = await this.requestRaw("POST", this.url("upload"), { body });
-    if (res.status < 200 || res.status >= 300) {
-      this.throwApiResponseError("POST", "upload", res);
-    }
-    return JSON.parse(res.body) as UploadFileResult;
   }
 }
 

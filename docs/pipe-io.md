@@ -2,7 +2,7 @@
 
 `MthdsApiClient.pipeIo()` returns a method's three I/O artifacts in one call: its pipe I/O contracts, its input form and its output form. The server resolves the closure, selects a pipe and derives the artifacts without a dry run, so a call costs one load and one derivation where `validate` mock-runs every pipe of the method. A caller that shows a method, prepares its inputs or generates a template for it reads this route; a caller that needs the dry-run verdict stays on `validate`.
 
-It is a **Pipelex API extension, not an MTHDS Protocol route**, so it lives in `src/runners/` and never in `src/protocol/`. The artifacts it carries are the standard's own types, imported from `mthds/protocol` (`PipeIOContracts`, `InputForm`, `OutputForm`). Like `uploadFile`, it is a method of the concrete client and not of the `Runner` interface: the local pipelex runner shells out to `pipelex-agent` and has no use for it. `@pipelex/sdk` has its own `pipeIo()` with the same wire shape, because that SDK builds on `mthds/protocol` alone and not on this client.
+It is a **Pipelex API extension, not an MTHDS Protocol route**, so it lives in `src/runners/` and never in `src/protocol/`. The artifacts it carries are the standard's own types, imported from `mthds/protocol` (`PipeIOContracts`, `InputForm`, `OutputForm`). It is a method of the concrete client and not of the `Runner` interface: the local pipelex runner shells out to `pipelex-agent` and has no use for it. `@pipelex/sdk` has its own `pipeIo()` with the same wire shape, because that SDK builds on `mthds/protocol` alone and not on this client.
 
 A runner serves the route from `pipelex-api` v0.33.0, and the hosted API proxies it to its runner.
 

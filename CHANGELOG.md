@@ -1,5 +1,11 @@
 # Changelog
 
+## [Unreleased]
+
+### Fixed
+
+- **`CLI.md` no longer points at `pipelex build runner`**: the Build section names `pipelex build output` alone for a pipe's output representation, since `pipelex` drops `build runner`, and points a reader who wants the typed structures of a method's concepts at `pipelex codegen types`.
+
 ## [v0.30.0] - 2026-10-04
 
 ### Added

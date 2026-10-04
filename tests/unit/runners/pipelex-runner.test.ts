@@ -24,13 +24,12 @@ vi.mock("node:os", () => ({
   tmpdir: vi.fn(() => "/tmp"),
 }));
 
-import { readFileSync, readdirSync, existsSync, writeFileSync } from "node:fs";
+import { readFileSync, existsSync, writeFileSync } from "node:fs";
 import { spawn } from "node:child_process";
 import { PipelexRunner } from "../../../src/runners/pipelex/runner.js";
 import { MODEL_CATEGORIES } from "../../../src/protocol/models.js";
 
 const mockedReadFileSync = vi.mocked(readFileSync);
-const mockedReaddirSync = vi.mocked(readdirSync);
 const mockedExistsSync = vi.mocked(existsSync);
 const mockedWriteFileSync = vi.mocked(writeFileSync);
 const mockedSpawn = vi.mocked(spawn);
@@ -504,163 +503,6 @@ describe("PipelexRunner", () => {
       const result = await runner.buildInputs({ files: [{ content: BUNDLE }] });
 
       expect(result).toMatchObject({ is_valid: true, inputs: {} });
-    });
-  });
-
-  describe("buildOutput", () => {
-    it("passes -o to a temp file and reads it back", async () => {
-      const outputJson = '{"concept":"native.Text","content":{"type":"object"}}';
-      execFileAsync.mockResolvedValue({ stdout: "", stderr: "" });
-      mockedExistsSync.mockReturnValue(true);
-      mockedReadFileSync.mockReturnValue(outputJson);
-
-      const result = await runner.buildOutput({
-        files: [{ content: BUNDLE }],
-        pipe_ref: "smoke.echo",
-      });
-
-      const args = execFileAsync.mock.calls[0]![1] as string[];
-      const oIndex = args.indexOf("-o");
-      expect(oIndex).toBeGreaterThan(-1);
-      expect(args[oIndex + 1]).toMatch(/output\.json$/);
-
-      expect(result).toMatchObject({
-        is_valid: true,
-        pipe_ref: "smoke.echo",
-        output: { concept: "native.Text", content: { type: "object" } },
-      });
-    });
-
-    // The runner must pass an explicit `--format` so the parsing branch below does
-    // not rely on pipelex's CLI default (which is outside our contract). The default
-    // it passes is `schema` — the same default the API's `/v1/build/output` applies,
-    // so the two runners behind one `Runner` interface cannot mean different things.
-    it("passes --format schema when the caller omits format", async () => {
-      execFileAsync.mockResolvedValue({ stdout: "", stderr: "" });
-      mockedExistsSync.mockReturnValue(true);
-      mockedReadFileSync.mockReturnValue("{}");
-
-      const result = await runner.buildOutput({ files: [{ content: BUNDLE }] });
-
-      const args = execFileAsync.mock.calls[0]![1] as string[];
-      expect(args[args.indexOf("--format") + 1]).toBe("schema");
-      expect(result).toMatchObject({ format: "schema" });
-    });
-
-    // Regression: pipelex build output --format python writes Python source code,
-    // not JSON. Parsing it would crash — which is exactly the 500 the API's own
-    // `/build/output` used to return before the two-field split.
-    it("returns source text in output_python for --format python", async () => {
-      const pythonCode = "from pydantic import BaseModel\n\nclass Out(BaseModel):\n    text: str\n";
-      execFileAsync.mockResolvedValue({ stdout: "", stderr: "" });
-      mockedExistsSync.mockReturnValue(true);
-      mockedReadFileSync.mockReturnValue(pythonCode);
-
-      const result = await runner.buildOutput({
-        files: [{ content: BUNDLE }],
-        format: "python",
-      });
-
-      expect(result).toMatchObject({ format: "python", output_python: pythonCode });
-      expect(result).not.toHaveProperty("output");
-    });
-
-    it("JSON-parses --format schema output into `output`", async () => {
-      const schemaJson = '{"$schema":"http://json-schema.org/draft-07/schema#","type":"object"}';
-      execFileAsync.mockResolvedValue({ stdout: "", stderr: "" });
-      mockedExistsSync.mockReturnValue(true);
-      mockedReadFileSync.mockReturnValue(schemaJson);
-
-      const result = await runner.buildOutput({
-        files: [{ content: BUNDLE }],
-        format: "schema",
-      });
-
-      expect(result).toMatchObject({
-        output: { $schema: "http://json-schema.org/draft-07/schema#", type: "object" },
-      });
-      expect(result).not.toHaveProperty("output_python");
-    });
-
-    // Regression: pipelex can exit 0 without writing the file (e.g. render_output
-    // raises ValueError and the CLI does `typer.Exit(0)` after printing the message
-    // to stderr). The runner must surface that stderr instead of an opaque ENOENT.
-    it("surfaces pipelex stderr when no output file was written", async () => {
-      execFileAsync.mockResolvedValue({
-        stdout: "",
-        stderr: "Output is 'native.Anything' which has no specific shape",
-      });
-      mockedExistsSync.mockReturnValue(false);
-
-      await expect(runner.buildOutput({ files: [{ content: BUNDLE }] })).rejects.toThrow(
-        /native\.Anything/,
-      );
-      expect(mockedReadFileSync).not.toHaveBeenCalled();
-    });
-  });
-
-  describe("buildRunner", () => {
-    // A closure that resolves to no crate yields no structures projection (no
-    // `structures/codegen.lock`). That is not a failure: the runner.py we just
-    // generated is valid on its own, so a missing sidecar must not discard it.
-    it("returns the runner script even when the CLI emitted no structures projection", async () => {
-      mockSpawnExit(0);
-      mockedExistsSync.mockReturnValue(false); // no structures/codegen.lock beside it
-      mockedReadFileSync.mockReturnValue("# runner.py\n");
-
-      const result = await runner.buildRunner({ files: [{ content: BUNDLE }] });
-
-      expect(result.is_valid).toBe(true);
-      if (!result.is_valid) throw new Error("unreachable");
-      expect(result.python_code).toBe("# runner.py\n");
-      expect(result.structures).toBeUndefined();
-    });
-
-    // pipelex's lock layer validates artifact paths as (possibly multi-part) RELATIVE
-    // paths, so a projection may nest files in subdirectories. The collector must walk
-    // them and report each artifact under its relative path — not EISDIR on the
-    // directory entry, and not silently halve the locked artifact set by skipping it.
-    it("collects nested structure artifacts under their relative paths", async () => {
-      mockSpawnExit(0);
-      mockedExistsSync.mockReturnValue(true); // structures/codegen.lock present
-      const dirent = (name: string, kind: "file" | "dir") =>
-        ({ name, isFile: () => kind === "file", isDirectory: () => kind === "dir" }) as never;
-      mockedReaddirSync.mockImplementation((path) =>
-        String(path).endsWith("/structures")
-          ? ([
-              dirent("codegen.lock", "file"),
-              dirent("structures.py", "file"),
-              dirent("pkg", "dir"),
-            ] as never)
-          : ([dirent("mod.py", "file")] as never),
-      );
-      mockedReadFileSync.mockImplementation((path) => {
-        const p = String(path);
-        if (p.endsWith("runner.py")) return "# runner.py\n";
-        if (p.endsWith("codegen.lock")) return "lock-content";
-        return `content of ${p.split("/").pop()}`;
-      });
-
-      const result = await runner.buildRunner({ files: [{ content: BUNDLE }] });
-
-      expect(result.is_valid).toBe(true);
-      if (!result.is_valid) throw new Error("unreachable");
-      expect(result.structures).toMatchObject({
-        directory: "structures",
-        lock: "lock-content",
-        artifacts: [
-          { path: "pkg/mod.py", content: "content of mod.py" },
-          { path: "structures.py", content: "content of structures.py" },
-        ],
-      });
-    });
-
-    // `pipelex build runner` has no --allow-signatures flag, so there is nothing to
-    // forward. Dropping it silently would make one request mean two things.
-    it("rejects allow_signatures rather than silently ignoring it", async () => {
-      await expect(
-        runner.buildRunner({ files: [{ content: BUNDLE }], allow_signatures: true }),
-      ).rejects.toThrow(/allow_signatures is not supported by the local pipelex runner/);
     });
   });
 

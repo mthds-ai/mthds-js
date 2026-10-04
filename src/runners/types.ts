@@ -17,8 +17,6 @@ export const RUNNER_NAMES: RunnerType[] = Object.values(Runners);
 
 // ── Shared enums / literals ─────────────────────────────────────────
 
-export type ConceptRepresentationFormat = "json" | "python" | "schema";
-
 /** Encoding of a `/v1/build/inputs` template. Decides which field carries it back. */
 export type InputsTemplateFormat = "json" | "toml";
 
@@ -58,7 +56,7 @@ export interface CrateRequestBase {
   method_ref?: string;
 }
 
-/** The closure + pipe selector every `/v1/build/*` route shares. */
+/** The closure + pipe selector of the per-pipe `/v1/build/inputs` route. */
 export interface BuildRequestBase extends CrateRequestBase {
   /**
    * The pipe to project, as a QUALIFIED `domain.pipe_code` ref. Omit it to default
@@ -82,25 +80,6 @@ export interface BuildInputsRequest extends BuildRequestBase {
   format?: InputsTemplateFormat;
   /** Emit the ceremonial `{concept, content}` envelope per input. Defaults to the light shape. */
   explicit?: boolean;
-}
-
-export interface BuildOutputRequest extends BuildRequestBase {
-  /** `schema` (default) and `json` put a parsed object in `output`; `python` puts source in `output_python`. */
-  format?: ConceptRepresentationFormat;
-}
-
-export interface BuildRunnerRequest extends BuildRequestBase {
-  /**
-   * Accept unresolved pipe signatures as pending rather than invalid. Alone
-   * among the build routes this one still runs the dry-run sweep, and the flag
-   * only ever parameterized that sweep.
-   *
-   * **API runner only.** `pipelex build runner` exposes no `--allow-signatures`
-   * flag, so the local runner has nothing to forward and REJECTS the request rather
-   * than silently ignoring the flag — a dropped `allow_signatures` would make the
-   * same request mean two different things depending on which runner served it.
-   */
-  allow_signatures?: boolean;
 }
 
 /**
@@ -173,8 +152,8 @@ export interface CheckModelRequest {
 // ── Response types ──────────────────────────────────────────────────
 
 /**
- * The `is_valid: false` arm shared by the per-pipe build routes (`/v1/build/inputs`,
- * `/v1/build/output`, `/v1/build/runner`) and `/v1/pipe-io`. The spec-to-TOML routes
+ * The `is_valid: false` arm shared by the per-pipe build route `/v1/build/inputs`
+ * and `/v1/pipe-io`. The spec-to-TOML routes
  * (`/v1/build/concept`, `/v1/build/pipe-spec`) have no such arm: they refuse an
  * invalid spec with a 422.
  *
@@ -190,7 +169,7 @@ export interface CrateInvalidReport {
   message: string;
 }
 
-/** Fields the valid arm of every `/v1/build/*` route carries. */
+/** Fields the `/v1/build/inputs` valid arm carries beside its template. */
 interface BuildValidReportBase {
   is_valid: true;
   /** The qualified pipe that was projected — the RESOLVED selector, always `domain.pipe_code`. */
@@ -228,58 +207,6 @@ interface BuildInputsTomlReport extends BuildValidReportBase {
 export type BuildInputsValidReport = BuildInputsJsonReport | BuildInputsTomlReport;
 
 export type BuildInputsResponse = BuildInputsValidReport | CrateInvalidReport;
-
-/**
- * The `/v1/build/output` valid arm. Same two-field split as the inputs template,
- * for the same reason: `schema` and `json` are objects, `python` is source text —
- * and so it is a discriminated union for the same reason too.
- */
-interface BuildOutputObjectReport extends BuildValidReportBase {
-  format: "schema" | "json";
-  output: Record<string, unknown>;
-  output_python?: never;
-}
-
-interface BuildOutputPythonReport extends BuildValidReportBase {
-  format: "python";
-  output?: never;
-  output_python: string;
-}
-
-export type BuildOutputValidReport = BuildOutputObjectReport | BuildOutputPythonReport;
-
-export type BuildOutputResponse = BuildOutputValidReport | CrateInvalidReport;
-
-/** One stamped generated file in the structures projection. */
-export interface GeneratedArtifact {
-  path: string;
-  content: string;
-}
-
-/**
- * The typed-structures projection the runner script imports from. Write
- * `artifacts` and `lock` (as `lock_filename`) under `directory`, relative to the
- * runner script, and the returned `python_code` runs against them.
- */
-export interface RunnerStructures {
-  directory: string;
-  artifacts: GeneratedArtifact[];
-  lock: string;
-  lock_filename: string;
-}
-
-export interface BuildRunnerValidReport extends BuildValidReportBase {
-  python_code: string;
-  /**
-   * The stamped structures projection. The API always sends one. The LOCAL runner
-   * only can when the installed pipelex ships the codegen engine that writes the
-   * lock — so treat it as optional and skip writing the projection when it's absent;
-   * `python_code` is valid either way.
-   */
-  structures?: RunnerStructures;
-}
-
-export type BuildRunnerResponse = BuildRunnerValidReport | CrateInvalidReport;
 
 /**
  * The `/v1/pipe-io` valid arm — a method's three I/O artifacts, with the selection
@@ -363,8 +290,6 @@ export interface Runner extends MTHDSProtocol<DictPipeOutput> {
   // Build extensions (Pipelex API layer 2 — `/v1/build/*`). Each returns a
   // discriminated 200 verdict: pattern-match `is_valid` before reading the arm.
   buildInputs(request: BuildInputsRequest): Promise<BuildInputsResponse>;
-  buildOutput(request: BuildOutputRequest): Promise<BuildOutputResponse>;
-  buildRunner(request: BuildRunnerRequest): Promise<BuildRunnerResponse>;
   concept(request: ConceptRequest): Promise<ConceptResponse>;
   pipeSpec(request: PipeSpecRequest): Promise<PipeSpecResponse>;
 }

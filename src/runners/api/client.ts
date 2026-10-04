@@ -4,10 +4,6 @@ import type {
   RunnerType,
   BuildInputsRequest,
   BuildInputsResponse,
-  BuildOutputRequest,
-  BuildOutputResponse,
-  BuildRunnerRequest,
-  BuildRunnerResponse,
   ConceptRequest,
   ConceptResponse,
   PipeIORequest,
@@ -126,8 +122,8 @@ const VALIDATE_MARKDOWN_RENDER_FORMAT = "markdown";
  * One base URL (`MTHDS_BASE_URL`); every endpoint is `<base>/v1/<endpoint>`:
  * - **protocol** (`execute` / `start` / `validate` / `models` / `version`) — works
  *   against any MTHDS-compliant runner, hosted or bare.
- * - **build extensions** (`/v1/build/*`) — the Pipelex API's spec-to-TOML / runner
- *   / inputs / output helpers.
+ * - **build extensions** (`/v1/build/*`) — the Pipelex API's spec-to-TOML helpers
+ *   (`concept`, `pipeSpec`) and its inputs-template helper (`buildInputs`).
  * - **`pipeIo`** (`/v1/pipe-io`) — a Pipelex API extension carrying the standard's
  *   I/O artifacts. Like `uploadFile`, it lives on this class and not on `Runner`:
  *   the local pipelex runner shells out and has no use for it.
@@ -575,14 +571,6 @@ export class MthdsApiClient implements Runner {
 
   async buildInputs(request: BuildInputsRequest): Promise<BuildInputsResponse> {
     return this.postApi("build/inputs", request);
-  }
-
-  async buildOutput(request: BuildOutputRequest): Promise<BuildOutputResponse> {
-    return this.postApi("build/output", request);
-  }
-
-  async buildRunner(request: BuildRunnerRequest): Promise<BuildRunnerResponse> {
-    return this.postApi("build/runner", request);
   }
 
   async concept(request: ConceptRequest): Promise<ConceptResponse> {

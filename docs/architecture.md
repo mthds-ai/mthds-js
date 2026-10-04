@@ -40,9 +40,9 @@ src/protocol/                 PURE — the MTHDS Protocol mirror (imports nothin
   working_memory.ts           WorkingMemoryAbstract<TStuff>
   exceptions.ts               PipelineRequestError (protocol-level base)
 src/runners/api/
-  client.ts                   MthdsApiClient — IS the api runner: implements Runner (protocol + build extensions)
+  client.ts                   MthdsApiClient — IS the api runner: implements Runner (protocol + health), plus pipeIo
   models.ts                   DictStuff/DictWorkingMemory/DictPipeOutput + DictRunResultExecute (default binding);
-                              ValidationErrorItem/Category (the build verdict's and run refusal's item) — the Pipelex
+                              ValidationErrorItem/Category (the pipe-io verdict's and run refusal's item) — the Pipelex
                               /v1/validate narrowing (PipelexValidationResult) now lives in @pipelex/sdk
   exceptions.ts               ApiResponseError (+ validationErrors and the problem members: type, title, instance,
                               requestId, errorDomain, retryable, userAction), ApiUnreachableError, ClientAuthenticationError,
@@ -50,7 +50,7 @@ src/runners/api/
 src/runners/pipelex/
   runner.ts                   PipelexRunner (local CLI runner)
 src/runners/
-  types.ts                    Runner interface (extends MTHDSProtocol<DictPipeOutput>) + Runners enum + build types
+  types.ts                    Runner interface (extends MTHDSProtocol<DictPipeOutput>) + Runners enum + pipe-io types
   registry.ts                 createRunner() factory
 src/index.ts                  public barrel → re-exports protocol/ + runners/
 src/errors.ts                 client-safe error subpath (mthds/errors) → re-exports the exception classes only
@@ -145,7 +145,7 @@ In the constructor, an explicitly-passed `apiKey` wins over `MTHDS_API_KEY` from
 There is one class, not a client wrapped by a runner. `MthdsApiClient implements Runner`:
 
 - **`pipelex-app`** instantiates it directly and uses its protocol subset (`execute`, `start`, `validate`, `version`).
-- **The CLI** gets it via `createRunner('api')`, which wires the config-derived base URL + token, and uses the full `Runner` surface (protocol + build extensions + `health`).
+- **The CLI** gets it via `createRunner('api')`, which wires the config-derived base URL + token, and uses the full `Runner` surface (protocol + `health`) and `pipeIo`.
 
 ## Run lifecycle lives in `@pipelex/sdk`
 

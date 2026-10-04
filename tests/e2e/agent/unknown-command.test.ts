@@ -14,11 +14,12 @@ function runAgent(...args: string[]): { stdout: string; stderr: string; status: 
   return { stdout: result.stdout, stderr: result.stderr, status: result.status };
 }
 
-// Commander answers `--help` before it rejects a command it does not know, so a
-// deleted command would print the root help and exit 0 as if it still existed.
-// `mthds-agent` refuses such a path instead, on both runners, before any help is
-// written. Each case names its runner, so the user's configured default plays no part.
-describe("mthds-agent --help on a path naming no command (e2e)", () => {
+// A path naming a command `mthds-agent` does not register on the active runner is
+// refused by name, on both runners, whether it is run or asked for its help. Left to
+// Commander, `--help` on a deleted command printed the root help and exited 0 as if it
+// still existed. Each case names its runner, so the user's configured default plays
+// no part.
+describe("mthds-agent on a path naming no command (e2e)", () => {
   it.each([
     ["pipelex", ["concept"], "concept"],
     ["pipelex", ["pipe"], "pipe"],
@@ -26,12 +27,10 @@ describe("mthds-agent --help on a path naming no command (e2e)", () => {
     ["api", ["pipe"], "pipe"],
     ["pipelex", ["config", "nonexistent"], "nonexistent"],
     ["api", ["package", "nonexistent"], "nonexistent"],
-    // A group that passes its options through reads `--help` as an argument, so
-    // Commander refuses these itself, in its own words.
     ["pipelex", ["validate", "nonexistent"], "nonexistent"],
     // The API runner offers `run start` in place of `run pipe`.
     ["api", ["run", "pipe"], "pipe"],
-  ])("refuses `%s` runner path %j as an unknown command", (runner, path, unknownWord) => {
+  ])("refuses `--help` on `%s` runner path %j by name", (runner, path, unknownWord) => {
     const { stdout, stderr, status } = runAgent("--runner", runner, ...path, "--help");
 
     expect(status).toBe(1);
@@ -43,8 +42,38 @@ describe("mthds-agent --help on a path naming no command (e2e)", () => {
     };
     expect(payload.error).toBe(true);
     expect(payload.error_type).toBe("ArgumentError");
-    expect(payload.message?.toLowerCase()).toContain("unknown command");
-    expect(payload.message).toContain(unknownWord);
+    expect(payload.message).toBe(
+      `Unknown command: ${unknownWord}. Run mthds-agent --help for usage.`,
+    );
+  });
+
+  // Commander alone refused these as an unknown option or an excess argument, which
+  // named neither the command nor the fault, and nothing reaches `pipelex-agent`.
+  it.each([
+    ["pipelex", ["concept", "--spec", "{}"], "concept"],
+    ["pipelex", ["pipe", "--type", "PipeLLM", "--spec", "{}"], "pipe"],
+    ["api", ["concept", "--spec-file", "spec.json"], "concept"],
+    ["api", ["pipe"], "pipe"],
+    ["pipelex", ["-L", "lib", "nonexistent", "arg"], "nonexistent"],
+  ])("refuses a run of `%s` runner path %j by name", (runner, path, unknownWord) => {
+    const { stdout, stderr, status } = runAgent("--runner", runner, ...path);
+
+    expect(status).toBe(1);
+    expect(stdout).toBe("");
+    const payload = JSON.parse(stderr) as { error_type?: string; message?: string };
+    expect(payload.error_type).toBe("ArgumentError");
+    expect(payload.message).toBe(
+      `Unknown command: ${unknownWord}. Run mthds-agent --help for usage.`,
+    );
+  });
+
+  it("still answers no command at all with its own refusal", () => {
+    const { stderr, status } = runAgent("--runner", "pipelex");
+
+    expect(status).toBe(1);
+    expect((JSON.parse(stderr) as { message?: string }).message).toBe(
+      "No command specified. Run mthds-agent --help for usage.",
+    );
   });
 
   it.each([

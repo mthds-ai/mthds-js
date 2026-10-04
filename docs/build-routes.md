@@ -1,6 +1,6 @@
 # Build routes — `/v1/build/*`
 
-The three per-pipe projections: `buildInputs`, `buildOutput`, `buildRunner`. Given a closure of `.mthds` files and a pipe inside it, each returns one view of that pipe — an example inputs template, its output representation, or a runnable Python script.
+The per-pipe projection `buildInputs`: given a closure of `.mthds` files and a pipe inside it, it returns an example inputs template for that pipe.
 
 These are **Pipelex API extensions, not MTHDS Protocol routes.** The protocol fixes `execute` / `start` / `validate` / `models` / `version`; everything here is Pipelex's own surface, which is why the request types live in `src/runners/types.ts` (the runner layer) rather than in `src/protocol/`. A third-party MTHDS runner is not obliged to serve them.
 
@@ -8,7 +8,7 @@ These are **Pipelex API extensions, not MTHDS Protocol routes.** The protocol fi
 
 ## The shared envelope
 
-All three take the same closure + pipe selector:
+It takes a closure + pipe selector:
 
 ```typescript
 const result = await runner.buildInputs({
@@ -61,30 +61,16 @@ Branch on `is_valid` — never on an HTTP status or a caught exception. A throw 
 
 ## The format axis decides which field carries the payload
 
-Each route's `format` picks the field the result rides in. The unused field is **absent from the response**, not null.
+The request's `format` picks the field the result rides in. The unused field is **absent from the response**, not null.
 
-| Route         | `format`                   | Payload field   | Type          |
-| ------------- | -------------------------- | --------------- | ------------- |
-| `buildInputs` | `json` (default)           | `inputs`        | parsed object |
-| `buildInputs` | `toml`                     | `inputs_toml`   | raw text      |
-| `buildOutput` | `schema` (default), `json` | `output`        | parsed object |
-| `buildOutput` | `python`                   | `output_python` | source text   |
+| `format`         | Payload field | Type          |
+| ---------------- | ------------- | ------------- |
+| `json` (default) | `inputs`      | parsed object |
+| `toml`           | `inputs_toml` | raw text      |
 
-The split is not cosmetic. TOML carried as a parsed object would lose its concept comments and key order — exactly what makes it worth asking for. And Python source fed through a JSON parse is not a value at all; before the split, `format: "python"` was a hard 500 on the API.
+The split is not cosmetic. TOML carried as a parsed object would lose its concept comments and key order — exactly what makes it worth asking for.
 
 `buildInputs` also takes `explicit` (default `false`): emit the ceremonial `{concept, content}` envelope per input instead of the light, signature-driven shape.
-
-## `allow_signatures` is `buildRunner`-only
-
-Alone among the three, `buildRunner` still runs the dry-run sweep — and `allow_signatures` only ever parameterized that sweep. `buildInputs` and `buildOutput` are static reads of the resolved closure, so the flag is meaningless to them and they do not accept it.
-
-**It is an API-runner option, and it is settable only from code.** `buildRunner({ files, allow_signatures: true })` on an `MthdsApiClient` sends it; the **`mthds build runner` CLI has no `--allow-signatures` flag at all**, on either runner, so no CLI invocation can turn it on — `--runner api` alone will not do it.
-
-The local runner **rejects** a request that sets the flag rather than dropping it silently: `pipelex build runner` exposes nothing to forward it to, and a silently-dropped flag would make one `BuildRunnerRequest` mean two different things depending on which runner served it (the API would accept a closure with unresolved signatures that the local runner then rejected). If you need it, build against the API runner programmatically.
-
-`buildRunner`'s valid arm carries the script plus the typed-structures projection it imports from: write `structures.artifacts` and `structures.lock` (under `structures.lock_filename`) into `structures.directory`, relative to the script, and the returned `python_code` runs against them.
-
-`structures` is **optional**, and that is the second local-runner divergence: the stamped projection is emitted by pipelex's codegen engine, which is not in any published pipelex yet, so a local `buildRunner` against a released install returns `python_code` with no projection beside it. The API always sends one. Guard on `structures` before writing it; the script is valid either way.
 
 ## See also
 

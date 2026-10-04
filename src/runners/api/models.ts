@@ -69,9 +69,8 @@ export type ValidationErrorCategory =
 /**
  * One structured bundle-validation error — exact mirror of pipelex's
  * `ValidationErrorItem` (the union across the `ValidateBundleError` error-data
- * models). In `mthds` it narrows the **200** invalid arm of the per-pipe `/v1/build/*`
- * projections — `build/inputs`, `build/output`, `build/runner` ({@link
- * CrateInvalidReport}); the spec-to-TOML routes `build/concept` and `build/pipe-spec`
+ * models). In `mthds` it narrows the **200** invalid arm of `build/inputs` and
+ * `pipe-io` ({@link CrateInvalidReport}); the spec-to-TOML routes `build/concept` and `build/pipe-spec`
  * have no `is_valid` arm at all and return their own shapes. It also types whatever
  * validation errors ride a problem body (`ApiResponseError.validationErrors`). The same item
  * narrows the 200 invalid `/v1/validate` verdict, but that narrowing

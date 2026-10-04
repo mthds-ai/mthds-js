@@ -4,10 +4,6 @@ import type {
   RunnerType,
   BuildInputsRequest,
   BuildInputsResponse,
-  BuildOutputRequest,
-  BuildOutputResponse,
-  BuildRunnerRequest,
-  BuildRunnerResponse,
   ConceptRequest,
   ConceptResponse,
   PipeIORequest,
@@ -575,14 +571,6 @@ export class MthdsApiClient implements Runner {
 
   async buildInputs(request: BuildInputsRequest): Promise<BuildInputsResponse> {
     return this.postApi("build/inputs", request);
-  }
-
-  async buildOutput(request: BuildOutputRequest): Promise<BuildOutputResponse> {
-    return this.postApi("build/output", request);
-  }
-
-  async buildRunner(request: BuildRunnerRequest): Promise<BuildRunnerResponse> {
-    return this.postApi("build/runner", request);
   }
 
   async concept(request: ConceptRequest): Promise<ConceptResponse> {

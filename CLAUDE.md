@@ -23,7 +23,7 @@ src/
 │   ├── index.ts                    # Banner + logo
 │   ├── run.ts                      # mthds run
 │   ├── validate.ts                 # mthds validate
-│   ├── build.ts                    # mthds build runner|inputs|output
+│   ├── build.ts                    # mthds build inputs
 │   ├── config.ts                   # mthds config set|get|list
 │   ├── setup.ts                    # mthds runner setup
 │   ├── install.ts                  # mthds install (JS-only)

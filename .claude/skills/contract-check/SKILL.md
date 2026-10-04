@@ -132,7 +132,7 @@ For each contract-visible change, read the relevant spec and compare:
 | Passthrough to `plxt` (arguments, flags forwarded, version pin) | `../docs/specs/plxt-cli.md` |
 | Passthrough to `pipelex-agent` | `../docs/specs/mthds-agent-cli.md` (runner-aware section) |
 | Hook-facing behavior (`codex-hook.ts`, the lint/fmt/validate pipeline, the `validate bundle` envelope the hook parses) | `../docs/specs/hook-lint-pipeline.md` |
-| Build/codegen route shapes — the `files[]` envelope, `pipe_ref` defaulting to `main_pipe`, the `200` + `is_valid` verdict discipline, the `inputs`/`inputs_toml` and `output`/`output_python` payload split, `allow_signatures` handling, the `structures` projection | `../docs/specs/pipelex-codegen.md` |
+| Build/codegen route shapes — the `files[]` envelope, `pipe_ref` defaulting to `main_pipe`, the `200` + `is_valid` verdict discipline, the `inputs`/`inputs_toml` payload split | `../docs/specs/pipelex-codegen.md` |
 | The standard's validate extensions — the `pipe_io_contracts` contract members, the closed `FieldKind` union and its per-kind slots, the common field slots, where `item_count` is present versus `null` | `../docs/specs/mthds-input-form-descriptor.md` for the carriage, and the normative shape pages it points at (`mthds/docs/spec/pipe-io-contracts.md`, `mthds/docs/spec/input-form-descriptor.md`, `mthds/docs/spec/intent-hints.md`) |
 | `mthds` interactive CLI | No spec exists yet — flag new commands/options for the user's awareness, but no spec comparison needed |
 

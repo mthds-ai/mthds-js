@@ -991,15 +991,15 @@ describe("MthdsApiClient build routes", () => {
       .spyOn(globalThis, "fetch")
       .mockResolvedValue(jsonResponse(200, { is_valid: true, pipe_ref: "smoke.echo" }));
 
-    await client.buildOutput({ files: [{ content: "domain = 'smoke'" }] });
+    await client.buildInputs({ files: [{ content: "domain = 'smoke'" }] });
 
-    expect(fetchSpy.mock.calls[0]![0]).toBe("http://localhost:8081/v1/build/output");
+    expect(fetchSpy.mock.calls[0]![0]).toBe("http://localhost:8081/v1/build/inputs");
     expect(bodyOf(fetchSpy)).toEqual({ files: [{ content: "domain = 'smoke'" }] });
   });
 
   // The invalid arm is a 200 VERDICT, not a transport failure: the client must
   // return it for the caller to branch on, never throw it.
-  it("returns the invalid arm of build/runner as a value, not an exception", async () => {
+  it("returns the invalid arm of build/inputs as a value, not an exception", async () => {
     const client = makeClient();
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
       jsonResponse(200, {
@@ -1011,7 +1011,7 @@ describe("MthdsApiClient build routes", () => {
       }),
     );
 
-    const result = await client.buildRunner({ files: [{ content: "domain = 'smoke'" }] });
+    const result = await client.buildInputs({ files: [{ content: "domain = 'smoke'" }] });
 
     expect(result.is_valid).toBe(false);
     if (result.is_valid) throw new Error("expected the invalid arm");
@@ -1446,7 +1446,7 @@ describe("MthdsApiClient User-Agent (client-identification spec)", () => {
       .spyOn(globalThis, "fetch")
       .mockImplementation(async () => jsonResponse(200, { ok: true }));
     await client.health();
-    await client.buildRunner({ files: [{ content: "domain = 'smoke'" }] });
+    await client.buildInputs({ files: [{ content: "domain = 'smoke'" }] });
     expect(headersOf(fetchSpy, 0)["User-Agent"]).toBe(LIBRARY_UA);
     expect(headersOf(fetchSpy, 1)["User-Agent"]).toBe(LIBRARY_UA);
   });

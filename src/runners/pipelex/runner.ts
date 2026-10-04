@@ -1,7 +1,7 @@
 import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
-import { existsSync, writeFileSync, readFileSync, readdirSync, mkdtempSync, rmSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { existsSync, writeFileSync, readFileSync, mkdtempSync, rmSync } from "node:fs";
+import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { Runners } from "../types.js";
 import { materializeBundleFiles } from "../bundle.js";
@@ -12,20 +12,14 @@ import type {
   RunnerType,
   BuildInputsRequest,
   BuildInputsResponse,
-  BuildOutputRequest,
-  BuildOutputResponse,
   BuildRequestBase,
-  BuildRunnerRequest,
-  BuildRunnerResponse,
   ConceptRequest,
   ConceptResponse,
   MthdsFileItem,
   PipeSpecRequest,
   PipeSpecResponse,
-  RunnerStructures,
   CheckModelRequest,
   CheckModelResponse,
-  ConceptRepresentationFormat,
   InputsTemplateFormat,
 } from "../types.js";
 import { resolveQualifiedPipeRef } from "../pipe-ref.js";
@@ -128,53 +122,6 @@ function writeBuildFiles(tmp: string, request: BuildRequestBase): string {
     );
   }
   return writeMthdsFiles(tmp, request.files ?? []);
-}
-
-const STRUCTURES_DIR = "structures";
-const CODEGEN_LOCK_FILENAME = "codegen.lock";
-
-/**
- * Walk a projection directory and collect every file under its path RELATIVE to the
- * root, "/"-separated regardless of platform — the wire shape `GeneratedArtifact.path`
- * carries. pipelex's lock layer validates artifact paths as (possibly multi-part)
- * relative paths, so nested files are part of the projection, not noise: skipping
- * them would hand `codegen check` a silently halved artifact set.
- */
-function collectArtifactFiles(root: string, rel = ""): { path: string; content: string }[] {
-  return readdirSync(join(root, rel), { withFileTypes: true }).flatMap((entry) => {
-    const relPath = rel ? `${rel}/${entry.name}` : entry.name;
-    if (entry.isDirectory()) return collectArtifactFiles(root, relPath);
-    if (!entry.isFile()) return [];
-    return [{ path: relPath, content: readFileSync(join(root, relPath), "utf-8") }];
-  });
-}
-
-/**
- * Collect the typed-structures projection `pipelex build runner` scaffolds beside
- * the script it emits, so the local runner returns the same `structures` payload
- * the API does — the stamped artifacts plus the lock that tracks them.
- *
- * Returns `undefined` when the CLI emitted no projection. That is not a failure: a
- * closure that resolves to no crate yields no `structures/`, and the `runner.py` we
- * just generated is valid regardless, so treating a missing lock as fatal would throw
- * away good output over an absent sidecar. The lock is still all-or-nothing: a
- * projection without one cannot be offline-checked, so we never report a half one.
- */
-function readRunnerStructures(runnerPath: string): RunnerStructures | undefined {
-  const dir = join(dirname(runnerPath), STRUCTURES_DIR);
-  const lockPath = join(dir, CODEGEN_LOCK_FILENAME);
-  if (!existsSync(lockPath)) return undefined;
-
-  const artifacts = collectArtifactFiles(dir)
-    .filter((artifact) => artifact.path !== CODEGEN_LOCK_FILENAME)
-    .sort((a, b) => (a.path < b.path ? -1 : 1));
-
-  return {
-    directory: STRUCTURES_DIR,
-    artifacts,
-    lock: readFileSync(lockPath, "utf-8"),
-    lock_filename: CODEGEN_LOCK_FILENAME,
-  };
 }
 
 export class PipelexRunner implements Runner {
@@ -320,115 +267,6 @@ export class PipelexRunner implements Runner {
         throw new Error("pipelex-agent inputs returned no `inputs` field in its JSON envelope.");
       }
       return { ...base, format, inputs: envelope.inputs };
-    } finally {
-      rmSync(tmp, { recursive: true, force: true });
-    }
-  }
-
-  // pipelex build output bundle <bundle.mthds> --pipe <ref> -o <file> --format <fmt>
-  // Output format determines the file content: 'json'/'schema' produce JSON, 'python' produces Python code.
-  // We always pass --format explicitly so the parsing branch below does not rely on
-  // pipelex's CLI default, which is outside our contract.
-  async buildOutput(request: BuildOutputRequest): Promise<BuildOutputResponse> {
-    const tmp = makeTmpDir();
-    try {
-      const bundlePath = writeBuildFiles(tmp, request);
-      const pipeRef = resolveQualifiedPipeRef(request.files ?? [], request.pipe_ref);
-      const outPath = join(tmp, "output.json");
-      const format: ConceptRepresentationFormat = request.format ?? "schema";
-
-      const args = [
-        "build",
-        "output",
-        "bundle",
-        bundlePath,
-        "--pipe",
-        pipeRef,
-        "-o",
-        outPath,
-        "-L",
-        tmp,
-        "--format",
-        format,
-        ...this.libraryArgs(),
-      ];
-
-      const { stderr } = await execFileAsync("pipelex", args, {
-        encoding: "utf-8",
-      });
-
-      // pipelex can exit 0 without writing the file (e.g. render_output raises ValueError
-      // and the CLI does `typer.Exit(0)` after printing the message to stderr). Surface
-      // that diagnostic instead of an opaque ENOENT.
-      if (!existsSync(outPath)) {
-        throw new Error(
-          `pipelex build output produced no file at ${outPath}.` +
-            (stderr ? ` Output:\n${stderr.trim()}` : ""),
-        );
-      }
-      const raw = readFileSync(outPath, "utf-8");
-
-      const base = {
-        is_valid: true as const,
-        pipe_ref: pipeRef,
-        ...(request.pipe_ref ? { requested_pipe_ref: request.pipe_ref } : {}),
-        message: "Output representation generated via local CLI",
-      };
-
-      // Same two-field split as the API: 'python' is source text, the rest are objects.
-      if (format === "python") {
-        return { ...base, format, output_python: raw };
-      }
-      return { ...base, format, output: JSON.parse(raw) as Record<string, unknown> };
-    } finally {
-      rmSync(tmp, { recursive: true, force: true });
-    }
-  }
-
-  // pipelex build runner bundle <bundle.mthds> --pipe <ref> -o <file>
-  async buildRunner(request: BuildRunnerRequest): Promise<BuildRunnerResponse> {
-    // `pipelex build runner` has no --allow-signatures flag, so there is nothing to
-    // forward. Silently dropping it would make the same request mean two different
-    // things depending on the runner — the API would accept a closure with unresolved
-    // signatures that we'd then reject. Say so instead of guessing.
-    if (request.allow_signatures) {
-      throw new Error(
-        "allow_signatures is not supported by the local pipelex runner: " +
-          "`pipelex build runner` exposes no --allow-signatures flag. Send this request " +
-          "through an MthdsApiClient (the API runner) instead.",
-      );
-    }
-
-    const tmp = makeTmpDir();
-    try {
-      const bundlePath = writeBuildFiles(tmp, request);
-      const pipeRef = resolveQualifiedPipeRef(request.files ?? [], request.pipe_ref);
-
-      const outPath = join(tmp, "runner.py");
-      await this.execStreaming([
-        "build",
-        "runner",
-        "bundle",
-        bundlePath,
-        "--pipe",
-        pipeRef,
-        "-o",
-        outPath,
-        "-L",
-        tmp,
-        ...this.libraryArgs(),
-      ]);
-
-      const pythonCode = readFileSync(outPath, "utf-8");
-      const structures = readRunnerStructures(outPath);
-      return {
-        is_valid: true,
-        pipe_ref: pipeRef,
-        ...(request.pipe_ref ? { requested_pipe_ref: request.pipe_ref } : {}),
-        python_code: pythonCode,
-        ...(structures ? { structures } : {}),
-        message: "Runner code generated via local CLI",
-      };
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }

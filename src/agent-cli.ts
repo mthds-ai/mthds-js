@@ -19,7 +19,6 @@ import { resolve } from "node:path";
 import { agentError, agentSuccess, AGENT_ERROR_DOMAINS } from "./agent/output.js";
 import { registerApiRunnerCommands } from "./agent/commands/api-commands.js";
 import { registerPipelexRunnerCommands } from "./agent/commands/pipelex-commands.js";
-import { passthroughToPipelexAgent } from "./agent/commands/pipelex-passthrough.js";
 import { registerPlxtCommands } from "./agent/commands/plxt.js";
 import { agentDoctor, OutputFormat } from "./agent/commands/doctor.js";
 import { agentUpdateCheck } from "./agent/commands/update-check.js";
@@ -39,6 +38,7 @@ import {
   agentPackageList,
   agentPackageValidate,
 } from "./agent/commands/package.js";
+import { findUnknownSubcommand } from "./cli/commands/unknown-subcommand.js";
 import { createRunner } from "./runners/registry.js";
 import { Runners, RUNNER_NAMES } from "./runners/types.js";
 import type { RunnerType, Runner } from "./runners/types.js";
@@ -471,26 +471,29 @@ if (isApiRunner) {
   registerPipelexRunnerCommands(program, () => getAutoInstall(program));
 }
 
-// Default action — handle no command or unrecognized commands.
-// With program.action() defined, Commander routes unknown operands here
-// as positional args rather than emitting command:*.
-program.action((_opts: unknown, cmd: Command) => {
-  if (cmd.args.length > 0) {
-    if (!isApiRunner) {
-      passthroughToPipelexAgent(getAutoInstall(program));
-    } else {
-      agentError(
-        `Unknown command: ${cmd.args[0]}. Run mthds-agent --help for usage.`,
-        "ArgumentError",
-        { error_domain: AGENT_ERROR_DOMAINS.ARGUMENT },
-      );
-    }
-    return;
-  }
+// Default action — no command at all. An unknown command never reaches it: it is
+// refused below, before Commander parses.
+program.action(() => {
   agentError("No command specified. Run mthds-agent --help for usage.", "ArgumentError", {
     error_domain: AGENT_ERROR_DOMAINS.ARGUMENT,
   });
 });
+
+// ── Unknown commands ─────────────────────────────────────────────────
+// A path naming a command mthds-agent does not register on the active runner is
+// refused by name, on both runners, whether it is run or asked for its help. Left
+// to Commander, `--help` on it prints the root help and exits 0 as if the command
+// existed, and a run of it fails as an unknown option or an excess argument, a
+// message that names neither the command nor the fault.
+
+const unknownCommand = findUnknownSubcommand(program, process.argv.slice(2));
+if (unknownCommand !== undefined) {
+  agentError(
+    `Unknown command: ${unknownCommand}. Run mthds-agent --help for usage.`,
+    "ArgumentError",
+    { error_domain: AGENT_ERROR_DOMAINS.ARGUMENT },
+  );
+}
 
 // ── Parse ────────────────────────────────────────────────────────────
 

@@ -892,40 +892,9 @@ describe("MthdsApiClient.validateFiles", () => {
   });
 });
 
-// The `/v1/build/*` routes are Pipelex API extensions (never MTHDS Protocol), and
-// they share one envelope: `files[]` XOR `method_ref`, plus an optional QUALIFIED
-// `pipe_ref`. Their request types ARE the wire body — the client posts them
-// verbatim — so these tests pin the body, not just the call.
-describe("MthdsApiClient build routes", () => {
-  function bodyOf(fetchSpy: ReturnType<typeof vi.spyOn>): Record<string, unknown> {
-    const init = fetchSpy.mock.calls[0]![1] as { body?: string };
-    return JSON.parse(init.body ?? "{}") as Record<string, unknown>;
-  }
-
-  it("posts the files[] envelope with per-file source labels to build/inputs", async () => {
-    const client = makeClient();
-    const fetchSpy = vi
-      .spyOn(globalThis, "fetch")
-      .mockResolvedValue(jsonResponse(200, { is_valid: true, pipe_ref: "smoke.echo" }));
-
-    await client.buildInputs({
-      files: [{ content: "domain = 'smoke'", source: "smoke.mthds" }],
-      pipe_ref: "smoke.echo",
-      format: "toml",
-      explicit: true,
-    });
-
-    expect(fetchSpy.mock.calls[0]![0]).toBe("http://localhost:8081/v1/build/inputs");
-    expect(bodyOf(fetchSpy)).toEqual({
-      files: [{ content: "domain = 'smoke'", source: "smoke.mthds" }],
-      pipe_ref: "smoke.echo",
-      format: "toml",
-      explicit: true,
-    });
-  });
-
-  // A build route's refusal is an ApiResponseError carrying the problem members,
-  // as on the protocol routes, so `mthds build` and `mthds-agent inputs` can print them.
+// `/health` is origin-level, outside the `/v1` prefix, and its refusal is an
+// ApiResponseError carrying the problem members, as on the protocol routes.
+describe("MthdsApiClient.health", () => {
   it("raises a refusal as ApiResponseError with its problem members", async () => {
     const client = makeClient();
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
@@ -940,20 +909,17 @@ describe("MthdsApiClient build routes", () => {
           error_domain: "config",
           retryable: false,
           user_action: { kind: "contact_support", detail: "Ask the runner's operator." },
-          validation_errors: [{ category: "blueprint_validation", message: "boom" }],
         },
-        { "X-Request-ID": "req-build-1" },
+        { "X-Request-ID": "req-health-1" },
       ),
     );
 
-    const err = await client
-      .buildInputs({ files: [{ content: "domain = 'smoke'" }] })
-      .catch((e: unknown) => e);
+    const err = await client.health().catch((e: unknown) => e);
 
     expect(err).toBeInstanceOf(ApiResponseError);
     const e = err as ApiResponseError;
     expect(e.message).toBe(
-      "API POST http://localhost:8081/v1/build/inputs failed (500): The model deck could not be loaded.",
+      "API GET http://localhost:8081/health failed (500): The model deck could not be loaded.",
     );
     expect(e).toMatchObject({
       status: 500,
@@ -963,12 +929,11 @@ describe("MthdsApiClient build routes", () => {
       errorDomain: "config",
       retryable: false,
       userAction: { kind: "contact_support", detail: "Ask the runner's operator." },
-      requestId: "req-build-1",
-      validationErrors: [{ category: "blueprint_validation", message: "boom" }],
+      requestId: "req-health-1",
     });
   });
 
-  it("raises a health refusal as ApiResponseError too", async () => {
+  it("raises a plain-text refusal as ApiResponseError too", async () => {
     const client = makeClient();
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
       textResponse(503, "Service Unavailable", "Service Unavailable"),
@@ -981,41 +946,6 @@ describe("MthdsApiClient build routes", () => {
     expect((err as ApiResponseError).message).toBe(
       "API GET http://localhost:8081/health failed (503): Service Unavailable",
     );
-  });
-
-  // An omitted `pipe_ref` is how a caller says "the closure's main_pipe" — it must
-  // reach the server ABSENT, so the server does the defaulting, not the client.
-  it("omits pipe_ref entirely when the caller does not select a pipe", async () => {
-    const client = makeClient();
-    const fetchSpy = vi
-      .spyOn(globalThis, "fetch")
-      .mockResolvedValue(jsonResponse(200, { is_valid: true, pipe_ref: "smoke.echo" }));
-
-    await client.buildInputs({ files: [{ content: "domain = 'smoke'" }] });
-
-    expect(fetchSpy.mock.calls[0]![0]).toBe("http://localhost:8081/v1/build/inputs");
-    expect(bodyOf(fetchSpy)).toEqual({ files: [{ content: "domain = 'smoke'" }] });
-  });
-
-  // The invalid arm is a 200 VERDICT, not a transport failure: the client must
-  // return it for the caller to branch on, never throw it.
-  it("returns the invalid arm of build/inputs as a value, not an exception", async () => {
-    const client = makeClient();
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      jsonResponse(200, {
-        is_valid: false,
-        validation_errors: [
-          { category: "pipe_validation", message: "unknown concept", source: "smoke.mthds" },
-        ],
-        message: "MTHDS library could not be resolved",
-      }),
-    );
-
-    const result = await client.buildInputs({ files: [{ content: "domain = 'smoke'" }] });
-
-    expect(result.is_valid).toBe(false);
-    if (result.is_valid) throw new Error("expected the invalid arm");
-    expect(result.validation_errors[0]!.source).toBe("smoke.mthds");
   });
 });
 
@@ -1189,7 +1119,7 @@ describe("MthdsApiClient validation items keep their next step", () => {
     field_path: "pipe.main",
   };
 
-  it("keeps the suggested fix and the missing pipe on a build route's invalid verdict", async () => {
+  it("keeps the suggested fix and the missing pipe on pipe-io's invalid verdict", async () => {
     const client = makeClient();
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
       jsonResponse(200, {
@@ -1199,7 +1129,7 @@ describe("MthdsApiClient validation items keep their next step", () => {
       }),
     );
 
-    const result = await client.buildInputs({ files: [{ content: "domain = 'demo'" }] });
+    const result = await client.pipeIo({ files: [{ content: "domain = 'demo'" }] });
 
     if (result.is_valid) throw new Error("expected the invalid arm");
     const [modelItem, pipeItem] = result.validation_errors;
@@ -1440,15 +1370,13 @@ describe("MthdsApiClient User-Agent (client-identification spec)", () => {
     expect(headersOf(fetchSpy)["User-Agent"]).toBe(LIBRARY_UA);
   });
 
-  it("sends the library User-Agent on requestJson paths (health and build routes)", async () => {
+  it("sends the library User-Agent on the requestJson path (health)", async () => {
     const client = makeClient();
     const fetchSpy = vi
       .spyOn(globalThis, "fetch")
       .mockImplementation(async () => jsonResponse(200, { ok: true }));
     await client.health();
-    await client.buildInputs({ files: [{ content: "domain = 'smoke'" }] });
-    expect(headersOf(fetchSpy, 0)["User-Agent"]).toBe(LIBRARY_UA);
-    expect(headersOf(fetchSpy, 1)["User-Agent"]).toBe(LIBRARY_UA);
+    expect(headersOf(fetchSpy)["User-Agent"]).toBe(LIBRARY_UA);
   });
 
   it("sends it on the upload convenience and GET routes too", async () => {

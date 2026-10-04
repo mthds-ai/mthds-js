@@ -1,5 +1,5 @@
 /**
- * Catch-all passthrough to pipelex-agent.
+ * Passthrough to pipelex-agent, the action of every pipelex-runner stub.
  *
  * Strips mthds-agent-only flags (--runner, --auto-install) and the
  * silently-deprecated --log-level from argv, and forwards everything

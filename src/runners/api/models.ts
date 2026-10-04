@@ -42,10 +42,10 @@ export interface DictPipeOutput {
  */
 export type DictRunResultExecute = RunResultExecute<DictPipeOutput>;
 
-// ── Build-route validation errors (Pipelex-API layer 2 — `/v1/build/*`) ──
+// ── Validation errors (`/v1/pipe-io` verdicts, run-route refusals) ──
 //
-// What remains here is the structured error item the per-pipe build routes' `200`
-// invalid verdicts (`CrateInvalidReport.validation_errors`) and a run route's `422` refusal
+// What remains here is the structured error item the `/v1/pipe-io` `200` invalid
+// verdict (`CrateInvalidReport.validation_errors`) and a run route's `422` refusal
 // (`ApiResponseError.validationErrors`) carry — neutrally named, so no brand violation. `MthdsApiClient.validate()` returns the protocol's
 // neutral `ValidationResult` (its invalid arm exposes only the standard
 // `category` + `message`). The Pipelex-API narrowing of the `/v1/validate`
@@ -69,10 +69,9 @@ export type ValidationErrorCategory =
 /**
  * One structured bundle-validation error — exact mirror of pipelex's
  * `ValidationErrorItem` (the union across the `ValidateBundleError` error-data
- * models). In `mthds` it narrows the **200** invalid arm of `build/inputs` and
- * `pipe-io` ({@link CrateInvalidReport}); the spec-to-TOML routes `build/concept` and `build/pipe-spec`
- * have no `is_valid` arm at all and return their own shapes. It also types whatever
- * validation errors ride a problem body (`ApiResponseError.validationErrors`). The same item
+ * models). In `mthds` it narrows the **200** invalid arm of `pipe-io`
+ * ({@link CrateInvalidReport}). It also types whatever validation errors ride a
+ * problem body (`ApiResponseError.validationErrors`). The same item
  * narrows the 200 invalid `/v1/validate` verdict, but that narrowing
  * (`PipelexInvalidReport`) lives in the runtime SDK (`@pipelex/sdk`) — `mthds`'s
  * own `validate()` returns the protocol's neutral `ValidationResult`, whose

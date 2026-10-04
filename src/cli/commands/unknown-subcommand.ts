@@ -6,8 +6,8 @@ import type { Command } from "commander";
  *
  * Commander answers `--help` before it rejects an unknown subcommand, so on its own
  * `mthds build output --help` prints the help and exits 0, as if a deleted command
- * were still there. The CLI asks this before it shows the help, and refuses the
- * path instead. The walk follows Commander's dispatch: an option is skipped with
+ * were still there. Both CLIs, `mthds` and `mthds-agent`, ask this before they show
+ * the help, and refuse the path instead. The walk follows Commander's dispatch: an option is skipped with
  * the value it takes, from the command it is declared on or any command above it;
  * the walk stops at a leaf command, whose remaining words are its arguments, at
  * `--`, and at Commander's implicit `help` command.

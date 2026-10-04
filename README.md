@@ -240,7 +240,7 @@ const client = new MthdsApiClient();
 
 ### Methods
 
-The client implements the MTHDS Protocol plus the Pipelex API extensions (the build routes and pipe I/O). (The durable run-lifecycle — poll a run by id — lives in `@pipelex/sdk`, not here.)
+The client implements the MTHDS Protocol plus the Pipelex API's pipe I/O extension. (The durable run-lifecycle — poll a run by id — lives in `@pipelex/sdk`, not here.)
 
 | Method | Route | Description |
 |--------|-------|-------------|

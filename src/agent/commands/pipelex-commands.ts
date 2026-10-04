@@ -28,16 +28,6 @@ export function registerPipelexRunnerCommands(
 
   stub(program.command("init").description("Initialize Pipelex configuration"));
 
-  // ── concept ──
-
-  stub(
-    program.command("concept").description("Structure a concept from JSON spec and output TOML"),
-  );
-
-  // ── pipe ──
-
-  stub(program.command("pipe").description("Structure a pipe from JSON spec and output TOML"));
-
   // ── validate ──
 
   const validateGroup = program

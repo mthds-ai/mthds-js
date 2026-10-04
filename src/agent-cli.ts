@@ -39,6 +39,7 @@ import {
   agentPackageList,
   agentPackageValidate,
 } from "./agent/commands/package.js";
+import { findUnknownSubcommand } from "./cli/commands/unknown-subcommand.js";
 import { createRunner } from "./runners/registry.js";
 import { Runners, RUNNER_NAMES } from "./runners/types.js";
 import type { RunnerType, Runner } from "./runners/types.js";
@@ -490,6 +491,24 @@ program.action((_opts: unknown, cmd: Command) => {
   agentError("No command specified. Run mthds-agent --help for usage.", "ArgumentError", {
     error_domain: AGENT_ERROR_DOMAINS.ARGUMENT,
   });
+});
+
+// ── Help on an unknown command ───────────────────────────────────────
+// Commander answers `--help` before it rejects a command it does not know, so a
+// path naming one, such as a deleted command, would print the root help and exit 0
+// as if the command existed. Refuse the path before any help is written, on both
+// runners: the pipelex runner's catch-all forwards an unknown command that is run,
+// but mthds-agent has no help of its own to give for one.
+
+program.on("beforeAllHelp", () => {
+  const unknownCommand = findUnknownSubcommand(program, process.argv.slice(2));
+  if (unknownCommand !== undefined) {
+    agentError(
+      `Unknown command: ${unknownCommand}. Run mthds-agent --help for usage.`,
+      "ArgumentError",
+      { error_domain: AGENT_ERROR_DOMAINS.ARGUMENT },
+    );
+  }
 });
 
 // ── Parse ────────────────────────────────────────────────────────────

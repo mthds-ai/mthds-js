@@ -15,12 +15,7 @@ export type RunnerType = (typeof Runners)[keyof typeof Runners];
 
 export const RUNNER_NAMES: RunnerType[] = Object.values(Runners);
 
-// ── Shared enums / literals ─────────────────────────────────────────
-
-/** Encoding of a `/v1/build/inputs` template. Decides which field carries it back. */
-export type InputsTemplateFormat = "json" | "toml";
-
-// ── Shared crate envelope (`/v1/build/*`, `/v1/pipe-io`) ────────────
+// ── Crate envelope (`/v1/pipe-io`) ──────────────────────────────────
 
 /**
  * One MTHDS file in a closure. `source` is an optional provenance label
@@ -33,8 +28,8 @@ export interface MthdsFileItem {
 }
 
 /**
- * The closure selector every crate-family route shares — `/v1/build/*` and
- * `/v1/pipe-io`.
+ * The closure selector of the crate-family routes (`/v1/resolve`, `/v1/codegen`,
+ * `/v1/pipe-io`), of which this package calls `/v1/pipe-io`.
  *
  * Supply the closure EITHER as inline `files` OR as a `method_ref` — never both.
  * An **address-form** `method_ref` (`github.com/<owner>/<repo>[/<selector>][@<tag>]`)
@@ -43,9 +38,6 @@ export interface MthdsFileItem {
  * closure with their real relative paths as per-file sources. The **registry form**
  * (any non-address reference) stays reserved and answers `501` until a method
  * registry exists.
- *
- * Either form is API-only. The local `pipelex` runner materializes its closure from
- * `files` on disk and rejects a `method_ref` outright rather than fetching one.
  *
  * The exclusivity is the server's to enforce: neither or both is a request-shape
  * `422`, which this client surfaces as an `ApiResponseError` rather than checking it
@@ -56,31 +48,7 @@ export interface CrateRequestBase {
   method_ref?: string;
 }
 
-/** The closure + pipe selector of the per-pipe `/v1/build/inputs` route. */
-export interface BuildRequestBase extends CrateRequestBase {
-  /**
-   * The pipe to project, as a QUALIFIED `domain.pipe_code` ref. Omit it to default
-   * the way a run by address does: to the fetched package manifest's `main_pipe` on
-   * a `method_ref` request, else to the closure's declared `main_pipe` — which fails
-   * (422) when the closure declares none, or declares several across its domains.
-   *
-   * That manifest arm needs a server NEWER than pipelex-api 0.21.0. 0.21.0 resolves
-   * the address form but drops the manifest on the tooling path, falling straight
-   * through to the closure's own domain-level declarations — so a package whose
-   * `METHODS.toml` names an entry pipe that its domains do not answers `422` there.
-   * Send `pipe_ref` explicitly to be portable across both.
-   */
-  pipe_ref?: string;
-}
-
 // ── Request types ───────────────────────────────────────────────────
-
-export interface BuildInputsRequest extends BuildRequestBase {
-  /** `json` (default) puts the parsed template in `inputs`; `toml` puts raw text in `inputs_toml`. */
-  format?: InputsTemplateFormat;
-  /** Emit the ceremonial `{concept, content}` envelope per input. Defaults to the light shape. */
-  explicit?: boolean;
-}
 
 /**
  * `POST /v1/pipe-io` request — a method's three I/O artifacts, with no dry run.
@@ -119,7 +87,7 @@ export interface PipeIORequest extends CrateRequestBase {
 }
 
 /**
- * The `error_type` values a `/v1/pipe-io` (or per-pipe route) `422` carries when
+ * The `error_type` values a `/v1/pipe-io` `422` carries when
  * the request's pipe SELECTION failed, as opposed to its shape:
  * `EntryPipeNotFoundError` for a `pipe_ref` that names no pipe, a manifest
  * `main_pipe` the closure lacks, or no `pipe_ref` and no `main_pipe`;
@@ -133,15 +101,6 @@ export const PIPE_SELECTION_ERROR_TYPES: ReadonlySet<string> = new Set([
   "EntryPipeAmbiguousError",
 ]);
 
-export interface ConceptRequest {
-  spec: Record<string, unknown>;
-}
-
-export interface PipeSpecRequest {
-  pipe_type: string;
-  spec: Record<string, unknown>;
-}
-
 /** Request for `PipelexRunner.checkModel` — a LOCAL CLI capability only (no API route). */
 export interface CheckModelRequest {
   reference: string;
@@ -152,12 +111,9 @@ export interface CheckModelRequest {
 // ── Response types ──────────────────────────────────────────────────
 
 /**
- * The `is_valid: false` arm shared by the per-pipe build route `/v1/build/inputs`
- * and `/v1/pipe-io`. The spec-to-TOML routes
- * (`/v1/build/concept`, `/v1/build/pipe-spec`) have no such arm: they refuse an
- * invalid spec with a 422.
+ * The `is_valid: false` arm of `/v1/pipe-io`, which the crate-family routes share.
  *
- * These routes follow `/validate`'s discipline: an unresolvable closure is
+ * They follow `/validate`'s discipline: an unresolvable closure is
  * the *successful product* of the call (the request was well-formed, the library
  * was not), so it rides a **200** discriminated on `is_valid` — never a 4xx.
  * Only a no-verdict condition (an unknown `pipe_ref`, auth, a server fault)
@@ -168,45 +124,6 @@ export interface CrateInvalidReport {
   validation_errors: ValidationErrorItem[];
   message: string;
 }
-
-/** Fields the `/v1/build/inputs` valid arm carries beside its template. */
-interface BuildValidReportBase {
-  is_valid: true;
-  /** The qualified pipe that was projected — the RESOLVED selector, always `domain.pipe_code`. */
-  pipe_ref: string;
-  /** The `pipe_ref` as submitted. Absent when it was omitted and defaulted to `main_pipe`. */
-  requested_pipe_ref?: string;
-  message: string;
-}
-
-/**
- * The `/v1/build/inputs` valid arm. The template rides ONE of two fields, chosen
- * by `format`: `inputs` (a parsed object) for `json`, `inputs_toml` (raw text)
- * for `toml`. TOML cannot be carried as a parsed object without losing what makes
- * it worth asking for — its concept comments and key order — so the two are
- * separate fields and the unused one is absent from the body entirely.
- *
- * That "absent entirely" is why this is a union rather than one interface with two
- * optional fields: `format` is a real discriminant, so narrowing on it hands you the
- * field it selected as REQUIRED and makes the other one statically unreachable.
- */
-interface BuildInputsJsonReport extends BuildValidReportBase {
-  format: "json";
-  explicit: boolean;
-  inputs: Record<string, unknown>;
-  inputs_toml?: never;
-}
-
-interface BuildInputsTomlReport extends BuildValidReportBase {
-  format: "toml";
-  explicit: boolean;
-  inputs?: never;
-  inputs_toml: string;
-}
-
-export type BuildInputsValidReport = BuildInputsJsonReport | BuildInputsTomlReport;
-
-export type BuildInputsResponse = BuildInputsValidReport | CrateInvalidReport;
 
 /**
  * The `/v1/pipe-io` valid arm — a method's three I/O artifacts, with the selection
@@ -253,19 +170,6 @@ export interface PipeIOValidReport {
 /** The `POST /v1/pipe-io` 200 response — pattern-match `is_valid` before reading the arm. */
 export type PipeIOResponse = PipeIOValidReport | CrateInvalidReport;
 
-export interface ConceptResponse {
-  success: boolean;
-  concept_code: string;
-  toml: string;
-}
-
-export interface PipeSpecResponse {
-  success: boolean;
-  pipe_code: string;
-  pipe_type: string;
-  toml: string;
-}
-
 /** Response of `PipelexRunner.checkModel` — a LOCAL CLI capability only (no API route). */
 export interface CheckModelResponse {
   success: boolean;
@@ -277,19 +181,13 @@ export interface CheckModelResponse {
 
 // ── Runner interface ────────────────────────────────────────────────
 // Every runtime (API, local pipelex CLI, …) implements the MTHDS Protocol
-// (execute / start / validate / models / version) plus the Pipelex build
-// extensions. The durable run-lifecycle (poll a run by id) is NOT part of this
-// interface — it now lives in the Pipelex runtime SDK (`@pipelex/sdk`).
+// (execute / start / validate / models / version) plus `health`. The durable
+// run-lifecycle (poll a run by id) is NOT part of this interface — it now lives
+// in the Pipelex runtime SDK (`@pipelex/sdk`).
 
 export interface Runner extends MTHDSProtocol<DictPipeOutput> {
   readonly type: RunnerType;
 
   // Health — origin-level `/health` on the API runner, local doctor on pipelex.
   health(): Promise<Record<string, unknown>>;
-
-  // Build extensions (Pipelex API layer 2 — `/v1/build/*`). Each returns a
-  // discriminated 200 verdict: pattern-match `is_valid` before reading the arm.
-  buildInputs(request: BuildInputsRequest): Promise<BuildInputsResponse>;
-  concept(request: ConceptRequest): Promise<ConceptResponse>;
-  pipeSpec(request: PipeSpecRequest): Promise<PipeSpecResponse>;
 }

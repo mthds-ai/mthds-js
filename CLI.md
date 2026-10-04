@@ -45,7 +45,7 @@ mthds runner setup pipelex
 | `-L, --library-dir <dir>` | Additional library directory (can be repeated). Applies to `run`, `validate`, and `build` subcommands. |
 | `--no-logo` | Suppress the ASCII logo |
 | `--version` | Print the CLI version |
-| `--help` | Show help for any command |
+| `--help` | Show help for any command; a path naming a command that does not exist fails with `unknown command` instead |
 
 When `--runner` is omitted, the CLI uses the runner configured via `mthds config set runner <name>` (default: `api`).
 
@@ -622,6 +622,8 @@ mthds package list
 ## Agent CLI (`mthds-agent`)
 
 Machine-oriented CLI for AI agents. All output is structured JSON to stdout (success) and stderr (errors). No interactive prompts.
+
+`--help` answers only for a path of commands `mthds-agent` registers on the active runner. A path naming any other command, such as `mthds-agent concept --help`, fails on both runners with an `ArgumentError` (`Unknown command: concept. …`) before any help is printed. On the pipelex runner, a command `mthds-agent` does not register is still forwarded to `pipelex-agent` when it is run rather than asked for its help.
 
 When the API runner refuses a call, the error envelope carries what the runner's problem document said: its `error_domain` (`input`, `config` or `runtime`) in place of the command's own, its next step as the `hint`, `retryable: true` when a retry can succeed, the `request_id` to hand to support, and, when the runner refused an invalid method (`run start` answered with a 422, for one), the bundle's `validation_errors`, each item whole with its locators and its `suggested_fix`. See [docs/errors.md → "What the CLIs print for a runner's refusal"](docs/errors.md#what-the-clis-print-for-a-runners-refusal).
 

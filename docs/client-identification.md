@@ -22,7 +22,7 @@ mthds-js/0.26.0 node/22.4.0 (darwin; arm64)
 - The runtime token is `node/<process.versions.node>`, `bun/<version>` or `deno/<version>`, followed by the `(<os>; <arch>)` comment. When the runtime version cannot be read, the runtime token is omitted.
 - **In a browser or a web worker, no `User-Agent` is set at all**, including an Electron renderer that also exposes `process.versions.node`. Browsers either ignore the header or turn the request into a CORS preflight the API refuses, so browser traffic is identified by the browser's own `User-Agent`.
 
-The header is computed once, when the client is constructed, and every request helper in the client builds its headers through one private method, so no request path — protocol routes, build routes, `health` or `uploadFile` — can miss it.
+The header is computed once, when the client is constructed, and every request helper in the client builds its headers through one private method, so no request path — protocol routes, `pipeIo`, `health` or `uploadFile` — can miss it.
 
 Requests `mthds-js` sends to third parties keep their own `User-Agent`: the GitHub resolver used by `mthds install` still sends `mthds-cli` to GitHub, and the npm-registry version check is untouched.
 

@@ -1,16 +1,5 @@
 import { Runners } from "../types.js";
-import type {
-  Runner,
-  RunnerType,
-  BuildInputsRequest,
-  BuildInputsResponse,
-  ConceptRequest,
-  ConceptResponse,
-  PipeIORequest,
-  PipeIOResponse,
-  PipeSpecRequest,
-  PipeSpecResponse,
-} from "../types.js";
+import type { Runner, RunnerType, PipeIORequest, PipeIOResponse } from "../types.js";
 import type { RunOptions, RunRequest, StartOptions, StartRequest } from "../../protocol/options.js";
 import type {
   ModelCategory,
@@ -49,7 +38,7 @@ export interface ValidateFilesOptions {
 
 /**
  * Request for `uploadFile` — the NON-CONTRACT `POST /v1/upload` convenience.
- * Not part of the MTHDS Protocol nor the Pipelex build extensions, which is why
+ * Not part of the MTHDS Protocol nor of the pipe I/O extension, which is why
  * it lives on the concrete client, not the shared `Runner` interface.
  */
 export interface UploadFileRequest {
@@ -117,13 +106,11 @@ const VALIDATE_MARKDOWN_RENDER_FORMAT = "markdown";
  * Client for any MTHDS runner — and THE API runner (parity D8). One class,
  * two consumers: `pipelex-app` instantiates it directly as a protocol client,
  * the CLI gets it via `createRunner()` as a full `Runner`. It carries the
- * protocol surface plus the Pipelex build extensions.
+ * protocol surface plus the Pipelex API's pipe I/O extension.
  *
  * One base URL (`MTHDS_BASE_URL`); every endpoint is `<base>/v1/<endpoint>`:
  * - **protocol** (`execute` / `start` / `validate` / `models` / `version`) — works
  *   against any MTHDS-compliant runner, hosted or bare.
- * - **build extensions** (`/v1/build/*`) — the Pipelex API's spec-to-TOML helpers
- *   (`concept`, `pipeSpec`) and its inputs-template helper (`buildInputs`).
  * - **`pipeIo`** (`/v1/pipe-io`) — a Pipelex API extension carrying the standard's
  *   I/O artifacts. Like `uploadFile`, it lives on this class and not on `Runner`:
  *   the local pipelex runner shells out and has no use for it.
@@ -271,7 +258,7 @@ export class MthdsApiClient implements Runner {
   /**
    * Issue a request and parse the JSON body, throwing an `ApiResponseError`
    * on a non-2xx response, so a refusal carries its problem members here as on
-   * the protocol routes. Used by the build extensions and `health`. Unlike
+   * the protocol routes. Used by `health`. Unlike
    * `requestRaw`, it sets no timeout and does not wrap a network failure as
    * `ApiUnreachableError`.
    */
@@ -292,10 +279,6 @@ export class MthdsApiClient implements Runner {
       });
     }
     return res.json() as Promise<T>;
-  }
-
-  private postApi<T>(path: string, body: unknown): Promise<T> {
-    return this.requestJson("POST", this.url(path), body);
   }
 
   private throwApiResponseError(method: "GET" | "POST", endpoint: string, res: RawResponse): never {
@@ -567,20 +550,6 @@ export class MthdsApiClient implements Runner {
     return JSON.parse(res.body) as VersionInfo;
   }
 
-  // ── Build extensions (Pipelex API layer 2 — `/v1/build/*`) ────────
-
-  async buildInputs(request: BuildInputsRequest): Promise<BuildInputsResponse> {
-    return this.postApi("build/inputs", request);
-  }
-
-  async concept(request: ConceptRequest): Promise<ConceptResponse> {
-    return this.postApi("build/concept", request);
-  }
-
-  async pipeSpec(request: PipeSpecRequest): Promise<PipeSpecResponse> {
-    return this.postApi("build/pipe-spec", request);
-  }
-
   // ── Pipe I/O (Pipelex API extension — `POST /v1/pipe-io`) ─────────
 
   /**
@@ -622,7 +591,7 @@ export class MthdsApiClient implements Runner {
    * Upload a file and get back the `pipelex-storage://` URI pipelex resolves at
    * runtime — `POST /v1/upload`.
    *
-   * NON-CONTRACT: not part of the MTHDS Protocol nor the build extensions; a
+   * NON-CONTRACT: not part of the MTHDS Protocol nor of the pipe I/O extension; a
    * deployment convenience slated for replacement by the storage redesign. Kept
    * off the `Runner` interface for that reason (a local pipelex runner has no
    * upload route). Goes through `requestRaw` + `throwApiResponseError` so an

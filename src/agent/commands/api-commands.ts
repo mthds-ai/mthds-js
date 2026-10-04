@@ -57,110 +57,6 @@ export function registerApiRunnerCommands(program: Command, makeRunner: () => Ru
     ...(local ?? []),
   ];
 
-  // ── concept ──
-
-  program
-    .command("concept")
-    .description("Structure a concept from JSON spec and output TOML")
-    .option("--spec <json>", "JSON string with concept specification")
-    .option("--spec-file <path>", "Path to JSON file with concept specification")
-    .allowUnknownOption()
-    .allowExcessArguments(true)
-    .exitOverride()
-    .action(async (options: { spec?: string; specFile?: string }) => {
-      const runner = safeCreateRunner(makeRunner);
-
-      let specStr = options.spec;
-      if (!specStr && options.specFile) {
-        try {
-          specStr = readFileSync(options.specFile, "utf-8");
-        } catch (err) {
-          agentError(`Cannot read spec file: ${(err as Error).message}`, "IOError", {
-            error_domain: AGENT_ERROR_DOMAINS.IO,
-          });
-        }
-      }
-      if (!specStr) {
-        agentError("--spec or --spec-file is required.", "ArgumentError", {
-          error_domain: AGENT_ERROR_DOMAINS.ARGUMENT,
-        });
-      }
-
-      const spec = parseJsonOrError(specStr, "--spec");
-      try {
-        const result = await runner.concept({ spec });
-        agentSuccess({ ...result });
-      } catch (err) {
-        agentError((err as Error).message, "RunnerError", {
-          error_domain: AGENT_ERROR_DOMAINS.RUNNER,
-          ...runnerProblemExtras(err),
-        });
-      }
-    });
-
-  // ── pipe ──
-
-  program
-    .command("pipe")
-    .description("Structure a pipe from JSON spec and output TOML")
-    .option("--type <type>", "Pipe type (PipeLLM, PipeSequence, etc.)")
-    .option("--spec <json>", "JSON string with pipe specification")
-    .option("--spec-file <path>", "Path to JSON file with pipe specification")
-    .allowUnknownOption()
-    .allowExcessArguments(true)
-    .exitOverride()
-    .action(async (options: { type?: string; spec?: string; specFile?: string }) => {
-      const runner = safeCreateRunner(makeRunner);
-
-      let specStr = options.spec;
-      if (!specStr && options.specFile) {
-        try {
-          specStr = readFileSync(options.specFile, "utf-8");
-        } catch (err) {
-          agentError(`Cannot read spec file: ${(err as Error).message}`, "IOError", {
-            error_domain: AGENT_ERROR_DOMAINS.IO,
-          });
-        }
-      }
-      if (!specStr) {
-        agentError("--spec or --spec-file is required.", "ArgumentError", {
-          error_domain: AGENT_ERROR_DOMAINS.ARGUMENT,
-        });
-      }
-
-      const spec = parseJsonOrError(specStr, "--spec");
-      const specObj = spec as Record<string, unknown>;
-
-      // Accept "pipe_type" as alias for "type" in spec JSON (matches Python tolerance)
-      if (specObj.pipe_type && !specObj.type) {
-        specObj.type = specObj.pipe_type;
-      }
-      delete specObj.pipe_type;
-
-      // Resolve: CLI --type takes precedence, then spec.type
-      const pipeType = options.type ?? (specObj.type as string | undefined);
-      if (!pipeType) {
-        agentError(
-          "Pipe type must be provided either via --type or as 'type' in the spec JSON.",
-          "ArgumentError",
-          { error_domain: AGENT_ERROR_DOMAINS.ARGUMENT },
-        );
-      }
-
-      // Clean type fields from spec — API expects pipe_type as a separate field
-      delete specObj.type;
-
-      try {
-        const result = await runner.pipeSpec({ pipe_type: pipeType, spec });
-        agentSuccess({ ...result });
-      } catch (err) {
-        agentError((err as Error).message, "RunnerError", {
-          error_domain: AGENT_ERROR_DOMAINS.RUNNER,
-          ...runnerProblemExtras(err),
-        });
-      }
-    });
-
   // ── validate ──
 
   const validateGroup = program
@@ -797,9 +693,9 @@ function resolveContentForRun(
 
 /**
  * Resolve the pipe for a RUN request (`/execute`, `/start`), whose `pipe_code` is
- * still a bare code. The build routes no longer come through here: they take a
- * qualified `pipe_ref` and let the SERVER default it off the closure's `main_pipe`,
- * which knows the whole closure rather than one file's regex.
+ * still a bare code. `pipe-io` does not come through here: it takes a qualified
+ * `pipe_ref` and lets the SERVER default it off the closure's `main_pipe`, which
+ * knows the whole closure rather than one file.
  */
 function resolvePipeCode(mthdsContent: string, pipeCodeOption: string | undefined): string {
   if (pipeCodeOption) return pipeCodeOption;

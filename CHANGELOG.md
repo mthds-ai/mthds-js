@@ -15,11 +15,12 @@
 ### Fixed
 
 - **`mthds build inputs pipe` on the API runner sends the whole method**: it now sends every `.mthds` file of each `-L` directory after the bundle file, as `mthds validate pipe` does, and when those are several and `--pipe` is omitted it asks for the bundle file's own `main_pipe`, so a method split across files gets its inputs template there as it does on the pipelex runner. `-L` was ignored before.
-- **An unknown `mthds` subcommand is refused under `--help`**: a path naming a subcommand that does not exist, such as `mthds build output --help`, now fails with `unknown command`, where it printed the banner and exited 0 as if the command existed.
+- **Both CLIs refuse an unknown subcommand under `--help`**: a path naming a subcommand that does not exist, such as `mthds build output --help` or `mthds-agent concept --help`, now fails, `mthds` with `unknown command` and `mthds-agent` with an `ArgumentError` on either runner, where they printed the banner or the root help and exited 0 as if the command existed.
 
 ### Removed
 
 - **`mthds build output` and `mthds build runner` (Breaking)**: both commands are gone on both runners, together with `MthdsApiClient.buildOutput()` and `buildRunner()`, the `Runner` interface's `buildOutput` and `buildRunner` and the pipelex runner's implementations, so `mthds` no longer calls `POST /v1/build/output` or `POST /v1/build/runner`. `mthds build inputs` is the one command left under `mthds build`; a pipe's output representation and its Python runner script are generated with `pipelex build output` and `pipelex build runner`.
+- **`mthds-agent concept` and `mthds-agent pipe` (Breaking)**: both spec-to-TOML commands are gone on both runners, together with `MthdsApiClient.concept()`, `pipeSpec()` and `buildInputs()`, the `Runner` interface's `concept`, `pipeSpec` and `buildInputs` and the pipelex runner's implementations, so `mthds` no longer calls any `/v1/build/*` route. Write a method's concepts and pipes as TOML and check them with `mthds-agent validate bundle`. On the pipelex runner, `mthds-agent` still forwards a command it does not register to `pipelex-agent` when it is run, so `pipelex-agent concept` and `pipe` stay reachable that way for as long as `pipelex` ships them.
 
 ## [v0.29.0] - 2026-10-03
 

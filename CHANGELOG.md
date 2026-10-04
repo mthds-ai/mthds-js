@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- **`mthds-agent` requires pipelex 0.72.0 or later**: the pipelex floor checked for the `pipelex` and `pipelex-agent` binaries moves from `>=0.46.4` to `>=0.72.0`, the first release whose `pipelex-agent` accepts `--type judgment`, so `mthds-agent models --type judgment` and `mthds-agent check-model … --type judgment` on the pipelex runner no longer pass an older runtime's environment check only to fail as a usage error.
+
 ### Fixed
 
 - **`CLI.md` no longer points at `pipelex build runner`**: the Build section names `pipelex build output` alone for a pipe's output representation, since `pipelex` drops `build runner`, and points a reader who wants the typed structures of a method's concepts at `pipelex codegen types`.

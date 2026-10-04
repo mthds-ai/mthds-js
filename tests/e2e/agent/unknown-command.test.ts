@@ -30,6 +30,9 @@ describe("mthds-agent on a path naming no command (e2e)", () => {
     ["pipelex", ["validate", "nonexistent"], "nonexistent"],
     // The API runner offers `run start` in place of `run pipe`.
     ["api", ["run", "pipe"], "pipe"],
+    // File storage is a Pipelex capability, not the MTHDS Protocol: no runner uploads.
+    ["api", ["inputs", "upload"], "upload"],
+    ["pipelex", ["inputs", "upload"], "upload"],
   ])("refuses `--help` on `%s` runner path %j by name", (runner, path, unknownWord) => {
     const { stdout, stderr, status } = runAgent("--runner", runner, ...path, "--help");
 
@@ -55,6 +58,7 @@ describe("mthds-agent on a path naming no command (e2e)", () => {
     ["api", ["concept", "--spec-file", "spec.json"], "concept"],
     ["api", ["pipe"], "pipe"],
     ["pipelex", ["-L", "lib", "nonexistent", "arg"], "nonexistent"],
+    ["api", ["inputs", "upload", "./synthetic.png"], "upload"],
   ])("refuses a run of `%s` runner path %j by name", (runner, path, unknownWord) => {
     const { stdout, stderr, status } = runAgent("--runner", runner, ...path);
 
@@ -84,7 +88,9 @@ describe("mthds-agent on a path naming no command (e2e)", () => {
     ["pipelex", ["plxt", "fmt"]],
     ["api", ["run", "start"]],
     ["api", ["validate", "pipe"]],
+    ["api", ["inputs", "bundle"]],
     ["api", ["inputs", "pipe"]],
+    ["api", ["inputs", "method"]],
   ])("still answers `%s` runner path %j with its help", (runner, path) => {
     const { stdout, status } = runAgent("--runner", runner, ...path, "--help");
 

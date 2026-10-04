@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [v0.30.0] - 2026-10-04
 
 ### Added
 
@@ -9,8 +9,7 @@
 
 ### Changed
 
-- **`mthds-agent inputs` on the API runner reads `POST /v1/pipe-io` (Breaking)**: `inputs bundle` and `inputs pipe` project the template locally from the pipe's input form instead of calling `POST /v1/build/inputs`, so they need a runner serving the new route (`pipelex-api` v0.33.0 or later). They now honour `--format json|toml`, printing TOML raw on stdout, and `--explicit`, which the API runner used to ignore. Against `pipelex-api` v0.33.1 or later, which types these refusals, a refused pipe selection (a `--pipe` the method does not declare, or no `--pipe` when it declares no entry pipe or several) is an `ArgumentError` carrying the runner's message, where it was a `RunnerError`.
-- **`mthds build inputs pipe` on the API runner reads `POST /v1/pipe-io` (Breaking)**: it projects the template locally from the pipe's input form instead of calling `POST /v1/build/inputs`, so it needs a runner serving the new route.
+- **`mthds-agent inputs` and `mthds build inputs pipe` on the API runner read `POST /v1/pipe-io` (Breaking)**: `mthds-agent inputs bundle`, `mthds-agent inputs pipe` and `mthds build inputs pipe` project the template locally from the pipe's input form instead of calling `POST /v1/build/inputs`, so they need a runner serving the new route (`pipelex-api` v0.33.0 or later). The `mthds-agent` commands now honour `--format json|toml`, printing TOML raw on stdout, and `--explicit`, which the API runner used to ignore. Against `pipelex-api` v0.33.1 or later, which types these refusals, `mthds-agent` reports a refused pipe selection (a `--pipe` the method does not declare, or no `--pipe` when it declares no entry pipe or several) as an `ArgumentError` carrying the runner's message, where it was a `RunnerError`.
 
 ### Fixed
 
@@ -19,8 +18,7 @@
 
 ### Removed
 
-- **`mthds build output` and `mthds build runner` (Breaking)**: both commands are gone on both runners, together with `MthdsApiClient.buildOutput()` and `buildRunner()`, the `Runner` interface's `buildOutput` and `buildRunner` and the pipelex runner's implementations, so `mthds` no longer calls `POST /v1/build/output` or `POST /v1/build/runner`. `mthds build inputs` is the one command left under `mthds build`; a pipe's output representation and its Python runner script are generated with `pipelex build output` and `pipelex build runner`.
-- **`mthds-agent concept` and `mthds-agent pipe` (Breaking)**: both spec-to-TOML commands are gone on both runners, together with `MthdsApiClient.concept()`, `pipeSpec()` and `buildInputs()`, the `Runner` interface's `concept`, `pipeSpec` and `buildInputs` and the pipelex runner's implementations, so `mthds` no longer calls any `/v1/build/*` route. Write a method's concepts and pipes as TOML and check them with `mthds-agent validate bundle`; `pipelex-agent concept` and `pipe` remain `pipelex`'s own commands.
+- **`mthds build output`, `mthds build runner`, `mthds-agent concept` and `mthds-agent pipe` (Breaking)**: these commands are gone on both runners, together with `MthdsApiClient.buildOutput()`, `buildRunner()`, `buildInputs()`, `concept()` and `pipeSpec()`, the `Runner` interface's methods of the same names and the pipelex runner's implementations, so `mthds` no longer calls any `/v1/build/*` route and `mthds build inputs` is the one command left under `mthds build`. A pipe's output representation and its Python runner script are generated with `pipelex build output` and `pipelex build runner`. In place of the spec-to-TOML commands, write a method's concepts and pipes as TOML and check them with `mthds-agent validate bundle`; `pipelex-agent concept` and `pipe` remain `pipelex`'s own commands.
 - **`MthdsApiClient.uploadFile()` and `mthds-agent inputs upload` (Breaking)**: file storage is a Pipelex capability, not part of the MTHDS Protocol, so `mthds` no longer calls `POST /v1/upload`. The method, its `UploadFileRequest` and `UploadFileResult` types and the command are gone, and `mthds-agent inputs upload` now fails as an unknown command on either runner. Upload a file with `uploadFile()` in `@pipelex/sdk` or `upload_file()` in `pipelex-sdk`.
 
 ## [v0.29.0] - 2026-10-03

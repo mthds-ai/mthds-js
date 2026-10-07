@@ -331,7 +331,7 @@ function runPlxt(args: string[]): PlxtRunResult {
  * Run `pipelex-agent validate bundle <file> -L <libraryDir> --allow-signatures
  * --format json --error-format json`. We do NOT shell out through `mthds-agent`
  * to avoid recursing into this same CLI; pipelex-agent's bundle validation is
- * offline-safe (no remote-config or gateway fetch in this code path).
+ * offline-safe.
  *
  * `--format json --error-format json` is the load-bearing decision input: the
  * hook reads the structured `is_valid` / `error_domain` from the JSON envelope

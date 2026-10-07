@@ -21,7 +21,7 @@ After installation the `mthds` command is available on your PATH.
 ## Quick Start
 
 ```bash
-# Log in to Pipelex Gateway (opens browser)
+# Log in to Pipelex (opens browser)
 mthds login
 
 # Install a method from the hub
@@ -59,7 +59,7 @@ The `--runner` flag is consumed by mthds and not forwarded. The `-L/--library-di
 
 ## Login
 
-Log in to Pipelex Gateway via the browser and save your API key. Required when using the **pipelex_gateway** backend.
+Log in to Pipelex via the browser. Forwards to `pipelex login`.
 
 ### `mthds login`
 
@@ -67,14 +67,14 @@ Log in to Pipelex Gateway via the browser and save your API key. Required when u
 mthds login
 ```
 
-Opens a browser window for OAuth authentication (GitHub or Google). After successful login, the Gateway API key is automatically saved to `~/.pipelex/.env` as `PIPELEX_GATEWAY_API_KEY`. The key never appears in terminal output.
+Opens a browser window for OAuth authentication (GitHub or Google). The credentials the login saves never appear in terminal output.
 
 If pipelex is not installed, the command will install it first.
 
 **Example:**
 
 ```bash
-# Log in and save your Gateway API key
+# Log in to Pipelex through the browser
 mthds login
 ```
 
@@ -668,26 +668,13 @@ mthds-agent runner setup api --api-key sk-my-api-key --base-url http://localhost
 
 ### `mthds-agent pipelex login`
 
-Log in to Pipelex Gateway via the browser and save the API key. Required when using the **pipelex_gateway** backend. Forwards to `pipelex login`.
+Log in to Pipelex via the browser. Forwards to `pipelex login`.
 
 ```bash
 mthds-agent pipelex login
 ```
 
-Opens a browser window for OAuth authentication (GitHub or Google). After successful login, the Gateway API key is saved to `~/.pipelex/.env`. The key never appears in terminal output.
-
-**Typical agent workflow with Gateway:**
-
-```bash
-# Step 1: Install pipelex if needed
-mthds-agent runner setup pipelex
-
-# Step 2: Log in to get Gateway API key
-mthds-agent pipelex login
-
-# Step 3: Initialize configuration with Gateway backend
-mthds-agent pipelex init -g --config '{"backends": ["pipelex_gateway"], "accept_gateway_terms": true}'
-```
+Opens a browser window for OAuth authentication (GitHub or Google). The credentials the login saves never appear in terminal output.
 
 ### `mthds-agent pipelex init`
 
@@ -701,8 +688,10 @@ All options are forwarded directly to `pipelex-agent init`:
 
 | Option | Description |
 |---|---|
-| `--config, -c <json>` | Inline JSON string or path to a JSON file. Schema: `{"backends": list[str], "primary_backend": str, "accept_gateway_terms": bool, "telemetry_mode": str}`. All fields optional. |
+| `--config, -c <json>` | Inline JSON string or path to a JSON file. Schema: `{"backends": list[str], "primary_backend": str, "telemetry_mode": str}`. All fields optional. |
 | `--global, -g` | Force global `~/.pipelex/` directory. Without this flag, targets project-level `.pipelex/`. |
+
+`init` configures bring-your-own-keys backends: name the ones to enable, such as `openai`, `anthropic`, `mistral`, `google` and `openrouter`, and give each one its key in the environment or in a `.env` file (`OPENAI_API_KEY` for `openai`, `ANTHROPIC_API_KEY` for `anthropic`, and so on). `init` does not write those keys. With one backend named, it routes to that backend every model the backend supports. With two or more, `primary_backend` names the one tried first and is required. With no `backends` at all, `init` keeps the template's backends and its routing profile, which routes among every backend it enables.
 
 **Typical agent workflow:**
 
@@ -710,11 +699,14 @@ All options are forwarded directly to `pipelex-agent init`:
 # Step 1: Install pipelex if needed
 mthds-agent runner setup pipelex
 
-# Step 2: Initialize configuration
+# Step 2: Initialize configuration on one backend, here OpenAI, whose one key covers every default model
 mthds-agent pipelex init --config '{"backends": ["openai"], "telemetry_mode": "off"}'
 
-# Step 2 (global variant):
-mthds-agent pipelex init -g --config '{"backends": ["pipelex_gateway"], "accept_gateway_terms": true}'
+# Step 2 (global variant, several backends, OpenAI tried first):
+mthds-agent pipelex init -g --config '{"backends": ["openai", "anthropic", "mistral"], "primary_backend": "openai"}'
+
+# Step 2 (global variant, keeping the template's backends and routing profile):
+mthds-agent pipelex init -g
 ```
 
 ### `mthds-agent publish`

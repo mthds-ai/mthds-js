@@ -629,7 +629,7 @@ When the API runner refuses a call, the error envelope carries what the runner's
 
 ### `mthds-agent runner setup pipelex`
 
-Install the Pipelex runtime. Does **not** initialize configuration — use `mthds-agent pipelex init` for that.
+Install the Pipelex runtime. Does **not** initialize configuration — use `mthds-agent init` for that.
 
 ```bash
 mthds-agent runner setup pipelex
@@ -666,29 +666,19 @@ mthds-agent runner setup api --api-key sk-my-api-key
 mthds-agent runner setup api --api-key sk-my-api-key --base-url http://localhost:8081
 ```
 
-### `mthds-agent pipelex login`
-
-Log in to Pipelex via the browser. Forwards to `pipelex login`.
-
-```bash
-mthds-agent pipelex login
-```
-
-Opens a browser window for OAuth authentication (GitHub or Google). The credentials the login saves never appear in terminal output.
-
-### `mthds-agent pipelex init`
+### `mthds-agent init`
 
 Initialize Pipelex configuration (non-interactive). Forwards to `pipelex-agent init`.
 
 ```bash
-mthds-agent pipelex init [OPTIONS]
+mthds-agent init [OPTIONS]
 ```
 
 All options are forwarded directly to `pipelex-agent init`:
 
 | Option | Description |
 |---|---|
-| `--config, -c <json>` | Inline JSON string or path to a JSON file. Schema: `{"backends": list[str], "primary_backend": str, "telemetry_mode": str}`. All fields optional. |
+| `--config, -c <json>` | Inline JSON string or path to a JSON file. Schema: `{"backends": list[str], "primary_backend": str}`. All fields optional. Telemetry is seeded from a template, not from `--config`. |
 | `--global, -g` | Force global `~/.pipelex/` directory. Without this flag, targets project-level `.pipelex/`. |
 
 `init` configures bring-your-own-keys backends: name the ones to enable, such as `openai`, `anthropic`, `mistral`, `google` and `openrouter`, and give each one its key in the environment or in a `.env` file (`OPENAI_API_KEY` for `openai`, `ANTHROPIC_API_KEY` for `anthropic`, and so on). `init` does not write those keys. With one backend named, it routes to that backend every model the backend supports. With two or more, `primary_backend` names the one tried first and is required. With no `backends` at all, `init` keeps the template's backends and its routing profile, which routes among every backend it enables.
@@ -700,13 +690,13 @@ All options are forwarded directly to `pipelex-agent init`:
 mthds-agent runner setup pipelex
 
 # Step 2: Initialize configuration on one backend, here OpenAI, whose one key covers every default model
-mthds-agent pipelex init --config '{"backends": ["openai"], "telemetry_mode": "off"}'
+mthds-agent init --config '{"backends": ["openai"]}'
 
 # Step 2 (global variant, several backends, OpenAI tried first):
-mthds-agent pipelex init -g --config '{"backends": ["openai", "anthropic", "mistral"], "primary_backend": "openai"}'
+mthds-agent init -g --config '{"backends": ["openai", "anthropic", "mistral"], "primary_backend": "openai"}'
 
 # Step 2 (global variant, keeping the template's backends and routing profile):
-mthds-agent pipelex init -g
+mthds-agent init -g
 ```
 
 ### `mthds-agent publish`

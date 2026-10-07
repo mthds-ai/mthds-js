@@ -71,7 +71,7 @@ program
 // ── mthds login ─────────────────────────────────────────────────────
 program
   .command("login")
-  .description("Log in to Pipelex Gateway via the browser")
+  .description("Log in to Pipelex via the browser")
   .exitOverride()
   .action(async () => {
     await login();

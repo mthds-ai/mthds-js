@@ -2,7 +2,8 @@
  * Client identification — the `User-Agent` header `MthdsApiClient` sends on
  * every request to an MTHDS runner or the hosted API.
  *
- * The contract is the Pipelex workspace spec `docs/specs/client-identification.md`:
+ * The contract is the spec `conformance/specs/client-identification.md`, in the
+ * conformance repo beside the test that verifies it:
  * product tokens outermost first, the integrator's `appInfo` (if any), then this
  * library (`mthds-js/<version>`), then the runtime (`node/<v> (<os>; <arch>)`).
  * In a browser no header is produced at all, because a browser either ignores

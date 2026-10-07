@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- **`mthds-agent` requires pipelex 0.73.0 or later**: the pipelex floor checked for the `pipelex` and `pipelex-agent` binaries moves from `>=0.72.0` to `>=0.73.0`, the first release without the Pipelex Gateway, so a runtime that would still need `accept-gateway-terms`, which `mthds-agent` no longer forwards, is upgraded rather than left half working.
+
 ### Removed
 
 - **`mthds-agent accept-gateway-terms` and the Pipelex Gateway wording (Breaking)**: the pipelex runner no longer forwards `accept-gateway-terms` to `pipelex-agent`, whose command pipelex 0.73.0 deleted along with the `pipelex_gateway` backend, so `mthds-agent accept-gateway-terms` now fails as an unknown command on either runner. `mthds login` describes itself as logging in to Pipelex without naming the Gateway, and `CLI.md` drops `pipelex_gateway` and `accept_gateway_terms` from the `init` examples and the `--config` schema, showing bring-your-own-keys backends such as `openai`, `anthropic` and `mistral` instead.

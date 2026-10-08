@@ -4,6 +4,7 @@
 
 ### Changed
 
+- **`/contract-check` reads the specs from `conformance`**: the skill reads the interface specs at `../conformance/specs/`, where they now live beside the tests that verify them, and files a finding that needs a spec edit, with its conformance test, as a `spec` item owned by `conformance` rather than `workspace`, under a `spec:conformance/specs/<file>#<section>` ref. `/release` runs it against the same path.
 - **`mthds-agent` requires pipelex 0.73.0 or later**: the pipelex floor checked for the `pipelex` and `pipelex-agent` binaries moves from `>=0.72.0` to `>=0.73.0`, the first release without the Pipelex Gateway, so a runtime that would still need `accept-gateway-terms`, which `mthds-agent` no longer forwards, is upgraded rather than left half working.
 
 ### Removed

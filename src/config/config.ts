@@ -110,9 +110,10 @@ export function resolveKey(cliKey: string): keyof MthdsConfig | undefined {
 }
 
 // ── Dotenv parser / serializer ─────────────────────────────────────
-// The dialect is shared with mthds-python and pinned by docs/specs/mthds-config-file.md
-// (workspace repo). Both functions are exported so the shared conformance fixture
-// (tests/fixtures/config-dialect-cases.json) can exercise them directly.
+// The dialect is shared with mthds-python and pinned by conformance/specs/mthds-config-file.md,
+// which lives in the conformance repo beside the test that verifies it. Both functions are
+// exported so the shared conformance fixture (tests/fixtures/config-dialect-cases.json) can
+// exercise them directly.
 
 export function parseDotenv(content: string): Record<string, string> {
   const result: Record<string, string> = {};

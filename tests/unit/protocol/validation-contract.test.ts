@@ -11,7 +11,7 @@ import type {
  * returns).
  *
  * The discriminated `ValidationResult` must parse the spec's example bodies
- * (`ValidReport` / `InvalidReport` in docs/specs/pipelex-mthds-protocol.md) and
+ * (`ValidReport` / `InvalidReport` in conformance/specs/pipelex-mthds-protocol.md) and
  * narrow on the one mandatory `is_valid` field — never a status code, never an
  * exception. The neutral union guarantees only the standard fields: the valid arm's
  * `is_valid: true` (any structural artifacts ride the extension index signature,

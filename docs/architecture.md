@@ -35,7 +35,8 @@ src/protocol/                 PURE — the MTHDS Protocol mirror (imports nothin
                               input-form descriptor (mirror of mthds/protocol/inputs_template.py)
   toml_emitter.ts             the deterministic TOML layout the two projections share, TemplateFloat and the
                               TemplateValue shapes (mirror of mthds/protocol/toml_emitter.py)
-  concept.ts                  ConceptAbstract + conceptRef()
+  concept.ts                  ConceptAbstract (code + domain_code: a concept as a stuff names it, never its
+                              definition) + conceptRef()
   stuff.ts                    StuffAbstract<TConcept, TContent>, StuffContentAbstract
   working_memory.ts           WorkingMemoryAbstract<TStuff>
   exceptions.ts               PipelineRequestError (protocol-level base)
@@ -132,7 +133,7 @@ Two shapes, and the difference is what the runtime's own input shaper can take b
 
 **The bar is byte identity with `mthds-python`**, across every kind of the closed vocabulary, both shapes and both formats — otherwise the JS/Python asymmetry that retiring the build routes removed is rebuilt one layer up. Two consequences for how this is written. The TOML is emitted by `toml_emitter.ts` rather than by `smol-toml`: a library emits no comments and may change its layout in a patch release, in one language and not the other, so the layout is stated in the few dozen lines it takes and mirrored line for line. And a number carries a `TemplateFloat` marker where it must print with its decimal point — TypeScript has one number type where Python has two, so `0.0` would otherwise print as `0` — which is also why the JSON half is written here rather than handed to `JSON.stringify`.
 
-`tests/fixtures/protocol/inputs_template/` is the corpus that holds the two sides to it: one file per pipe, shape and format, committed identically in both repos. The rules the captured bundles do not reach are stated on their own — each TOML layout rule as bytes in `toml-emitter.test.ts`, and the forms no capture produced (an input-less pipe, a plural native slot, an unknown format) in `inputs-template-rendering.test.ts`.
+`tests/fixtures/protocol/inputs_template/` is the corpus that holds the two sides to it: one file per pipe, shape and format, committed identically in both repos. The rules the captured bundles do not reach are stated on their own — each TOML layout rule as bytes in `toml-emitter.test.ts`, and the forms no capture produced (an input-less pipe, a plural native slot, the verdict natives the standard added at 3.0.0, an unknown format) in `inputs-template-rendering.test.ts`. Those verdict natives need no table of their own: the descriptor states `Choice` and `Rating` as `object`s, which keep their envelope through the same kind rule as any object native, and `YesNo` as a `boolean`, whose compact slot is a bare boolean.
 
 `mthds-agent inputs` and `mthds build inputs` on the API runner use this projection: they read the pipe's descriptor from `POST /v1/pipe-io` through `MthdsApiClient.pipeIo()` and render the template here, so `--format` and `--explicit` are honoured on the API runner as on the pipelex one, and neither command calls `POST /v1/build/inputs` any more. See [pipe-io.md](./pipe-io.md).
 

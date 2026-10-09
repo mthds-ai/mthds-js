@@ -71,7 +71,9 @@ program
 // ── mthds login ─────────────────────────────────────────────────────
 program
   .command("login")
-  .description("Log in to Pipelex via the browser")
+  .description(
+    "Get a Pipelex API key through the browser for runs on the hosted Pipelex API (runs pipelex login)",
+  )
   .exitOverride()
   .action(async () => {
     await login();
@@ -82,13 +84,13 @@ const run = program.command("run").description("Execute a pipeline").exitOverrid
 
 run
   .command("method")
-  .argument("<name>", "Name of the installed method")
+  .argument("<name>", "Installed method name, method address or GitHub URL")
   .option("--pipe <code>", "Pipe code (overrides method's main_pipe)")
   .option("-i, --inputs <file>", "Path to JSON inputs file")
   .option("-o, --output <file>", "Path to save output JSON")
   .option("--no-output", "Skip saving output to file")
   .option("--no-pretty-print", "Skip pretty printing the output")
-  .description("Run an installed method by name")
+  .description("Run a method: an installed one by name, or a published one by address")
   .allowUnknownOption()
   .allowExcessArguments(true)
   .exitOverride()
@@ -124,13 +126,13 @@ run
 
 run
   .command("bundle")
-  .argument("<target>", ".mthds bundle file")
+  .argument("<target>", ".mthds bundle file or method directory")
   .option("--pipe <code>", "Pipe code to run within the bundle")
   .option("-i, --inputs <file>", "Path to JSON inputs file")
   .option("-o, --output <file>", "Path to save output JSON")
   .option("--no-output", "Skip saving output to file")
   .option("--no-pretty-print", "Skip pretty printing the output")
-  .description("Run a bundle file")
+  .description("Run a bundle file or directory")
   .allowUnknownOption()
   .allowExcessArguments(true)
   .exitOverride()

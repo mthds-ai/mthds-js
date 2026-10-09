@@ -7,9 +7,14 @@
 - **`/contract-check` reads the specs from `conformance`**: the skill reads the interface specs at `../conformance/specs/`, where they now live beside the tests that verify them, and files a finding that needs a spec edit, with its conformance test, as a `spec` item owned by `conformance` rather than `workspace`, under a `spec:conformance/specs/<file>#<section>` ref. `/release` runs it against the same path.
 - **`mthds-agent` requires pipelex 0.73.0 or later**: the pipelex floor checked for the `pipelex` and `pipelex-agent` binaries moves from `>=0.72.0` to `>=0.73.0`, the first release without the Pipelex Gateway, so a runtime that would still need `accept-gateway-terms`, which `mthds-agent` no longer forwards, is upgraded rather than left half working.
 
+### Fixed
+
+- **`mthds login` describes the Pipelex API key it gets**: its help and `CLI.md` say that it runs `pipelex login`, which gets a Pipelex API key through the browser and saves it as `PIPELEX_API_KEY` in `~/.pipelex/.env` for pipelex's hosted runs, not for the API runner, that it needs pipelex 0.79.0 or later, and that `pipelex login --paste` serves a machine with no browser.
+- **`CLI.md` and the README describe where the pipelex runner executes a run**: they cover pipelex's `[run] execution` setting and its `--hosted`/`--local` flags, the way to choose pipelex's execution through `mthds-agent run` since `mthds-agent` keeps `--runner` for itself, as well as the `execution` field of `mthds-agent init --config`, the real options of `pipelex-agent run` and the question `pipelex init` asks during `mthds runner setup pipelex`. They also correct the default runner to `pipelex`, the README's `mthds setup runner` commands to `mthds runner setup`, and the claim that `mthds run pipe` and `run bundle` pass pipelex flags through: both drop any flag they do not declare, `--dry-run` included.
+
 ### Removed
 
-- **`mthds-agent accept-gateway-terms` and the Pipelex Gateway wording (Breaking)**: the pipelex runner no longer forwards `accept-gateway-terms` to `pipelex-agent`, whose command pipelex 0.73.0 deleted along with the `pipelex_gateway` backend, so `mthds-agent accept-gateway-terms` now fails as an unknown command on either runner. `mthds login` describes itself as logging in to Pipelex without naming the Gateway, and `CLI.md` drops `pipelex_gateway` and `accept_gateway_terms` from the `init` examples and the `--config` schema, showing bring-your-own-keys backends such as `openai`, `anthropic` and `mistral` instead.
+- **`mthds-agent accept-gateway-terms` and the Pipelex Gateway wording (Breaking)**: the pipelex runner no longer forwards `accept-gateway-terms` to `pipelex-agent`, whose command pipelex 0.73.0 deleted along with the `pipelex_gateway` backend, so `mthds-agent accept-gateway-terms` now fails as an unknown command on either runner. `mthds login` no longer names the Gateway, and `CLI.md` drops `pipelex_gateway` and `accept_gateway_terms` from the `init` examples and the `--config` schema, showing bring-your-own-keys backends such as `openai`, `anthropic` and `mistral` instead.
 
 ## [v0.30.1] - 2026-10-04
 

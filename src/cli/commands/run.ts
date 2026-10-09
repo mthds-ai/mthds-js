@@ -32,7 +32,9 @@ function withInputs(options: StartOptions, inputsFile?: string): StartOptions {
 /**
  * Run through the MTHDS Protocol `execute` primitive (blocking), dispatched on
  * the runner:
- *  - pipelex runner → local, blocking, in-process — streams logs.
+ *  - pipelex runner → the pipelex CLI on this machine, blocking — streams logs.
+ *    pipelex executes the run locally or on the hosted Pipelex API, as its
+ *    `[run] execution` setting says.
  *  - API runner     → blocking `POST /v1/execute`.
  *
  * `StartRequest = RunRequest`, so the same options object drives either path.

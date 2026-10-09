@@ -157,9 +157,10 @@ export class PipelexRunner implements Runner {
 
   // ── Method execution ────────────────────────────────────────────
   // pipelex run <target> [--pipe code] [--inputs file] [--output-dir dir]
-  // Local, blocking, in-process — methods run through `execute`. There is no
-  // durable run to poll by id; the async `start` primitive is unsupported (use
-  // the API runner for that).
+  // Blocking — methods run through `execute`, and pipelex executes them locally
+  // or on the hosted Pipelex API, as its `[run] execution` setting says. There
+  // is no durable run to poll by id; the async `start` primitive is unsupported
+  // (use the API runner for that).
 
   async execute(options: RunOptions): Promise<DictRunResultExecute> {
     // Reject conflicting run sources up front — the same contract the API client

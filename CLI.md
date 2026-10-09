@@ -53,13 +53,13 @@ When `--runner` is omitted, the CLI uses the runner configured via `mthds config
 
 When using the **pipelex** runner, `run method`, `validate` and `build` act as thin wrappers: they forward their arguments to the `pipelex` CLI, so pipelex's own flags reach it (for `run method`: `--dry-run`, `--mock-inputs`, `--output-dir` and `--hosted`/`--local`, for instance).
 
-`run pipe` and `run bundle` do not forward their arguments. They build their own `pipelex run` command from the target, `--pipe`, `--inputs` and `-L`, and silently drop any other flag. A `--dry-run`, `--mock-inputs`, `--hosted` or `--local` given to them therefore has no effect: the run goes ahead for real, wherever pipelex is set to execute it. For a dry run of a bundle, call `pipelex run bundle <target> --dry-run` directly.
+`run pipe` and `run bundle` do not forward their arguments. They build their own `pipelex run` command from the target, `--pipe`, `--inputs` and `-L`, and add the pipelex flags they declare: `--dry-run`, `--mock-inputs`, `--hosted` and `--local`. They refuse any other flag as an unknown option, on either runner, rather than drop it and run anyway.
 
 The `--runner` flag is consumed by mthds and not forwarded. The `-L/--library-dir` flags are forwarded to pipelex. With the API runner, `validate pipe` and `build inputs pipe` send every `.mthds` file of each `-L` directory beside the bundle file, so a method split across files validates and gets its inputs template as it does on the pipelex runner.
 
 ### Where the pipelex runner executes a run
 
-The pipelex runner hands each run to the `pipelex` CLI on this machine, and pipelex executes it where its `[run] execution` setting says: `local`, its default, runs the method on this machine with your own provider keys, and `hosted` runs it on the hosted Pipelex API with the Pipelex API key in `PIPELEX_API_KEY`, the key [`mthds login`](#login) saves. `pipelex init` writes the setting from its answer to "Where should your runs execute?", whose default is the hosted API. A single `pipelex run` can go the other way with `--hosted` or `--local`.
+The pipelex runner hands each run to the `pipelex` CLI on this machine, and pipelex executes it where its `[run] execution` setting says: `local`, its default, runs the method on this machine with your own provider keys, and `hosted` runs it on the hosted Pipelex API with the Pipelex API key in `PIPELEX_API_KEY`, the key [`mthds login`](#login) saves. `pipelex init` writes the setting from its answer to "Where should your runs execute?", whose default is the hosted API. A single `pipelex run` can go the other way with `--hosted` or `--local`, and `mthds run method`, `run pipe` and `run bundle` pass either flag on to it. pipelex refuses `--dry-run` and `--mock-inputs` on a hosted run, so on a machine set to `hosted`, a dry run needs `--local` as well.
 
 A hosted run sends the method's `.mthds` files only, so a method whose pipes call custom Python (`funcs/*.py`) cannot run that way, and it reads only `PIPELEX_API_KEY`, never the API runner's `api-key`.
 
@@ -138,12 +138,15 @@ mthds run pipe <target> [OPTIONS]
 | `-o, --output <file>` | string | no | -- | Path to save output JSON |
 | `--no-output` | flag | no | -- | Skip saving output to file |
 | `--no-pretty-print` | flag | no | -- | Skip pretty printing the output |
+| `--dry-run` | flag | no | -- | Run without inference calls; pipelex runner only |
+| `--mock-inputs` | flag | no | -- | Generate mock data for missing required inputs (requires `--dry-run`); pipelex runner only |
+| `--hosted` / `--local` | flag | no | pipelex's `[run] execution` | Have pipelex run it on the hosted Pipelex API or on this machine; pipelex runner only |
 
-These are the only options `run pipe` reads: any other flag, such as `--dry-run`, `--mock-inputs`, `--hosted` or `--local`, is silently dropped, on either runner. With the API runner, the run is a blocking `POST /v1/execute`; with the pipelex runner, it is a `pipelex run` that executes where pipelex is set to execute it (see [Where the pipelex runner executes a run](#where-the-pipelex-runner-executes-a-run)).
+`run pipe` refuses any other flag as an unknown option. With the API runner, the run is a blocking `POST /v1/execute`, which has no dry run: `--dry-run`, `--mock-inputs`, `--hosted` and `--local` are refused before anything is sent, and `mthds validate bundle` checks a bundle without running it. With the pipelex runner, the run is a `pipelex run` that executes where pipelex is set to execute it, unless `--hosted` or `--local` says otherwise (see [Where the pipelex runner executes a run](#where-the-pipelex-runner-executes-a-run)).
 
 ### `mthds run bundle`
 
-Run a `.mthds` bundle file or a method directory directly. Like `run pipe`, it reads only the options below and silently drops any other flag.
+Run a `.mthds` bundle file or a method directory directly. Like `run pipe`, it refuses any flag not listed below, and the API runner refuses its pipelex runner flags before anything is sent.
 
 ```bash
 mthds run bundle <target> [OPTIONS]
@@ -157,6 +160,9 @@ mthds run bundle <target> [OPTIONS]
 | `-o, --output <file>` | string | no | -- | Path to save output JSON |
 | `--no-output` | flag | no | -- | Skip saving output to file |
 | `--no-pretty-print` | flag | no | -- | Skip pretty printing the output |
+| `--dry-run` | flag | no | -- | Run without inference calls; pipelex runner only |
+| `--mock-inputs` | flag | no | -- | Generate mock data for missing required inputs (requires `--dry-run`); pipelex runner only |
+| `--hosted` / `--local` | flag | no | pipelex's `[run] execution` | Have pipelex run it on the hosted Pipelex API or on this machine; pipelex runner only |
 
 **Examples:**
 
@@ -173,6 +179,9 @@ mthds run pipe ./bundle.mthds --pipe my_pipe
 
 # Run a bundle directly
 mthds run bundle ./bundle.mthds --pipe my_pipe
+
+# Dry-run a bundle on this machine, with mock data for the missing inputs
+mthds run bundle ./bundle.mthds --dry-run --mock-inputs --local
 
 # Run with inputs and save output
 mthds run pipe my_pipe_code --inputs inputs.json --output result.json

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { Command, CommanderError } from "commander";
+import { Command, CommanderError, Option } from "commander";
 import { createRequire } from "node:module";
 import { resolve } from "node:path";
 import * as p from "@clack/prompts";
@@ -79,8 +79,26 @@ program
     await login();
   });
 
-// ── mthds run method|pipe ─────────────────────────────────────────────
+// ── mthds run method|pipe|bundle ──────────────────────────────────────
 const run = program.command("run").description("Execute a pipeline").exitOverride();
+
+// `run method` forwards its raw arguments to pipelex, so it accepts any flag. `run pipe`
+// and `run bundle` build their own `pipelex run` command instead, so they declare the
+// pipelex flags they forward and refuse any other: a flag dropped in silence, `--dry-run`
+// above all, would start a real, paid run.
+const dryRunOption = new Option(
+  "--dry-run",
+  "Run without inference calls, through pipelex on this machine",
+);
+const mockInputsOption = new Option(
+  "--mock-inputs",
+  "Generate mock data for missing required inputs (requires --dry-run)",
+);
+const hostedOption = new Option(
+  "--hosted",
+  "Have pipelex run it on the hosted Pipelex API",
+).conflicts("local");
+const localOption = new Option("--local", "Have pipelex run it on this machine");
 
 run
   .command("method")
@@ -110,9 +128,11 @@ run
   .option("-o, --output <file>", "Path to save output JSON")
   .option("--no-output", "Skip saving output to file")
   .option("--no-pretty-print", "Skip pretty printing the output")
+  .addOption(dryRunOption)
+  .addOption(mockInputsOption)
+  .addOption(hostedOption)
+  .addOption(localOption)
   .description("Run a pipe by code or bundle file")
-  .allowUnknownOption()
-  .allowExcessArguments(true)
   .exitOverride()
   .action(
     async (target: string, options: Record<string, string | boolean | undefined>, cmd: Cmd) => {
@@ -132,9 +152,11 @@ run
   .option("-o, --output <file>", "Path to save output JSON")
   .option("--no-output", "Skip saving output to file")
   .option("--no-pretty-print", "Skip pretty printing the output")
+  .addOption(dryRunOption)
+  .addOption(mockInputsOption)
+  .addOption(hostedOption)
+  .addOption(localOption)
   .description("Run a bundle file or directory")
-  .allowUnknownOption()
-  .allowExcessArguments(true)
   .exitOverride()
   .action(
     async (target: string, options: Record<string, string | boolean | undefined>, cmd: Cmd) => {

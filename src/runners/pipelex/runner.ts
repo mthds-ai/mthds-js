@@ -44,6 +44,20 @@ function writeMthdsContents(tmp: string, contents: string[]): string {
   return join(tmp, "bundle.mthds");
 }
 
+/**
+ * The pipelex CLI's own run flags, which `execute` forwards to `pipelex run`. They
+ * steer the pipelex runtime, not the request, so they ride beside the protocol's
+ * `RunOptions` rather than inside it, and no other runner reads them.
+ */
+export interface PipelexRunFlags {
+  /** `--dry-run`: run without inference calls. pipelex refuses it on a hosted run. */
+  dryRun?: boolean;
+  /** `--mock-inputs`: mock the missing required inputs. pipelex requires `--dry-run` with it. */
+  mockInputs?: boolean;
+  /** `true` sends `--hosted`, `false` sends `--local`; unset leaves pipelex's `[run] execution` setting to decide. */
+  hosted?: boolean;
+}
+
 export class PipelexRunner implements Runner {
   readonly type: RunnerType = Runners.PIPELEX;
   private readonly libraryDirs: string[];
@@ -158,11 +172,11 @@ export class PipelexRunner implements Runner {
   // ── Method execution ────────────────────────────────────────────
   // pipelex run <target> [--pipe code] [--inputs file] [--output-dir dir]
   // Blocking — methods run through `execute`, and pipelex executes them locally
-  // or on the hosted Pipelex API, as its `[run] execution` setting says. There
-  // is no durable run to poll by id; the async `start` primitive is unsupported
-  // (use the API runner for that).
+  // or on the hosted Pipelex API, as its `[run] execution` setting says, unless
+  // `flags.hosted` overrides it. There is no durable run to poll by id; the async
+  // `start` primitive is unsupported (use the API runner for that).
 
-  async execute(options: RunOptions): Promise<DictRunResultExecute> {
+  async execute(options: RunOptions, flags: PipelexRunFlags = {}): Promise<DictRunResultExecute> {
     // Reject conflicting run sources up front — the same contract the API client
     // enforces — so a bundle combined with `mthds_contents` (or both encodings)
     // fails clearly instead of the branch order below silently preferring one.
@@ -207,6 +221,16 @@ export class PipelexRunner implements Runner {
         const inputsPath = join(tmp, "inputs.json");
         writeFileSync(inputsPath, JSON.stringify(options.inputs), "utf-8");
         args.push("--inputs", inputsPath);
+      }
+
+      if (flags.dryRun) {
+        args.push("--dry-run");
+      }
+      if (flags.mockInputs) {
+        args.push("--mock-inputs");
+      }
+      if (flags.hosted !== undefined) {
+        args.push(flags.hosted ? "--hosted" : "--local");
       }
 
       // Pin the working-memory artifact to a known path; other outputs go to

@@ -372,6 +372,36 @@ describe("PipelexRunner", () => {
       expect(spawnArgs[2]).toContain("method_b.mthds");
       expect(spawnArgs[2]).not.toContain("method_a.mthds");
     });
+
+    // A dry run that never reaches pipelex is a real, paid run.
+    it("forwards --dry-run, --mock-inputs and --local to `pipelex run`", async () => {
+      mockSpawnExit(0);
+      await runner.execute(
+        { mthds_contents: ["bundle content"] },
+        { dryRun: true, mockInputs: true, hosted: false },
+      );
+      const spawnArgs = mockedSpawn.mock.calls[0]![1] as string[];
+      expect(spawnArgs).toEqual(expect.arrayContaining(["--dry-run", "--mock-inputs", "--local"]));
+      expect(spawnArgs).not.toContain("--hosted");
+    });
+
+    it("forwards --hosted to `pipelex run pipe`", async () => {
+      mockSpawnExit(0);
+      await runner.execute({ pipe_code: "echo" }, { hosted: true });
+      const spawnArgs = mockedSpawn.mock.calls[0]![1] as string[];
+      expect(spawnArgs.slice(0, 3)).toEqual(["run", "pipe", "echo"]);
+      expect(spawnArgs).toContain("--hosted");
+      expect(spawnArgs).not.toContain("--local");
+    });
+
+    it("adds no run flag when none is given, leaving `[run] execution` to pipelex", async () => {
+      mockSpawnExit(0);
+      await runner.execute({ mthds_contents: ["bundle content"] });
+      const spawnArgs = mockedSpawn.mock.calls[0]![1] as string[];
+      for (const flag of ["--dry-run", "--mock-inputs", "--hosted", "--local"]) {
+        expect(spawnArgs).not.toContain(flag);
+      }
+    });
   });
 
   describe("validate — 0/1/2 exit-code policy", () => {

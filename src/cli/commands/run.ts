@@ -5,6 +5,7 @@ import { resolveRunBundle } from "../../runners/bundle.js";
 import { isPipelexRunner, extractPassthroughArgs } from "./utils.js";
 import { formatCliError } from "./error-output.js";
 import { createRunner } from "../../runners/registry.js";
+import type { PipelexRunFlags } from "../../runners/pipelex/runner.js";
 import type { Runner, RunnerType } from "../../runners/types.js";
 import type { StartOptions } from "../../protocol/options.js";
 
@@ -13,12 +14,49 @@ interface RunOptions {
   inputs?: string;
   output?: string;
   prettyPrint?: boolean;
+  dryRun?: boolean;
+  mockInputs?: boolean;
+  hosted?: boolean;
+  local?: boolean;
   runner?: RunnerType;
   libraryDir?: string[];
 }
 
 function libraryDirs(options: RunOptions): string[] | undefined {
   return options.libraryDir?.length ? options.libraryDir : undefined;
+}
+
+/**
+ * Read the pipelex run flags of `run pipe` and `run bundle`, refusing them on any
+ * other runner before anything is read or started. Dropping them would turn a
+ * requested dry run into a real, paid one: the API runner's `execute` has no dry run.
+ */
+function pipelexRunFlags(runner: Runner, cli: RunOptions): PipelexRunFlags {
+  if (isPipelexRunner(runner)) {
+    return {
+      dryRun: cli.dryRun,
+      mockInputs: cli.mockInputs,
+      hosted: cli.hosted ? true : cli.local ? false : undefined,
+    };
+  }
+  const named = [
+    cli.dryRun && "--dry-run",
+    cli.mockInputs && "--mock-inputs",
+    cli.hosted && "--hosted",
+    cli.local && "--local",
+  ].filter((flag): flag is string => typeof flag === "string");
+  if (named.length > 0) {
+    const verb = named.length === 1 ? "applies" : "apply";
+    let message = `${named.join(", ")} ${verb} only to the pipelex runner, and this run uses the ${runner.type} runner, so nothing was started.`;
+    if (cli.dryRun || cli.mockInputs) {
+      message +=
+        " The API runner has no dry run: pass --runner pipelex to dry-run through pipelex, or check the bundle without running it with mthds validate bundle.";
+    }
+    p.log.error(message);
+    p.outro("");
+    process.exit(1);
+  }
+  return {};
 }
 
 /** Merge an optional JSON inputs file into the run options. */
@@ -40,7 +78,12 @@ function withInputs(options: StartOptions, inputsFile?: string): StartOptions {
  * `StartRequest = RunRequest`, so the same options object drives either path.
  * Both return a `DictRunResultExecute` carrying `pipe_output` — print that.
  */
-async function dispatchRun(runner: Runner, options: StartOptions, cli: RunOptions): Promise<void> {
+async function dispatchRun(
+  runner: Runner,
+  options: StartOptions,
+  flags: PipelexRunFlags,
+  cli: RunOptions,
+): Promise<void> {
   // Stopped with the failure marker before a failure prints, so the error neither
   // shares a line with a still-spinning frame nor follows a success marker.
   let spinner: ReturnType<typeof p.spinner> | undefined;
@@ -49,8 +92,8 @@ async function dispatchRun(runner: Runner, options: StartOptions, cli: RunOption
     if (isPipelexRunner(runner)) {
       // The pipelex CLI streams its own logs to stderr — no spinner, or it
       // would fight the streamed output for the terminal.
-      p.log.step("Executing via pipelex...");
-      result = await runner.execute(options);
+      p.log.step(flags.dryRun ? "Dry-running via pipelex..." : "Executing via pipelex...");
+      result = await runner.execute(options, flags);
     } else {
       spinner = p.spinner();
       spinner.start("Executing and waiting for result...");
@@ -117,6 +160,7 @@ export async function runBundle(target: string, options: RunOptions): Promise<vo
   p.intro("mthds run bundle");
 
   const runner = createRunner("mthds-cli", options.runner, libraryDirs(options));
+  const flags = pipelexRunFlags(runner, options);
 
   let runOptions: StartOptions;
   try {
@@ -141,7 +185,7 @@ export async function runBundle(target: string, options: RunOptions): Promise<vo
     process.exit(1);
   }
 
-  await dispatchRun(runner, runOptions, options);
+  await dispatchRun(runner, runOptions, flags, options);
 }
 
 export async function runPipe(target: string, options: RunOptions): Promise<void> {
@@ -149,6 +193,7 @@ export async function runPipe(target: string, options: RunOptions): Promise<void
   p.intro("mthds run pipe");
 
   const runner = createRunner("mthds-cli", options.runner, libraryDirs(options));
+  const flags = pipelexRunFlags(runner, options);
 
   // A target is either a pipe code or a .mthds bundle file.
   const isBundlePath = target.endsWith(".mthds") || existsSync(target);
@@ -170,5 +215,5 @@ export async function runPipe(target: string, options: RunOptions): Promise<void
     process.exit(1);
   }
 
-  await dispatchRun(runner, runOptions, options);
+  await dispatchRun(runner, runOptions, flags, options);
 }

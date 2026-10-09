@@ -9,8 +9,9 @@
 
 ### Fixed
 
+- **`mthds run pipe` and `run bundle` honour `--dry-run` and refuse unknown flags (Breaking)**: both used to accept any flag and drop the ones they did not declare, so `--dry-run` started a real, paid run. They now pass `--dry-run`, `--mock-inputs`, `--hosted` and `--local` on to `pipelex run`; the API runner, which has no dry run, refuses those four before sending anything; and any other flag or extra argument fails as an unknown option instead of being ignored.
 - **`mthds login` describes the Pipelex API key it gets**: its help and `CLI.md` say that it runs `pipelex login`, which gets a Pipelex API key through the browser and saves it as `PIPELEX_API_KEY` in `~/.pipelex/.env` for pipelex's hosted runs, not for the API runner, that it needs pipelex 0.79.0 or later, and that `pipelex login --paste` serves a machine with no browser.
-- **`CLI.md` and the README describe where the pipelex runner executes a run**: they cover pipelex's `[run] execution` setting and its `--hosted`/`--local` flags, the way to choose pipelex's execution through `mthds-agent run` since `mthds-agent` keeps `--runner` for itself, as well as the `execution` field of `mthds-agent init --config`, the real options of `pipelex-agent run` and the question `pipelex init` asks during `mthds runner setup pipelex`. They also correct the default runner to `pipelex`, the README's `mthds setup runner` commands to `mthds runner setup`, and the claim that `mthds run pipe` and `run bundle` pass pipelex flags through: both drop any flag they do not declare, `--dry-run` included.
+- **`CLI.md` and the README describe where the pipelex runner executes a run**: they cover pipelex's `[run] execution` setting and its `--hosted`/`--local` flags, the way to choose pipelex's execution through `mthds-agent run` since `mthds-agent` keeps `--runner` for itself, as well as the `execution` field of `mthds-agent init --config`, the real options of `pipelex-agent run` and the question `pipelex init` asks during `mthds runner setup pipelex`. They also correct the default runner to `pipelex` and the README's `mthds setup runner` commands to `mthds runner setup`.
 
 ### Removed
 

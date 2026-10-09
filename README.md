@@ -21,6 +21,7 @@ mthds install org/repo --method my-method
 ```bash
 mthds runner setup pipelex
 ```
+This installs pipelex and runs `pipelex init`, which first asks where your runs should execute. Its default answer, taken by pressing Enter, is the hosted Pipelex API, for which it gets a Pipelex API key through your browser; answer `2` (this machine) to run methods locally with your own provider keys instead.
 
 4. Run a method:
 ```bash
@@ -124,26 +125,32 @@ To execute a method, you need a **runner**. A runner is the engine that takes a 
 
 | Runner | Description |
 |--------|-------------|
-| **[Pipelex](https://github.com/Pipelex/pipelex)** (local) | A Python-based runner you install on your machine. Install it with `npx mthds setup runner pipelex`. |
+| **[Pipelex](https://github.com/Pipelex/pipelex)** | A Python-based runner you install on your machine. It runs methods on this machine with your own provider keys, or on the hosted Pipelex API with a Pipelex API key, as pipelex is set up. Install it with `npx mthds runner setup pipelex`. |
 | **Pipelex API** (remote) | An API server that runs methods remotely. You can self-host it using [`pipelex-api`](https://docs.pipelex.com/latest/api-server/), the source-available API server released with Pipelex. The Pipelex Hosted API lives at `https://api.pipelex.com`. |
 
 These are the only runners that exist today. Feel free to create your own runner in a different language!
 
-### Install the local runner
+### Install the pipelex runner
 
 ```bash
-npx mthds setup runner pipelex
+npx mthds runner setup pipelex
 ```
+
+This installs pipelex and runs `pipelex init`, whose answer to "Where should your runs execute?" becomes pipelex's `[run] execution` setting: `local` runs methods on this machine with your own provider keys, and `hosted`, the default answer, runs them on the hosted Pipelex API. A single `pipelex run` can go the other way with `--hosted` or `--local`.
+
+Hosted runs through pipelex use the Pipelex API key in `PIPELEX_API_KEY`, which `mthds login` (or `pipelex login`) gets through the browser and saves to `~/.pipelex/.env`. They need pipelex 0.79.0 or later, and they send only a method's `.mthds` files, so a method whose pipes call custom Python cannot run that way. See [CLI.md](./CLI.md#where-the-pipelex-runner-executes-a-run).
 
 ### Configure the API runner
 
-The local pipelex runner is the default; to use the Pipelex Hosted API or a self-hosted API instead, set up the API runner interactively:
+The pipelex runner is the default; to call the Pipelex Hosted API or a self-hosted API directly instead, set up the API runner interactively:
 
 ```bash
-mthds setup runner api
+mthds runner setup api
 ```
 
 This prompts for the API base URL and an API key (masked input), and saves them to `~/.mthds/config`.
+
+The two runners keep their keys apart. The API runner reads its `api-key` (`MTHDS_API_KEY`) from `~/.mthds/config`, and the pipelex runner's hosted runs read `PIPELEX_API_KEY` from pipelex's `~/.pipelex/.env`, which `mthds login` writes. Setting one does not set the other.
 
 There is ONE base URL — the host only, with no version prefix. The SDK composes every endpoint as `{base}/v1/{endpoint}`:
 

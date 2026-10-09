@@ -3,7 +3,7 @@
 The SDK is split into two layers that mirror `mthds-python` (`mthds/protocol/` ⊥ `mthds/runners/`):
 
 - **`src/protocol/` — the pure MTHDS Protocol.** The interface and wire models, exactly what `mthds-protocol.openapi.yaml` defines — no more, no less. It imports **nothing** from `runners/`, `cli/`, `agent/`, or `config/`.
-- **`src/runners/` — the implementations.** The API client/runner, the local `pipelex` CLI runner, and the shared `Runner` supertype the CLI programs against.
+- **`src/runners/` — the implementations.** The API client/runner, the `pipelex` CLI runner (which drives the `pipelex` CLI installed on this machine; pipelex itself executes a run locally or on the hosted Pipelex API, as it is configured), and the shared `Runner` supertype the CLI programs against.
 
 ```mermaid
 flowchart TD
@@ -48,7 +48,7 @@ src/runners/api/
                               requestId, errorDomain, retryable, userAction), ApiUnreachableError, ClientAuthenticationError,
                               RunStillRunningError, PipelineExecuteTimeoutError
 src/runners/pipelex/
-  runner.ts                   PipelexRunner (local CLI runner)
+  runner.ts                   PipelexRunner (drives the pipelex CLI on this machine)
 src/runners/
   types.ts                    Runner interface (extends MTHDSProtocol<DictPipeOutput>) + Runners enum + pipe-io types
   registry.ts                 createRunner() factory

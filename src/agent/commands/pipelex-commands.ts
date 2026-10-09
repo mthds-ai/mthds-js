@@ -66,20 +66,20 @@ export function registerPipelexRunnerCommands(
   stub(
     runGroup
       .command("method")
-      .argument("<name>", "Name of the installed method")
-      .description("Run an installed method by name"),
+      .argument("<name>", "Installed method name, method address or GitHub URL")
+      .description("Run a method: an installed one by name, or a published one by address"),
   );
   stub(
     runGroup
       .command("pipe")
-      .argument("[target]", "Bundle file (.mthds) or directory")
-      .description("Run a pipe from a bundle file, directory, or content"),
+      .argument("[pipe_code]", "Pipe code to run")
+      .description("Run a pipe by its code"),
   );
   stub(
     runGroup
       .command("bundle")
       .argument("[target]", "Bundle file (.mthds) or directory")
-      .description("Run a bundle file or content"),
+      .description("Run a bundle file or directory"),
   );
 
   // ── models ──

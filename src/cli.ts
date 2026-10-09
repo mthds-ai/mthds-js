@@ -71,7 +71,9 @@ program
 // ── mthds login ─────────────────────────────────────────────────────
 program
   .command("login")
-  .description("Log in to Pipelex via the browser")
+  .description(
+    "Get a Pipelex API key through the browser for runs on the hosted Pipelex API (runs pipelex login)",
+  )
   .exitOverride()
   .action(async () => {
     await login();

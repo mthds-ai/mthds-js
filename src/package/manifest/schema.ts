@@ -49,7 +49,7 @@ export const RESERVED_DOMAINS: ReadonlySet<string> = new Set(["native", "mthds",
  * (`satisfiesMthdsStandardVersion` below) and what `mthds package init` writes as
  * the floor of a new package's constraint.
  */
-export const MTHDS_STANDARD_VERSION = "2.1.1";
+export const MTHDS_STANDARD_VERSION = "3.0.0";
 
 // ---------------------------------------------------------------------------
 // Standalone validation helpers (used outside the parser too)

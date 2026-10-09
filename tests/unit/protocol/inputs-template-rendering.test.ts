@@ -192,6 +192,78 @@ const ENVELOPE_RETENTION: EnvelopeCase[] = [
   },
 ];
 
+// The verdict natives the standard pinned at 3.0.0, with their fields as the input-form descriptor
+// states them: a `dict` member is `unknown`, and `integer` is a `number` with `integer: true`.
+const CHOICE_PAYLOAD: InputFormField[] = [
+  { name: "choice", kind: "text", required: true },
+  { name: "confidence", kind: "number", required: false, integer: false },
+  { name: "probabilities", kind: "unknown", required: false },
+];
+const RATING_PAYLOAD: InputFormField[] = [
+  { name: "level", kind: "number", required: true, integer: true },
+  { name: "confidence", kind: "number", required: false, integer: false },
+  { name: "probabilities", kind: "unknown", required: false },
+  { name: "position", kind: "number", required: false, integer: false },
+];
+
+interface VerdictNativeCase {
+  topic: string;
+  field: InputFormTopLevelField;
+  keeps: boolean;
+  /** The compact template's JSON, byte for byte — the float placeholders keep their decimal point. */
+  compactJson: string;
+}
+
+// Each case carries the compact template it renders to, so a `YesNo` that regressed to
+// `{"yes_no": false}` fails here rather than only in the byte-parity corpus. Twin of the Python
+// side's `CompactSlotCases.VERDICT_NATIVES`.
+const VERDICT_NATIVES: VerdictNativeCase[] = [
+  {
+    topic: "a Choice keeps its envelope: a bare option key would read exactly as a Text does",
+    field: {
+      name: "choice_in",
+      kind: "object",
+      concept_ref: "native.Choice",
+      required: true,
+      presence: "plain",
+      gating: true,
+      fields: CHOICE_PAYLOAD,
+    },
+    keeps: true,
+    compactJson:
+      '{\n  "choice_in": {\n    "concept": "native.Choice",\n    "content": {\n      "choice": "choice_value",\n      "confidence": 0.0,\n      "probabilities": {}\n    }\n  }\n}',
+  },
+  {
+    topic: "a Rating keeps it too: a bare level would read exactly as a Number does",
+    field: {
+      name: "rating_in",
+      kind: "object",
+      concept_ref: "native.Rating",
+      required: true,
+      presence: "plain",
+      gating: true,
+      fields: RATING_PAYLOAD,
+    },
+    keeps: true,
+    compactJson:
+      '{\n  "rating_in": {\n    "concept": "native.Rating",\n    "content": {\n      "level": 0,\n      "confidence": 0.0,\n      "probabilities": {},\n      "position": 0.0\n    }\n  }\n}',
+  },
+  {
+    topic:
+      "a YesNo does not: its input is a boolean, its probability being what a judging model reports",
+    field: {
+      name: "yes_no_in",
+      kind: "boolean",
+      concept_ref: "native.YesNo",
+      required: true,
+      presence: "plain",
+      gating: true,
+    },
+    keeps: false,
+    compactJson: '{\n  "yes_no_in": false\n}',
+  },
+];
+
 const FIXED_COUNT_SLOT: InputFormTopLevelField = {
   name: "two",
   kind: "list",
@@ -295,6 +367,20 @@ describe("whether a compact slot keeps its envelope", () => {
       const slot = compact[field.name];
       const wrapped = typeof slot === "object" && slot !== null && "content" in slot;
       expect(wrapped).toBe(expected);
+    });
+  }
+});
+
+describe("a verdict native's compact slot", () => {
+  for (const { topic, field, keeps, compactJson } of VERDICT_NATIVES) {
+    it(topic, () => {
+      // The standard's 3.0.0 natives reach the projection through the descriptor's own kinds, with
+      // no table naming them: `Choice` and `Rating` as `object`s, `YesNo` still as a `boolean`. The
+      // shared corpus captures neither new native, so the rule is held here.
+      expect(keepsEnvelope(field)).toBe(keeps);
+      expect(renderInputsTemplate({ fields: [field] }, { explicit: false, format: "json" })).toBe(
+        compactJson,
+      );
     });
   }
 });

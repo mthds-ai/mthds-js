@@ -35,7 +35,8 @@ src/protocol/                 PURE — the MTHDS Protocol mirror (imports nothin
                               input-form descriptor (mirror of mthds/protocol/inputs_template.py)
   toml_emitter.ts             the deterministic TOML layout the two projections share, TemplateFloat and the
                               TemplateValue shapes (mirror of mthds/protocol/toml_emitter.py)
-  concept.ts                  ConceptAbstract + conceptRef()
+  concept.ts                  ConceptAbstract (code + domain_code: a concept as a stuff names it, never its
+                              definition) + conceptRef()
   stuff.ts                    StuffAbstract<TConcept, TContent>, StuffContentAbstract
   working_memory.ts           WorkingMemoryAbstract<TStuff>
   exceptions.ts               PipelineRequestError (protocol-level base)

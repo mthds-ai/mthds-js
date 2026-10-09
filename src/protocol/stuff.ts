@@ -3,6 +3,11 @@
  * (`StuffAbstract`, `StuffContentAbstract`). The protocol-level abstract stuff;
  * the Dict-serialized concrete (`DictStuff`) is runner-side
  * (`runners/api/models.ts`).
+ *
+ * `concept` is held here as the concept object, but a stuff never travels that
+ * way: on the wire it names its concept by the ref string `conceptRef` builds,
+ * as python's `StuffAbstract` serializes it, and `DictStuff.concept` is that
+ * string.
  */
 
 import type { ConceptAbstract } from "./concept.js";

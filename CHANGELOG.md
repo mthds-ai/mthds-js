@@ -15,6 +15,7 @@
 
 ### Removed
 
+- **`ConceptAbstract`'s `description`, `structure_class_name` and `refines` (Breaking)**: the protocol's concept shape keeps `code` and `domain_code`, as the trimmed Python model in the `mthds` PyPI package does, since a concept's definition belongs to the library the method loads and never travels beside a stuff. Code that built a `ConceptAbstract` drops those three members, and a runtime that needs one of them in memory declares it on its own extension of the interface; `conceptRef()` is unchanged.
 - **`mthds-agent accept-gateway-terms` and the Pipelex Gateway wording (Breaking)**: the pipelex runner no longer forwards `accept-gateway-terms` to `pipelex-agent`, whose command pipelex 0.73.0 deleted along with the `pipelex_gateway` backend, so `mthds-agent accept-gateway-terms` now fails as an unknown command on either runner. `mthds login` no longer names the Gateway, and `CLI.md` drops `pipelex_gateway` and `accept_gateway_terms` from the `init` examples and the `--config` schema, showing bring-your-own-keys backends such as `openai`, `anthropic` and `mistral` instead.
 
 ## [v0.30.1] - 2026-10-04

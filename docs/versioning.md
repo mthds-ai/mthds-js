@@ -21,7 +21,7 @@ The standard version is the version of the specification itself — its language
 
 ### `mthds_version` is a constraint, not a stamp
 
-A manifest's `mthds_version` declares which versions of the standard the package is compatible with, so it is checked by *evaluation* and never by equality — a package constraining `>=1.0.0` is satisfied by an implementation of `2.0.0`. (A library crate's `mthds_version` is the other thing: a stamp of the exact version the crate was normalized against. This package does not produce crates.)
+A manifest's `mthds_version` declares which versions of the standard the package is compatible with, so it is checked by *evaluation* and never by equality — a package constraining `>=1.0.0` is satisfied by an implementation of `4.0.0`. (A library crate's `mthds_version` is the other thing: a stamp of the exact version the crate was normalized against. This package does not produce crates.)
 
 **The shape check and the satisfaction check live in different places, deliberately:**
 

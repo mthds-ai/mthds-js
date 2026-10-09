@@ -314,7 +314,8 @@ describe("PipelexRunner", () => {
           root: {
             main_stuff: {
               stuff_code: "s1",
-              concept: { code: "Greeting", domain_code: "hello" },
+              stuff_name: "main_stuff",
+              concept: "hello.Greeting",
               content: { text: "hi" },
             },
           },
@@ -339,6 +340,60 @@ describe("PipelexRunner", () => {
       });
       expect(result.main_stuff_name).toBe("main_stuff");
     });
+
+    it("passes a dependency's package-qualified crate key through as written", async () => {
+      mockSpawnExit(0);
+      mockedExistsSync.mockReturnValue(true);
+      mockedReadFileSync.mockReturnValue(
+        JSON.stringify({
+          root: {
+            clause: {
+              stuff_code: "s1",
+              concept: "github.com/acme/legal::legal.Clause",
+              content: { text: "…" },
+            },
+          },
+          aliases: {},
+        }),
+      );
+
+      const result = await runner.execute({ mthds_contents: ["bundle content"] });
+
+      const root = (
+        result.pipe_output as {
+          working_memory: { root: Record<string, { concept: string; content: unknown }> };
+        }
+      ).working_memory.root;
+      expect(root.clause!.concept).toBe("github.com/acme/legal::legal.Clause");
+    });
+
+    // Since standard 2.1.0 a stuff names its concept by its crate key wherever it travels,
+    // the working memory a run writes included, so the reduction has nothing to rebuild.
+    it.each([
+      [
+        "the concept object a runtime older than 2.1.0 wrote",
+        { code: "Greeting", domain_code: "hello" },
+        "an object",
+      ],
+      ["no concept at all", undefined, "missing"],
+      ["a null concept", null, "null"],
+    ])(
+      "refuses a stuff carrying %s in place of its ref string",
+      async (_topic, concept, described) => {
+        mockSpawnExit(0);
+        mockedExistsSync.mockReturnValue(true);
+        mockedReadFileSync.mockReturnValue(
+          JSON.stringify({
+            root: { main_stuff: { stuff_code: "s1", concept, content: { text: "hi" } } },
+            aliases: { main_stuff: "main_stuff" },
+          }),
+        );
+
+        await expect(runner.execute({ mthds_contents: ["bundle content"] })).rejects.toThrow(
+          `pipelex wrote the stuff "main_stuff" whose "concept" is ${described}`,
+        );
+      },
+    );
 
     it("throws `pipelex exited with code N` when the CLI fails", async () => {
       mockSpawnExit(1);

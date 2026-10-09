@@ -17,7 +17,6 @@ import type {
   VersionInfo,
 } from "../../protocol/models.js";
 import { MODEL_CATEGORIES, MTHDS_PROTOCOL_VERSION } from "../../protocol/models.js";
-import { conceptRef } from "../../protocol/concept.js";
 import type { DictPipeOutput, DictRunResultExecute } from "../api/models.js";
 
 const execFileAsync = promisify(execFile);
@@ -42,6 +41,15 @@ function writeMthdsContents(tmp: string, contents: string[]): string {
     writeFileSync(join(tmp, name), content, "utf-8");
   });
   return join(tmp, "bundle.mthds");
+}
+
+/** How a stuff's `concept` reads when it is not the ref string, for the refusal that names it. */
+function describeNonRefConcept(concept: unknown): string {
+  if (concept === undefined) return "missing";
+  if (concept === null) return "null";
+  if (Array.isArray(concept)) return "a list";
+  if (typeof concept === "object") return "an object";
+  return `the ${typeof concept} ${String(concept)}`;
 }
 
 /**
@@ -247,27 +255,28 @@ export class PipelexRunner implements Runner {
         : {};
 
       // The CLI writes the runtime's FULL working memory
-      // (`{root: {name: {stuff_code, stuff_name, concept: {...}, content}}, aliases}`).
-      // Reduce each stuff to the SDK wire shape `{concept: <ref string>, content}` —
-      // the same reduction the API runner performs server-side. The runtime-internal
-      // id keeps its `pipeline_run_id` name (D1: internals are out of the rename scope).
-      const rawRoot = (raw["root"] ?? {}) as Record<string, Record<string, unknown>>;
+      // (`{root: {name: {stuff_code, stuff_name, concept, content}}, aliases}`), each stuff
+      // naming its concept by its crate key, the string the standard puts on the wire.
+      // Reduce each stuff to the SDK wire shape `{concept, content}`, passing the key
+      // through as written so a dependency's `<package_address>::<domain>.<Code>` survives.
+      // A stuff carrying anything else in its place — the concept object a runtime older
+      // than standard 2.1.0 wrote, or no concept at all — is refused rather than reduced,
+      // as mthds-python's runner refuses it. The runtime-internal id keeps its
+      // `pipeline_run_id` name (D1: internals are out of the rename scope).
+      const rawRoot = (raw["root"] ?? {}) as Record<string, unknown>;
       const aliases = (raw["aliases"] ?? {}) as Record<string, string>;
       const reducedRoot: Record<string, { concept: string; content: unknown }> = {};
       for (const [stuffName, stuff] of Object.entries(rawRoot)) {
-        const conceptRaw = stuff["concept"];
-        let conceptRefStr: string;
-        if (conceptRaw && typeof conceptRaw === "object") {
-          const conceptObj = conceptRaw as Record<string, unknown>;
-          const code = typeof conceptObj["code"] === "string" ? conceptObj["code"] : "";
-          const domainCode =
-            typeof conceptObj["domain_code"] === "string" ? conceptObj["domain_code"] : "";
-          // A missing domain_code falls back to the bare code (no leading dot).
-          conceptRefStr = domainCode ? conceptRef({ domain_code: domainCode, code }) : code;
-        } else {
-          conceptRefStr = String(conceptRaw ?? "");
+        const fields =
+          typeof stuff === "object" && stuff !== null ? (stuff as Record<string, unknown>) : {};
+        const concept = fields["concept"];
+        if (typeof concept !== "string") {
+          throw new Error(
+            `pipelex wrote the stuff "${stuffName}" whose "concept" is ${describeNonRefConcept(concept)}, ` +
+              `where the MTHDS standard puts the concept's ref string; upgrade pipelex.`,
+          );
         }
-        reducedRoot[stuffName] = { concept: conceptRefStr, content: stuff["content"] };
+        reducedRoot[stuffName] = { concept, content: fields["content"] };
       }
 
       // `main_stuff_name` is a pipelex extension field riding the protocol's

@@ -65,9 +65,10 @@ A constraint is also **bounded** — a length and a clause ceiling in `semver.ts
 
 When the standard's repo cuts a new version:
 
-1. Read `mthds/docs/spec/versioning.md` to learn which of the two numbers moved.
-2. Edit the constant — one line, one file, per number.
-3. Run the suite. The `mthds_version` tests in `tests/unit/package/manifest/validate.test.ts` are written relative to `MTHDS_STANDARD_VERSION` rather than against a literal, so they follow the constant instead of breaking on it — except the pre-cut cases, which are literals on purpose: they ask what became of the manifests already published against `1.0.0`, and that population does not move when the constant does.
-4. Record it in `CHANGELOG.md`. A standard-version bump is user-visible: it changes what `mthds package init` writes and which manifests the installer accepts.
+1. Read `mthds/docs/spec/versioning.md` to learn which of the two numbers moved, and the standard's changelog to learn what the new version requires of an implementation.
+2. Port what it requires first. A standard-version move is a claim that this implementation obeys the standard at that version, so the constant follows the port and never leads it, and it moves through every cut in turn rather than skipping one whose port is not done.
+3. Edit the constant — one line, one file, per number.
+4. Run the suite, after updating the pin. `tests/unit/package/manifest/standard-version.test.ts` pins `MTHDS_STANDARD_VERSION` to a literal, so a value moving without a cut fails there, and holds a table of manifest constraints the current number does and does not satisfy, rewritten with each cut so that it states which constraints the new number stops satisfying. The `mthds_version` tests in `tests/unit/package/manifest/validate.test.ts` are written relative to `MTHDS_STANDARD_VERSION` instead, so they follow the constant rather than breaking on it — except the pre-cut cases, which are literals on purpose: they ask what became of the manifests already published against `1.0.0`, and that population does not move when the constant does.
+5. Record it in `CHANGELOG.md`. A standard-version bump is user-visible: it changes what `mthds package init` writes and which manifests the installer accepts, so the entry says which constraints the new number stops satisfying.
 
 **A prerelease cut is not a one-line edit.** Under npm's rule a prerelease satisfies nothing that does not name it, so setting the constant to, say, `2.1.0-rc.1` makes *every* ordinary constraint unsatisfied — `>=1.0.0` and even `*` — and every method on every repository is refused. The suite fails loudly when you try it (the wildcard case is the one to read), so this cannot ship by accident, but the fix is a decision about what a prerelease standard version should mean to a manifest, not a second edit. Take it up before following such a cut.

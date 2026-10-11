@@ -6,6 +6,7 @@
  * to the spool and hands the posting to a process of its own.
  */
 
+import { existsSync } from "node:fs";
 import { BATCH_PATH, PROJECT_TOKEN } from "./contract.js";
 import type { Envelope } from "./event.js";
 import {
@@ -63,10 +64,39 @@ export interface DrainOptions {
 }
 
 /**
+ * The events of a claimed file that may be posted, read immediately before the post: those made
+ * under the current identifier, and none when there is no valid identifier, when statistics were
+ * turned off on the machine, or when the claimed file is gone, which only `disable`, `reset-id` or
+ * the legacy migration does to a claimed file. The identifier is read first and `disabled` last, so
+ * that a `disable` running meanwhile is seen.
+ */
+function eventsToPost(claimed: string, events: Envelope[]): Envelope[] {
+  const current = readInstallationId();
+  if (current.kind !== "valid") return [];
+  const kept = events.filter((event) => event.distinct_id === current.id);
+  if (!existsSync(claimed) || isMachineDisabled()) return [];
+  return kept;
+}
+
+/**
+ * Give a file whose post should be retried back to the spool, for the next sender, without the
+ * events it dropped. Not when statistics were turned off on the machine or the file was deleted
+ * while the post ran: it is deleted then, and never written again.
+ */
+function giveBack(claimed: string, posted: Envelope[], held: number): void {
+  if (isMachineDisabled()) {
+    deleteFile(claimed);
+    return;
+  }
+  if (posted.length !== held && !rewriteClaimed(claimed, posted)) return;
+  releaseClaim(claimed);
+}
+
+/**
  * Post this tool's spool, one attempt per file, oldest first, until the deadline. The legacy
- * migration runs once, before the first post; with statistics turned off on the machine it deletes
- * what it claimed unsent; and it drops every event made under an identifier other than the current
- * one.
+ * migration runs once, before the first post. Immediately before each post, the sender reads the
+ * current identifier and drops every event made under another one, and posts nothing, deleting
+ * what it claimed, once statistics are off on the machine.
  */
 export async function drainSpool(options: DrainOptions): Promise<void> {
   runLegacyMigration();
@@ -76,25 +106,18 @@ export async function drainSpool(options: DrainOptions): Promise<void> {
     if (Date.now() >= options.deadline) return;
     const claimed = claimFile(file);
     if (claimed === undefined) continue;
-    if (isMachineDisabled()) {
-      deleteFile(claimed);
-      continue;
-    }
     const content = readSpoolFile(claimed);
     if (content === undefined) {
       deleteFile(claimed);
       continue;
     }
-    const current = readInstallationId();
-    const currentId = current.kind === "valid" ? current.id : undefined;
-    const kept = content.events.filter((event) => event.distinct_id === currentId);
+    const kept = eventsToPost(claimed, content.events);
     if (kept.length === 0) {
       deleteFile(claimed);
       continue;
     }
-    if (kept.length !== content.events.length) rewriteClaimed(claimed, kept);
     const verdict = await postBatch(options.endpoint, kept, options.deadline - Date.now());
-    if (verdict === "retry") releaseClaim(claimed);
+    if (verdict === "retry") giveBack(claimed, kept, content.events.length);
     else deleteFile(claimed);
   }
 }

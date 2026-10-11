@@ -10,7 +10,10 @@
 
 import { randomBytes } from "node:crypto";
 import {
+  closeSync,
+  ftruncateSync,
   mkdirSync,
+  openSync,
   readdirSync,
   readFileSync,
   renameSync,
@@ -18,8 +21,9 @@ import {
   statSync,
   utimesSync,
   writeFileSync,
+  writeSync,
 } from "node:fs";
-import { basename, dirname, join } from "node:path";
+import { join } from "node:path";
 import { SPOOL_LIMITS, STATE_FILES, TOOL } from "./contract.js";
 import type { Envelope } from "./event.js";
 import { ensureStateDir, stateDir } from "./state.js";
@@ -134,12 +138,28 @@ export function readSpoolFile(path: string): SpoolFile | undefined {
   }
 }
 
-/** Rewrite a file this sender holds claimed, with the events it keeps. */
-export function rewriteClaimed(claimed: string, events: Envelope[]): void {
-  const temporary = join(dirname(claimed), `.${basename(claimed)}.${randomSuffix()}.tmp`);
+/**
+ * Rewrite a file this sender holds claimed, with the events it keeps; false when the file is gone.
+ * It is written in place, opened without creating it, so a file that `disable`, `reset-id` or the
+ * legacy migration deleted meanwhile is never written again. No other sender reads a claimed file.
+ */
+export function rewriteClaimed(claimed: string, events: Envelope[]): boolean {
   const content: SpoolFile = { spool_version: SPOOL_VERSION, events };
-  writeFileSync(temporary, JSON.stringify(content), { encoding: "utf-8", mode: 0o600 });
-  renameSync(temporary, claimed);
+  let descriptor: number;
+  try {
+    descriptor = openSync(claimed, "r+");
+  } catch {
+    return false;
+  }
+  try {
+    ftruncateSync(descriptor, 0);
+    writeSync(descriptor, JSON.stringify(content), 0, "utf-8");
+    return true;
+  } catch {
+    return false;
+  } finally {
+    closeSync(descriptor);
+  }
 }
 
 /**

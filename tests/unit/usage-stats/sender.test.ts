@@ -4,6 +4,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readdirSync,
+  readFileSync,
   utimesSync,
   writeFileSync,
 } from "node:fs";
@@ -21,10 +22,15 @@ vi.mock("node:os", async (importOriginal) => {
   return { ...original, homedir: () => tempHome };
 });
 
-// The migration is wrapped, to count it.
+// The migration and the identifier reading are wrapped, to count the one and to run a `disable`
+// from inside the other, between a sender's claim and its post.
 vi.mock("../../../src/usage-stats/state.js", async (importOriginal) => {
   const original = await importOriginal<typeof import("../../../src/usage-stats/state.js")>();
-  return { ...original, runLegacyMigration: vi.fn(original.runLegacyMigration) };
+  return {
+    ...original,
+    runLegacyMigration: vi.fn(original.runLegacyMigration),
+    readInstallationId: vi.fn(original.readInstallationId),
+  };
 });
 
 import { drainSpool, postBatch, postDirect } from "../../../src/usage-stats/sender.js";
@@ -38,7 +44,10 @@ import {
 import { buildCommandCompleted } from "../../../src/usage-stats/event.js";
 import type { Envelope } from "../../../src/usage-stats/event.js";
 import {
+  createDisabledFile,
+  deleteEverySpool,
   obtainInstallationId,
+  readInstallationId,
   runLegacyMigration,
   stateDir,
 } from "../../../src/usage-stats/state.js";
@@ -83,7 +92,14 @@ beforeEach(() => {
   server.requests.length = 0;
   server.respond(() => ({ status: 200, body: { status: "Ok" } }));
   vi.mocked(runLegacyMigration).mockClear();
+  vi.mocked(readInstallationId).mockClear();
 });
+
+/** What `mthds telemetry disable` does: create `disabled`, then delete every tool's spool. */
+function disableOnMachine(): void {
+  createDisabledFile();
+  deleteEverySpool();
+}
 
 describe("postBatch", () => {
   it("posts the project token and the events to /batch/", async () => {
@@ -162,6 +178,68 @@ describe("drainSpool", () => {
     await drainSpool({ endpoint: server.origin, deadline: deadline() });
     expect(server.requests).toHaveLength(3);
     expect(runLegacyMigration).toHaveBeenCalledTimes(1);
+  });
+
+  it("posts nothing when statistics are turned off between its claim and its post", async () => {
+    writeSpoolFile([event(OTHER_ID), event()]);
+    const actual = await vi.importActual<typeof import("../../../src/usage-stats/state.js")>(
+      "../../../src/usage-stats/state.js",
+    );
+    vi.mocked(readInstallationId).mockImplementationOnce(() => {
+      disableOnMachine();
+      return actual.readInstallationId();
+    });
+    await drainSpool({ endpoint: server.origin, deadline: deadline() });
+    expect(server.requests).toEqual([]);
+    // The claimed file `disable` deleted is not written again.
+    expect(spoolNames()).toEqual([]);
+  });
+
+  it("posts nothing when the file it claimed was deleted before its post", async () => {
+    writeSpoolFile([event()]);
+    const actual = await vi.importActual<typeof import("../../../src/usage-stats/state.js")>(
+      "../../../src/usage-stats/state.js",
+    );
+    // `reset-id` deletes every spool, claimed files included, and replaces the identifier.
+    vi.mocked(readInstallationId).mockImplementationOnce(() => {
+      const reading = actual.readInstallationId();
+      deleteEverySpool();
+      return reading;
+    });
+    await drainSpool({ endpoint: server.origin, deadline: deadline() });
+    expect(server.requests).toEqual([]);
+    expect(spoolNames()).toEqual([]);
+  });
+
+  it("never gives back a file that statistics were turned off for while its post ran", async () => {
+    server.respond(() => {
+      disableOnMachine();
+      return { status: 503 };
+    });
+    writeSpoolFile([event(OTHER_ID), event()]);
+    await drainSpool({ endpoint: server.origin, deadline: deadline() });
+    expect(server.requests).toHaveLength(1);
+    expect(spoolNames()).toEqual([]);
+  });
+
+  it("never writes again a file deleted while its post ran", async () => {
+    server.respond(() => {
+      deleteEverySpool();
+      return { status: 503 };
+    });
+    writeSpoolFile([event(OTHER_ID), event()]);
+    await drainSpool({ endpoint: server.origin, deadline: deadline() });
+    expect(spoolNames()).toEqual([]);
+  });
+
+  it("gives a retried file back without the events made under another identifier", async () => {
+    server.respond(() => ({ status: 503 }));
+    const current = event();
+    const path = writeSpoolFile([event(OTHER_ID), current]);
+    await drainSpool({ endpoint: server.origin, deadline: deadline() });
+    expect(listReadyFiles()).toEqual([path]);
+    const kept = JSON.parse(readFileSync(path, "utf-8")) as { events: Envelope[] };
+    expect(kept.events.map((held) => held.uuid)).toEqual([current.uuid]);
   });
 
   it("drops every event made under an identifier other than the current one", async () => {

@@ -3,6 +3,20 @@ import { homedir } from "node:os";
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { Runners } from "../runners/types.js";
 import type { RunnerType } from "../runners/types.js";
+import { parseDotenv, serializeDotenv } from "./dotenv.js";
+import { ENV, SWITCH_VALUES } from "../usage-stats/contract.js";
+import { isMthdsDisableOn, normalizedValue } from "../usage-stats/environment.js";
+import {
+  createDisabledFile,
+  deleteEverySpool,
+  isMachineDisabled,
+  legacyOptOutPending,
+  markLegacyMigrated,
+  removeDisabledFile,
+} from "../usage-stats/state.js";
+import { isDoNotTrack, toolSwitchSaysOff } from "../usage-stats/switches.js";
+
+export { parseDotenv, serializeDotenv };
 
 // ── Types ──────────────────────────────────────────────────────────
 
@@ -15,10 +29,16 @@ export interface MthdsConfig {
    */
   baseUrl: string;
   apiKey: string;
-  telemetry: boolean;
   autoUpgrade: boolean;
   updateCheck: boolean;
 }
+
+/**
+ * A key `mthds config` takes: a setting of `~/.mthds/config`, or `telemetry`, which is no setting
+ * of that file but the machine's usage-statistics choice, kept in the shared state every reporting
+ * tool reads (`~/.mthds/usage-stats/`).
+ */
+export type ConfigKey = keyof MthdsConfig | "telemetry";
 
 export type ConfigSource = "env" | "file" | "default";
 
@@ -34,7 +54,6 @@ const ENV_NAMES: Record<keyof MthdsConfig, string> = {
   baseUrl: "MTHDS_BASE_URL",
   apiKey: "MTHDS_API_KEY",
   runner: "MTHDS_RUNNER",
-  telemetry: "DISABLE_TELEMETRY",
   autoUpgrade: "MTHDS_AUTO_UPGRADE",
   updateCheck: "MTHDS_UPDATE_CHECK",
 };
@@ -44,25 +63,9 @@ const FILE_KEYS: Record<keyof MthdsConfig, string> = {
   baseUrl: "MTHDS_BASE_URL",
   apiKey: "MTHDS_API_KEY",
   runner: "MTHDS_RUNNER",
-  telemetry: "DISABLE_TELEMETRY",
   autoUpgrade: "MTHDS_AUTO_UPGRADE",
   updateCheck: "MTHDS_UPDATE_CHECK",
 };
-
-/**
- * The universal telemetry opt-out (https://consoledonottrack.com). Set to anything but an
- * empty string, `0` or `false` — the reading the pipelex runtime gives it — it turns telemetry
- * off whatever `DISABLE_TELEMETRY` or the config file says. It only ever disables: unset or
- * falsy, it leaves the telemetry setting to the usual resolution.
- */
-export const DO_NOT_TRACK_ENV = "DO_NOT_TRACK";
-
-const DO_NOT_TRACK_FALSY: ReadonlySet<string> = new Set(["", "0", "false"]);
-
-export function isDoNotTrackSet(): boolean {
-  const value = process.env[DO_NOT_TRACK_ENV];
-  return value !== undefined && !DO_NOT_TRACK_FALSY.has(value.trim().toLowerCase());
-}
 
 /** Hosted default — host only; endpoints compose as `{base}/v1/{endpoint}`. */
 export const DEFAULT_BASE_URL = "https://api.pipelex.com";
@@ -72,13 +75,12 @@ const DEFAULTS: MthdsConfig = {
   runner: Runners.PIPELEX,
   baseUrl: DEFAULT_BASE_URL,
   apiKey: "",
-  telemetry: true,
   autoUpgrade: false,
   updateCheck: true,
 };
 
 /** Map from CLI flag names (kebab-case) to config keys */
-const KEY_ALIASES: Record<string, keyof MthdsConfig> = {
+const KEY_ALIASES: Record<string, ConfigKey> = {
   runner: "runner",
   "base-url": "baseUrl",
   "api-key": "apiKey",
@@ -90,10 +92,7 @@ const KEY_ALIASES: Record<string, keyof MthdsConfig> = {
 // ── Boolean key sets ──────────────────────────────────────────────
 
 /** Keys that store boolean values (coerced from "0"/"1" in file/env) */
-const BOOLEAN_KEYS: Set<keyof MthdsConfig> = new Set(["telemetry", "autoUpgrade", "updateCheck"]);
-
-/** Boolean keys with inverted file semantics (DISABLE_TELEMETRY=1 → false) */
-const INVERTED_BOOLEAN_KEYS: Set<keyof MthdsConfig> = new Set(["telemetry"]);
+const BOOLEAN_KEYS: Set<keyof MthdsConfig> = new Set(["autoUpgrade", "updateCheck"]);
 
 /** Strings treated as truthy for boolean keys — used in both load and set paths */
 const TRUTHY_STRINGS: ReadonlySet<string> = new Set(["true", "1", "yes", "on"]);
@@ -120,36 +119,8 @@ export function isValidBaseUrl(value: string): boolean {
   return !parsed.search && !parsed.hash;
 }
 
-export function resolveKey(cliKey: string): keyof MthdsConfig | undefined {
+export function resolveKey(cliKey: string): ConfigKey | undefined {
   return KEY_ALIASES[cliKey];
-}
-
-// ── Dotenv parser / serializer ─────────────────────────────────────
-// The dialect is shared with mthds-python and pinned by conformance/specs/mthds-config-file.md,
-// which lives in the conformance repo beside the test that verifies it. Both functions are
-// exported so the shared conformance fixture (tests/fixtures/config-dialect-cases.json) can
-// exercise them directly.
-
-export function parseDotenv(content: string): Record<string, string> {
-  const result: Record<string, string> = {};
-  for (const line of content.split("\n")) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith("#")) continue;
-    const eqIndex = trimmed.indexOf("=");
-    if (eqIndex === -1) continue;
-    const key = trimmed.slice(0, eqIndex).trim();
-    const value = trimmed.slice(eqIndex + 1).trim();
-    result[key] = value;
-  }
-  return result;
-}
-
-export function serializeDotenv(entries: Record<string, string>): string {
-  const lines: string[] = [];
-  for (const [key, value] of Object.entries(entries)) {
-    lines.push(`${key}=${value}`);
-  }
-  return lines.join("\n") + "\n";
 }
 
 // ── File I/O ───────────────────────────────────────────────────────
@@ -176,15 +147,14 @@ function writeConfigFile(entries: Record<string, string>): void {
 
 function coerceValue(key: keyof MthdsConfig, raw: string): string | boolean {
   if (!BOOLEAN_KEYS.has(key)) return raw;
-  const truthy = TRUTHY_STRINGS.has(raw.toLowerCase());
-  return INVERTED_BOOLEAN_KEYS.has(key) ? !truthy : truthy;
+  return TRUTHY_STRINGS.has(raw.toLowerCase());
 }
 
 function toFileValue(key: keyof MthdsConfig, value: string | boolean): string {
   if (!BOOLEAN_KEYS.has(key)) return String(value);
   const boolVal =
     typeof value === "boolean" ? value : TRUTHY_STRINGS.has(String(value).toLowerCase());
-  return INVERTED_BOOLEAN_KEYS.has(key) ? (boolVal ? "0" : "1") : boolVal ? "1" : "0";
+  return boolVal ? "1" : "0";
 }
 
 export function loadConfig(): MthdsConfig {
@@ -206,17 +176,11 @@ export function loadConfig(): MthdsConfig {
     }
   }
 
-  if (isDoNotTrackSet()) merged.telemetry = false;
-
   return merged as unknown as MthdsConfig;
 }
 
-export function getConfigValue(key: keyof MthdsConfig): { value: string; source: ConfigSource } {
-  // DO_NOT_TRACK outranks DISABLE_TELEMETRY and the file; reported in the
-  // DISABLE_TELEMETRY encoding, where "1" means telemetry is off.
-  if (key === "telemetry" && isDoNotTrackSet()) {
-    return { value: "1", source: "env" };
-  }
+export function getConfigValue(key: ConfigKey): { value: string; source: ConfigSource } {
+  if (key === "telemetry") return getTelemetryValue();
 
   const envName = ENV_NAMES[key];
   const envVal = process.env[envName];
@@ -232,16 +196,16 @@ export function getConfigValue(key: keyof MthdsConfig): { value: string; source:
 
   const defaultVal = DEFAULTS[key];
   if (BOOLEAN_KEYS.has(key)) {
-    const boolDefault = defaultVal as boolean;
-    if (INVERTED_BOOLEAN_KEYS.has(key)) {
-      return { value: boolDefault ? "0" : "1", source: "default" };
-    }
-    return { value: boolDefault ? "1" : "0", source: "default" };
+    return { value: (defaultVal as boolean) ? "1" : "0", source: "default" };
   }
   return { value: String(defaultVal), source: "default" };
 }
 
-export function setConfigValue(key: keyof MthdsConfig, value: string): void {
+export function setConfigValue(key: ConfigKey, value: string): void {
+  if (key === "telemetry") {
+    setTelemetryValue(value);
+    return;
+  }
   const file = readConfigFile();
   const fileKey = FILE_KEYS[key];
   if (BOOLEAN_KEYS.has(key)) {
@@ -281,29 +245,56 @@ export function listConfig(): Array<{
   return result;
 }
 
-// ── Telemetry helpers (for PostHog module) ─────────────────────────
+// ── The `telemetry` key ────────────────────────────────────────────
+// `telemetry` keeps the inverted encoding of the `DISABLE_TELEMETRY` it used to stand for: "1"
+// means usage statistics are off, "0" that they are on. It reports and sets the machine's choice in
+// the shared state, the `disabled` file every reporting tool reads, and never writes
+// `DISABLE_TELEMETRY` to `~/.mthds/config` any more; a `DISABLE_TELEMETRY` already in that file is
+// carried into the shared state by the legacy migration. `mthds telemetry status` is the full
+// answer, with every switch that keeps statistics off.
 
-export function isTelemetryEnabled(): boolean {
-  return loadConfig().telemetry;
+/** The environment variable holding usage statistics off, if one does. */
+export function getTelemetryDisablingEnvVar(): string | undefined {
+  if (isDoNotTrack()) return ENV.doNotTrack;
+  if (isMthdsDisableOn(process.env[ENV.mthdsToolSwitch])) return ENV.mthdsToolSwitch;
+  if (toolSwitchSaysOff()) return ENV.toolSwitch;
+  return undefined;
 }
 
-export function setTelemetryEnabled(enabled: boolean): void {
-  setConfigValue("telemetry", enabled ? "true" : "false");
+function getTelemetryValue(): { value: string; source: ConfigSource } {
+  if (getTelemetryDisablingEnvVar() !== undefined) return { value: "1", source: "env" };
+  if (isMachineDisabled() || legacyOptOutPending()) return { value: "1", source: "file" };
+  return { value: "0", source: "default" };
 }
 
-export function getTelemetrySource(): ConfigSource {
-  return getConfigValue("telemetry").source;
+function telemetryValueSaysOn(value: string): boolean | undefined {
+  const normalized = normalizedValue(value) ?? "";
+  if (TRUTHY_STRINGS.has(normalized)) return true;
+  if ((SWITCH_VALUES.toolSwitchOff as readonly string[]).includes(normalized)) return false;
+  return undefined;
 }
+
+/** Whether `config set telemetry` accepts `value`: `true`/`false`, `1`/`0`, `yes`/`no` or `on`/`off`. */
+export function isValidTelemetryValue(value: string): boolean {
+  return telemetryValueSaysOn(value) !== undefined;
+}
+
+export const TELEMETRY_VALUE_HINT = "Use true or false (also 1/0, yes/no, on/off).";
 
 /**
- * The environment variable holding telemetry off, if one does: `DO_NOT_TRACK`,
- * which outranks everything, or a truthy `DISABLE_TELEMETRY`. Either beats the
- * file that `mthds telemetry enable` writes.
+ * `config set telemetry <value>`: a value saying on does what `mthds telemetry enable` does, one
+ * saying off what `mthds telemetry disable` does. Any other value is refused.
  */
-export function getTelemetryDisablingEnvVar(): string | undefined {
-  if (isDoNotTrackSet()) return DO_NOT_TRACK_ENV;
-  const envName = ENV_NAMES.telemetry;
-  const envVal = process.env[envName];
-  if (envVal !== undefined && coerceValue("telemetry", envVal) === false) return envName;
-  return undefined;
+function setTelemetryValue(value: string): void {
+  const on = telemetryValueSaysOn(value);
+  if (on === undefined) {
+    throw new Error(`Invalid value for telemetry: ${value}. ${TELEMETRY_VALUE_HINT}`);
+  }
+  if (on) {
+    removeDisabledFile();
+    markLegacyMigrated();
+  } else {
+    createDisabledFile();
+    deleteEverySpool();
+  }
 }

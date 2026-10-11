@@ -1,5 +1,19 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- **Anonymous usage statistics**: `mthds` and `mthds-agent` send one `command_completed` event per command, naming the command, its outcome, who can fix a failure, its duration, the CLI's version, the operating system family and whether it ran in CI or a container, under an anonymous identifier kept in `~/.mthds/usage-stats/` and shared with every Pipelex and MTHDS tool; no argument, path, method or content is ever sent. The first command that sends one prints a notice once, `mthds-agent` only on runner commands whose errors are not JSON. Turn them off with `mthds telemetry disable`, `DO_NOT_TRACK=1` or `PIPELEX_USAGE_STATS=0`; `PIPELEX_USAGE_STATS_DEBUG=1` prints each event on stderr instead of sending it.
+- **`mthds telemetry reset-id` and `mthds telemetry status --format json`**: `reset-id` replaces the anonymous identifier and drops every queued event, and `status --format json` prints the status object (`enabled`, `off_by`, `installation_id`, `notice_version`, `internal`, `ci`, `container`, `state_dir`) alone on stdout, listing every switch that keeps statistics off.
+- **`mthds-agent` names itself to the tools it runs**: `pipelex-agent` and `plxt` started by `mthds-agent` get `PIPELEX_USAGE_STATS_HOST=mthds-agent`, so their own statistics say who ran them.
+- **`MTHDS_HUB_URL`**: points `mthds publish` and `mthds-agent publish` at a fake hub for tests; only a loopback `http` origin is accepted.
+
+### Changed
+
+- **Publishing goes through mthds.sh's registry route and no longer depends on telemetry (Breaking)**: `mthds publish` and `mthds-agent publish` ask `POST https://mthds.sh/api/v1/registry/methods` to list each method and report what it answered, so they work with `DO_NOT_TRACK` set and never claim a method the hub did not list. `mthds publish` exits 1 unless every selected method was listed, and `mthds-agent publish` names only the listed methods in `published_methods`, carries every answer in a new `registrations` field, and fails with a `PublishError` when none was listed. A private repository or an address naming a subdirectory is refused before any request; `mthds publish --local` publishes by each manifest's address, while `mthds-agent publish --local` registers nothing and says so in a `message`.
+- **The telemetry opt-out is the machine's shared choice (Breaking)**: `mthds telemetry disable` and `enable`, and `mthds config set telemetry`, now write `~/.mthds/usage-stats/disabled`, which every Pipelex and MTHDS tool reads, instead of `DISABLE_TELEMETRY` in `~/.mthds/config`; a `DISABLE_TELEMETRY=1` already there is carried over once and still holds. `DISABLE_TELEMETRY=0` in the environment no longer turns anything on, `config set telemetry` refuses a value it cannot read, and the `method_install` and `method_publish` events follow `DO_NOT_TRACK`, `DISABLE_TELEMETRY` and the shared choice.
+
 ## [v0.31.0] - 2026-10-11
 
 ### Changed

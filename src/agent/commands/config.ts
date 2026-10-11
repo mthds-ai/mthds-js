@@ -10,6 +10,8 @@ import {
   setConfigValue,
   listConfig,
   isValidBaseUrl,
+  isValidTelemetryValue,
+  TELEMETRY_VALUE_HINT,
 } from "../../config/config.js";
 import { RUNNER_NAMES } from "../../runners/types.js";
 import type { RunnerType } from "../../runners/types.js";
@@ -34,6 +36,12 @@ export async function agentConfigSet(cliKey: string, value: string): Promise<voi
 
   if (configKey === "baseUrl" && !isValidBaseUrl(value)) {
     agentError(`Invalid URL: ${value}`, "ConfigError", {
+      error_domain: AGENT_ERROR_DOMAINS.CONFIG,
+    });
+  }
+
+  if (configKey === "telemetry" && !isValidTelemetryValue(value)) {
+    agentError(`Invalid value for telemetry: ${value}. ${TELEMETRY_VALUE_HINT}`, "ConfigError", {
       error_domain: AGENT_ERROR_DOMAINS.CONFIG,
     });
   }

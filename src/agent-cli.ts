@@ -42,6 +42,7 @@ import { findUnknownSubcommand } from "./cli/commands/unknown-subcommand.js";
 import { createRunner } from "./runners/registry.js";
 import { Runners, RUNNER_NAMES } from "./runners/types.js";
 import type { RunnerType, Runner } from "./runners/types.js";
+import { installUsageStats } from "./usage-stats/session.js";
 import type { Command as Cmd } from "commander";
 
 const require = createRequire(import.meta.url);
@@ -159,7 +160,7 @@ program
   .argument("[address]", "GitHub repo (org/repo or https://github.com/org/repo)")
   .option("--local <path>", "Publish from a local directory")
   .option("--method <name>", "Publish only the specified method (by name)")
-  .description("Publish a method package to mthds.sh (telemetry only, no install)")
+  .description("Publish a method package to mthds.sh through its registry route (no install)")
   .exitOverride()
   .action(
     async (
@@ -471,12 +472,58 @@ if (isApiRunner) {
   registerPipelexRunnerCommands(program, () => getAutoInstall(program));
 }
 
+// ── Usage statistics ─────────────────────────────────────────────────
+// One `command_completed` per command (src/usage-stats/). The notice never goes on a stderr a
+// program reads: not on a native command, whose errors are always JSON, nor on a runner command
+// whose errors are JSON (`--error-format json`, or `--format json` without `--error-format`). On
+// the API runner, only `validate bundle` and `validate pipe` print Markdown errors at all.
+
+/** The top-level commands a runner serves; every other command is native to mthds-agent. */
+const RUNNER_COMMAND_GROUPS = new Set([
+  "init",
+  "validate",
+  "run",
+  "models",
+  "check-model",
+  "inputs",
+  "codegen",
+]);
+const API_MARKDOWN_ERROR_COMMANDS = new Set(["validate bundle", "validate pipe"]);
+
+/** The value of `--name <value>` or `--name=<value>` in argv, the last one given. */
+function optionValue(argv: readonly string[], name: string): string | undefined {
+  let value: string | undefined;
+  for (let idx = 0; idx < argv.length; idx++) {
+    const arg = argv[idx]!;
+    if (arg === name && idx + 1 < argv.length) value = argv[idx + 1];
+    else if (arg.startsWith(`${name}=`)) value = arg.slice(name.length + 1);
+  }
+  return value;
+}
+
+function errorsAreJson(argv: readonly string[]): boolean {
+  const format = optionValue(argv, "--error-format") ?? optionValue(argv, "--format");
+  return format?.trim().toLowerCase() === "json";
+}
+
+function noticeAllowed(commandPath: string, argv: readonly string[]): boolean {
+  if (!RUNNER_COMMAND_GROUPS.has(commandPath.split(" ")[0]!)) return false;
+  if (isApiRunner && !API_MARKDOWN_ERROR_COMMANDS.has(commandPath)) return false;
+  return !errorsAreJson(argv);
+}
+
 // Default action — no command at all. An unknown command never reaches it: it is
 // refused below, before Commander parses.
 program.action(() => {
   agentError("No command specified. Run mthds-agent --help for usage.", "ArgumentError", {
     error_domain: AGENT_ERROR_DOMAINS.ARGUMENT,
   });
+});
+
+const usageStats = installUsageStats(program, {
+  surface: "mthds-agent",
+  toolVersion: pkg.version,
+  noticeAllowed,
 });
 
 // ── Unknown commands ─────────────────────────────────────────────────
@@ -500,6 +547,8 @@ if (unknownCommand !== undefined) {
 program.parseAsync(process.argv).catch((err: unknown) => {
   if (err instanceof CommanderError) {
     if (err.exitCode === 0) {
+      // --help and --version send nothing.
+      usageStats.silence();
       process.exit(0);
     }
     const message = err.message.replace(/^error: /, "").replace(/^Error: /, "");

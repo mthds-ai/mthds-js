@@ -8,6 +8,17 @@ import { agentError, AGENT_ERROR_DOMAINS } from "./output.js";
 import { BINARY_RECOVERY, buildInstallCommand } from "./binaries.js";
 import { checkBinaryVersion } from "../installer/runtime/version-check.js";
 import { uvToolInstallSync } from "../installer/runtime/installer.js";
+import { ENV } from "../usage-stats/contract.js";
+import { noteCancelled } from "../usage-stats/outcome.js";
+
+/**
+ * The environment of a spawned tool: this process's, plus `PIPELEX_USAGE_STATS_HOST=mthds-agent`,
+ * so that `pipelex-agent` and `plxt`, which report usage statistics of their own, say that
+ * `mthds-agent` ran them.
+ */
+export function passthroughEnv(env: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+  return { ...env, [ENV.host]: "mthds-agent" };
+}
 
 export function passthrough(
   bin: string,
@@ -123,6 +134,7 @@ export function passthrough(
 
   const result = spawnSync(bin, args, {
     stdio: "inherit",
+    env: passthroughEnv(),
   });
 
   if (result.error) {
@@ -145,5 +157,9 @@ export function passthrough(
     });
   }
 
+  if (result.signal === "SIGINT") {
+    noteCancelled();
+    process.exit(130);
+  }
   process.exit(result.status ?? 1);
 }

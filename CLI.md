@@ -310,7 +310,7 @@ Configuration values are resolved in this order: **environment variables > confi
 | `runner` | `MTHDS_RUNNER` | `pipelex` | Default runner (`api` or `pipelex`) |
 | `base-url` | `MTHDS_BASE_URL` | `https://api.pipelex.com` | API base URL — host only, no version prefix; endpoints compose as `{base}/v1/{endpoint}` |
 | `api-key` | `MTHDS_API_KEY` | (empty) | The API runner's authentication key. The pipelex runner never reads it: pipelex's hosted runs use `PIPELEX_API_KEY`, which [`mthds login`](#login) saves |
-| `telemetry` | `DISABLE_TELEMETRY` | `0` | Set to `1` to disable telemetry. `DO_NOT_TRACK` outranks it: set to anything but an empty string, `0` or `false`, it turns telemetry off and `config get telemetry` reports `1` from `env` |
+| `telemetry` | `DISABLE_TELEMETRY`, `PIPELEX_USAGE_STATS`, `DO_NOT_TRACK` | `0` | Whether [usage statistics](#telemetry) are on. It reads and writes the machine's shared choice in `~/.mthds/usage-stats/`, never `~/.mthds/config`. `config set telemetry false` (or `0`, `no`, `off`) turns statistics off for every tool, as `mthds telemetry disable` does, and `true` (or `1`, `yes`, `on`) turns them back on, as `mthds telemetry enable` does. `config get telemetry` answers in the `DISABLE_TELEMETRY` encoding, `1` meaning off: from `env` while a variable keeps them off, from `file` while the machine's choice or a legacy `DISABLE_TELEMETRY=1` in `~/.mthds/config` does |
 
 ### `mthds config set`
 
@@ -325,7 +325,7 @@ mthds config set <key> <value>
 | `key` | string | yes | Config key (`runner`, `base-url`, `api-key`, `telemetry`) |
 | `value` | string | yes | Value to set |
 
-Validates the value before saving: `runner` must be `api` or `pipelex`; `base-url` must be a valid URL (host only — no version prefix).
+Validates the value before saving: `runner` must be `api` or `pipelex`; `base-url` must be a valid URL (host only — no version prefix); `telemetry` must be `true`, `false`, `1`, `0`, `yes`, `no`, `on` or `off`.
 
 **Examples:**
 
@@ -334,7 +334,7 @@ mthds config set api-key sk-my-api-key
 mthds config set runner pipelex
 # Self-hosted bare runner:
 mthds config set base-url http://localhost:8081
-mthds config set telemetry 1
+mthds config set telemetry false
 ```
 
 ### `mthds config get`
@@ -444,33 +444,60 @@ Default runner: pipelex
 
 ## Telemetry
 
-Manage anonymous usage telemetry: the `method_install` and `method_publish` events sent when a method from a public GitHub repository is installed or published. Each carries the package's manifest fields one by one (address, name, version, description, display name, authors, licence, main pipe, MTHDS standard version and exports), never the manifest's raw text.
+Manage the anonymous usage statistics that every Pipelex and MTHDS tool on the machine shares. The `mthds` and `mthds-agent` CLIs send one `command_completed` event per command, saying which command ran and how it ended; the first command that sends one prints a notice once. What is sent, every switch, the shared state and the delivery are described in [docs/usage-statistics.md](docs/usage-statistics.md).
 
-Telemetry can also be controlled from the environment, which takes precedence over the config file:
+Statistics are off while any of these says so: `DO_NOT_TRACK` set to anything but empty, `0` or `false`; `PIPELEX_USAGE_STATS=0` (or `false`, `no`, `off`); `DISABLE_TELEMETRY=1` in the environment; the machine's choice made by `mthds telemetry disable` or another tool's disable command; a legacy `DISABLE_TELEMETRY=1` in `~/.mthds/config`; `[usage_stats] enabled = false` in the project's `.pipelex/pipelex.toml`; or a `PIPELEX_USAGE_STATS_ENDPOINT` that is not a loopback `http` origin. The group's own commands never send an event or print the notice.
 
-- `DISABLE_TELEMETRY=1` disables it, and `DISABLE_TELEMETRY=0` enables it.
-- `DO_NOT_TRACK`, the universal opt-out, disables it when set to anything but an empty string, `0` or `false`, whatever `DISABLE_TELEMETRY` or the config file says. It only ever disables: a falsy `DO_NOT_TRACK` leaves the setting to `DISABLE_TELEMETRY` and the file.
+`mthds install` and `mthds publish` also send `method_install` and `method_publish` events that rank methods on mthds.sh; those follow `DO_NOT_TRACK`, `DISABLE_TELEMETRY` and the machine's choice only. Publishing never depends on them.
 
-### `mthds telemetry enable`
+### `mthds telemetry status`
 
-Writes `DISABLE_TELEMETRY=0` to `~/.mthds/config`. When `DO_NOT_TRACK` or `DISABLE_TELEMETRY=1` is set in the environment, it warns that the variable keeps telemetry off.
+Says whether usage statistics are on and, when they are not, every switch keeping them off. It is read-only: it creates nothing and migrates nothing.
 
 ```bash
-mthds telemetry enable
+mthds telemetry status [--format text|json]
 ```
 
+With `--format json`, it prints the status object alone on stdout:
+
+```json
+{
+  "tool": "mthds",
+  "enabled": false,
+  "off_by": ["do_not_track"],
+  "installation_id": "0f8fad5b-d9cb-469f-a165-70867728950e",
+  "notice_version": 1,
+  "internal": false,
+  "ci": false,
+  "container": false,
+  "state_dir": "/home/me/.mthds/usage-stats"
+}
+```
+
+`off_by` lists the switches' tokens in this order: `do_not_track`, `tool_variable`, `machine_choice`, `legacy_mthds_choice`, `project_setting`, `invalid_endpoint_override`. `installation_id` is `null` while no valid identifier exists.
+
 ### `mthds telemetry disable`
+
+Turns usage statistics off on this machine, for every tool, and deletes every tool's queued events.
 
 ```bash
 mthds telemetry disable
 ```
 
-### `mthds telemetry status`
+### `mthds telemetry enable`
 
-Show whether telemetry is currently enabled or disabled, and its source: the environment variable holding it off (`DO_NOT_TRACK` or `DISABLE_TELEMETRY`), `env`, the config file, or the default.
+Turns them back on for this machine, including over a legacy `DISABLE_TELEMETRY=1` in `~/.mthds/config`. When a variable or the project setting still keeps them off, it names it instead of claiming success.
 
 ```bash
-mthds telemetry status
+mthds telemetry enable
+```
+
+### `mthds telemetry reset-id`
+
+Replaces the anonymous installation identifier, prints the new one, and deletes every tool's queued events, which were made under the old one.
+
+```bash
+mthds telemetry reset-id
 ```
 
 ---
@@ -521,7 +548,7 @@ mthds install org/repo/methods/specific
 
 ## Publish
 
-Publish method packages to [mthds.sh](https://mthds.sh). Sends `method_publish` telemetry for public GitHub repos, which is how mthds.sh registers a method, so while [telemetry](#telemetry) is off, `DO_NOT_TRACK` included, it refuses to publish a public repository and exits non-zero, naming the switch that holds telemetry off. No files are written, no runner is installed.
+Publish method packages to [mthds.sh](https://mthds.sh) through the hub's registry route, one request per method. The hub reads each method from the default branch of a public GitHub repository and answers whether it listed it; the command reports that answer method by method. Publishing does not depend on telemetry: it works with `DO_NOT_TRACK` set. No files are written, no runner is installed. See [docs/publishing.md](docs/publishing.md) for the route and its answers.
 
 ### `mthds publish`
 
@@ -531,8 +558,8 @@ mthds publish [address] [OPTIONS]
 
 | Argument / Option | Type | Required | Default | Description |
 |---|---|---|---|---|
-| `address` | string | no | -- | GitHub repo (`org/repo` or full URL) |
-| `--local <path>` | string | no | -- | Publish from a local directory |
+| `address` | string | no | -- | GitHub repo (`org/repo` or full URL); an address naming a subdirectory is refused |
+| `--local <path>` | string | no | -- | Publish from a local directory, by the address each method's `METHODS.toml` declares |
 | `--method <name>` | string | no | -- | Publish only the specified method (by name) |
 
 You must provide either `address` or `--local`, but not both.
@@ -540,9 +567,12 @@ You must provide either `address` or `--local`, but not both.
 The publish flow is interactive:
 1. Resolves methods from the address or local directory
 2. Displays a summary of found methods (valid/skipped)
-3. If multiple methods: lets you select which ones to publish (multiselect)
-4. Sends `method_publish` telemetry (public GitHub repos only; with telemetry off, a public repository is refused before step 3)
-5. Prints success
+3. Refuses a private repository, since mthds.sh lists public ones only
+4. If multiple methods: lets you select which ones to publish (multiselect)
+5. Asks mthds.sh to list each selected method, then shows each answer: the method's page when it was listed, the reason when it was refused; with `--local`, it points out when mthds.sh lists a different version than the local copy, which usually means the change is not pushed yet
+6. Exits 0 when every selected method was listed, and 1 otherwise
+
+`MTHDS_HUB_URL` replaces `https://mthds.sh`, for tests; it accepts only a loopback `http` origin.
 
 **Examples:**
 
@@ -750,7 +780,11 @@ mthds-agent init -g --config '{"execution": "hosted"}'
 
 ### `mthds-agent publish`
 
-Publish methods to mthds.sh (non-interactive). Sends `method_publish` telemetry for public GitHub repos, which is how mthds.sh registers a method, so while [telemetry](#telemetry) is off, `DO_NOT_TRACK` included, a public repository is refused with a `PublishError` naming the switch that holds telemetry off. No files are written.
+Publish methods to mthds.sh (non-interactive) through the hub's registry route, one request per method, reporting each method's answer. Publishing does not depend on telemetry. No files are written. See [docs/publishing.md](docs/publishing.md).
+
+`published_methods` names only the methods mthds.sh listed, and `registrations` carries the route's answer for every method sent, with its `name`, `outcome` (`registered`, `updated`, `unchanged`, `refused` or `error`) and the rest of the answer whole. When mthds.sh listed none, the command fails with a `PublishError` whose message gives each answer, with `registrations` on the error envelope and `retryable: true` when every failure can be retried. A private repository or an address naming a subdirectory is refused before any request.
+
+With `--local`, nothing is registered: mthds.sh lists what a public GitHub repository holds. The command answers `success: true` with `published_methods` naming the selected methods, `registrations: []`, and a `message` saying so.
 
 ```bash
 mthds-agent publish [address] [OPTIONS]
@@ -768,7 +802,22 @@ mthds-agent publish [address] [OPTIONS]
 {
   "success": true,
   "published_methods": ["contract-analysis"],
-  "address": "mthds-ai/contract-analysis"
+  "address": "mthds-ai/contract-analysis",
+  "skipped_methods": [],
+  "registrations": [
+    {
+      "name": "contract-analysis",
+      "outcome": "registered",
+      "method": {
+        "address": "mthds-ai/contract-analysis",
+        "name": "contract-analysis",
+        "version": "1.0.0",
+        "commit_sha": "8d39d1dca38a4de613c20e85fbaa05dd75024835",
+        "url": "https://mthds.sh/methods/mthds-ai/contract-analysis/contract-analysis"
+      },
+      "validation": "queued"
+    }
+  ]
 }
 ```
 

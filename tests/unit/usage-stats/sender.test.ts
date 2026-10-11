@@ -21,6 +21,12 @@ vi.mock("node:os", async (importOriginal) => {
   return { ...original, homedir: () => tempHome };
 });
 
+// The migration is wrapped, to count it.
+vi.mock("../../../src/usage-stats/state.js", async (importOriginal) => {
+  const original = await importOriginal<typeof import("../../../src/usage-stats/state.js")>();
+  return { ...original, runLegacyMigration: vi.fn(original.runLegacyMigration) };
+});
+
 import { drainSpool, postBatch, postDirect } from "../../../src/usage-stats/sender.js";
 import {
   claimFile,
@@ -31,7 +37,11 @@ import {
 } from "../../../src/usage-stats/spool.js";
 import { buildCommandCompleted } from "../../../src/usage-stats/event.js";
 import type { Envelope } from "../../../src/usage-stats/event.js";
-import { obtainInstallationId, stateDir } from "../../../src/usage-stats/state.js";
+import {
+  obtainInstallationId,
+  runLegacyMigration,
+  stateDir,
+} from "../../../src/usage-stats/state.js";
 import { PROJECT_TOKEN } from "../../../src/usage-stats/contract.js";
 
 const OTHER_ID = "0f8fad5b-d9cb-469f-a165-70867728950e";
@@ -72,6 +82,7 @@ beforeEach(() => {
   tempHome = mkdtempSync(join(tmpdir(), "mthds-sender-"));
   server.requests.length = 0;
   server.respond(() => ({ status: 200, body: { status: "Ok" } }));
+  vi.mocked(runLegacyMigration).mockClear();
 });
 
 describe("postBatch", () => {
@@ -142,6 +153,15 @@ describe("drainSpool", () => {
     await drainSpool({ endpoint: server.origin, deadline: deadline() });
     expect(server.requests).toEqual([]);
     expect(existsSync(join(stateDir(), "disabled"))).toBe(true);
+  });
+
+  it("runs the legacy migration once per drain, not once per file", async () => {
+    writeSpoolFile([event()]);
+    writeSpoolFile([event()]);
+    writeSpoolFile([event()]);
+    await drainSpool({ endpoint: server.origin, deadline: deadline() });
+    expect(server.requests).toHaveLength(3);
+    expect(runLegacyMigration).toHaveBeenCalledTimes(1);
   });
 
   it("drops every event made under an identifier other than the current one", async () => {

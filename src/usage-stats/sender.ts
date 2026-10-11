@@ -63,18 +63,19 @@ export interface DrainOptions {
 }
 
 /**
- * Post this tool's spool, one attempt per file, oldest first, until the deadline. Before each post
- * it runs the legacy migration; with statistics turned off on the machine it deletes what it claimed
- * unsent; and it drops every event made under an identifier other than the current one.
+ * Post this tool's spool, one attempt per file, oldest first, until the deadline. The legacy
+ * migration runs once, before the first post; with statistics turned off on the machine it deletes
+ * what it claimed unsent; and it drops every event made under an identifier other than the current
+ * one.
  */
 export async function drainSpool(options: DrainOptions): Promise<void> {
+  runLegacyMigration();
   tidySpool();
   const files = options.onlyFile !== undefined ? [options.onlyFile] : listReadyFiles();
   for (const file of files) {
     if (Date.now() >= options.deadline) return;
     const claimed = claimFile(file);
     if (claimed === undefined) continue;
-    runLegacyMigration();
     if (isMachineDisabled()) {
       deleteFile(claimed);
       continue;

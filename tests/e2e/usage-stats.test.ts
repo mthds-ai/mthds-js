@@ -199,6 +199,21 @@ describe.skipIf(process.platform === "win32")("mthds usage statistics (e2e)", ()
     });
   });
 
+  it.each([
+    [["--local"], false],
+    [["--hosted"], true],
+    [["--inputs", "--local"], undefined],
+  ] as const)("reads hosted from the run's parsed flags %j", async (flags, hosted) => {
+    // The API runner, on the loopback server, refuses the missing bundle before any request.
+    const result = await run(MTHDS, ["--runner", "api", "run", "pipe", "missing.mthds", ...flags], {
+      ...DEBUG,
+      MTHDS_BASE_URL: server.origin,
+    });
+    const event = onlyEvent(result.stderr);
+    expect(event.properties["command"]).toBe("run pipe");
+    expect(event.properties["hosted"]).toBe(hosted);
+  });
+
   it("posts the event before exiting in CI, and leaves nothing spooled", async () => {
     const result = await run(MTHDS, ["config", "list"], { CI: "true" });
     expect(result.status).toBe(0);

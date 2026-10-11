@@ -12,7 +12,7 @@ The first command that sends statistics on a machine prints this notice on stder
 
 The notice is recorded in `~/.mthds/usage-stats/notice-v1`, which every tool reads, so a notice another tool already printed is not printed again. It is printed only while statistics are on.
 
-`mthds` prints it on any command that sends an event. `mthds-agent` is read by agents and by hooks that parse its output, so its native commands (`install`, `publish`, `config`, `package`, `doctor` and the rest) never print it. Only the commands it runs on a runner may, and only when their errors are not JSON: `init`, `validate`, `run`, `models`, `check-model`, `inputs` and `codegen` on the pipelex runner, and on the API runner only `validate bundle` and `validate pipe`, whose errors are Markdown. A `--format json` or `--error-format json` invocation never sees it.
+`mthds` prints it on any command that sends an event. `mthds-agent` is read by agents and by hooks that parse its output, so its native commands (`install`, `publish`, `config`, `package`, `doctor` and the rest) never print it. Only the commands it runs on a runner may, and only when their errors are not JSON: `init`, `validate`, `run`, `models`, `check-model`, `inputs` and `codegen` on the pipelex runner, and on the API runner only `validate bundle` and `validate pipe`, whose errors are Markdown. A `--format json` or `--error-format json` invocation never sees it: the API runner's commands read those options as their parser did, and the pipelex runner's, which hand their arguments to `pipelex-agent` unparsed, read them up to `--`, erring toward JSON when a token could be either an option or another option's value.
 
 ## What is sent
 
@@ -23,7 +23,7 @@ Every event carries the contract's common properties: the schema version, `tool:
 - `command`: the command's path, such as `config list` or `run pipe`, from the contract's list for the surface; any command the list does not name is sent as `other`. Arguments, option values, paths and method names are never sent.
 - `outcome`: `succeeded`, `failed` or `cancelled` (interrupted with Ctrl-C; on `mthds-agent`, a tool it runs that is interrupted, or that handles Ctrl-C and exits with status 130, cancels the command too).
 - `error_domain` on a failure, when the CLI can say who can fix it: `input` for a command line that did not parse or an agent error in the argument, validation or package domain; `config` for the config and binary domains; `runtime` for the runner and pipeline domains. Install and file errors send none.
-- `duration_ms`, and `hosted` on a `run` command given `--hosted` (true) or `--local` (false).
+- `duration_ms`, and `hosted` on an `mthds run` command given `--hosted` (true) or `--local` (false), as the command's parser read them, so an option's value or an argument after `--` never counts. `mthds-agent`'s `run` commands hand their flags to `pipelex-agent` unparsed and carry no `hosted`; the `pipelex-agent` run reports where it ran.
 
 Each event is sent under the installation identifier, a random UUID in `~/.mthds/usage-stats/id`, with `$process_person_profile: false`, so PostHog builds no person profile from it. Nothing is sent for `--help`, `--version`, the banner, a command group run without its subcommand, an unknown command, or the `telemetry` group's own commands.
 

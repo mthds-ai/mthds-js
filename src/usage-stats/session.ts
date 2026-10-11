@@ -35,12 +35,19 @@ import {
 } from "./state.js";
 import type { Installation } from "./state.js";
 
+/** A command of the program: its path, the Commander command with its parsed options, and the arguments. */
+export interface Invocation {
+  path: string;
+  command: Command;
+  argv: readonly string[];
+}
+
 /** How the process was started: its surface, version and the rules that differ between the two CLIs. */
 export interface UsageStatsOptions {
   surface: Surface;
   toolVersion: string;
   /** Whether the notice may be printed for this command, or whether its stderr is a machine contract. */
-  noticeAllowed: (commandPath: string, argv: readonly string[]) => boolean;
+  noticeAllowed: (invocation: Invocation) => boolean;
   /** Top-level groups whose commands send nothing: the statistics group. */
   silentGroups?: readonly string[];
   argv?: readonly string[];
@@ -74,11 +81,17 @@ function senderMainPath(): string {
   return fileURLToPath(new URL("./sender-main.js", import.meta.url));
 }
 
-/** `hosted` from a run command's own flags: `--hosted` or `--local`, absent when neither is given. */
-function hostedFromArgv(path: string, argv: readonly string[]): boolean | undefined {
+/**
+ * `hosted` from a run command's `--hosted` or `--local` as Commander parsed them, so that a value
+ * (`--inputs --local`) or an argument after `--` is never read as the flag. Absent when neither was
+ * given, and on a command that declares neither, such as `mthds-agent`'s, which hand their flags to
+ * `pipelex-agent` unparsed: the `pipelex-agent` run reports where it ran.
+ */
+export function hostedFromOptions(path: string, command: Command): boolean | undefined {
   if (!path.startsWith("run ")) return undefined;
-  if (argv.includes("--hosted")) return true;
-  if (argv.includes("--local")) return false;
+  const options = command.opts<{ hosted?: unknown; local?: unknown }>();
+  if (options.hosted === true) return true;
+  if (options.local === true) return false;
   return undefined;
 }
 
@@ -130,7 +143,7 @@ export class UsageStatsSession {
       if (
         this.enabled &&
         noticeVersionSeen() < NOTICE_VERSION &&
-        this.options.noticeAllowed(path, this.argv)
+        this.options.noticeAllowed({ path, command: this.leaf!, argv: this.argv })
       ) {
         writeStderrLine(NOTICE_TEXT);
         recordNoticeShown();
@@ -163,7 +176,7 @@ export class UsageStatsSession {
           outcome,
           errorDomain: notes.errorDomain,
           durationMs: Date.now() - this.startedAt,
-          hosted: hostedFromArgv(path, this.argv),
+          hosted: hostedFromOptions(path, this.leaf!),
         },
       );
       if (isSetAndNotFalsy(process.env[ENV.debug])) {

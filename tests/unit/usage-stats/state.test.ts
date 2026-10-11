@@ -22,6 +22,12 @@ vi.mock("node:os", async (importOriginal) => {
   return { ...original, homedir: () => tempHome };
 });
 
+// Reads are wrapped, to count those of `~/.mthds/config`.
+vi.mock("node:fs", async (importOriginal) => {
+  const original = await importOriginal<typeof import("node:fs")>();
+  return { ...original, readFileSync: vi.fn(original.readFileSync) };
+});
+
 import {
   legacyOptOutPending,
   markLegacyMigrated,
@@ -179,6 +185,32 @@ describe("the legacy opt-out", () => {
     runLegacyMigration();
     writeLegacyConfig("DISABLE_TELEMETRY=1\n", new Date(Date.now() + 60_000));
     expect(legacyOptOutPending()).toBe(true);
+  });
+
+  it("reads the config file only when it changed since it was last read", () => {
+    const configReads = () =>
+      vi.mocked(readFileSync).mock.calls.filter(([path]) => path === configPath()).length;
+    vi.mocked(readFileSync).mockClear();
+
+    // No marker, and a value that migrates nothing: the file is parsed once, then not again.
+    writeLegacyConfig("MTHDS_RUNNER=api\n", new Date(Date.now() - 60_000));
+    expect(runLegacyMigration()).toBe(false);
+    expect(runLegacyMigration()).toBe(false);
+    expect(legacyOptOutPending()).toBe(false);
+    expect(configReads()).toBe(1);
+
+    // A write is read, and once migrated the marker is newer than the file, which is not read.
+    writeLegacyConfig("MTHDS_RUNNER=api\nDISABLE_TELEMETRY=1\n");
+    expect(runLegacyMigration()).toBe(true);
+    expect(configReads()).toBe(2);
+    expect(runLegacyMigration()).toBe(false);
+    expect(legacyOptOutPending()).toBe(false);
+    expect(configReads()).toBe(2);
+
+    // A later write is newer than the marker, and is read and migrated again.
+    writeLegacyConfig("DISABLE_TELEMETRY=yes\n", new Date(Date.now() + 60_000));
+    expect(runLegacyMigration()).toBe(true);
+    expect(configReads()).toBe(3);
   });
 
   it("is settled by a marker dated past a config file whose clock runs ahead", () => {

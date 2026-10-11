@@ -23,6 +23,7 @@ import {
   writeFileSync,
   writeSync,
 } from "node:fs";
+import type { Stats } from "node:fs";
 import { join } from "node:path";
 import {
   configFilePath,
@@ -278,35 +279,60 @@ interface LegacyReading {
   mtimeMs: number;
 }
 
+/**
+ * The last parse of `~/.mthds/config` in this process, keyed by the file's path, inode, size and
+ * times, so that a sender, which runs the migration before each post, parses the file again only
+ * when it changed. The file is stat'ed before it is read, so a write between the two leaves a key
+ * older than the content, which the next reading parses again, never the reverse.
+ */
+let lastParsed: { key: string; off: boolean } | undefined;
+
 function readLegacyOptOut(): LegacyReading | undefined {
   const path = legacyConfigPath();
-  let content: string;
-  let mtimeMs: number;
+  let stats: Stats;
   try {
-    content = readFileSync(path, "utf-8");
-    mtimeMs = statSync(path).mtimeMs;
+    stats = statSync(path);
   } catch {
     return undefined;
   }
-  return { off: isMthdsDisableOn(parseDotenv(content)[LEGACY_KEY]), mtimeMs };
+  const { mtimeMs } = stats;
+  const key = [path, stats.ino, stats.size, mtimeMs, stats.ctimeMs].join("\0");
+  if (lastParsed?.key === key) return { off: lastParsed.off, mtimeMs };
+  let content: string;
+  try {
+    content = readFileSync(path, "utf-8");
+  } catch {
+    return undefined;
+  }
+  const off = isMthdsDisableOn(parseDotenv(content)[LEGACY_KEY]);
+  lastParsed = { key, off };
+  return { off, mtimeMs };
+}
+
+function mtimeMsOf(path: string): number | undefined {
+  try {
+    return statSync(path).mtimeMs;
+  } catch {
+    return undefined;
+  }
 }
 
 function legacyMarkerMtimeMs(): number | undefined {
-  try {
-    return statSync(statePath(STATE_FILES.legacyMigrated)).mtimeMs;
-  } catch {
-    return undefined;
-  }
+  return mtimeMsOf(statePath(STATE_FILES.legacyMigrated));
 }
 
 /**
  * Whether the legacy opt-out is on and not migrated yet: `DISABLE_TELEMETRY` means off in
  * `~/.mthds/config`, and the file is newer than the `legacy-migrated` marker, or no marker exists.
+ * The marker records when the file was last read, so a file no newer than it is not parsed at all.
  */
 export function legacyOptOutPending(): boolean {
+  const configMtimeMs = mtimeMsOf(legacyConfigPath());
+  if (configMtimeMs === undefined) return false;
+  const marker = legacyMarkerMtimeMs();
+  if (marker !== undefined && configMtimeMs <= marker) return false;
   const legacy = readLegacyOptOut();
   if (!legacy?.off) return false;
-  const marker = legacyMarkerMtimeMs();
   return marker === undefined || legacy.mtimeMs > marker;
 }
 

@@ -64,13 +64,16 @@ export interface DrainOptions {
 }
 
 /**
- * The events of a claimed file that may be posted, read immediately before the post: those made
- * under the current identifier, and none when there is no valid identifier, when statistics were
- * turned off on the machine, or when the claimed file is gone, which only `disable`, `reset-id` or
- * the legacy migration does to a claimed file. The identifier is read first and `disabled` last, so
- * that a `disable` running meanwhile is seen.
+ * The events of a claimed file that may be posted, read immediately before the post, as the
+ * contract's "Before each post" says. The legacy migration runs first, so an opt-out written to
+ * `~/.mthds/config` since the last post is carried over now; it parses the file only when it changed
+ * since it was last read. Then none are posted when there is no valid identifier, when statistics
+ * are off on the machine, or when the claimed file is gone, which only `disable`, `reset-id` or the
+ * legacy migration does to a claimed file; otherwise those made under the current identifier are.
+ * The identifier is read before `disabled`, so that a `disable` running meanwhile is seen.
  */
 function eventsToPost(claimed: string, events: Envelope[]): Envelope[] {
+  runLegacyMigration();
   const current = readInstallationId();
   if (current.kind !== "valid") return [];
   const kept = events.filter((event) => event.distinct_id === current.id);
@@ -93,13 +96,12 @@ function giveBack(claimed: string, posted: Envelope[], held: number): void {
 }
 
 /**
- * Post this tool's spool, one attempt per file, oldest first, until the deadline. The legacy
- * migration runs once, before the first post. Immediately before each post, the sender reads the
- * current identifier and drops every event made under another one, and posts nothing, deleting
- * what it claimed, once statistics are off on the machine.
+ * Post this tool's spool, one attempt per file, oldest first, until the deadline. Immediately
+ * before each post, the sender runs the legacy migration, posts nothing, deleting what it claimed,
+ * once statistics are off on the machine, and drops every event made under an identifier other
+ * than the current one.
  */
 export async function drainSpool(options: DrainOptions): Promise<void> {
-  runLegacyMigration();
   tidySpool();
   const files = options.onlyFile !== undefined ? [options.onlyFile] : listReadyFiles();
   for (const file of files) {

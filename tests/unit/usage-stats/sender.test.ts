@@ -22,15 +22,11 @@ vi.mock("node:os", async (importOriginal) => {
   return { ...original, homedir: () => tempHome };
 });
 
-// The migration and the identifier reading are wrapped, to count the one and to run a `disable`
-// from inside the other, between a sender's claim and its post.
+// The identifier reading is wrapped, to run a `disable` from inside it, between a sender's claim
+// and its post.
 vi.mock("../../../src/usage-stats/state.js", async (importOriginal) => {
   const original = await importOriginal<typeof import("../../../src/usage-stats/state.js")>();
-  return {
-    ...original,
-    runLegacyMigration: vi.fn(original.runLegacyMigration),
-    readInstallationId: vi.fn(original.readInstallationId),
-  };
+  return { ...original, readInstallationId: vi.fn(original.readInstallationId) };
 });
 
 import { drainSpool, postBatch, postDirect } from "../../../src/usage-stats/sender.js";
@@ -48,7 +44,6 @@ import {
   deleteEverySpool,
   obtainInstallationId,
   readInstallationId,
-  runLegacyMigration,
   stateDir,
 } from "../../../src/usage-stats/state.js";
 import { PROJECT_TOKEN } from "../../../src/usage-stats/contract.js";
@@ -91,7 +86,6 @@ beforeEach(() => {
   tempHome = mkdtempSync(join(tmpdir(), "mthds-sender-"));
   server.requests.length = 0;
   server.respond(() => ({ status: 200, body: { status: "Ok" } }));
-  vi.mocked(runLegacyMigration).mockClear();
   vi.mocked(readInstallationId).mockClear();
 });
 
@@ -171,13 +165,25 @@ describe("drainSpool", () => {
     expect(existsSync(join(stateDir(), "disabled"))).toBe(true);
   });
 
-  it("runs the legacy migration once per drain, not once per file", async () => {
+  it("runs the legacy migration before each post: an opt-out written between two posts stops the second", async () => {
     writeSpoolFile([event()]);
     writeSpoolFile([event()]);
     writeSpoolFile([event()]);
+    // `~/.mthds/config` exists and says nothing of the opt-out when the drain starts.
+    mkdirSync(join(tempHome, ".mthds"), { recursive: true });
+    writeFileSync(join(tempHome, ".mthds", "config"), "MTHDS_RUNNER=api\n");
+    server.respond(() => {
+      // An older mthds writes its opt-out while the first post is answered.
+      const configPath = join(tempHome, ".mthds", "config");
+      writeFileSync(configPath, "MTHDS_RUNNER=api\nDISABLE_TELEMETRY=1\n");
+      const later = new Date(Date.now() + 60_000);
+      utimesSync(configPath, later, later);
+      return { status: 200, body: { status: "Ok" } };
+    });
     await drainSpool({ endpoint: server.origin, deadline: deadline() });
-    expect(server.requests).toHaveLength(3);
-    expect(runLegacyMigration).toHaveBeenCalledTimes(1);
+    expect(server.requests).toHaveLength(1);
+    expect(existsSync(join(stateDir(), "disabled"))).toBe(true);
+    expect(spoolNames()).toEqual([]);
   });
 
   it("posts nothing when statistics are turned off between its claim and its post", async () => {

@@ -11,7 +11,7 @@
 
 import * as p from "@clack/prompts";
 import chalk from "chalk";
-import { trackPublish, shutdown } from "../../installer/telemetry/posthog.js";
+import { trackLocalPublish, trackPublish, shutdown } from "../../installer/telemetry/posthog.js";
 import { printLogo } from "./index.js";
 import { parseAddress } from "../../installer/resolver/address.js";
 import { resolveFromGitHub } from "../../installer/resolver/github.js";
@@ -251,7 +251,11 @@ export async function publishMethod(options: {
     if (!reportRegistration(registration, method, local)) continue;
     publishedCount++;
     const answer = registration.answer;
-    if (method && isAccepted(answer)) trackPublish(method, answer.method.address);
+    if (!isAccepted(answer)) continue;
+    // A local manifest may hold edits never pushed: a local publish is counted with what the hub
+    // read from the public repository alone.
+    if (local) trackLocalPublish(answer.method);
+    else if (method) trackPublish(method, answer.method.address);
   }
 
   await shutdown();

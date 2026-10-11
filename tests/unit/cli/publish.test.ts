@@ -26,6 +26,7 @@ vi.mock("../../../src/installer/resolver/local.js", () => ({ resolveFromLocal: v
 
 vi.mock("../../../src/installer/telemetry/posthog.js", () => ({
   trackPublish: vi.fn(),
+  trackLocalPublish: vi.fn(),
   shutdown: vi.fn().mockResolvedValue(undefined),
 }));
 
@@ -39,7 +40,7 @@ import * as p from "@clack/prompts";
 import { parseAddress } from "../../../src/installer/resolver/address.js";
 import { resolveFromGitHub } from "../../../src/installer/resolver/github.js";
 import { resolveFromLocal } from "../../../src/installer/resolver/local.js";
-import { trackPublish } from "../../../src/installer/telemetry/posthog.js";
+import { trackLocalPublish, trackPublish } from "../../../src/installer/telemetry/posthog.js";
 import { registerMethods, resolveHubUrl } from "../../../src/installer/registry/client.js";
 import type {
   MethodRegistration,
@@ -200,5 +201,42 @@ describe("publishMethod", () => {
     );
     expect(report).toContain("Your local copy is version 1.1.0");
     expect(report).toContain("validation badge will not refresh yet");
+  });
+
+  it("counts a local publish with what the hub read, never the local manifest's fields", async () => {
+    // The local manifest holds edits never pushed; the public one, at the commit the hub accepted,
+    // is version 1.0.0.
+    const localEdits = {
+      ...method,
+      manifest: {
+        package: {
+          ...method.manifest.package,
+          version: "2.0.0-draft",
+          description: "Confidential: the acquisition scoring rules",
+          authors: ["Unannounced Partner"],
+          main_pipe: "secret_pipe",
+        },
+        exports: { secret: { pipes: ["secret_pipe"] } },
+      },
+    };
+    vi.mocked(resolveFromLocal).mockReturnValue({
+      ...publicRepo,
+      source: "local",
+      isPublic: false,
+      methods: [localEdits],
+    });
+    const answer = accepted("1.0.0");
+    routeAnswers(answer);
+
+    await publishMethod({ dir: "/some/path" });
+
+    expect(trackPublish).not.toHaveBeenCalled();
+    expect(trackLocalPublish).toHaveBeenCalledWith(
+      answer.outcome === "registered" ? answer.method : undefined,
+    );
+    const sent = JSON.stringify(vi.mocked(trackLocalPublish).mock.calls);
+    for (const secret of ["2.0.0-draft", "Confidential", "Unannounced Partner", "secret_pipe"]) {
+      expect(sent).not.toContain(secret);
+    }
   });
 });

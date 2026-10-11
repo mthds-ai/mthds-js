@@ -19,6 +19,7 @@ vi.mock("../../../../src/usage-stats/switches.js", () => ({
 
 import { methodEventsEnabled } from "../../../../src/usage-stats/switches.js";
 import {
+  trackLocalPublish,
   trackPublish,
   trackInstall,
   shutdown,
@@ -54,6 +55,48 @@ const sampleMethod: ResolvedMethod = {
   rawManifest: "[package]\nname = 'contract-analysis'",
   files: [],
 };
+
+describe("trackLocalPublish", () => {
+  it("carries only what the hub answered, never a field of the local manifest", () => {
+    trackLocalPublish({
+      address: "MTHDS-AI/contract-analysis",
+      name: "contract-analysis",
+      version: "1.0.0",
+      commit_sha: "8d39d1dca38a4de613c20e85fbaa05dd75024835",
+      url: "https://mthds.sh/methods/MTHDS-AI/contract-analysis/contract-analysis",
+    });
+
+    expect(mockCapture).toHaveBeenCalledTimes(1);
+    const captured = mockCapture.mock.calls[0]![0] as {
+      event: string;
+      properties: Record<string, unknown>;
+    };
+    expect(captured.event).toBe("method_publish");
+    expect(Object.keys(captured.properties).sort()).toEqual([
+      "address",
+      "name",
+      "package_version",
+      "timestamp",
+    ]);
+    expect(captured.properties).toMatchObject({
+      address: "MTHDS-AI/contract-analysis",
+      name: "contract-analysis",
+      package_version: "1.0.0",
+    });
+  });
+
+  it("sends nothing when a switch turns the method events off", () => {
+    mockedMethodEventsEnabled.mockReturnValue(false);
+    trackLocalPublish({
+      address: "a/b",
+      name: "c",
+      version: "1.0.0",
+      commit_sha: "",
+      url: "https://mthds.sh/methods/a/b/c",
+    });
+    expect(mockCapture).not.toHaveBeenCalled();
+  });
+});
 
 describe("trackPublish", () => {
   it("captures a method_publish event with the manifest's fields one by one", () => {

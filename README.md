@@ -286,7 +286,7 @@ export PIPELEX_USAGE_STATS=0  # every Pipelex and MTHDS tool, for one shell
 
 `mthds telemetry status` says whether they are on and what keeps them off, `mthds telemetry enable` turns them back on, and `mthds telemetry reset-id` replaces the anonymous identifier. A `DISABLE_TELEMETRY=1` written to `~/.mthds/config` by an earlier version still holds.
 
-Installing or publishing a method from a public GitHub repository also sends one event per method, carrying the package's manifest fields one by one, to rank methods on mthds.sh; `DO_NOT_TRACK`, `DISABLE_TELEMETRY` and `mthds telemetry disable` turn those off too. Publishing itself never depends on them.
+Installing or publishing a method from a public GitHub repository also sends one event per method, carrying the package's manifest fields one by one (for a publish from a local directory, only the address, name and version mthds.sh read from GitHub), to rank methods on mthds.sh; `DO_NOT_TRACK`, `DISABLE_TELEMETRY` and `mthds telemetry disable` turn those off too. Publishing itself never depends on them.
 
 ## Development
 

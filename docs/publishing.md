@@ -27,7 +27,7 @@ The CLIs read every answer by its `outcome`, never by the HTTP status.
 
 Two codes are the CLI's own: `unreachable` when no answer came (a network failure or the thirty-second timeout), and `unexpected_response` when the answer is not one the route defines.
 
-The address a method is listed under is the one in `method.address`, which can differ from the one sent (GitHub's own capitalisation of the owner, say). The CLIs show `method.url` and send `method.address` in the `method_publish` event they still send for each method listed, which ranks it on mthds.sh and follows the method-event switches of [usage-statistics.md](usage-statistics.md#method-events).
+The address a method is listed under is the one in `method.address`, which can differ from the one sent (GitHub's own capitalisation of the owner, say). The CLIs show `method.url` and send `method.address` in the `method_publish` event they still send for each method listed, which ranks it on mthds.sh and follows the method-event switches of [usage-statistics.md](usage-statistics.md#method-events). For a `--local` publish that event carries only the address, name and version the hub answered with, never a field of the local manifest, which may hold edits not pushed yet.
 
 ## `mthds publish`
 

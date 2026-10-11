@@ -10,6 +10,7 @@
  */
 
 import { PostHog } from "posthog-node";
+import type { ListedMethod } from "../registry/client.js";
 import type { ResolvedMethod } from "../../package/manifest/types.js";
 import { methodEventsEnabled } from "../../usage-stats/switches.js";
 
@@ -61,6 +62,27 @@ function trackEvent(eventName: string, method: ResolvedMethod, address?: string)
 /** Count a publish mthds.sh's registry route accepted, under the address it answered with. */
 export function trackPublish(method: ResolvedMethod, listedAddress: string): void {
   trackEvent("method_publish", method, listedAddress);
+}
+
+/**
+ * Count a publish from a local directory that mthds.sh's registry route accepted. The local
+ * manifest may hold edits never pushed, which the event must not carry: it holds only what the
+ * route answered, read from the public repository at the commit it accepted (the address, the name
+ * and the version), and none of the local manifest's fields.
+ */
+export function trackLocalPublish(listed: ListedMethod): void {
+  const posthog = getClient();
+  if (!posthog) return;
+  posthog.capture({
+    distinctId: "anonymous",
+    event: "method_publish",
+    properties: {
+      address: listed.address,
+      name: listed.name,
+      package_version: listed.version,
+      timestamp: new Date().toISOString(),
+    },
+  });
 }
 
 export function trackInstall(method: ResolvedMethod, orgRepo?: string): void {

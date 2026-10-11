@@ -66,7 +66,7 @@ npx mthds install --local /path/to/repo
 
 ## Publishing a method
 
-To make your methods installable via `npx mthds install`, you need a **public GitHub repository** with the right structure.
+To make your methods installable via `npx mthds install`, you need a **public GitHub repository** with the right structure. Push it, then run `mthds publish org/repo-name`: mthds.sh reads each method from the repository's default branch and lists it, and the command shows each method's page or the reason it was refused. See [docs/publishing.md](docs/publishing.md).
 
 ### Repository structure
 
@@ -272,19 +272,21 @@ The client implements the MTHDS Protocol plus the Pipelex API's pipe I/O extensi
 
 Either `pipe_code` or `mthds_contents` must be provided (or a server-specific extension arg via `extra`). Anything beyond the protocol's basic args is server-specific and rides the generic `extra` option, merged into the request body — the server you call defines and handles its own extension args (a client-supplied run id, where a server supports one, is such an extension; the request side never names it).
 
-## Telemetry
+## Usage statistics
 
-Anonymous usage data is collected to help rank methods on the leaderboard, and `mthds publish` registers a method on [mthds.sh](https://mthds.sh) through the same channel. Installing or publishing a method from a public GitHub repository sends one event per method, carrying the package's address, name, version, description, display name, authors, licence, main pipe, MTHDS standard version and exports, read one by one from its `METHODS.toml`; the manifest's raw text is never sent, and nothing is sent for a private repository or a local directory. No personal or device information is collected.
+The `mthds` and `mthds-agent` CLIs send anonymous usage statistics, shared with every Pipelex and MTHDS tool: one event per command, saying which command ran, how it ended and how long it took, with the CLI's version, the operating system family and whether it ran in CI. They never send your methods, prompts, inputs, outputs, file names, pipe names or command arguments. The first `mthds` command that sends statistics prints a notice once; `mthds-agent` never prints it. Details are in [docs/usage-statistics.md](docs/usage-statistics.md) and at [docs.pipelex.com/latest/setup/usage-statistics](https://docs.pipelex.com/latest/setup/usage-statistics/).
 
-To opt out, use any of these:
+To turn them off, use any of these:
 
 ```bash
-mthds telemetry disable    # writes DISABLE_TELEMETRY=1 to ~/.mthds/config
-export DISABLE_TELEMETRY=1 # for one shell, overriding the config file
-export DO_NOT_TRACK=1      # the universal opt-out, overriding everything else
+mthds telemetry disable       # for this machine, for every Pipelex and MTHDS tool
+export DO_NOT_TRACK=1         # the universal opt-out
+export PIPELEX_USAGE_STATS=0  # every Pipelex and MTHDS tool, for one shell
 ```
 
-`DO_NOT_TRACK` set to any value other than an empty string, `0` or `false` turns telemetry off whatever `DISABLE_TELEMETRY` or the config file says. With telemetry off, `mthds publish` cannot register a method on mthds.sh, so it refuses to publish a public repository and says which switch holds telemetry off.
+`mthds telemetry status` says whether they are on and what keeps them off, `mthds telemetry enable` turns them back on, and `mthds telemetry reset-id` replaces the anonymous identifier. A `DISABLE_TELEMETRY=1` written to `~/.mthds/config` by an earlier version still holds.
+
+Installing or publishing a method from a public GitHub repository also sends one event per method, carrying the package's manifest fields one by one (for a publish from a local directory, only the address, name and version mthds.sh read from GitHub), to rank methods on mthds.sh; `DO_NOT_TRACK`, `DISABLE_TELEMETRY` and `mthds telemetry disable` turn those off too. Publishing itself never depends on them.
 
 ## Development
 

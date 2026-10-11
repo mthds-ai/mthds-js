@@ -12,6 +12,10 @@ jobs:
   quality:
     name: Quality Checks
     runs-on: ubuntu-latest
+    # The tests run the built CLIs; DO_NOT_TRACK keeps any of them from sending usage statistics
+    # or method events from CI. The usage-statistics tests build their own environment instead.
+    env:
+      DO_NOT_TRACK: "1"
 
     steps:
       - name: Checkout code

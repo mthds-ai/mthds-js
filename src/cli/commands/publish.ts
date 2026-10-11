@@ -1,16 +1,99 @@
+/**
+ * `mthds publish`: list methods on mthds.sh through its registry route.
+ *
+ * The CLI resolves the methods, the person picks which to publish, and each one is sent to the
+ * route by its repository's address and its name; what the route answers for each is reported, and
+ * the command fails unless every selected method was listed. A GitHub address is published as
+ * given; a `--local` directory is published by the address each method's `METHODS.toml` declares,
+ * since the hub lists what the public repository holds, once GitHub says that repository is public,
+ * and a version the hub read that differs from the local one is pointed out. Publishing does not
+ * depend on telemetry.
+ */
+
 import * as p from "@clack/prompts";
 import chalk from "chalk";
-import {
-  trackPublish,
-  publishBlockedByTelemetry,
-  shutdown,
-} from "../../installer/telemetry/posthog.js";
+import { trackLocalPublish, trackPublish, shutdown } from "../../installer/telemetry/posthog.js";
 import { printLogo } from "./index.js";
 import { parseAddress } from "../../installer/resolver/address.js";
-import { resolveFromGitHub } from "../../installer/resolver/github.js";
+import { repositoryVisibility, resolveFromGitHub } from "../../installer/resolver/github.js";
+import type { RepositoryVisibility } from "../../installer/resolver/github.js";
 import { resolveFromLocal } from "../../installer/resolver/local.js";
 import { describeUnusableMethod } from "../../installer/resolver/skipped.js";
-import type { ResolvedRepo } from "../../package/manifest/types.js";
+import {
+  describeRegistration,
+  isAccepted,
+  registerMethods,
+  resolveHubUrl,
+} from "../../installer/registry/client.js";
+import type { MethodRegistration } from "../../installer/registry/client.js";
+import {
+  notOnGitHubRefusal,
+  privateRepositoryRefusal,
+  subdirectoryRefusal,
+  unseenRepositoryRefusal,
+  visibilityUnknownRefusal,
+} from "../../installer/registry/refusals.js";
+import type { ParsedAddress, ResolvedMethod, ResolvedRepo } from "../../package/manifest/types.js";
+
+const GITHUB_ADDRESS = /^(https?:\/\/)?github\.com\//;
+
+/**
+ * Check, before a local publish sends anything, each address the selected methods' manifests
+ * declare, as a GitHub address given on the command line is checked: on GitHub, naming a
+ * repository's root rather than a subdirectory, and public, which GitHub is asked. Answers the
+ * refusal, or undefined when every address may be sent: mthds.sh is never sent the name of a
+ * repository that is not public, nor one GitHub could not vouch for.
+ */
+async function localAddressRefusal(methods: ResolvedMethod[]): Promise<string | undefined> {
+  const addresses = [...new Set(methods.map((method) => method.manifest.package.address.trim()))];
+  for (const address of addresses) {
+    if (!GITHUB_ADDRESS.test(address)) return notOnGitHubRefusal(address);
+    let parsed: ParsedAddress;
+    try {
+      parsed = parseAddress(address);
+    } catch (err) {
+      return `Nothing was published: ${(err as Error).message}`;
+    }
+    if (parsed.subpath) return subdirectoryRefusal(parsed);
+    const orgRepo = `${parsed.org}/${parsed.repo}`;
+    let visibility: RepositoryVisibility;
+    try {
+      visibility = await repositoryVisibility(parsed.org, parsed.repo);
+    } catch (err) {
+      return visibilityUnknownRefusal(orgRepo, (err as Error).message);
+    }
+    if (visibility === "private") return privateRepositoryRefusal(orgRepo);
+    if (visibility === "not_found") return unseenRepositoryRefusal(orgRepo);
+  }
+  return undefined;
+}
+
+/** Report what the route answered for one method, and answer whether it was listed. */
+function reportRegistration(
+  registration: MethodRegistration,
+  method: ResolvedMethod | undefined,
+  local: boolean,
+): boolean {
+  const answer = registration.answer;
+  if (!isAccepted(answer)) {
+    p.log.error(describeRegistration(registration));
+    return false;
+  }
+  const lines = [describeRegistration(registration)];
+  const localVersion = method?.manifest.package.version;
+  if (local && localVersion !== undefined && localVersion !== answer.method.version) {
+    lines.push(
+      `  Your local copy is version ${localVersion}; mthds.sh lists what GitHub holds, so push it to publish ${localVersion}.`,
+    );
+  }
+  if (answer.validation === "unavailable") {
+    lines.push(
+      "  Its validation badge will not refresh yet: mthds.sh could not ask for a validation.",
+    );
+  }
+  p.log.success(lines.join("\n"));
+  return true;
+}
 
 export async function publishMethod(options: {
   address?: string;
@@ -55,9 +138,14 @@ export async function publishMethod(options: {
       process.exit(1);
     }
 
-    s.message(
-      `Resolving methods from ${parsed.org}/${parsed.repo}${parsed.subpath ? `/${parsed.subpath}` : ""}...`,
-    );
+    if (parsed.subpath) {
+      s.stop("");
+      p.log.error(subdirectoryRefusal(parsed));
+      p.outro("");
+      process.exit(1);
+    }
+
+    s.message(`Resolving methods from ${parsed.org}/${parsed.repo}...`);
     try {
       resolved = await resolveFromGitHub(parsed);
     } catch (err) {
@@ -118,12 +206,17 @@ export async function publishMethod(options: {
     process.exit(1);
   }
 
-  // The publish event is the one way a method reaches mthds.sh, so a public
-  // repository is refused before the selection while telemetry is off.
-  const registrable = resolved.source === "github" && resolved.isPublic;
-  const blocked = registrable ? publishBlockedByTelemetry() : undefined;
-  if (blocked) {
-    p.log.error(blocked);
+  // mthds.sh lists only public repositories; a private one is refused before the selection, and
+  // its name is never sent.
+  if (resolved.source === "github" && !resolved.isPublic) {
+    p.log.error(privateRepositoryRefusal(orgRepo!));
+    p.outro("");
+    process.exit(1);
+  }
+
+  const hub = resolveHubUrl();
+  if (!hub.ok) {
+    p.log.error(hub.message);
     p.outro("");
     process.exit(1);
   }
@@ -171,16 +264,65 @@ export async function publishMethod(options: {
   }
 
   const selectedCount = selectedMethods.length;
+  const local = resolved.source === "local";
 
-  // Track publish telemetry (public GitHub repos only)
-  if (registrable) {
-    for (const method of selectedMethods) {
-      trackPublish(method, orgRepo);
+  // A local method is published by its manifest's address, which gets the checks a GitHub address
+  // got above, before any request.
+  if (local) {
+    const checking = p.spinner();
+    checking.start("Checking the repositories on GitHub...");
+    const refusal = await localAddressRefusal(selectedMethods);
+    checking.stop(refusal === undefined ? "The repositories are public." : "");
+    if (refusal !== undefined) {
+      p.log.error(refusal);
+      p.outro("");
+      process.exit(1);
     }
+  }
+
+  // One request per method: a GitHub address as given, a local method by its manifest's address.
+  const publishing = p.spinner();
+  publishing.start("Publishing to mthds.sh...");
+  const registrations = await registerMethods(
+    selectedMethods.map((method) => ({
+      address: local ? method.manifest.package.address : orgRepo!,
+      name: method.name,
+    })),
+    {
+      hubUrl: hub.url,
+      onMethod: (name) => publishing.message(`Publishing ${name} to mthds.sh...`),
+      onRateLimited: (seconds) =>
+        publishing.message(`mthds.sh asks to wait ${seconds} s before the next request...`),
+    },
+  );
+  publishing.stop("mthds.sh answered.");
+
+  let publishedCount = 0;
+  for (const registration of registrations) {
+    const method = selectedMethods.find((candidate) => candidate.name === registration.name);
+    if (!reportRegistration(registration, method, local)) continue;
+    publishedCount++;
+    const answer = registration.answer;
+    if (!isAccepted(answer)) continue;
+    // A local manifest may hold edits never pushed: a local publish is counted with what the hub
+    // read from the public repository alone.
+    if (local) trackLocalPublish(answer.method);
+    else if (method) trackPublish(method, answer.method.address);
   }
 
   await shutdown();
 
-  p.log.success(`Published ${selectedCount} method${selectedCount !== 1 ? "s" : ""} to mthds.sh`);
-  p.outro("Done");
+  const plural = (count: number): string => `${count} method${count !== 1 ? "s" : ""}`;
+  if (publishedCount === selectedCount) {
+    p.log.success(`Published ${plural(publishedCount)} to mthds.sh`);
+    p.outro("Done");
+    return;
+  }
+  if (publishedCount === 0) {
+    p.log.error("Nothing was published to mthds.sh.");
+  } else {
+    p.log.warn(`Published ${publishedCount} of ${plural(selectedCount)} to mthds.sh.`);
+  }
+  p.outro("");
+  process.exit(1);
 }

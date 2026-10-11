@@ -18,7 +18,14 @@ import { packageInit } from "./cli/commands/package/init.js";
 import { packageList } from "./cli/commands/package/list.js";
 import { packageValidate } from "./cli/commands/package/validate.js";
 import { RUNNER_NAMES } from "./runners/types.js";
-import { telemetryEnable, telemetryDisable, telemetryStatus } from "./cli/commands/telemetry.js";
+import {
+  telemetryEnable,
+  telemetryDisable,
+  telemetryStatus,
+  telemetryResetId,
+} from "./cli/commands/telemetry.js";
+import { installUsageStats } from "./usage-stats/session.js";
+import { noteErrorDomain } from "./usage-stats/outcome.js";
 import type { RunnerType } from "./runners/types.js";
 import type { Command as Cmd } from "commander";
 
@@ -431,29 +438,42 @@ runnerCmd
     await runnerStatus();
   });
 
-// ── mthds telemetry enable|disable ──────────────────────────────────
+// ── mthds telemetry status|enable|disable|reset-id ──────────────────
+// The usage-statistics command group, shared by every Pipelex and MTHDS tool on the machine
+// through ~/.mthds/usage-stats/. Its own commands send nothing and never print the notice.
 const telemetry = program
   .command("telemetry")
-  .description("Manage anonymous usage telemetry")
+  .description("Manage the anonymous usage statistics of every Pipelex and MTHDS tool")
   .exitOverride();
 
 telemetry
+  .command("status")
+  .description("Show whether usage statistics are on, and what keeps them off")
+  .addOption(
+    new Option("--format <format>", "Output format").choices(["text", "json"]).default("text"),
+  )
+  .exitOverride()
+  .action((options: { format?: string }) => {
+    telemetryStatus(options);
+  });
+
+telemetry
   .command("enable")
-  .description("Enable anonymous telemetry")
+  .description("Turn usage statistics back on for this machine")
   .exitOverride()
   .action(telemetryEnable);
 
 telemetry
   .command("disable")
-  .description("Disable anonymous telemetry")
+  .description("Turn usage statistics off for this machine, for every tool")
   .exitOverride()
   .action(telemetryDisable);
 
 telemetry
-  .command("status")
-  .description("Show current telemetry status")
+  .command("reset-id")
+  .description("Replace the anonymous installation identifier and drop queued events")
   .exitOverride()
-  .action(telemetryStatus);
+  .action(telemetryResetId);
 
 // ── mthds package <subcommand> ──────────────────────────────────────
 const packageCmd = program
@@ -491,10 +511,19 @@ program.action(() => {
   showBanner();
 });
 
+// One `command_completed` per command, once every command is registered (src/usage-stats/).
+const usageStats = installUsageStats(program, {
+  surface: "mthds",
+  toolVersion: pkg.version,
+  printsNotice: true,
+  silentGroups: ["telemetry"],
+});
+
 program.parseAsync(process.argv).catch((err: unknown) => {
   if (err instanceof CommanderError) {
     // --version: print version and exit
     if (err.code === "commander.version") {
+      usageStats.silence();
       console.log(pkg.version);
       process.exit(0);
     }
@@ -504,9 +533,13 @@ program.parseAsync(process.argv).catch((err: unknown) => {
     const unknownSubcommand =
       err.exitCode === 0 ? findUnknownSubcommand(program, process.argv.slice(2)) : undefined;
     if (err.exitCode === 0 && unknownSubcommand === undefined) {
+      usageStats.silence();
       showBanner();
       process.exit(0);
     }
+
+    // A command line Commander refused is the caller's to fix.
+    noteErrorDomain("input");
 
     printLogo();
     p.intro("mthds");

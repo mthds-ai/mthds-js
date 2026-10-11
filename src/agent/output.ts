@@ -9,6 +9,8 @@
 import type { BinaryRecoveryInfo } from "./binaries.js";
 import { ApiResponseError } from "../runners/api/exceptions.js";
 import type { ValidationErrorItem } from "../runners/api/models.js";
+import type { ErrorDomain } from "../usage-stats/contract.js";
+import { noteErrorDomain } from "../usage-stats/outcome.js";
 
 // ── Error domains ────────────────────────────────────────────────────
 
@@ -40,6 +42,31 @@ export type RunnerErrorDomain = (typeof RUNNER_ERROR_DOMAINS)[number];
 
 function isRunnerErrorDomain(value: string | undefined): value is RunnerErrorDomain {
   return (RUNNER_ERROR_DOMAINS as readonly string[]).includes(value ?? "");
+}
+
+/**
+ * Who can fix an error, as the usage statistics' `error_domain` says it, from the envelope's own
+ * domain: the caller (`input`), the machine's setup (`config`) or nobody beforehand (`runtime`).
+ * A domain that does not say, such as a failed install or a file that could not be written, sends
+ * none.
+ */
+const USAGE_STATS_ERROR_DOMAINS: Partial<
+  Record<AgentErrorDomain | RunnerErrorDomain, ErrorDomain>
+> = {
+  argument: "input",
+  validation: "input",
+  package: "input",
+  config: "config",
+  binary: "config",
+  runner: "runtime",
+  pipeline: "runtime",
+  input: "input",
+  runtime: "runtime",
+};
+
+/** Note, for the command's usage statistics, who can fix the error it is failing with. */
+function noteAgentErrorDomain(domain: AgentErrorDomain | RunnerErrorDomain | undefined): void {
+  noteErrorDomain(domain === undefined ? undefined : USAGE_STATS_ERROR_DOMAINS[domain]);
 }
 
 // ── Error hints ──────────────────────────────────────────────────────
@@ -76,8 +103,14 @@ export function agentMarkdownSuccess(markdown: string): void {
  * Emit a server-rendered Markdown failure to stderr + `process.exit(1)` — the
  * `--format markdown` invalid arm (a produced negative verdict). Mirrors the
  * local CLI, which writes the failure Markdown to stderr and exits non-zero.
+ * `errorDomain` is the one the JSON arm's envelope would carry, noted for the
+ * usage statistics as `agentError` notes it, so both arms count the failure alike.
  */
-export function agentMarkdownError(markdown: string): never {
+export function agentMarkdownError(
+  markdown: string,
+  errorDomain: AgentErrorDomain | RunnerErrorDomain,
+): never {
+  noteAgentErrorDomain(errorDomain);
   process.stderr.write(markdown.endsWith("\n") ? markdown : markdown + "\n");
   process.exit(1);
 }
@@ -110,6 +143,11 @@ export function agentError(
      * happened carries it, whether or not the failure is about the refusals.
      */
     skipped_methods?: unknown[];
+    /**
+     * What mthds.sh's registry route answered for each method a publish sent, so a failed
+     * publish says, method by method, why nothing was listed.
+     */
+    registrations?: unknown[];
   },
 ): never {
   const payload: Record<string, unknown> = {
@@ -137,6 +175,9 @@ export function agentError(
   if (extras?.skipped_methods !== undefined) {
     payload.skipped_methods = extras.skipped_methods;
   }
+  if (extras?.registrations !== undefined) {
+    payload.registrations = extras.registrations;
+  }
 
   // Remove undefined values for cleaner output
   for (const key of Object.keys(payload)) {
@@ -145,6 +186,7 @@ export function agentError(
     }
   }
 
+  noteAgentErrorDomain(extras?.error_domain);
   process.stderr.write(JSON.stringify(payload, null, 2) + "\n");
   process.exit(1);
 }

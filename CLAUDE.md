@@ -42,7 +42,16 @@ src/
 │   ├── api/                        # MthdsApiClient (IS the api runner) + Dict models + errors
 │   └── pipelex/runner.ts           # Pipelex CLI runner
 ├── config/
-│   └── config.ts                   # ~/.mthds/config handling
+│   ├── config.ts                   # ~/.mthds/config handling
+│   ├── config-file.ts              # the config file's path, read and write
+│   └── dotenv.ts                   # the config file's dotenv format
+├── usage-stats/                    # Anonymous usage statistics (command_completed) — see docs/usage-statistics.md
+│   ├── contract.ts                 # The shared contract's constants, checked against tests/fixtures/usage-statistics.json
+│   ├── switches.ts / project.ts    # What turns statistics off
+│   ├── state.ts / spool.ts         # ~/.mthds/usage-stats/: identifier, markers, queued events
+│   ├── event.ts / outcome.ts       # Building the event
+│   ├── session.ts                  # Commander hooks: notice, exit handler, delivery
+│   └── sender.ts / sender-main.ts  # The sender process posting to PostHog
 ├── package/
 │   ├── manifest/
 │   │   ├── types.ts                # Manifest types
@@ -50,7 +59,8 @@ src/
 │   └── exceptions.ts               # Package error types
 └── installer/                      # JS-only: method installation
     ├── resolver/                   # GitHub/local method resolution
-    ├── telemetry/                  # PostHog tracking
+    ├── registry/                   # mthds.sh registry route client (publish) — see docs/publishing.md
+    ├── telemetry/                  # method_install / method_publish events
     └── runtime/                    # Pipelex installer
 ```
 
@@ -68,6 +78,8 @@ tests/
 ├── integration/                    # Component interaction tests
 └── e2e/                            # Full CLI invocation tests
 ```
+
+The CLIs send usage statistics and method events, so tests never touch the real home or network: `vitest.config.ts` gives every test, and every CLI a test spawns, a scratch `HOME`, `DO_NOT_TRACK=1` and a loopback statistics endpoint, `tests/support/isolation-guard.ts` fails a test that connects to a non-loopback host, and the run fails if the real `~/.mthds/usage-stats/` changed. A test that builds a CLI's environment from scratch keeps a scratch `HOME` and a loopback `PIPELEX_USAGE_STATS_ENDPOINT` or `MTHDS_HUB_URL`. Run a built CLI by hand as `env HOME=$(mktemp -d) DO_NOT_TRACK=1 node dist/cli.js …` (a shell's unexported `DO_NOT_TRACK` does not reach it).
 
 ## Conventions
 

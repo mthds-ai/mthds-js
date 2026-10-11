@@ -66,12 +66,23 @@ export interface PipelexRunFlags {
   hosted?: boolean;
 }
 
+/** How a `PipelexRunner` starts the `pipelex` and `pipelex-agent` processes it runs. */
+export interface PipelexRunnerOptions {
+  /**
+   * Their environment; this process's when absent. `mthds-agent` passes its own plus
+   * `PIPELEX_USAGE_STATS_HOST=mthds-agent`, so their usage statistics say that it ran them.
+   */
+  env?: NodeJS.ProcessEnv;
+}
+
 export class PipelexRunner implements Runner {
   readonly type: RunnerType = Runners.PIPELEX;
   private readonly libraryDirs: string[];
+  private readonly env: NodeJS.ProcessEnv | undefined;
 
-  constructor(libraryDirs?: string[]) {
+  constructor(libraryDirs?: string[], options: PipelexRunnerOptions = {}) {
     this.libraryDirs = libraryDirs ?? [];
+    this.env = options.env;
   }
 
   private libraryArgs(): string[] {
@@ -81,6 +92,7 @@ export class PipelexRunner implements Runner {
   private async exec(args: string[]): Promise<{ stdout: string; stderr: string }> {
     return execFileAsync("pipelex", [...args, ...this.libraryArgs()], {
       encoding: "utf-8",
+      env: this.env,
     });
   }
 
@@ -92,6 +104,7 @@ export class PipelexRunner implements Runner {
     return new Promise<void>((resolve, reject) => {
       const child = spawn("pipelex", [...args, ...this.libraryArgs()], {
         stdio: [inheritStdin ? "inherit" : "ignore", "inherit", "inherit"],
+        env: this.env,
       });
       child.on("error", (err) => reject(new Error(`pipelex not found: ${err.message}`)));
       child.on("close", (code) => {
@@ -160,6 +173,7 @@ export class PipelexRunner implements Runner {
     const args = ["check-model", request.reference, "--type", request.type, "--format", "json"];
     const { stdout } = await execFileAsync("pipelex-agent", args, {
       encoding: "utf-8",
+      env: this.env,
     });
     return JSON.parse(stdout) as CheckModelResponse;
   }
@@ -173,6 +187,7 @@ export class PipelexRunner implements Runner {
     args.push("--format", "json");
     const { stdout } = await execFileAsync("pipelex-agent", args, {
       encoding: "utf-8",
+      env: this.env,
     });
     return toModelDeck(JSON.parse(stdout));
   }

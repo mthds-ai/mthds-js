@@ -7,6 +7,8 @@ import {
   setConfigValue,
   listConfig,
   isValidBaseUrl,
+  isValidTelemetryValue,
+  TELEMETRY_VALUE_HINT,
 } from "../../config/config.js";
 import { RUNNER_NAMES } from "../../runners/types.js";
 import type { RunnerType } from "../../runners/types.js";
@@ -34,6 +36,13 @@ export async function configSet(cliKey: string, value: string): Promise<void> {
 
   if (configKey === "baseUrl" && !isValidBaseUrl(value)) {
     p.log.error(`Invalid URL: ${value}`);
+    p.outro("");
+    process.exit(1);
+  }
+
+  if (configKey === "telemetry" && !isValidTelemetryValue(value)) {
+    p.log.error(`Invalid value for telemetry: ${value}`);
+    p.log.info(TELEMETRY_VALUE_HINT);
     p.outro("");
     process.exit(1);
   }

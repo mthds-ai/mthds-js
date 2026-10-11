@@ -21,6 +21,7 @@ import { accessSync, constants as fsConstants, existsSync, readFileSync, statSyn
 import { spawnSync } from "node:child_process";
 import { posix as path } from "node:path";
 import { formatValidationItem } from "../../cli/commands/error-output.js";
+import { passthroughEnv } from "../passthrough.js";
 
 const PLXT_INSTALL_HINT = "uv tool install pipelex-tools";
 const PIPELEX_AGENT_INSTALL_HINT = "uv tool install pipelex";
@@ -312,7 +313,7 @@ export function commandOnPath(name: string): boolean {
 }
 
 function runPlxt(args: string[]): PlxtRunResult {
-  const result = spawnSync("plxt", args, { encoding: "utf8" });
+  const result = spawnSync("plxt", args, { encoding: "utf8", env: passthroughEnv() });
   if (result.error) {
     return {
       exitCode: 127,
@@ -366,7 +367,7 @@ export function runPipelexValidate(file: string, libraryDir: string): PipelexVal
       "--error-format",
       "json",
     ],
-    { encoding: "utf8" },
+    { encoding: "utf8", env: passthroughEnv() },
   );
   if (result.error) {
     return { exitCode: 127, stderr: result.error.message };

@@ -13,30 +13,27 @@ vi.mock("posthog-node", () => {
   return { PostHog: MockPostHog };
 });
 
-vi.mock("../../../../src/config/config.js", () => ({
-  isTelemetryEnabled: vi.fn().mockReturnValue(true),
-  getTelemetryDisablingEnvVar: vi.fn().mockReturnValue(undefined),
+vi.mock("../../../../src/usage-stats/switches.js", () => ({
+  methodEventsEnabled: vi.fn().mockReturnValue(true),
 }));
 
-import { isTelemetryEnabled, getTelemetryDisablingEnvVar } from "../../../../src/config/config.js";
+import { methodEventsEnabled } from "../../../../src/usage-stats/switches.js";
 import {
+  trackLocalPublish,
   trackPublish,
   trackInstall,
-  publishBlockedByTelemetry,
   shutdown,
 } from "../../../../src/installer/telemetry/posthog.js";
 import type { ResolvedMethod } from "../../../../src/package/manifest/types.js";
 
-const mockedIsTelemetryEnabled = vi.mocked(isTelemetryEnabled);
-const mockedGetTelemetryDisablingEnvVar = vi.mocked(getTelemetryDisablingEnvVar);
+const mockedMethodEventsEnabled = vi.mocked(methodEventsEnabled);
 
 beforeEach(async () => {
   // Drop the client a previous test created, so each test sees getClient()
-  // consult isTelemetryEnabled afresh.
+  // consult the switches afresh.
   await shutdown();
   vi.clearAllMocks();
-  mockedIsTelemetryEnabled.mockReturnValue(true);
-  mockedGetTelemetryDisablingEnvVar.mockReturnValue(undefined);
+  mockedMethodEventsEnabled.mockReturnValue(true);
 });
 
 const sampleMethod: ResolvedMethod = {
@@ -58,6 +55,48 @@ const sampleMethod: ResolvedMethod = {
   rawManifest: "[package]\nname = 'contract-analysis'",
   files: [],
 };
+
+describe("trackLocalPublish", () => {
+  it("carries only what the hub answered, never a field of the local manifest", () => {
+    trackLocalPublish({
+      address: "MTHDS-AI/contract-analysis",
+      name: "contract-analysis",
+      version: "1.0.0",
+      commit_sha: "8d39d1dca38a4de613c20e85fbaa05dd75024835",
+      url: "https://mthds.sh/methods/MTHDS-AI/contract-analysis/contract-analysis",
+    });
+
+    expect(mockCapture).toHaveBeenCalledTimes(1);
+    const captured = mockCapture.mock.calls[0]![0] as {
+      event: string;
+      properties: Record<string, unknown>;
+    };
+    expect(captured.event).toBe("method_publish");
+    expect(Object.keys(captured.properties).sort()).toEqual([
+      "address",
+      "name",
+      "package_version",
+      "timestamp",
+    ]);
+    expect(captured.properties).toMatchObject({
+      address: "MTHDS-AI/contract-analysis",
+      name: "contract-analysis",
+      package_version: "1.0.0",
+    });
+  });
+
+  it("sends nothing when a switch turns the method events off", () => {
+    mockedMethodEventsEnabled.mockReturnValue(false);
+    trackLocalPublish({
+      address: "a/b",
+      name: "c",
+      version: "1.0.0",
+      commit_sha: "",
+      url: "https://mthds.sh/methods/a/b/c",
+    });
+    expect(mockCapture).not.toHaveBeenCalled();
+  });
+});
 
 describe("trackPublish", () => {
   it("captures a method_publish event with the manifest's fields one by one", () => {
@@ -91,8 +130,15 @@ describe("trackPublish", () => {
     expect(Object.values(call.properties)).not.toContain(sampleMethod.rawManifest);
   });
 
+  it("sends the address mthds.sh listed the method under", () => {
+    trackPublish(sampleMethod, "MTHDS-AI/Contract-Analysis");
+
+    const call = mockCapture.mock.calls[0]![0];
+    expect(call.properties.address).toBe("MTHDS-AI/Contract-Analysis");
+  });
+
   it("falls back to the manifest's address, without its github.com/ prefix", () => {
-    trackPublish(sampleMethod);
+    trackInstall(sampleMethod);
 
     const call = mockCapture.mock.calls[0]![0];
     expect(call.properties.address).toBe("mthds-ai/contract-analysis");
@@ -106,8 +152,8 @@ describe("trackPublish", () => {
     expect(new Date(call.properties.timestamp).toISOString()).toBe(call.properties.timestamp);
   });
 
-  it("sends nothing when telemetry is disabled", () => {
-    mockedIsTelemetryEnabled.mockReturnValue(false);
+  it("sends nothing when a switch turns the method events off", () => {
+    mockedMethodEventsEnabled.mockReturnValue(false);
 
     trackPublish(sampleMethod, "mthds-ai/contract-analysis");
 
@@ -142,31 +188,6 @@ describe("trackPublish vs trackInstall", () => {
     const publishKeys = Object.keys(publishCall.properties).sort();
     const installKeys = Object.keys(installCall.properties).sort();
     expect(publishKeys).toEqual(installKeys);
-  });
-});
-
-describe("publishBlockedByTelemetry", () => {
-  it("is undefined while telemetry is on", () => {
-    expect(publishBlockedByTelemetry()).toBeUndefined();
-  });
-
-  it("names the environment variable holding telemetry off", () => {
-    mockedIsTelemetryEnabled.mockReturnValue(false);
-    mockedGetTelemetryDisablingEnvVar.mockReturnValue("DO_NOT_TRACK");
-
-    const reason = publishBlockedByTelemetry();
-
-    expect(reason).toMatch(/^Nothing was published/);
-    expect(reason).toContain("DO_NOT_TRACK is set in your environment");
-  });
-
-  it("points at mthds telemetry enable when the config file holds it off", () => {
-    mockedIsTelemetryEnabled.mockReturnValue(false);
-
-    const reason = publishBlockedByTelemetry();
-
-    expect(reason).toContain("~/.mthds/config");
-    expect(reason).toContain("mthds telemetry enable");
   });
 });
 

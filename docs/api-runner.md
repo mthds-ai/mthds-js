@@ -1,6 +1,8 @@
 # Using a runner API — hosted or self-hosted
 
-`mthds-js` runs methods either with the **local `pipelex` runner** (a Python CLI on your machine, the default) or with an **HTTP runner** — an MTHDS-compliant API server. This page is about the HTTP runner: how to point the CLI and SDK at one.
+`mthds-js` runs methods either with the **`pipelex` runner** (a Python CLI on your machine, the default) or with an **HTTP runner** — an MTHDS-compliant API server. This page is about the HTTP runner: how to point the CLI and SDK at one.
+
+The `pipelex` runner can reach the hosted API too, by another route: pipelex executes a run on this machine or on the hosted Pipelex API, as its own `[run] execution` setting or a `--hosted`/`--local` flag says, with its own key (`PIPELEX_API_KEY` in `~/.pipelex/.env`, which `mthds login` saves). That route is pipelex's, and `CLI.md` describes it under "Where the pipelex runner executes a run"; this page is about the HTTP runner.
 
 There are two common targets, and the same `MthdsApiClient` and `mthds` CLI drive both:
 
@@ -57,6 +59,8 @@ mthds config set api-key YOUR_KEY
 
 Or run `mthds runner setup api` for an interactive prompt (base URL + masked key).
 
+This `api-key` is the HTTP runner's own. It is not the `PIPELEX_API_KEY` that `mthds login` and `pipelex login` save to `~/.pipelex/.env` for the `pipelex` runner's hosted runs: each route reads only its own key, and setting one does not set the other.
+
 ### Self-hosted
 
 Boot a bare runner, then point at it — no key needed:
@@ -84,7 +88,7 @@ For anything long-running, prefer `start` over `execute`. The async `start` prim
 **Custom-PipeFunc method bundles.** A method whose pipes call custom Python (`funcs/*.py`, and any `structures/*.py` / `requirements.txt`) is more than its `.mthds` text. When `mthds run bundle` / `mthds run pipe` target a **directory** — or a `.mthds` file whose directory carries custom Python — the CLI ships the whole bundle instead of just the `.mthds`, leaving out the folders pipelex's library scan skips (virtual environments, caches, `results/`, a folder the user may not list) and every hidden folder:
 
 - Against the **API runner**, the bundle travels as the pipelex-api `files` extension (a `{ relativePath: text }` map on the run request); the runner materializes it into a temporary library directory before the run, so the custom Python travels with the method. (Custom `.py` is only executed on a sandbox-hosted deployment — a non-sandbox runner rejects it with `CustomCodeRequiresSandbox`.)
-- Against the **pipelex runner**, the same bundle is written back to a temp directory and run locally with `-L`, so the `funcs/*.py` resolve.
+- Against the **pipelex runner**, the same bundle is written back to a temp directory and handed to `pipelex run bundle` with `-L`, so the `funcs/*.py` resolve when pipelex executes the run on this machine. When pipelex executes it on the hosted Pipelex API instead (`[run] execution = "hosted"`), it sends only the `.mthds` files, so the custom Python does not travel and such a method cannot run that way.
 
 A plain `.mthds` file with no custom Python keeps the lighter single-content path (`mthds_contents`) — nothing changes for the common case. `files` is the SDK's `RunOptions.files` field (or `bundle_b64` for a zipped bundle); both are mutually exclusive with `mthds_contents`.
 

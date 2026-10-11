@@ -71,7 +71,7 @@ interface PipeInputContractCommon {
 
 /**
  * One declared input slot — an entry of `PipeIOContract.inputs`, keyed by the
- * authored input name (dotted names included). Closed shape.
+ * authored input name, a plain `snake_case` name. Closed shape.
  *
  * A union discriminated on `multiplicity`, so the page's pairing rules are the
  * type rather than prose beside it:

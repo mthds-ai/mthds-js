@@ -304,7 +304,7 @@ function renderPath(path: readonly string[]): string {
   return path.map((segment) => renderKey(segment)).join(".");
 }
 
-/** A bare key where TOML allows one, a quoted key otherwise — a dotted input name included. */
+/** A bare key where TOML allows one, a quoted key otherwise, such as a key carrying a dot or a space. */
 function renderKey(key: string): string {
   if (BARE_KEY.test(key)) return key;
   return renderString(key);

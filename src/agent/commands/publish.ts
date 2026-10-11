@@ -8,7 +8,11 @@ import { parseAddress } from "../../installer/resolver/address.js";
 import { resolveFromGitHub } from "../../installer/resolver/github.js";
 import { resolveFromLocal } from "../../installer/resolver/local.js";
 import { describeUnusableMethod, skippedMethodReports } from "../../installer/resolver/skipped.js";
-import { trackPublish, shutdown } from "../../installer/telemetry/posthog.js";
+import {
+  trackPublish,
+  publishBlockedByTelemetry,
+  shutdown,
+} from "../../installer/telemetry/posthog.js";
 import type { ResolvedRepo } from "../../package/manifest/types.js";
 
 interface AgentPublishOptions {
@@ -93,23 +97,18 @@ export async function agentPublish(
     });
   }
 
-  // Track publish telemetry (public GitHub repos only)
+  // Track publish telemetry (public GitHub repos only), the one way a method
+  // reaches mthds.sh, so a publish with telemetry off is refused, not reported.
   if (resolved.source === "github" && resolved.isPublic) {
-    for (const method of resolved.methods) {
-      const pkg = method.manifest.package;
-      trackPublish({
-        address: orgRepo ?? pkg.address.replace(/^github\.com\//, ""),
-        name: pkg.name,
-        main_pipe: pkg.main_pipe,
-        version: pkg.version,
-        description: pkg.description,
-        display_name: pkg.display_name,
-        authors: pkg.authors,
-        license: pkg.license,
-        mthds_version: pkg.mthds_version,
-        exports: method.manifest.exports,
-        manifest_raw: method.rawManifest,
+    const blocked = publishBlockedByTelemetry();
+    if (blocked) {
+      agentError(blocked, "PublishError", {
+        error_domain: AGENT_ERROR_DOMAINS.INSTALL,
+        skipped_methods: skippedMethodReports(resolved),
       });
+    }
+    for (const method of resolved.methods) {
+      trackPublish(method, orgRepo);
     }
   }
 

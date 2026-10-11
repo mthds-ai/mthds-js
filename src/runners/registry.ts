@@ -8,9 +8,9 @@ import { MTHDS_JS_VERSION } from "../version.js";
 
 /**
  * The program a runner is created for — the two binaries this package ships.
- * Each is a row of the closed token registry in the workspace spec
- * `docs/specs/client-identification.md`, and names itself in front of
- * `mthds-js/<version>` in the API runner's `User-Agent`.
+ * Each is a row of the closed token registry in the spec
+ * `conformance/specs/client-identification.md`, in the conformance repo, and
+ * names itself in front of `mthds-js/<version>` in the API runner's `User-Agent`.
  */
 export type CliCaller = "mthds-cli" | "mthds-agent";
 

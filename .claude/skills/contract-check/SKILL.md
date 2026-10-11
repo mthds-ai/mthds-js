@@ -1,6 +1,6 @@
 ---
 name: contract-check
-description: Detect interface-contract drift between this package's code and a baseline (defaults to the last release tag, but the user can specify any tag or commit). Compares the source files behind the mthds-js provided/consumed/implemented interfaces — the mthds-agent CLI, the MTHDS Protocol API runner, plxt/pipelex-agent passthrough, and the hook pipeline — against the interface specs in ../docs/specs/. Use when the user says "check the contract", "contract review", "contract check", "did we break the contract", "check interfaces", "API contract", "protocol drift", "compare to vX.Y.Z", or before shipping/releasing a version that touches CLI, API-runner, protocol, or passthrough code. Also trigger automatically before the /release skill runs, and proactively when you notice such changes during a PR review.
+description: Detect interface-contract drift between this package's code and a baseline (defaults to the last release tag, but the user can specify any tag or commit). Compares the source files behind the mthds-js provided/consumed/implemented interfaces — the mthds-agent CLI, the MTHDS Protocol API runner, plxt/pipelex-agent passthrough, and the hook pipeline — against the interface specs in ../conformance/specs/. Use when the user says "check the contract", "contract review", "contract check", "did we break the contract", "check interfaces", "API contract", "protocol drift", "compare to vX.Y.Z", or before shipping/releasing a version that touches CLI, API-runner, protocol, or passthrough code. Also trigger automatically before the /release skill runs, and proactively when you notice such changes during a PR review.
 ---
 
 # Contract Check
@@ -11,21 +11,21 @@ The output is a summary in the session plus one **workspace ledger item per acti
 
 ## Prerequisites: Locate the Specs
 
-The specs live at `../docs/specs/` (relative to the mthds-js repo root, i.e. the sibling `docs` repo). They were previously called "contracts" and lived in `../docs/contracts/` — that path is gone; use `../docs/specs/`. Before doing anything else:
+The specs live in the `conformance` repo, in its `specs/` directory beside the tests that verify them. Every checkout of mthds-js, the main one and each `_mthds-js--<topic>` worktree, sits directly under the workspace root beside the `conformance` checkout, so from the mthds-js repo root the specs are at `../conformance/specs/`. Before doing anything else:
 
-1. Check that the directory `../docs/specs/` exists.
+1. Check that the directory `../conformance/specs/` exists.
 2. Check that it contains at least `mthds-agent-cli.md` (the one spec mthds-js owns).
 3. Also check for `pipelex-mthds-protocol.md`, `plxt-cli.md`, and `hook-lint-pipeline.md` — these are required by Step 4.
 
 If the directory is missing or does not contain the expected spec files, **stop immediately** and tell the user:
 
-> The interface specs directory was not found at `../docs/specs/`. You need access to the `docs` repo. Please contact the Pipelex staff to get access.
+> The interface specs directory was not found at `../conformance/specs/`. You need the `conformance` repo checked out at the workspace root, beside this one. Please contact the Pipelex staff to get access.
 
 Do not proceed with the review if specs are missing.
 
 ### The spec set in scope
 
-`docs/specs/` holds more specs than this skill checks. Only these touch mthds-js code:
+`conformance/specs/` holds more specs than this skill checks. Only these touch mthds-js code:
 
 | Spec | mthds-js's relationship | Owner repo |
 |---|---|---|
@@ -67,7 +67,7 @@ sources:
   - mthds-js/src/agent/**/*.ts
 ```
 
-Read `../docs/specs/mthds-agent-cli.md`'s `sources:` and diff exactly those globs (strip the `mthds-js/` prefix — you are already in that repo). This self-maintains as files move, so prefer it over a hardcoded list for the owned spec.
+Read `../conformance/specs/mthds-agent-cli.md`'s `sources:` and diff exactly those globs (strip the `mthds-js/` prefix — you are already in that repo). This self-maintains as files move, so prefer it over a hardcoded list for the owned spec.
 
 ### b) Explicit map (for specs mthds-js consumes/implements)
 
@@ -127,13 +127,13 @@ For each contract-visible change, read the relevant spec and compare:
 
 | What changed | Spec to check |
 |---|---|
-| `mthds-agent` commands, options, output/envelope format, error types | `../docs/specs/mthds-agent-cli.md` |
-| API-runner wire shapes — validate report/result union, model deck, version handshake, request/response models, HTTP status semantics, RFC 7807 error bodies, `pipe_ref` identity | `../docs/specs/pipelex-mthds-protocol.md` |
-| Passthrough to `plxt` (arguments, flags forwarded, version pin) | `../docs/specs/plxt-cli.md` |
-| Passthrough to `pipelex-agent` | `../docs/specs/mthds-agent-cli.md` (runner-aware section) |
-| Hook-facing behavior (`codex-hook.ts`, the lint/fmt/validate pipeline, the `validate bundle` envelope the hook parses) | `../docs/specs/hook-lint-pipeline.md` |
-| Pipe I/O route shapes — the `files[]` XOR `method_ref` envelope, `pipe_ref` selection and its refusal `error_type`s, the `200` + `is_valid` verdict discipline | `../docs/specs/pipelex-codegen.md` |
-| The standard's validate extensions — the `pipe_io_contracts` contract members, the closed `FieldKind` union and its per-kind slots, the common field slots, where `item_count` is present versus `null` | `../docs/specs/mthds-input-form-descriptor.md` for the carriage, and the normative shape pages it points at (`mthds/docs/spec/pipe-io-contracts.md`, `mthds/docs/spec/input-form-descriptor.md`, `mthds/docs/spec/intent-hints.md`) |
+| `mthds-agent` commands, options, output/envelope format, error types | `../conformance/specs/mthds-agent-cli.md` |
+| API-runner wire shapes — validate report/result union, model deck, version handshake, request/response models, HTTP status semantics, RFC 7807 error bodies, `pipe_ref` identity | `../conformance/specs/pipelex-mthds-protocol.md` |
+| Passthrough to `plxt` (arguments, flags forwarded, version pin) | `../conformance/specs/plxt-cli.md` |
+| Passthrough to `pipelex-agent` | `../conformance/specs/mthds-agent-cli.md` (runner-aware section) |
+| Hook-facing behavior (`codex-hook.ts`, the lint/fmt/validate pipeline, the `validate bundle` envelope the hook parses) | `../conformance/specs/hook-lint-pipeline.md` |
+| Pipe I/O route shapes — the `files[]` XOR `method_ref` envelope, `pipe_ref` selection and its refusal `error_type`s, the `200` + `is_valid` verdict discipline | `../conformance/specs/pipelex-codegen.md` |
+| The standard's validate extensions — the `pipe_io_contracts` contract members, the closed `FieldKind` union and its per-kind slots, the common field slots, where `item_count` is present versus `null` | `../conformance/specs/mthds-input-form-descriptor.md` for the carriage, and the normative shape pages it points at (`mthds/docs/spec/pipe-io-contracts.md`, `mthds/docs/spec/input-form-descriptor.md`, `mthds/docs/spec/intent-hints.md`) |
 | `mthds` interactive CLI | No spec exists yet — flag new commands/options for the user's awareness, but no spec comparison needed |
 
 **Pipelex stub sync check** (always run, even if `pipelex-commands.ts` itself didn't change):
@@ -151,7 +151,7 @@ For each contract-visible change, determine:
 2. **Does the change contradict the spec?** (the code now does something the spec says it doesn't)
 3. **Is the change absent from the spec?** (new behavior not yet documented)
 
-**When citing a spec surface, note its conformance status.** Each verified surface in `docs/specs/` carries a `> Verified by:` line pointing at the `conformance/` test that exercises it (or an explicit `<!-- unverified: ... -->` marker). When a finding touches a surface, include its `> Verified by:` target (or note it's unverified) so the reviewer knows whether a test already guards it.
+**When citing a spec surface, note its conformance status.** Each verified surface in `conformance/specs/` carries a `> Verified by:` line pointing at the test under `conformance/tests/` that exercises it (or an explicit `<!-- unverified: ... -->` marker). When a finding touches a surface, include its `> Verified by:` target (or note it's unverified) so the reviewer knows whether a test already guards it.
 
 ## Step 5 — Report
 
@@ -173,12 +173,12 @@ Start the report with a header block, then the summary table, then the detailed 
 **Target**: HEAD (`<commit short hash>`)
 
 **Specs checked**:
-- `docs/specs/mthds-agent-cli.md` — mthds-agent CLI (owned by mthds-js)
-- `docs/specs/pipelex-mthds-protocol.md` — MTHDS Protocol wire surface (owned by pipelex + pipelex-api; implemented by the API runner)
-- `docs/specs/plxt-cli.md` — plxt CLI (owned by vscode-pipelex; consumed via passthrough)
-- `docs/specs/hook-lint-pipeline.md` — hook pipeline (owned by mthds-plugins; participated in by codex-hook.ts)
-- `docs/specs/pipelex-codegen.md` — the pipe I/O route and the crate envelope it shares (owned by pipelex + pipelex-api; consumed by the API runner)
-- `docs/specs/mthds-input-form-descriptor.md` — carriage of the standard's validate extensions (shape owned by the standard; typed in `src/protocol/`)
+- `conformance/specs/mthds-agent-cli.md` — mthds-agent CLI (owned by mthds-js)
+- `conformance/specs/pipelex-mthds-protocol.md` — MTHDS Protocol wire surface (owned by pipelex + pipelex-api; implemented by the API runner)
+- `conformance/specs/plxt-cli.md` — plxt CLI (owned by vscode-pipelex; consumed via passthrough)
+- `conformance/specs/hook-lint-pipeline.md` — hook pipeline (owned by mthds-plugins; participated in by codex-hook.ts)
+- `conformance/specs/pipelex-codegen.md` — the pipe I/O route and the crate envelope it shares (owned by pipelex + pipelex-api; consumed by the API runner)
+- `conformance/specs/mthds-input-form-descriptor.md` — carriage of the standard's validate extensions (shape owned by the standard; typed in `src/protocol/`)
 ```
 
 ### Summary Table
@@ -245,7 +245,7 @@ This check runs before every release, against a moving baseline, so the same dri
 
 ```bash
 ledger list --ref skill:contract-check --status open
-ledger list --ref spec:docs/specs/<file>          # prefix match on the surface
+ledger list --ref spec:conformance/specs/<file>   # prefix match on the surface
 ```
 
 If an open item already covers the finding, do not file a second one. Record the new sighting on the existing item and move on:
@@ -258,12 +258,12 @@ Mention the existing ID in the report so the reader sees it was already tracked.
 
 ### 6d — Pick the owner and the type
 
-`--owner` is the repo that *fixes* it — not the repo that found it. Note that `docs/specs/` lives in the workspace meta-repo, so a spec edit is owned by `workspace`, never by mthds-js.
+`--owner` is the repo that *fixes* it — not the repo that found it. Note that the specs live in the `conformance` repo beside the tests that verify them, so a spec edit and its conformance test pair are owned by `conformance`, never by mthds-js.
 
 | What resolving the finding requires | `--owner` | `--type` |
 |---|---|---|
 | An mthds-js code change | `mthds-js` | `bug` if shipped behavior is wrong, else `task` |
-| A `docs/specs/` edit (and its `conformance/` pair) | `workspace` | `spec` |
+| A `conformance/specs/` edit (and its conformance test pair) | `conformance` | `spec` |
 | A change in another implementation of the same spec — `pipelex`, `pipelex-api`, `vscode-pipelex`, `mthds-plugins` | that repo | `bug` or `task` |
 | **Which side is wrong is genuinely undetermined** | `workspace` | `decision` |
 
@@ -281,7 +281,7 @@ Write each finding's body to a scratch file and pass it with `--body-from`; neve
 
 - `## What` — the disagreement, plainly, as if the reader has never seen this repo.
 - `## Evidence` — required. `repo/path/file.ext:line` on both sides (the code site *and* the spec line), the commands you ran (`git diff <baseline> HEAD -- <file>`, the `grep` that came back empty), and the surface's conformance status: its `> Verified by:` target, or that it is unverified.
-- `## Why it was not fixed in place` — required whenever the owner is not `mthds-js`. Name the boundary: the spec lives in the workspace repo and its `conformance/` pair must move in the same change; the passthrough contract is `vscode-pipelex`'s; and so on.
+- `## Why it was not fixed in place` — required whenever the owner is not `mthds-js`. Name the boundary: the spec lives in the `conformance` repo and its conformance test must move with it in the same pull request; the passthrough contract is `vscode-pipelex`'s; and so on.
 - `## Suggested fix` — optional but valuable here, and say how confident you are. State the options; do not prescribe which side changes.
 - `## Options` / `## Recommendation` — required on a `decision`.
 
@@ -289,11 +289,11 @@ Then file it:
 
 ```bash
 ledger new \
-  --owner workspace --type spec --severity normal \
+  --owner conformance --type spec --severity normal \
   --theme cross-repo-hygiene \
   --title "…" \
   --ref skill:contract-check \
-  --ref "spec:docs/specs/<file>#<section>" \
+  --ref "spec:conformance/specs/<file>#<section>" \
   --ref mthds-js/src/<path>.ts \
   --body-from <scratch-path>
 ```
@@ -317,8 +317,8 @@ Close the session's report with the IDs, so the human can see the check's output
 
 ```
 Filed:
-  L-…  workspace  spec      Document `run start` in the mthds-agent CLI spec
-  L-…  mthds-js   bug       Register the `codegen` stub on the API runner
+  L-…  conformance  spec  Document `run start` in the mthds-agent CLI spec
+  L-…  mthds-js     bug   Register the `codegen` stub on the API runner
 Already tracked:
   L-…  (noted this run's sighting)
 ```
@@ -335,7 +335,7 @@ ledger commit
 ## Notes
 
 - **Never write a `wip/contract-check-*.md` report.** That was this skill's output until the workspace ledger existed, and it is the shape the ledger replaced: a file nobody reads, in a repo that often is not the one that has to act. Findings go to `ledger new` (Step 6), durable knowledge goes to `mthds-js/docs/`, and the summary goes to the session.
-- **Specs and conformance are a linked pair.** If the resolution to a finding is to edit a spec in `docs/specs/`, the matching `conformance/` test must be updated in the same change, and `make check-spec-links` (run from the `conformance/` repo) must pass — it enforces the bidirectional `> Verified by:` ↔ `pytestmark = pytest.mark.spec(...)` links. A spec edit that renames a heading or documents a new surface without touching conformance will fail that gate. Say so in the item body whenever a finding points at a spec edit — the agent who picks it up needs to know the change is two repos wide.
+- **Specs and conformance are a linked pair.** If the resolution to a finding is to edit a spec in `conformance/specs/`, the matching test under `conformance/tests/` must be updated in the same change, and `make check-spec-links` (run from the `conformance` repo) must pass — it enforces the bidirectional `> Verified by:` ↔ `pytestmark = pytest.mark.spec(...)` links. A spec edit that renames a heading or documents a new surface without touching its test will fail that gate. Say so in the item body whenever a finding points at a spec edit — the agent who picks it up needs to know the spec and its test move together in one `conformance` pull request.
 - The `mthds` interactive CLI does not have a spec yet (it's user-facing, not machine-facing). Flag notable changes for awareness but don't treat them as spec violations.
 - The `mthds-agent` CLI spec and the MTHDS Protocol spec are the most critical, because AI agents, the `skills` plugin, and `pipelex-app` depend on their exact output/wire formats.
 - When checking passthrough behavior, pay special attention to how arguments are constructed and forwarded — even small changes (extra flags, different ordering) can break downstream consumers.

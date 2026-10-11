@@ -38,20 +38,7 @@ export function runInstallFlow(input: InstallFlowInput): InstallFlowResult {
 
   if (resolved.source === "github" && resolved.isPublic) {
     for (const method of resolved.methods) {
-      const pkg = method.manifest.package;
-      trackInstall({
-        address: orgRepo ?? pkg.address.replace(/^github\.com\//, ""),
-        name: pkg.name,
-        main_pipe: pkg.main_pipe,
-        version: pkg.version,
-        description: pkg.description,
-        display_name: pkg.display_name,
-        authors: pkg.authors,
-        license: pkg.license,
-        mthds_version: pkg.mthds_version,
-        exports: method.manifest.exports,
-        manifest_raw: method.rawManifest,
-      });
+      trackInstall(method, orgRepo);
     }
   }
 

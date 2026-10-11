@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { Command, CommanderError } from "commander";
+import { Command, CommanderError, Option } from "commander";
 import { createRequire } from "node:module";
 import { resolve } from "node:path";
 import * as p from "@clack/prompts";
@@ -18,7 +18,7 @@ import { packageInit } from "./cli/commands/package/init.js";
 import { packageList } from "./cli/commands/package/list.js";
 import { packageValidate } from "./cli/commands/package/validate.js";
 import { RUNNER_NAMES } from "./runners/types.js";
-import { isTelemetryEnabled, setTelemetryEnabled, getTelemetrySource } from "./config/config.js";
+import { telemetryEnable, telemetryDisable, telemetryStatus } from "./cli/commands/telemetry.js";
 import type { RunnerType } from "./runners/types.js";
 import type { Command as Cmd } from "commander";
 
@@ -71,24 +71,44 @@ program
 // ── mthds login ─────────────────────────────────────────────────────
 program
   .command("login")
-  .description("Log in to Pipelex Gateway via the browser")
+  .description(
+    "Get a Pipelex API key through the browser for runs on the hosted Pipelex API (runs pipelex login)",
+  )
   .exitOverride()
   .action(async () => {
     await login();
   });
 
-// ── mthds run method|pipe ─────────────────────────────────────────────
+// ── mthds run method|pipe|bundle ──────────────────────────────────────
 const run = program.command("run").description("Execute a pipeline").exitOverride();
+
+// `run method` forwards its raw arguments to pipelex, so it accepts any flag. `run pipe`
+// and `run bundle` build their own `pipelex run` command instead, so they declare the
+// pipelex flags they forward and refuse any other: a flag dropped in silence, `--dry-run`
+// above all, would start a real, paid run.
+const dryRunOption = new Option(
+  "--dry-run",
+  "Run without inference calls, through pipelex on this machine",
+);
+const mockInputsOption = new Option(
+  "--mock-inputs",
+  "Generate mock data for missing required inputs (requires --dry-run)",
+);
+const hostedOption = new Option(
+  "--hosted",
+  "Have pipelex run it on the hosted Pipelex API",
+).conflicts("local");
+const localOption = new Option("--local", "Have pipelex run it on this machine");
 
 run
   .command("method")
-  .argument("<name>", "Name of the installed method")
+  .argument("<name>", "Installed method name, method address or GitHub URL")
   .option("--pipe <code>", "Pipe code (overrides method's main_pipe)")
   .option("-i, --inputs <file>", "Path to JSON inputs file")
   .option("-o, --output <file>", "Path to save output JSON")
   .option("--no-output", "Skip saving output to file")
   .option("--no-pretty-print", "Skip pretty printing the output")
-  .description("Run an installed method by name")
+  .description("Run a method: an installed one by name, or a published one by address")
   .allowUnknownOption()
   .allowExcessArguments(true)
   .exitOverride()
@@ -108,9 +128,11 @@ run
   .option("-o, --output <file>", "Path to save output JSON")
   .option("--no-output", "Skip saving output to file")
   .option("--no-pretty-print", "Skip pretty printing the output")
+  .addOption(dryRunOption)
+  .addOption(mockInputsOption)
+  .addOption(hostedOption)
+  .addOption(localOption)
   .description("Run a pipe by code or bundle file")
-  .allowUnknownOption()
-  .allowExcessArguments(true)
   .exitOverride()
   .action(
     async (target: string, options: Record<string, string | boolean | undefined>, cmd: Cmd) => {
@@ -124,15 +146,17 @@ run
 
 run
   .command("bundle")
-  .argument("<target>", ".mthds bundle file")
+  .argument("<target>", ".mthds bundle file or method directory")
   .option("--pipe <code>", "Pipe code to run within the bundle")
   .option("-i, --inputs <file>", "Path to JSON inputs file")
   .option("-o, --output <file>", "Path to save output JSON")
   .option("--no-output", "Skip saving output to file")
   .option("--no-pretty-print", "Skip pretty printing the output")
-  .description("Run a bundle file")
-  .allowUnknownOption()
-  .allowExcessArguments(true)
+  .addOption(dryRunOption)
+  .addOption(mockInputsOption)
+  .addOption(hostedOption)
+  .addOption(localOption)
+  .description("Run a bundle file or directory")
   .exitOverride()
   .action(
     async (target: string, options: Record<string, string | boolean | undefined>, cmd: Cmd) => {
@@ -417,39 +441,19 @@ telemetry
   .command("enable")
   .description("Enable anonymous telemetry")
   .exitOverride()
-  .action(() => {
-    printLogo();
-    p.intro("mthds telemetry");
-    setTelemetryEnabled(true);
-    p.log.success("Telemetry enabled.");
-    p.outro("");
-  });
+  .action(telemetryEnable);
 
 telemetry
   .command("disable")
   .description("Disable anonymous telemetry")
   .exitOverride()
-  .action(() => {
-    printLogo();
-    p.intro("mthds telemetry");
-    setTelemetryEnabled(false);
-    p.log.success("Telemetry disabled.");
-    p.outro("");
-  });
+  .action(telemetryDisable);
 
 telemetry
   .command("status")
   .description("Show current telemetry status")
   .exitOverride()
-  .action(() => {
-    printLogo();
-    p.intro("mthds telemetry");
-    const enabled = isTelemetryEnabled();
-    const source = getTelemetrySource();
-    const sourceLabel = source === "env" ? " (from env)" : source === "default" ? " (default)" : "";
-    p.log.info(`Telemetry is ${enabled ? "enabled" : "disabled"}${sourceLabel}`);
-    p.outro("");
-  });
+  .action(telemetryStatus);
 
 // ── mthds package <subcommand> ──────────────────────────────────────
 const packageCmd = program

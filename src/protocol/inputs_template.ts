@@ -92,6 +92,14 @@ const NATIVE_PREFIX = "native.";
 // `{concept, content}` envelope, because a bare value at one of these positions is not re-shapable.
 // The vocabulary is the standard's closed native set (`docs/spec/native-concepts.md`), which is why
 // a projection may consult it: it reads an identity the descriptor states, never sniffs a shape.
+//
+// Membership is what decides a native whose descriptor kind cannot say it — the `unknown` natives.
+// An `object` native keeps its envelope through the kind arm of `keepsEnvelope` whether it is listed
+// or not, so the object natives listed here are redundant with that arm, and the verdict natives the
+// standard added at 3.0.0 are left to it alone: the descriptor states `Choice` and `Rating` as
+// `object`s, precisely because a bare option key would read as a `Text` and a bare level as a
+// `Number`, while `YesNo` stays a `boolean` input whose compact slot is a bare boolean. The Python
+// twin lists them nowhere either, and listing them on one side only would change no byte.
 const OUT_OF_MATRIX_NATIVES = new Set([
   "Anything",
   "Composite",

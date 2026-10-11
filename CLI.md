@@ -21,7 +21,7 @@ After installation the `mthds` command is available on your PATH.
 ## Quick Start
 
 ```bash
-# Log in to Pipelex Gateway (opens browser)
+# Get a Pipelex API key for runs on the hosted Pipelex API (opens a browser)
 mthds login
 
 # Install a method from the hub
@@ -33,7 +33,7 @@ mthds run pipe my_pipe_code
 # Set up the API runner (interactive)
 mthds runner setup api
 
-# Set up the pipelex runner (local)
+# Set up the pipelex runner (installs pipelex, then runs pipelex init)
 mthds runner setup pipelex
 ```
 
@@ -47,19 +47,29 @@ mthds runner setup pipelex
 | `--version` | Print the CLI version |
 | `--help` | Show help for any command; a path naming a command that does not exist fails with `unknown command` instead |
 
-When `--runner` is omitted, the CLI uses the runner configured via `mthds config set runner <name>` (default: `api`).
+When `--runner` is omitted, the CLI uses the runner configured via `mthds config set runner <name>` (default: `pipelex`).
 
 ## Runner Passthrough
 
-When using the **pipelex** runner, the `run`, `build`, and `validate` commands act as thin wrappers: they forward all arguments directly to the `pipelex` CLI. This means any pipelex-specific flags (e.g. `--dry-run`, `--mock-inputs`, `--output-dir`) are passed through transparently.
+When using the **pipelex** runner, `run method`, `validate` and `build` act as thin wrappers: they forward their arguments to the `pipelex` CLI, so pipelex's own flags reach it (for `run method`: `--dry-run`, `--mock-inputs`, `--output-dir` and `--hosted`/`--local`, for instance).
+
+`run pipe` and `run bundle` do not forward their arguments. They build their own `pipelex run` command from the target, `--pipe`, `--inputs` and `-L`, and add the pipelex flags they declare: `--dry-run`, `--mock-inputs`, `--hosted` and `--local`. They refuse any other flag as an unknown option, on either runner, rather than drop it and run anyway.
 
 The `--runner` flag is consumed by mthds and not forwarded. The `-L/--library-dir` flags are forwarded to pipelex. With the API runner, `validate pipe` and `build inputs pipe` send every `.mthds` file of each `-L` directory beside the bundle file, so a method split across files validates and gets its inputs template as it does on the pipelex runner.
+
+### Where the pipelex runner executes a run
+
+The pipelex runner hands each run to the `pipelex` CLI on this machine, and pipelex executes it where its `[run] execution` setting says: `local`, its default, runs the method on this machine with your own provider keys, and `hosted` runs it on the hosted Pipelex API with the Pipelex API key in `PIPELEX_API_KEY`, the key [`mthds login`](#login) saves. `pipelex init` writes the setting from its answer to "Where should your runs execute?", whose default is the hosted API. A single `pipelex run` can go the other way with `--hosted` or `--local`, and `mthds run method`, `run pipe` and `run bundle` pass either flag on to it. pipelex refuses `--dry-run` and `--mock-inputs` on a hosted run, so on a machine set to `hosted`, a dry run needs `--local` as well.
+
+A hosted run sends the method's `.mthds` files only, so a method whose pipes call custom Python (`funcs/*.py`) cannot run that way, and it reads only `PIPELEX_API_KEY`, never the API runner's `api-key`.
+
+Hosted runs, the `[run] execution` setting, `--hosted`/`--local` and `pipelex login` need pipelex 0.79.0 or later. `mthds` and `mthds-agent` accept an older pipelex and do not upgrade it to that version: upgrade it with `uv tool install --upgrade "pipelex>=0.79.0"`.
 
 ---
 
 ## Login
 
-Log in to Pipelex Gateway via the browser and save your API key. Required when using the **pipelex_gateway** backend.
+Get a Pipelex API key through the browser, for runs on the hosted Pipelex API. Forwards to `pipelex login`.
 
 ### `mthds login`
 
@@ -67,15 +77,22 @@ Log in to Pipelex Gateway via the browser and save your API key. Required when u
 mthds login
 ```
 
-Opens a browser window for OAuth authentication (GitHub or Google). After successful login, the Gateway API key is automatically saved to `~/.pipelex/.env` as `PIPELEX_GATEWAY_API_KEY`. The key never appears in terminal output.
+Runs `pipelex login`, which opens the Pipelex app in your browser. Once you are signed in, the app creates a Pipelex API key (it starts with `plx_sk_`) and hands it back to the command, which checks it against the hosted API and saves it as `PIPELEX_API_KEY` in pipelex's home `.env` file: `~/.pipelex/.env`, or the `.env` in `PIPELEX_HOME` when that is set. The key is never printed. `PIPELEX_APP_URL` points the command at another Pipelex app, and `PIPELEX_BASE_URL` at another hosted API.
 
-If pipelex is not installed, the command will install it first.
+The key serves pipelex's own hosted runs: a `pipelex run` or `pipelex-agent run` that executes on the hosted API, with `--hosted` or under `[run] execution = "hosted"`, including those made through the pipelex runner (see [Where the pipelex runner executes a run](#where-the-pipelex-runner-executes-a-run)). The API runner does not read it: it uses its own `api-key` (`MTHDS_API_KEY`) from `~/.mthds/config`, set with `mthds runner setup api` or `mthds config set api-key`. Setting one key does not set the other.
 
-**Example:**
+If pipelex is not installed, the command installs it first. The command needs pipelex 0.79.0 or later, the first release with `pipelex login`, and it does not upgrade a pipelex that is already installed: with an older one, `pipelex` refuses `login` as an unknown command and `mthds login` fails. Upgrade it with `uv tool install --upgrade "pipelex>=0.79.0"`.
+
+`mthds login` takes no options. On a machine with no browser, run pipelex's own paste form, `pipelex login --paste`, and paste a key created in the Pipelex app.
+
+**Examples:**
 
 ```bash
-# Log in and save your Gateway API key
+# Get a Pipelex API key through the browser
 mthds login
+
+# On a machine with no browser, paste a key created in the Pipelex app
+pipelex login --paste
 ```
 
 ---
@@ -86,7 +103,7 @@ Execute a pipeline via a runner.
 
 ### `mthds run method`
 
-Run an installed method by name.
+Run an installed method by name. Only supported with the pipelex runner, which forwards every argument to `pipelex run method`: the options are that command's own, and `pipelex run method --help` lists them all.
 
 ```bash
 mthds run method <name> [OPTIONS]
@@ -94,12 +111,16 @@ mthds run method <name> [OPTIONS]
 
 | Argument / Option | Type | Required | Default | Description |
 |---|---|---|---|---|
-| `name` | string | yes | -- | Name of the installed method |
+| `name` | string | yes | -- | Name of the installed method; `pipelex run method` also takes a method address (`github.com/<owner>/<repo>[/<name>][@<tag>]`) or a GitHub URL |
 | `--pipe <code>` | string | no | -- | Pipe code (overrides method's main_pipe) |
 | `-i, --inputs <file>` | string | no | -- | Path to JSON inputs file |
-| `-o, --output <file>` | string | no | -- | Path to save output JSON |
-| `--no-output` | flag | no | -- | Skip saving output to file |
+| `-o, --output-dir <dir>` | string | no | -- | Base directory for the run's outputs (working memory, main stuff, graphs) |
 | `--no-pretty-print` | flag | no | -- | Skip pretty printing the output |
+| `--dry-run` | flag | no | -- | Run without inference calls, on this machine only |
+| `--mock-inputs` | flag | no | -- | Generate mock data for missing required inputs (requires `--dry-run`) |
+| `--hosted` / `--local` | flag | no | pipelex's `[run] execution` | Run on the hosted Pipelex API, with the key in `PIPELEX_API_KEY`, or on this machine |
+
+`mthds run method --help` also lists `-o, --output <file>` and `--no-output`, which `pipelex run method` does not have: `-o` reaches it as its `--output-dir`, and `--output` or `--no-output` is refused as an unknown option.
 
 ### `mthds run pipe`
 
@@ -117,12 +138,15 @@ mthds run pipe <target> [OPTIONS]
 | `-o, --output <file>` | string | no | -- | Path to save output JSON |
 | `--no-output` | flag | no | -- | Skip saving output to file |
 | `--no-pretty-print` | flag | no | -- | Skip pretty printing the output |
+| `--dry-run` | flag | no | -- | Run without inference calls; pipelex runner only |
+| `--mock-inputs` | flag | no | -- | Generate mock data for missing required inputs (requires `--dry-run`); pipelex runner only |
+| `--hosted` / `--local` | flag | no | pipelex's `[run] execution` | Have pipelex run it on the hosted Pipelex API or on this machine; pipelex runner only |
 
-With the pipelex runner, additional flags like `--dry-run`, `--mock-inputs`, and `--output-dir` are passed through to pipelex.
+`run pipe` refuses any other flag as an unknown option. With the API runner, the run is a blocking `POST /v1/execute`, which has no dry run: `--dry-run`, `--mock-inputs`, `--hosted` and `--local` are refused before anything is sent, and `mthds validate bundle` checks a bundle without running it. With the pipelex runner, the run is a `pipelex run` that executes where pipelex is set to execute it, unless `--hosted` or `--local` says otherwise (see [Where the pipelex runner executes a run](#where-the-pipelex-runner-executes-a-run)).
 
 ### `mthds run bundle`
 
-Run a `.mthds` bundle file directly. Only supported with the pipelex runner.
+Run a `.mthds` bundle file or a method directory directly. Like `run pipe`, it refuses any flag not listed below, and the API runner refuses its pipelex runner flags before anything is sent.
 
 ```bash
 mthds run bundle <target> [OPTIONS]
@@ -130,12 +154,15 @@ mthds run bundle <target> [OPTIONS]
 
 | Argument / Option | Type | Required | Default | Description |
 |---|---|---|---|---|
-| `target` | string | yes | -- | `.mthds` bundle file |
+| `target` | string | yes | -- | `.mthds` bundle file or method directory |
 | `--pipe <code>` | string | no | -- | Pipe code to run within the bundle |
 | `-i, --inputs <file>` | string | no | -- | Path to JSON inputs file |
 | `-o, --output <file>` | string | no | -- | Path to save output JSON |
 | `--no-output` | flag | no | -- | Skip saving output to file |
 | `--no-pretty-print` | flag | no | -- | Skip pretty printing the output |
+| `--dry-run` | flag | no | -- | Run without inference calls; pipelex runner only |
+| `--mock-inputs` | flag | no | -- | Generate mock data for missing required inputs (requires `--dry-run`); pipelex runner only |
+| `--hosted` / `--local` | flag | no | pipelex's `[run] execution` | Have pipelex run it on the hosted Pipelex API or on this machine; pipelex runner only |
 
 **Examples:**
 
@@ -153,11 +180,14 @@ mthds run pipe ./bundle.mthds --pipe my_pipe
 # Run a bundle directly
 mthds run bundle ./bundle.mthds --pipe my_pipe
 
+# Dry-run a bundle on this machine, with mock data for the missing inputs
+mthds run bundle ./bundle.mthds --dry-run --mock-inputs --local
+
 # Run with inputs and save output
 mthds run pipe my_pipe_code --inputs inputs.json --output result.json
 
-# Dry run via pipelex
-mthds run pipe ./bundle.mthds --inputs inputs.json --dry-run
+# Run an installed method on the hosted Pipelex API, whatever pipelex's default
+mthds run method my-method --inputs inputs.json --hosted
 ```
 
 ---
@@ -277,10 +307,10 @@ Configuration values are resolved in this order: **environment variables > confi
 
 | Key | Environment Variable | Default | Description |
 |---|---|---|---|
-| `runner` | `MTHDS_RUNNER` | `api` | Default runner (`api` or `pipelex`) |
+| `runner` | `MTHDS_RUNNER` | `pipelex` | Default runner (`api` or `pipelex`) |
 | `base-url` | `MTHDS_BASE_URL` | `https://api.pipelex.com` | API base URL — host only, no version prefix; endpoints compose as `{base}/v1/{endpoint}` |
-| `api-key` | `MTHDS_API_KEY` | (empty) | API authentication key |
-| `telemetry` | `DISABLE_TELEMETRY` | `0` | Set to `1` to disable telemetry |
+| `api-key` | `MTHDS_API_KEY` | (empty) | The API runner's authentication key. The pipelex runner never reads it: pipelex's hosted runs use `PIPELEX_API_KEY`, which [`mthds login`](#login) saves |
+| `telemetry` | `DISABLE_TELEMETRY` | `0` | Set to `1` to disable telemetry. `DO_NOT_TRACK` outranks it: set to anything but an empty string, `0` or `false`, it turns telemetry off and `config get telemetry` reports `1` from `env` |
 
 ### `mthds config set`
 
@@ -323,7 +353,7 @@ mthds config get <key>
 
 ```bash
 mthds config get runner
-# runner = api (default)
+# runner = pipelex (default)
 ```
 
 ### `mthds config list`
@@ -354,9 +384,9 @@ mthds runner setup <name>
 |---|---|---|---|
 | `name` | string | yes | Runner name (`api` or `pipelex`) |
 
-**For `api`:** interactively prompts for the API base URL (host only, e.g. `https://api.pipelex.com` or `http://localhost:8081`) and API key (masked input), then saves them to `~/.mthds/config`.
+**For `api`:** interactively prompts for the API base URL (host only, e.g. `https://api.pipelex.com` or `http://localhost:8081`) and API key (masked input), then saves them to `~/.mthds/config`. This key is the API runner's own: it does not reach the pipelex runner, whose hosted runs use `PIPELEX_API_KEY` (see [Login](#login)).
 
-**For `pipelex`:** installs the pipelex CLI if not already present, then runs `pipelex init` (interactive configuration for backends, credentials, routing, etc.).
+**For `pipelex`:** installs the pipelex CLI if not already present, then runs `pipelex init`, pipelex's interactive setup. When it sets up inference, `pipelex init` first asks where runs should execute, and its default answer, taken by pressing Enter, is the hosted Pipelex API: it then gets a Pipelex API key through the browser, unless one is already set, and configures no provider of your own. To run methods on this machine with your own provider keys, answer `2` (this machine) instead, and `pipelex init` goes on to the backends and their credentials. Either way, the answer becomes pipelex's `[run] execution` setting (see [Where the pipelex runner executes a run](#where-the-pipelex-runner-executes-a-run)).
 
 Both options then offer to set the runner as the default.
 
@@ -414,9 +444,16 @@ Default runner: pipelex
 
 ## Telemetry
 
-Manage anonymous usage telemetry. Telemetry can also be controlled via the `DISABLE_TELEMETRY=1` environment variable, which takes precedence over the config file.
+Manage anonymous usage telemetry: the `method_install` and `method_publish` events sent when a method from a public GitHub repository is installed or published. Each carries the package's manifest fields one by one (address, name, version, description, display name, authors, licence, main pipe, MTHDS standard version and exports), never the manifest's raw text.
+
+Telemetry can also be controlled from the environment, which takes precedence over the config file:
+
+- `DISABLE_TELEMETRY=1` disables it, and `DISABLE_TELEMETRY=0` enables it.
+- `DO_NOT_TRACK`, the universal opt-out, disables it when set to anything but an empty string, `0` or `false`, whatever `DISABLE_TELEMETRY` or the config file says. It only ever disables: a falsy `DO_NOT_TRACK` leaves the setting to `DISABLE_TELEMETRY` and the file.
 
 ### `mthds telemetry enable`
+
+Writes `DISABLE_TELEMETRY=0` to `~/.mthds/config`. When `DO_NOT_TRACK` or `DISABLE_TELEMETRY=1` is set in the environment, it warns that the variable keeps telemetry off.
 
 ```bash
 mthds telemetry enable
@@ -430,7 +467,7 @@ mthds telemetry disable
 
 ### `mthds telemetry status`
 
-Show whether telemetry is currently enabled or disabled, and its source (env, file, or default).
+Show whether telemetry is currently enabled or disabled, and its source: the environment variable holding it off (`DO_NOT_TRACK` or `DISABLE_TELEMETRY`), `env`, the config file, or the default.
 
 ```bash
 mthds telemetry status
@@ -459,7 +496,7 @@ You must provide either `address` or `--local`, but not both.
 The install flow is interactive:
 1. Resolves methods from the address or local directory
 2. Displays a summary of found methods
-3. Validates each method via the configured runner (`pipelex validate method`). If validation fails, the install is aborted.
+3. Checks that the configured runner is healthy, then validates each method with it (`pipelex validate bundle` on the pipelex runner, `POST /v1/validate` on the API runner). If validation fails, the install is aborted. If the health check fails, the install goes on without validating and prints `No runner configured — skipping pipe validation`. On the pipelex runner, the health check currently always fails, because it runs `pipelex doctor -g` and `pipelex doctor` has no `-g` option, so methods are installed unvalidated.
 4. Prompts for install location (local `.mthds/methods/` or global `~/.mthds/methods/`)
 5. Writes method files to the selected location
 6. Optionally installs the pipelex runner (only if not already installed)
@@ -484,7 +521,7 @@ mthds install org/repo/methods/specific
 
 ## Publish
 
-Publish method packages to [mthds.sh](https://mthds.sh). Sends `method_publish` telemetry for public GitHub repos. No files are written, no runner is installed.
+Publish method packages to [mthds.sh](https://mthds.sh). Sends `method_publish` telemetry for public GitHub repos, which is how mthds.sh registers a method, so while [telemetry](#telemetry) is off, `DO_NOT_TRACK` included, it refuses to publish a public repository and exits non-zero, naming the switch that holds telemetry off. No files are written, no runner is installed.
 
 ### `mthds publish`
 
@@ -504,7 +541,7 @@ The publish flow is interactive:
 1. Resolves methods from the address or local directory
 2. Displays a summary of found methods (valid/skipped)
 3. If multiple methods: lets you select which ones to publish (multiselect)
-4. Sends `method_publish` telemetry (public GitHub repos only)
+4. Sends `method_publish` telemetry (public GitHub repos only; with telemetry off, a public repository is refused before step 3)
 5. Prints success
 
 **Examples:**
@@ -621,7 +658,7 @@ mthds package list
 
 ## Agent CLI (`mthds-agent`)
 
-Machine-oriented CLI for AI agents. All output is structured JSON to stdout (success) and stderr (errors). No interactive prompts.
+Machine-oriented CLI for AI agents. Output goes to stdout on success and to stderr on failure, with no interactive prompts. Native commands print structured JSON; a command forwarded to `pipelex-agent` prints what `pipelex-agent` prints, which is Markdown by default for the commands that take `--format`, and JSON with `--format json`.
 
 A path naming a command `mthds-agent` does not register on the active runner, such as `mthds-agent concept`, fails on both runners with an `ArgumentError` (`Unknown command: concept. …`), whether it is run or asked for its help, and nothing is forwarded to `pipelex-agent`.
 
@@ -629,18 +666,18 @@ When the API runner refuses a call, the error envelope carries what the runner's
 
 ### `mthds-agent runner setup pipelex`
 
-Install the Pipelex runtime. Does **not** initialize configuration — use `mthds-agent pipelex init` for that.
+Install the Pipelex runtime. Does **not** initialize configuration — use `mthds-agent init` for that.
 
 ```bash
 mthds-agent runner setup pipelex
 ```
 
-Installs pipelex via `curl -fsSL https://pipelex.com/install.sh | sh` (macOS/Linux) or `irm https://pipelex.com/install.ps1 | iex` (Windows). Returns JSON indicating whether pipelex was already installed or freshly installed.
+When pipelex is missing, or older than the version `mthds-agent` requires, installs or upgrades it with `uv tool install --upgrade "pipelex<constraint>"`, the constraint being that minimum version. Returns JSON indicating whether pipelex was already installed, upgraded or freshly installed.
 
 **Example output:**
 
 ```json
-{ "success": true, "already_installed": true, "message": "pipelex is already installed" }
+{ "success": true, "already_installed": true, "message": "pipelex is already installed and up to date" }
 ```
 
 ### `mthds-agent runner setup api`
@@ -656,6 +693,8 @@ mthds-agent runner setup api --api-key <key> [--base-url <url>]
 | `--api-key <key>` | string | yes | API key for the Pipelex API |
 | `--base-url <url>` | string | no | API base URL — host only, no version prefix (uses the hosted default if omitted) |
 
+The key is saved as the API runner's `api-key` in `~/.mthds/config`. The pipelex runner does not read it: its hosted runs use `PIPELEX_API_KEY` from pipelex's own `.env` (see [Login](#login)).
+
 **Examples:**
 
 ```bash
@@ -666,43 +705,29 @@ mthds-agent runner setup api --api-key sk-my-api-key
 mthds-agent runner setup api --api-key sk-my-api-key --base-url http://localhost:8081
 ```
 
-### `mthds-agent pipelex login`
-
-Log in to Pipelex Gateway via the browser and save the API key. Required when using the **pipelex_gateway** backend. Forwards to `pipelex login`.
-
-```bash
-mthds-agent pipelex login
-```
-
-Opens a browser window for OAuth authentication (GitHub or Google). After successful login, the Gateway API key is saved to `~/.pipelex/.env`. The key never appears in terminal output.
-
-**Typical agent workflow with Gateway:**
-
-```bash
-# Step 1: Install pipelex if needed
-mthds-agent runner setup pipelex
-
-# Step 2: Log in to get Gateway API key
-mthds-agent pipelex login
-
-# Step 3: Initialize configuration with Gateway backend
-mthds-agent pipelex init -g --config '{"backends": ["pipelex_gateway"], "accept_gateway_terms": true}'
-```
-
-### `mthds-agent pipelex init`
+### `mthds-agent init`
 
 Initialize Pipelex configuration (non-interactive). Forwards to `pipelex-agent init`.
 
 ```bash
-mthds-agent pipelex init [OPTIONS]
+mthds-agent init [OPTIONS]
 ```
 
 All options are forwarded directly to `pipelex-agent init`:
 
 | Option | Description |
 |---|---|
-| `--config, -c <json>` | Inline JSON string or path to a JSON file. Schema: `{"backends": list[str], "primary_backend": str, "accept_gateway_terms": bool, "telemetry_mode": str}`. All fields optional. |
-| `--global, -g` | Force global `~/.pipelex/` directory. Without this flag, targets project-level `.pipelex/`. |
+| `--config, -c <json>` | Inline JSON string or path to a JSON file. Schema: `{"execution": "hosted" \| "local", "backends": list[str], "primary_backend": str}`. All fields optional. Telemetry is seeded from a template, not from `--config`. |
+| `--global, -g` | Force the home configuration directory (`~/.pipelex/`, or `PIPELEX_HOME`). Without this flag, targets project-level `.pipelex/`. |
+| `--format <fmt>` | Success output format: `markdown` (default) or `json` |
+| `--error-format <fmt>` | Failure output format: `markdown` or `json` (defaults to `--format`) |
+
+`execution` says where runs execute by default, and `init` writes it to pipelex's `[run] execution` setting (see [Where the pipelex runner executes a run](#where-the-pipelex-runner-executes-a-run)):
+
+- `local`, the default when `execution` is omitted, runs methods on this machine with bring-your-own-keys backends. Name the backends to enable, such as `openai`, `anthropic`, `mistral`, `google` and `openrouter`, and give each one its key in the environment or in a `.env` file (`OPENAI_API_KEY` for `openai`, `ANTHROPIC_API_KEY` for `anthropic`, and so on). `init` does not write those keys. With one backend named, it routes to that backend every model the backend supports. With two or more, `primary_backend` names the one tried first and is required. With no `backends` at all, `init` keeps the template's backends and its routing profile, which routes among every backend it enables.
+- `hosted` runs methods on the hosted Pipelex API, with the Pipelex API key in `PIPELEX_API_KEY`, and configures no backend: `backends` and `primary_backend` are refused beside it with an `ArgumentError`. `init` does not get the key, since an agent cannot sign in through a browser: the user runs `mthds login` or `pipelex login` in their own terminal, or sets `PIPELEX_API_KEY`. The JSON output's `api_key_set` says whether a key was found.
+
+The JSON output reports the `execution` written, beside the `backends_enabled` of a local setup.
 
 **Typical agent workflow:**
 
@@ -710,16 +735,22 @@ All options are forwarded directly to `pipelex-agent init`:
 # Step 1: Install pipelex if needed
 mthds-agent runner setup pipelex
 
-# Step 2: Initialize configuration
-mthds-agent pipelex init --config '{"backends": ["openai"], "telemetry_mode": "off"}'
+# Step 2: Initialize configuration on one backend, here OpenAI, whose one key covers every default model
+mthds-agent init --config '{"backends": ["openai"]}'
 
-# Step 2 (global variant):
-mthds-agent pipelex init -g --config '{"backends": ["pipelex_gateway"], "accept_gateway_terms": true}'
+# Step 2 (global variant, several backends, OpenAI tried first):
+mthds-agent init -g --config '{"backends": ["openai", "anthropic", "mistral"], "primary_backend": "openai"}'
+
+# Step 2 (global variant, keeping the template's backends and routing profile):
+mthds-agent init -g
+
+# Step 2 (global variant, runs on the hosted Pipelex API; the user then runs `mthds login`):
+mthds-agent init -g --config '{"execution": "hosted"}'
 ```
 
 ### `mthds-agent publish`
 
-Publish methods to mthds.sh (non-interactive). Sends `method_publish` telemetry for public GitHub repos. No files are written.
+Publish methods to mthds.sh (non-interactive). Sends `method_publish` telemetry for public GitHub repos, which is how mthds.sh registers a method, so while [telemetry](#telemetry) is off, `DO_NOT_TRACK` included, a public repository is refused with a `PublishError` naming the switch that holds telemetry off. No files are written.
 
 ```bash
 mthds-agent publish [address] [OPTIONS]
@@ -797,24 +828,35 @@ mthds-agent share --local ./my-methods --platform x
 
 ### `mthds-agent run method|pipe|bundle`
 
-Execute a pipeline via the pipelex runner. All three subcommands are pipelex-only passthroughs.
+Execute a pipeline via the pipelex runner. All three subcommands are passthroughs that forward every argument to `pipelex-agent run`, except `--runner`, which `mthds-agent` keeps for itself, so the options are `pipelex-agent run`'s own, and `pipelex-agent run bundle <target> --help` lists them all. On the API runner, `run method` answers `UnsupportedError`, `run pipe` and `run bundle` do not exist, and `run start` submits a run and returns its id.
 
 ```bash
 mthds-agent run method <name> [OPTIONS]
-mthds-agent run pipe <target> [OPTIONS]
+mthds-agent run pipe <pipe_code> [OPTIONS]
 mthds-agent run bundle <target> [OPTIONS]
 ```
 
 | Argument / Option | Type | Required | Default | Description |
 |---|---|---|---|---|
-| `name` / `target` | string | yes | -- | Method name, pipe code, or `.mthds` bundle file |
-| `--pipe <code>` | string | no | -- | Pipe code (overrides method's main_pipe or selects within bundle) |
-| `-i, --inputs <file>` | string | no | -- | Path to JSON inputs file |
-| `-o, --output <file>` | string | no | -- | Path to save output JSON |
-| `--no-output` | flag | no | -- | Skip saving output to file |
-| `--no-pretty-print` | flag | no | -- | Skip pretty printing the output |
+| `name` (`method`) | string | yes | -- | Installed method name, method address (`github.com/<owner>/<repo>[/<name>][@<tag>]`) or GitHub URL; on a hosted run, also a catalog id (`mt_…`) |
+| `pipe_code` (`pipe`) | string | yes | -- | Pipe code to run |
+| `target` (`bundle`) | string | yes | -- | `.mthds` bundle file or method directory |
+| `--pipe <code>` | string | no | -- | Pipe code (overrides the method's or bundle's main_pipe; `method` and `bundle` only) |
+| `-i, --inputs <file\|json>` | string | no | -- | Path to a JSON inputs file, or inline JSON |
+| `-L, --library-dir <dir>` | path, repeatable | no | -- | Directory to search for `.mthds` files |
+| `--dry-run` | flag | no | -- | Run without inference calls; on this machine only |
+| `--mock-inputs` | flag | no | -- | Generate mock data for missing required inputs (requires `--dry-run`); on this machine only |
+| `--with-memory` | flag | no | -- | Print the whole working memory beside the main output |
+| `--graph` / `--no-graph` | flag | no | `--graph` | Write the execution graph next to the output |
+| `--costs` / `--no-costs` | flag | no | `--costs` | Emit usage (cost) tracing events |
+| `--format <fmt>` | string | no | `markdown` | Success output format: `markdown` or `json` |
+| `--error-format <fmt>` | string | no | `--format` | Failure output format: `markdown` or `json` |
+| `--hosted` / `--local` | flag | no | pipelex's `[run] execution`, else local | Run on the hosted Pipelex API, with the key in `PIPELEX_API_KEY`, or on this machine |
+| `--base-url <url>` | string | no | `https://api.pipelex.com` | Origin of the hosted API a hosted run calls (overrides `PIPELEX_BASE_URL`); refused on a local run |
 
-All arguments are forwarded to `pipelex run`. Requires the pipelex runner.
+`pipelex-agent run` also takes `--runner local|hosted`, but that option cannot pass through `mthds-agent`, which reads `--runner` as its own runner choice and refuses `--runner hosted` or `--runner local` with `Unknown runner`. Choose where pipelex executes a run with `--hosted` or `--local`, which pass through unchanged.
+
+A run that executes on the hosted API refuses `--dry-run` and `--mock-inputs` with an `ArgumentError`: pass `--local` to dry-run on this machine. It writes nothing to disk, and with `--with-memory` its output carries the run's `pipeline_run_id` on the hosted API, with empty `markdown` and `html` renderings of the main output. If no Pipelex API key is set, or the hosted API refuses it, the run fails and the error's hint says to run `pipelex login`, which the user does in their own terminal. `mthds-agent doctor` does not check any of this: on the pipelex runner it reports a healthy setup whether or not runs execute hosted and a key is set. Run `pipelex-agent doctor` directly for that: it reports the `execution` and, for a hosted setup, a `pipelex_api_key` check.
 
 **Examples:**
 
@@ -822,6 +864,12 @@ All arguments are forwarded to `pipelex run`. Requires the pipelex runner.
 mthds-agent run method my_method
 mthds-agent run pipe my_pipe_code --inputs inputs.json
 mthds-agent run bundle ./bundle.mthds --pipe my_pipe
+
+# Dry run on this machine, whatever pipelex's default execution
+mthds-agent run bundle ./my_method/ --dry-run --mock-inputs --local
+
+# Run on the hosted Pipelex API
+mthds-agent run bundle ./my_method/ --inputs inputs.json --hosted
 ```
 
 ### `mthds-agent validate bundle`

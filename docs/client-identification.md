@@ -1,6 +1,6 @@
 # Client identification (`User-Agent`)
 
-Every request `MthdsApiClient` sends to an MTHDS runner or to the Pipelex hosted API carries a `User-Agent` header that says which program sent it. The hosted platform parses it into a client surface for product analytics and its access log, which is how it tells a run started from the `mthds` CLI apart from one started by an SDK script, the web app or a hand-written `curl`. The convention is shared by every first-party client and is fixed by the Pipelex workspace spec `docs/specs/client-identification.md`; this page describes how `mthds-js` implements it.
+Every request `MthdsApiClient` sends to an MTHDS runner or to the Pipelex hosted API carries a `User-Agent` header that says which program sent it. The hosted platform parses it into a client surface for product analytics and its access log, which is how it tells a run started from the `mthds` CLI apart from one started by an SDK script, the web app or a hand-written `curl`. The convention is shared by every first-party client and is fixed by the spec `conformance/specs/client-identification.md`, which lives in the `conformance` repo beside the test that verifies it; this page describes how `mthds-js` implements it.
 
 The header is self-declared and unauthenticated. It is analytics metadata only and never gates authorization, rate limits or entitlements. It never contains a secret, a user identifier, an email or a hostname.
 

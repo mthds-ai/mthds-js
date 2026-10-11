@@ -33,7 +33,7 @@ The address a method is listed under is the one in `method.address`, which can d
 
 The human CLI sends the requests behind a spinner, then shows each method's answer and a summary. It exits 0 only when every selected method was listed, and 1 otherwise, so a script running it never mistakes a refusal for a publish.
 
-With `--local <dir>`, it publishes each method by the address its `METHODS.toml` declares, since the hub reads GitHub; when the hub lists a different version than the local copy, it says so, so that a person who has not pushed yet knows why the page shows the old one.
+With `--local <dir>`, it publishes each method by the address its `METHODS.toml` declares, since the hub reads GitHub. Before any request it checks each of those addresses as it checks one given on the command line: it must be a GitHub address naming a repository's root, and GitHub, asked with the same credentials as a resolve (`GITHUB_TOKEN` or the `gh` CLI), must answer that the repository is public. A private repository, one GitHub does not show (which a private one can be), or a failure to reach GitHub refuses the publish, so the hub never learns the name of a repository that is not public; when the hub lists a different version than the local copy, it says so, so that a person who has not pushed yet knows why the page shows the old one.
 
 ## `mthds-agent publish`
 

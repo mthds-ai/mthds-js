@@ -21,7 +21,10 @@ vi.mock("@clack/prompts", () => ({
 vi.mock("../../../src/cli/commands/index.js", () => ({ printLogo: vi.fn() }));
 
 vi.mock("../../../src/installer/resolver/address.js", () => ({ parseAddress: vi.fn() }));
-vi.mock("../../../src/installer/resolver/github.js", () => ({ resolveFromGitHub: vi.fn() }));
+vi.mock("../../../src/installer/resolver/github.js", () => ({
+  resolveFromGitHub: vi.fn(),
+  repositoryVisibility: vi.fn(),
+}));
 vi.mock("../../../src/installer/resolver/local.js", () => ({ resolveFromLocal: vi.fn() }));
 
 vi.mock("../../../src/installer/telemetry/posthog.js", () => ({
@@ -38,7 +41,7 @@ vi.mock("../../../src/installer/registry/client.js", async (importOriginal) => {
 
 import * as p from "@clack/prompts";
 import { parseAddress } from "../../../src/installer/resolver/address.js";
-import { resolveFromGitHub } from "../../../src/installer/resolver/github.js";
+import { repositoryVisibility, resolveFromGitHub } from "../../../src/installer/resolver/github.js";
 import { resolveFromLocal } from "../../../src/installer/resolver/local.js";
 import { trackLocalPublish, trackPublish } from "../../../src/installer/telemetry/posthog.js";
 import { registerMethods, resolveHubUrl } from "../../../src/installer/registry/client.js";
@@ -104,6 +107,7 @@ beforeEach(() => {
     subpath: null,
   });
   vi.mocked(resolveFromGitHub).mockResolvedValue(publicRepo);
+  vi.mocked(repositoryVisibility).mockResolvedValue("public");
   vi.mocked(resolveHubUrl).mockReturnValue({ ok: true, url: "https://mthds.sh" });
   routeAnswers(accepted());
   // A failure ends in process.exit(1); throw a sentinel so the test can catch it.
@@ -201,6 +205,72 @@ describe("publishMethod", () => {
     );
     expect(report).toContain("Your local copy is version 1.1.0");
     expect(report).toContain("validation badge will not refresh yet");
+  });
+
+  describe("from a local directory, before any request", () => {
+    async function localMethodAt(address: string): Promise<void> {
+      const actual = await vi.importActual<
+        typeof import("../../../src/installer/resolver/address.js")
+      >("../../../src/installer/resolver/address.js");
+      vi.mocked(parseAddress).mockImplementation(actual.parseAddress);
+      vi.mocked(resolveFromLocal).mockReturnValue({
+        ...publicRepo,
+        source: "local",
+        isPublic: false,
+        methods: [{ ...method, manifest: { package: { ...method.manifest.package, address } } }],
+      });
+    }
+
+    it("asks GitHub whether the manifest's repository is public, then publishes", async () => {
+      await localMethodAt("github.com/mthds-ai/contract-analysis");
+      await publishMethod({ dir: "/some/path" });
+      expect(repositoryVisibility).toHaveBeenCalledWith("mthds-ai", "contract-analysis");
+      expect(mockedRegisterMethods).toHaveBeenCalled();
+    });
+
+    it("refuses a private repository without sending its name to the hub", async () => {
+      await localMethodAt("github.com/acme/secret-plans");
+      vi.mocked(repositoryVisibility).mockResolvedValue("private");
+      await expect(publishMethod({ dir: "/some/path" })).rejects.toThrow("__exit__");
+      expect(p.log.error).toHaveBeenCalledWith(
+        expect.stringContaining("acme/secret-plans is a private repository"),
+      );
+      expect(mockedRegisterMethods).not.toHaveBeenCalled();
+    });
+
+    it("refuses a repository GitHub does not show, which a private one can be", async () => {
+      await localMethodAt("github.com/acme/secret-plans");
+      vi.mocked(repositoryVisibility).mockResolvedValue("not_found");
+      await expect(publishMethod({ dir: "/some/path" })).rejects.toThrow("__exit__");
+      expect(p.log.error).toHaveBeenCalledWith(
+        expect.stringContaining("GitHub has no public repository acme/secret-plans"),
+      );
+      expect(mockedRegisterMethods).not.toHaveBeenCalled();
+    });
+
+    it("refuses when GitHub cannot say whether the repository is public", async () => {
+      await localMethodAt("github.com/acme/secret-plans");
+      vi.mocked(repositoryVisibility).mockRejectedValue(new Error("network down"));
+      await expect(publishMethod({ dir: "/some/path" })).rejects.toThrow("__exit__");
+      expect(p.log.error).toHaveBeenCalledWith(expect.stringContaining("could not check"));
+      expect(mockedRegisterMethods).not.toHaveBeenCalled();
+    });
+
+    it("refuses an address naming a subdirectory without asking GitHub", async () => {
+      await localMethodAt("github.com/acme/tools/sub/dir");
+      await expect(publishMethod({ dir: "/some/path" })).rejects.toThrow("__exit__");
+      expect(p.log.error).toHaveBeenCalledWith(expect.stringContaining("names a subdirectory"));
+      expect(repositoryVisibility).not.toHaveBeenCalled();
+      expect(mockedRegisterMethods).not.toHaveBeenCalled();
+    });
+
+    it("refuses an address outside GitHub without asking anyone", async () => {
+      await localMethodAt("gitlab.example.com/acme/tools");
+      await expect(publishMethod({ dir: "/some/path" })).rejects.toThrow("__exit__");
+      expect(p.log.error).toHaveBeenCalledWith(expect.stringContaining("is not on GitHub"));
+      expect(repositoryVisibility).not.toHaveBeenCalled();
+      expect(mockedRegisterMethods).not.toHaveBeenCalled();
+    });
   });
 
   it("counts a local publish with what the hub read, never the local manifest's fields", async () => {

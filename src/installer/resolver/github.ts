@@ -245,6 +245,29 @@ async function resolveOneMethod(
   };
 }
 
+/** What GitHub says about a repository's visibility to the credentials at hand. */
+export type RepositoryVisibility = "public" | "private" | "not_found";
+
+/**
+ * Ask GitHub whether `org/repo` is public, with the credentials a resolve uses. GitHub answers
+ * `not_found` for a repository that does not exist and for a private one these credentials cannot
+ * see; an answer that does not say the repository is public counts as private. Throws when GitHub
+ * cannot be asked.
+ */
+export async function repositoryVisibility(
+  org: string,
+  repo: string,
+): Promise<RepositoryVisibility> {
+  let meta: { private?: unknown };
+  try {
+    meta = (await githubFetch(detectAuth(), `repos/${org}/${repo}`)) as { private?: unknown };
+  } catch (err) {
+    if ((err as Error).message.startsWith("Not found")) return "not_found";
+    throw err;
+  }
+  return meta.private === false ? "public" : "private";
+}
+
 export async function resolveFromGitHub(parsed: ParsedAddress): Promise<ResolvedRepo> {
   const auth = detectAuth();
   const { org, repo, subpath } = parsed;

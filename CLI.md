@@ -569,8 +569,9 @@ The publish flow is interactive:
 2. Displays a summary of found methods (valid/skipped)
 3. Refuses a private repository, since mthds.sh lists public ones only
 4. If multiple methods: lets you select which ones to publish (multiselect)
-5. Asks mthds.sh to list each selected method, then shows each answer: the method's page when it was listed, the reason when it was refused; with `--local`, it points out when mthds.sh lists a different version than the local copy, which usually means the change is not pushed yet
-6. Exits 0 when every selected method was listed, and 1 otherwise
+5. With `--local`, checks each selected method's manifest address the same way before any request: it must be a GitHub address naming a repository's root, and GitHub must answer that the repository is public; a private repository, one GitHub does not show, or a failure to ask GitHub refuses the publish, so mthds.sh never learns the name of a repository that is not public
+6. Asks mthds.sh to list each selected method, then shows each answer: the method's page when it was listed, the reason when it was refused; with `--local`, it points out when mthds.sh lists a different version than the local copy, which usually means the change is not pushed yet
+7. Exits 0 when every selected method was listed, and 1 otherwise
 
 `MTHDS_HUB_URL` replaces `https://mthds.sh`, for tests; it accepts only a loopback `http` origin.
 

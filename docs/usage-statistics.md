@@ -21,7 +21,7 @@ Every event carries the contract's common properties: the schema version, `tool:
 `command_completed` adds:
 
 - `command`: the command's path, such as `config list` or `run pipe`, from the contract's list for the surface; any command the list does not name is sent as `other`. Arguments, option values, paths and method names are never sent.
-- `outcome`: `succeeded`, `failed` or `cancelled` (interrupted with Ctrl-C).
+- `outcome`: `succeeded`, `failed` or `cancelled` (interrupted with Ctrl-C; on `mthds-agent`, a tool it runs that is interrupted, or that handles Ctrl-C and exits with status 130, cancels the command too).
 - `error_domain` on a failure, when the CLI can say who can fix it: `input` for a command line that did not parse or an agent error in the argument, validation or package domain; `config` for the config and binary domains; `runtime` for the runner and pipeline domains. Install and file errors send none.
 - `duration_ms`, and `hosted` on a `run` command given `--hosted` (true) or `--local` (false).
 

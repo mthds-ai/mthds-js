@@ -11,6 +11,9 @@ import { uvToolInstallSync } from "../installer/runtime/installer.js";
 import { ENV } from "../usage-stats/contract.js";
 import { noteCancelled } from "../usage-stats/outcome.js";
 
+/** The exit status of a process ended by Ctrl-C: 128 plus SIGINT's number. */
+const EXIT_INTERRUPTED = 130;
+
 /**
  * The environment of a spawned tool: this process's, plus `PIPELEX_USAGE_STATS_HOST=mthds-agent`,
  * so that `pipelex-agent` and `plxt`, which report usage statistics of their own, say that
@@ -157,9 +160,13 @@ export function passthrough(
     });
   }
 
-  if (result.signal === "SIGINT") {
+  // The person interrupted the tool: it was killed by the interrupt, or it handled Ctrl-C itself
+  // and exited 130, as `pipelex-agent` and `plxt` do. Either way the command was cancelled, not
+  // failed. The interrupt reached this process too, but its handler cannot run while spawnSync
+  // blocks, and the exit below comes first.
+  if (result.signal === "SIGINT" || result.status === EXIT_INTERRUPTED) {
     noteCancelled();
-    process.exit(130);
+    process.exit(EXIT_INTERRUPTED);
   }
   process.exit(result.status ?? 1);
 }

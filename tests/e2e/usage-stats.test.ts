@@ -404,6 +404,47 @@ describe.skipIf(process.platform === "win32")("mthds-agent usage statistics (e2e
     },
   );
 
+  it.each(["markdown", "json"])(
+    "sends an invalid bundle's verdict as the caller's to fix under %s errors",
+    async (errorFormat) => {
+      writeFileSync(join(work, "bundle.mthds"), 'domain = "demo"\n');
+      // The loopback server stands in for the API runner too, answering its validate with an
+      // invalid verdict and its server-rendered Markdown.
+      server.respond((request) =>
+        request.path.endsWith("/validate")
+          ? {
+              status: 200,
+              body: {
+                is_valid: false,
+                message: "Bundle is invalid",
+                pending_signatures: [],
+                is_runnable: false,
+                validation_errors: [{ category: "blueprint_validation", message: "boom" }],
+                rendered_markdown: "# Validation failed\n\nboom",
+              },
+            }
+          : { status: 200, body: { status: "Ok" } },
+      );
+      const result = await run(
+        MTHDS_AGENT,
+        ["--runner", "api", "validate", "pipe", "bundle.mthds", "--error-format", errorFormat],
+        { MTHDS_BASE_URL: server.origin, CI: "true" },
+      );
+      expect(result.status).toBe(1);
+      expect(result.stderr.startsWith("# Validation failed")).toBe(errorFormat === "markdown");
+      const captures = server.requests.filter((request) => !request.path.endsWith("/validate"));
+      expect(captures).toHaveLength(1);
+      const [event] = (captures[0]!.body as { batch: DebugEvent[] }).batch;
+      expect(gateProblems(event as unknown as Record<string, unknown>, "mthds")).toEqual([]);
+      expect(event!.properties).toMatchObject({
+        surface: "mthds-agent",
+        command: "validate pipe",
+        outcome: "failed",
+        error_domain: "input",
+      });
+    },
+  );
+
   it.each([
     ["its JSON error about an outdated tool", "pipelex 0.0.1", 1],
     ["its JSON warning about an unreadable version", "weird", 0],

@@ -64,6 +64,11 @@ const USAGE_STATS_ERROR_DOMAINS: Partial<
   runtime: "runtime",
 };
 
+/** Note, for the command's usage statistics, who can fix the error it is failing with. */
+function noteAgentErrorDomain(domain: AgentErrorDomain | RunnerErrorDomain | undefined): void {
+  noteErrorDomain(domain === undefined ? undefined : USAGE_STATS_ERROR_DOMAINS[domain]);
+}
+
 // ── Error hints ──────────────────────────────────────────────────────
 
 export const AGENT_ERROR_HINTS: Record<string, string> = {
@@ -98,8 +103,14 @@ export function agentMarkdownSuccess(markdown: string): void {
  * Emit a server-rendered Markdown failure to stderr + `process.exit(1)` — the
  * `--format markdown` invalid arm (a produced negative verdict). Mirrors the
  * local CLI, which writes the failure Markdown to stderr and exits non-zero.
+ * `errorDomain` is the one the JSON arm's envelope would carry, noted for the
+ * usage statistics as `agentError` notes it, so both arms count the failure alike.
  */
-export function agentMarkdownError(markdown: string): never {
+export function agentMarkdownError(
+  markdown: string,
+  errorDomain: AgentErrorDomain | RunnerErrorDomain,
+): never {
+  noteAgentErrorDomain(errorDomain);
   process.stderr.write(markdown.endsWith("\n") ? markdown : markdown + "\n");
   process.exit(1);
 }
@@ -175,9 +186,7 @@ export function agentError(
     }
   }
 
-  noteErrorDomain(
-    extras?.error_domain === undefined ? undefined : USAGE_STATS_ERROR_DOMAINS[extras.error_domain],
-  );
+  noteAgentErrorDomain(extras?.error_domain);
   process.stderr.write(JSON.stringify(payload, null, 2) + "\n");
   process.exit(1);
 }

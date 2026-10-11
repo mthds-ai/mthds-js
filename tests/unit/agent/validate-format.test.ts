@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { runProtocolValidate } from "../../../src/agent/commands/api-commands.js";
 import type { Runner } from "../../../src/runners/types.js";
 import type { ValidationResult } from "../../../src/protocol/models.js";
+import { outcomeNotes, resetOutcomeNotes } from "../../../src/usage-stats/outcome.js";
 
 // `runProtocolValidate` honors --format on the API runner: when Markdown is wanted
 // (the default) it opts into the server's `rendered_markdown` extra and emits it
@@ -37,6 +38,7 @@ describe("runProtocolValidate — --format handling", () => {
   let exitSpy: ReturnType<typeof vi.spyOn>;
 
   beforeEach(() => {
+    resetOutcomeNotes();
     stdoutSpy = vi.spyOn(process.stdout, "write").mockReturnValue(true);
     stderrSpy = vi.spyOn(process.stderr, "write").mockReturnValue(true);
     exitSpy = vi.spyOn(process, "exit").mockImplementation((() => {
@@ -77,6 +79,25 @@ describe("runProtocolValidate — --format handling", () => {
     expect(written).toContain("# Validation failed");
     expect(exitSpy).toHaveBeenCalledWith(1);
   });
+
+  it.each(["markdown", "json"])(
+    "notes an invalid bundle as the caller's to fix, for the usage statistics, under %s errors",
+    async (errorFormat) => {
+      // The domain the command's event would carry: what was noted when the process exited.
+      const domainsAtExit: (string | undefined)[] = [];
+      exitSpy.mockImplementation((() => {
+        domainsAtExit.push(outcomeNotes().errorDomain);
+        throw new Error("__exit__");
+      }) as never);
+      const { runner } = makeRunner(INVALID_WITH_MD);
+      await expect(
+        runProtocolValidate(runner, ["x"], false, undefined, undefined, errorFormat),
+      ).rejects.toThrow("__exit__");
+      const written = String(stderrSpy.mock.calls[0]![0]);
+      expect(written.startsWith("{")).toBe(errorFormat === "json");
+      expect(domainsAtExit[0]).toBe("input");
+    },
+  );
 
   it("emits the JSON success envelope under --format json", async () => {
     const { runner } = makeRunner(VALID_NO_MD);

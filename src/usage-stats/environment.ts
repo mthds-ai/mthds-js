@@ -4,7 +4,7 @@
  */
 
 import { existsSync, readFileSync } from "node:fs";
-import { CI_VARIABLES, CONTAINER_MARKERS, SWITCH_VALUES } from "./contract.js";
+import { CI_VARIABLES, CONTAINER_MARKERS, ENV, SWITCH_VALUES } from "./contract.js";
 
 /** A variable's value as every switch reads it: surrounding whitespace removed, case ignored. */
 export function normalizedValue(value: string | undefined): string | undefined {
@@ -65,4 +65,13 @@ export function archFamily(arch: string = process.arch): string {
 /** `node-<major>`, the `language_runtime` of a tool running on Node. */
 export function languageRuntime(version: string = process.versions.node): string {
   return `node-${version.split(".")[0]}`;
+}
+
+/**
+ * The environment of a tool `mthds-agent` runs: `env` plus `PIPELEX_USAGE_STATS_HOST=mthds-agent`,
+ * over any host the caller declared, so that `pipelex`, `pipelex-agent` and `plxt`, which report
+ * usage statistics of their own, say that `mthds-agent` ran them.
+ */
+export function mthdsAgentChildEnv(env: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+  return { ...env, [ENV.host]: "mthds-agent" };
 }

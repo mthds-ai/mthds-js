@@ -8,7 +8,7 @@ import { agentError, AGENT_ERROR_DOMAINS } from "./output.js";
 import { BINARY_RECOVERY, buildInstallCommand } from "./binaries.js";
 import { checkBinaryVersion } from "../installer/runtime/version-check.js";
 import { uvToolInstallSync } from "../installer/runtime/installer.js";
-import { ENV } from "../usage-stats/contract.js";
+import { mthdsAgentChildEnv } from "../usage-stats/environment.js";
 import { noteCancelled } from "../usage-stats/outcome.js";
 
 /** The exit status of a process ended by Ctrl-C: 128 plus SIGINT's number. */
@@ -20,7 +20,7 @@ const EXIT_INTERRUPTED = 130;
  * `mthds-agent` ran them.
  */
 export function passthroughEnv(env: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
-  return { ...env, [ENV.host]: "mthds-agent" };
+  return mthdsAgentChildEnv(env);
 }
 
 export function passthrough(

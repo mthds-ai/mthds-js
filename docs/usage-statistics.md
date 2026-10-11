@@ -16,7 +16,7 @@ The notice is recorded in `~/.mthds/usage-stats/notice-v1`, which every tool rea
 
 ## What is sent
 
-Every event carries the contract's common properties: the schema version, `tool: "mthds"`, the CLI's version, the `surface` (`mthds` or `mthds-agent`), the `host` when a program running the CLI declared itself through `PIPELEX_USAGE_STATS_HOST` (`cocode`, `mthds-agent`, or `other` for any other value), whether this command created the installation identifier (`id_new`), the operating system and processor families, the Node major version (`node-22`), whether it ran in CI or in a container, whether the machine is marked as one of the team's (`internal`), and the notice version the machine has seen.
+Every event carries the contract's common properties: the schema version, `tool: "mthds"`, the CLI's version, the `surface` (`mthds` or `mthds-agent`), the `host` when a program running the CLI declared itself through `PIPELEX_USAGE_STATS_HOST` (`cocode`, `mthds-agent`, or `other` for any other value), whether this command created the installation identifier (`id_new`), the operating system and processor families, the Node major version (`node-22`), whether it ran in CI or in a container, whether the machine is marked as one of the team's (`internal`), and the notice version the machine has seen. Every `pipelex`, `pipelex-agent` and `plxt` process `mthds-agent` starts, through its passthrough or through a pipelex runner it creates, gets `PIPELEX_USAGE_STATS_HOST=mthds-agent`, so the statistics of those tools say that `mthds-agent` ran them.
 
 `command_completed` adds:
 

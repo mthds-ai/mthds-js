@@ -5,6 +5,7 @@ import { MthdsApiClient } from "./api/client.js";
 import type { AppInfo } from "./api/user-agent.js";
 import { PipelexRunner } from "./pipelex/runner.js";
 import { MTHDS_JS_VERSION } from "../version.js";
+import { mthdsAgentChildEnv } from "../usage-stats/environment.js";
 
 /**
  * The program a runner is created for — the two binaries this package ships.
@@ -37,7 +38,12 @@ export function createRunner(caller: CliCaller, type?: RunnerType, libraryDirs?:
         appInfo: cliAppInfo(caller),
       });
     case Runners.PIPELEX:
-      return new PipelexRunner(libraryDirs);
+      // The `pipelex` and `pipelex-agent` processes it starts for mthds-agent say so in their
+      // usage statistics, as those the agent's passthrough starts do.
+      return new PipelexRunner(
+        libraryDirs,
+        caller === "mthds-agent" ? { env: mthdsAgentChildEnv() } : {},
+      );
     default:
       throw new Error(`Unknown runner type: ${runnerType as string}`);
   }

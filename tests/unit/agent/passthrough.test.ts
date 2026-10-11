@@ -28,9 +28,6 @@ vi.mock("../../../src/agent/output.js", () => ({
   agentError: vi.fn((message: string, errorType: string, extras?: Record<string, unknown>) => {
     throw new AgentErrorThrow(errorType, { message, ...extras });
   }),
-  agentWarning: vi.fn((warning: Record<string, unknown>) => {
-    process.stderr.write(JSON.stringify({ warning: true, ...warning }) + "\n");
-  }),
   AGENT_ERROR_DOMAINS: {
     ARGUMENT: "argument",
     CONFIG: "config",

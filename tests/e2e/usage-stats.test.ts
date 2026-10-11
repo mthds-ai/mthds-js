@@ -285,89 +285,143 @@ describe.skipIf(process.platform === "win32")("mthds usage statistics (e2e)", ()
   });
 });
 
+/** Every `--format` and `--error-format` combination, each absent, `json` or `markdown`. */
+const FORMAT_FLAGS: readonly (readonly string[])[] = [undefined, "json", "markdown"].flatMap(
+  (format) =>
+    [undefined, "json", "markdown"].map((errorFormat) => [
+      ...(format === undefined ? [] : ["--format", format]),
+      ...(errorFormat === undefined ? [] : ["--error-format", errorFormat]),
+    ]),
+);
+
+/** A `pipelex-agent` first on the PATH, answering `--version` with `version` and running fine. */
+function stubPipelexAgent(version: string): Record<string, string> {
+  const bin = join(home, "bin");
+  mkdirSync(bin, { recursive: true });
+  writeFileSync(
+    join(bin, "pipelex-agent"),
+    [
+      "#!/bin/sh",
+      `if [ "$1" = "--version" ]; then echo "${version}"; exit 0; fi`,
+      'echo "ran"',
+      "",
+    ].join("\n"),
+  );
+  chmodSync(join(bin, "pipelex-agent"), 0o755);
+  return { PATH: `${bin}${delimiter}${process.env["PATH"] ?? ""}` };
+}
+
+/** The notice was neither printed on this run's stderr nor recorded on the machine. */
+function expectNoNotice(result: Result): void {
+  expect(result.stderr).not.toContain(NOTICE);
+  expect(result.stderr).not.toContain("collects anonymous usage statistics");
+  expect(readdirSync(stateDir()).filter((name) => name.startsWith("notice-v"))).toEqual([]);
+}
+
+/** The one event the run posted before exiting, as a command in CI does. */
+function sentEvent(): DebugEvent {
+  expect(server.requests).toHaveLength(1);
+  const batch = (server.requests[0]!.body as { batch: DebugEvent[] }).batch;
+  expect(batch).toHaveLength(1);
+  const event = batch[0]!;
+  expect(gateProblems(event as unknown as Record<string, unknown>, "mthds")).toEqual([]);
+  return event;
+}
+
 describe.skipIf(process.platform === "win32")("mthds-agent usage statistics (e2e)", () => {
+  // mthds-agent's stderr is a machine contract: it never prints or records the notice, and still
+  // sends the run's statistics. A pipelex-agent it runs applies its own rule.
+
   it("counts a native command without ever printing the notice", async () => {
     const result = await run(MTHDS_AGENT, ["config", "list"], DEBUG);
     expect(result.status).toBe(0);
-    expect(result.stderr).not.toContain(NOTICE);
+    expectNoNotice(result);
     expect(onlyEvent(result.stderr).properties).toMatchObject({
       surface: "mthds-agent",
       command: "config list",
       outcome: "succeeded",
     });
-    expect(existsSync(join(stateDir(), "notice-v1"))).toBe(false);
     expect(JSON.parse(result.stdout)).toBeTypeOf("object");
   });
 
-  it("keeps a JSON error stream one JSON document, and counts the failure", async () => {
-    const result = await run(MTHDS_AGENT, ["config", "get", "no-such-key"]);
+  it("keeps a JSON error stream one JSON document, and sends the failure", async () => {
+    const result = await run(MTHDS_AGENT, ["config", "get", "no-such-key"], { CI: "true" });
     expect(result.status).not.toBe(0);
-    expect(result.stderr).not.toContain(NOTICE);
+    expectNoNotice(result);
     expect(JSON.parse(result.stderr)).toMatchObject({ error: true });
-    expect(existsSync(join(stateDir(), "id"))).toBe(true);
+    expect(sentEvent().properties).toMatchObject({ command: "config get", outcome: "failed" });
   });
+
+  describe.each(FORMAT_FLAGS.map((flags) => [flags.join(" ") || "no format flag", flags]))(
+    "with %s",
+    (_label, flags) => {
+      it("never prints or records the notice on a success, and sends it", async () => {
+        const result = await run(
+          MTHDS_AGENT,
+          ["--runner", "pipelex", "run", "pipe", "x.mthds", ...flags],
+          {
+            ...stubPipelexAgent("pipelex 99.0.0"),
+            CI: "true",
+          },
+        );
+        expect(result.status).toBe(0);
+        expect(result.stdout).toContain("ran");
+        expectNoNotice(result);
+        expect(sentEvent().properties).toMatchObject({
+          surface: "mthds-agent",
+          command: "run pipe",
+          outcome: "succeeded",
+        });
+      });
+
+      it("never prints or records the notice on a parse failure, and sends it", async () => {
+        const result = await run(MTHDS_AGENT, ["--runner", "api", "validate", "pipe", ...flags], {
+          CI: "true",
+        });
+        expect(result.status).not.toBe(0);
+        expectNoNotice(result);
+        expect(sentEvent().properties).toMatchObject({
+          surface: "mthds-agent",
+          command: "validate pipe",
+          outcome: "failed",
+        });
+      });
+
+      it("never prints or records the notice on a refusal in the command, and sends it", async () => {
+        const result = await run(
+          MTHDS_AGENT,
+          ["--runner", "api", "validate", "pipe", "not-a-bundle", ...flags],
+          { MTHDS_BASE_URL: server.origin, CI: "true" },
+        );
+        expect(result.status).not.toBe(0);
+        expectNoNotice(result);
+        expect(sentEvent().properties).toMatchObject({
+          surface: "mthds-agent",
+          command: "validate pipe",
+          outcome: "failed",
+        });
+      });
+    },
+  );
 
   it.each([
-    ["a parse failure", ["--runner", "api", "validate", "pipe"]],
-    ["a refusal in the command", ["--runner", "api", "validate", "pipe", "not-a-bundle"]],
-  ])("never follows or precedes a JSON error with the notice: %s", async (_case, args) => {
-    // `validate pipe` on the API runner prints Markdown errors, yet these failures are its own JSON.
-    const result = await run(MTHDS_AGENT, args, { MTHDS_BASE_URL: server.origin });
-    expect(result.status).not.toBe(0);
-    expect(result.stderr).not.toContain(NOTICE);
-    expect(JSON.parse(result.stderr)).toMatchObject({ error: true });
-    expect(existsSync(join(stateDir(), "notice-v1"))).toBe(false);
-    expect(existsSync(join(stateDir(), "id"))).toBe(true);
-  });
-
-  describe("on the pipelex runner", () => {
-    /** A `pipelex-agent` first on the PATH, answering `--version` with `version` and running fine. */
-    function stubPipelexAgent(version: string): Record<string, string> {
-      const bin = join(home, "bin");
-      mkdirSync(bin, { recursive: true });
-      writeFileSync(
-        join(bin, "pipelex-agent"),
-        [
-          "#!/bin/sh",
-          `if [ "$1" = "--version" ]; then echo "${version}"; exit 0; fi`,
-          'echo "ran"',
-          "",
-        ].join("\n"),
+    ["its JSON error about an outdated tool", "pipelex 0.0.1", 1],
+    ["its JSON warning about an unreadable version", "weird", 0],
+  ])(
+    "never prints or records the notice beside %s, and sends it",
+    async (_case, version, status) => {
+      const result = await run(MTHDS_AGENT, ["--runner", "pipelex", "run", "pipe", "x.mthds"], {
+        ...stubPipelexAgent(version),
+        CI: "true",
+      });
+      expect(result.status).toBe(status);
+      expectNoNotice(result);
+      expect(JSON.parse(result.stderr.trim())).toMatchObject(
+        status === 0 ? { warning: true } : { error: true, error_type: "InstallError" },
       );
-      chmodSync(join(bin, "pipelex-agent"), 0o755);
-      return { PATH: `${bin}${delimiter}${process.env["PATH"] ?? ""}` };
-    }
-
-    it("prints the notice once the tool it ran is done, on a stderr a person reads", async () => {
-      const result = await run(
-        MTHDS_AGENT,
-        ["run", "pipe", "x.mthds"],
-        stubPipelexAgent("pipelex 99.0.0"),
-      );
-      expect(result.status).toBe(0);
-      expect(result.stdout).toContain("ran");
-      expect(result.stderr.split(NOTICE)).toHaveLength(2);
-      expect(existsSync(join(stateDir(), "notice-v1"))).toBe(true);
-    });
-
-    it("never adds the notice to its own JSON error about the tool", async () => {
-      const result = await run(
-        MTHDS_AGENT,
-        ["run", "pipe", "x.mthds"],
-        stubPipelexAgent("pipelex 0.0.1"),
-      );
-      expect(result.status).toBe(1);
-      expect(JSON.parse(result.stderr)).toMatchObject({ error: true, error_type: "InstallError" });
-      expect(existsSync(join(stateDir(), "notice-v1"))).toBe(false);
-    });
-
-    it("never adds the notice to a stderr carrying its JSON warning", async () => {
-      const result = await run(MTHDS_AGENT, ["run", "pipe", "x.mthds"], stubPipelexAgent("weird"));
-      expect(result.status).toBe(0);
-      expect(JSON.parse(result.stderr.trim())).toMatchObject({ warning: true });
-      expect(existsSync(join(stateDir(), "notice-v1"))).toBe(false);
-    });
-  });
+      expect(sentEvent().properties).toMatchObject({ command: "run pipe" });
+    },
+  );
 
   it("tells the tools it runs that mthds-agent ran them", async () => {
     const bin = join(home, "bin");

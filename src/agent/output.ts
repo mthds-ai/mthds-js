@@ -10,7 +10,7 @@ import type { BinaryRecoveryInfo } from "./binaries.js";
 import { ApiResponseError } from "../runners/api/exceptions.js";
 import type { ValidationErrorItem } from "../runners/api/models.js";
 import type { ErrorDomain } from "../usage-stats/contract.js";
-import { noteErrorDomain, noteJsonOnStderr } from "../usage-stats/outcome.js";
+import { noteErrorDomain } from "../usage-stats/outcome.js";
 
 // ── Error domains ────────────────────────────────────────────────────
 
@@ -178,18 +178,8 @@ export function agentError(
   noteErrorDomain(
     extras?.error_domain === undefined ? undefined : USAGE_STATS_ERROR_DOMAINS[extras.error_domain],
   );
-  noteJsonOnStderr();
   process.stderr.write(JSON.stringify(payload, null, 2) + "\n");
   process.exit(1);
-}
-
-/**
- * Write a warning to stderr in the CLI's warning shape, one JSON line. JSON on stderr makes it a
- * stream a program reads, so the usage-statistics notice stays off it.
- */
-export function agentWarning(warning: Record<string, unknown> & { message: string }): void {
-  noteJsonOnStderr();
-  process.stderr.write(JSON.stringify({ warning: true, ...warning }) + "\n");
 }
 
 // ── What a runner's refusal says ─────────────────────────────────────

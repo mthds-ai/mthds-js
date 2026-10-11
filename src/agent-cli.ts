@@ -43,7 +43,6 @@ import { createRunner } from "./runners/registry.js";
 import { Runners, RUNNER_NAMES } from "./runners/types.js";
 import type { RunnerType, Runner } from "./runners/types.js";
 import { installUsageStats } from "./usage-stats/session.js";
-import { agentNoticeAllowed } from "./agent/usage-stats-notice.js";
 import type { Command as Cmd } from "commander";
 
 const require = createRequire(import.meta.url);
@@ -474,8 +473,9 @@ if (isApiRunner) {
 }
 
 // ── Usage statistics ─────────────────────────────────────────────────
-// One `command_completed` per command (src/usage-stats/). The notice never goes on a stderr a
-// program reads; src/agent/usage-stats-notice.ts says when it may.
+// One `command_completed` per command (src/usage-stats/). mthds-agent never prints or records the
+// notice, whatever --format or --error-format say: its stderr is a machine contract (the
+// usage-statistics contract, Notice). A pipelex-agent it runs applies its own rule.
 
 // Default action — no command at all. An unknown command never reaches it: it is
 // refused below, before Commander parses.
@@ -488,8 +488,7 @@ program.action(() => {
 const usageStats = installUsageStats(program, {
   surface: "mthds-agent",
   toolVersion: pkg.version,
-  noticeAllowed: (invocation) => agentNoticeAllowed(invocation, isApiRunner),
-  noticeAtExit: true,
+  printsNotice: false,
 });
 
 // ── Unknown commands ─────────────────────────────────────────────────

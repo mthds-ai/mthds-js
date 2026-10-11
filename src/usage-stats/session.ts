@@ -4,8 +4,8 @@
  *
  * `installUsageStats` hooks a Commander program. The command a process runs is the deepest command
  * Commander dispatched to; when its action is about to run, the session reads every switch, after
- * the legacy migration, and prints the notice where it may (`mthds` there, `mthds-agent` as it
- * exits, once it knows its stderr stayed free of JSON). When the process exits, whether the
+ * the legacy migration, and prints the notice before the command does any work, on a CLI whose
+ * stderr a person reads (`mthds`; never `mthds-agent`). When the process exits, whether the
  * command returned, called `process.exit` or failed to parse, the session builds the event and
  * either prints it (the debug variable) or writes it to the spool and starts the sender.
  *
@@ -36,28 +36,17 @@ import {
 } from "./state.js";
 import type { Installation } from "./state.js";
 
-/** A command of the program: its path, the Commander command with its parsed options, and the arguments. */
-export interface Invocation {
-  path: string;
-  command: Command;
-  argv: readonly string[];
-}
-
 /** How the process was started: its surface, version and the rules that differ between the two CLIs. */
 export interface UsageStatsOptions {
   surface: Surface;
   toolVersion: string;
-  /** Whether the notice may be printed for this command, or whether its stderr is a machine contract. */
-  noticeAllowed: (invocation: Invocation) => boolean;
   /**
-   * Print the notice as the command exits rather than before it runs: `mthds-agent`'s own failures
-   * write JSON to stderr on every path, so only at exit is it known whether the stream stayed one a
-   * person reads.
+   * Whether the CLI prints the notice, or whether its stderr is a machine contract, on which the
+   * notice is neither printed nor recorded.
    */
-  noticeAtExit?: boolean;
+  printsNotice: boolean;
   /** Top-level groups whose commands send nothing: the statistics group. */
   silentGroups?: readonly string[];
-  argv?: readonly string[];
 }
 
 /** The path of a command in its program's tree, its words separated by one space, the root left out. */
@@ -104,15 +93,12 @@ export function hostedFromOptions(path: string, command: Command): boolean | und
 
 export class UsageStatsSession {
   private readonly startedAt = Date.now();
-  private readonly argv: readonly string[];
   private leaf: Command | undefined;
   private begun = false;
   private enabled = false;
   private silenced = false;
 
-  constructor(private readonly options: UsageStatsOptions) {
-    this.argv = options.argv ?? process.argv.slice(2);
-  }
+  constructor(private readonly options: UsageStatsOptions) {}
 
   /** Record the command Commander dispatched to; the deepest one is the command the process runs. */
   noteDispatched(command: Command): void {
@@ -147,23 +133,15 @@ export class UsageStatsSession {
     try {
       runLegacyMigration();
       this.enabled = usageStatsOffBy().length === 0;
-      if (!this.options.noticeAtExit) this.showNotice(path);
+      this.showNotice();
     } catch {
       this.enabled = false;
     }
   }
 
-  /**
-   * Print the notice and record it, once per machine, while statistics are on, unless this command's
-   * stderr is one a program reads: by the CLI's own rule, or because the command wrote JSON to it.
-   */
-  private showNotice(path: string): void {
-    if (
-      this.enabled &&
-      !outcomeNotes().jsonOnStderr &&
-      noticeVersionSeen() < NOTICE_VERSION &&
-      this.options.noticeAllowed({ path, command: this.leaf!, argv: this.argv })
-    ) {
+  /** Print the notice and record it, once per machine, while statistics are on, on a CLI that prints it. */
+  private showNotice(): void {
+    if (this.options.printsNotice && this.enabled && noticeVersionSeen() < NOTICE_VERSION) {
       writeStderrLine(NOTICE_TEXT);
       recordNoticeShown();
     }
@@ -178,7 +156,6 @@ export class UsageStatsSession {
       this.begin();
       // A command that turned statistics off on the machine is not counted.
       if (!this.enabled || isMachineDisabled()) return;
-      if (this.options.noticeAtExit) this.showNotice(path);
       const notes = outcomeNotes();
       const outcome = notes.cancelled ? "cancelled" : exitCode === 0 ? "succeeded" : "failed";
       const installation = obtainInstallationId();

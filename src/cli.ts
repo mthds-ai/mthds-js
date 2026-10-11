@@ -515,7 +515,7 @@ program.action(() => {
 const usageStats = installUsageStats(program, {
   surface: "mthds",
   toolVersion: pkg.version,
-  noticeAllowed: () => true,
+  printsNotice: true,
   silentGroups: ["telemetry"],
 });
 

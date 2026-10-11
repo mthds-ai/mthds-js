@@ -784,7 +784,7 @@ Publish methods to mthds.sh (non-interactive) through the hub's registry route, 
 
 `published_methods` names only the methods mthds.sh listed, and `registrations` carries the route's answer for every method sent, with its `name`, `outcome` (`registered`, `updated`, `unchanged`, `refused` or `error`) and the rest of the answer whole. When mthds.sh listed none, the command fails with a `PublishError` whose message gives each answer, with `registrations` on the error envelope and `retryable: true` when every failure can be retried. A private repository or an address naming a subdirectory is refused before any request.
 
-With `--local`, nothing is registered: mthds.sh lists what a public GitHub repository holds. The command answers `success: true` with `published_methods` naming the selected methods, `registrations: []`, and a `message` saying so.
+With `--local`, nothing is registered: mthds.sh lists what a public GitHub repository holds. The command answers `success: true` with `published_methods` naming the selected methods, `registrations: []`, and a `message` saying so. `published_methods` alone therefore does not say that a method was listed: an empty `registrations` with that `message` is how a caller tells that nothing was registered.
 
 ```bash
 mthds-agent publish [address] [OPTIONS]

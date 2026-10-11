@@ -1,14 +1,15 @@
 /**
  * Non-interactive agent publish command.
  *
- * Resolves the methods, then asks mthds.sh's registry route to list each one, and reports what the
- * route answered, method by method, in `registrations`. `published_methods` names only the methods
- * the route accepted, so the envelope never says a method was published when nothing listed it.
- * No file is written and no runner is involved.
+ * Given an address, it resolves the methods, asks mthds.sh's registry route to list each one, and
+ * reports what the route answered, method by method, in `registrations`; `published_methods` then
+ * names only the methods the route accepted. No file is written and no runner is involved.
  *
- * `--local` keeps the envelope this command shipped with: it resolves the directory and reports the
- * methods it selected, but registers nothing, since a local directory is not what mthds.sh lists.
- * Its `registrations` is empty, and its `message` says to publish the GitHub address instead.
+ * `--local` keeps the envelope this command shipped with, which the shared contract still describes:
+ * it resolves the directory and registers nothing, since a local directory is not what mthds.sh
+ * lists, yet `published_methods` names every method it selected. So `published_methods` alone never
+ * says whether a method was listed: an empty `registrations` and the `message` saying that nothing
+ * was registered are how a caller tells, and the message says to publish the GitHub address instead.
  */
 
 import { agentSuccess, agentError, AGENT_ERROR_DOMAINS } from "../output.js";

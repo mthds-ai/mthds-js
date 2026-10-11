@@ -93,8 +93,12 @@ function stateDir(): string {
   return join(home, ".mthds", "usage-stats");
 }
 
+function spoolDirectory(): string {
+  return join(stateDir(), "spool", "mthds");
+}
+
 function spooled(): string[] {
-  const directory = join(stateDir(), "spool", "mthds");
+  const directory = spoolDirectory();
   return existsSync(directory) ? readdirSync(directory) : [];
 }
 
@@ -222,6 +226,54 @@ describe.skipIf(process.platform === "win32")("mthds usage statistics (e2e)", ()
     expect(event!.properties).toMatchObject({ command: "config list", ci: true });
     expect(gateProblems(event as unknown as Record<string, unknown>, "mthds")).toEqual([]);
     expect(spooled()).toEqual([]);
+  });
+
+  it("queues its event for the endpoint it resolved, written as the variable gave it", async () => {
+    // Nothing listens there, so the post fails and the event stays queued.
+    const unanswered = "http://localhost:9";
+    const result = await run(MTHDS, ["config", "list"], {
+      CI: "true",
+      PIPELEX_USAGE_STATS_ENDPOINT: unanswered,
+    });
+    expect(result.status).toBe(0);
+    const files = spooled();
+    expect(files).toHaveLength(1);
+    const held = JSON.parse(readFileSync(join(spoolDirectory(), files[0]!), "utf-8")) as {
+      events: DebugEvent[];
+    };
+    expect(held).toMatchObject({ spool_version: 1, endpoint: unanswered });
+    expect(held.events.map((queued) => queued.properties["command"])).toEqual(["config list"]);
+  });
+
+  it("leaves a file queued for another endpoint in the spool, posting only its own", async () => {
+    // A file an earlier run queued under another loopback override, its event made under the
+    // machine's identifier, so nothing but its endpoint keeps it from this sender's post.
+    const id = "6f1c2b9e-3d4a-4b5c-8d6e-7f8091a2b3c4";
+    mkdirSync(spoolDirectory(), { recursive: true });
+    writeFileSync(join(stateDir(), "id"), id);
+    const queuedName = `${Date.now() - 1_000}-abcdef012345.json`;
+    writeFileSync(
+      join(spoolDirectory(), queuedName),
+      JSON.stringify({
+        spool_version: 1,
+        endpoint: "http://127.0.0.1:9",
+        events: [
+          {
+            event: "command_completed",
+            distinct_id: id,
+            uuid: "0b6c8f0e-2f6a-4d3b-9c1e-5a7d9e2f4b6c",
+            properties: { command: "install" },
+          },
+        ],
+      }),
+    );
+    const result = await run(MTHDS, ["config", "list"]);
+    expect(result.status).toBe(0);
+    // The sender takes the older file first, so it has left it by the time the command's arrives.
+    const events = await postedEvents(1);
+    expect(events.map((posted) => posted.properties["command"])).toEqual(["config list"]);
+    expect(events[0]!.distinct_id).toBe(id);
+    expect(spooled()).toContain(queuedName);
   });
 
   it("hands the event to a detached sender otherwise", async () => {

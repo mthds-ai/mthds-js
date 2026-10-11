@@ -12,12 +12,14 @@ import type { Envelope } from "./event.js";
 import {
   claimFile,
   deleteFile,
+  isQueuedFor,
   listReadyFiles,
   readSpoolFile,
   releaseClaim,
   rewriteClaimed,
   tidySpool,
 } from "./spool.js";
+import type { SpoolContent } from "./spool.js";
 import { isMachineDisabled, readInstallationId, runLegacyMigration } from "./state.js";
 
 /** What a post's answer means for the file it came from. */
@@ -56,6 +58,7 @@ export async function postBatch(
 }
 
 export interface DrainOptions {
+  /** The origin this sender posts to; it posts only the files queued for it, or naming none. */
   endpoint: string;
   /** When the whole run must be over, in epoch milliseconds. */
   deadline: number;
@@ -83,20 +86,29 @@ function eventsToPost(claimed: string, events: Envelope[]): Envelope[] {
 
 /**
  * Give a file whose post should be retried back to the spool, for the next sender, without the
- * events it dropped. Not when statistics were turned off on the machine or the file was deleted
- * while the post ran: it is deleted then, and never written again.
+ * events it dropped and still naming the endpoint it was queued for. Not when statistics were
+ * turned off on the machine or the file was deleted while the post ran: it is deleted then, and
+ * never written again.
  */
-function giveBack(claimed: string, posted: Envelope[], held: number): void {
+function giveBack(claimed: string, content: SpoolContent, posted: Envelope[]): void {
   if (isMachineDisabled()) {
     deleteFile(claimed);
     return;
   }
-  if (posted.length !== held && !rewriteClaimed(claimed, posted)) return;
+  if (
+    posted.length !== content.events.length &&
+    !rewriteClaimed(claimed, { endpoint: content.endpoint, events: posted })
+  ) {
+    return;
+  }
   releaseClaim(claimed);
 }
 
 /**
- * Post this tool's spool, one attempt per file, oldest first, until the deadline. Immediately
+ * Post this tool's spool, one attempt per file, oldest first, until the deadline. A file queued
+ * for an endpoint other than this sender's is left in place, unclaimed, for a sender posting
+ * there, so events queued under a test's loopback override never reach PostHog and events queued
+ * for PostHog never reach a loopback server; a file naming no endpoint is posted. Immediately
  * before each post, the sender runs the legacy migration, posts nothing, deleting what it claimed,
  * once statistics are off on the machine, and drops every event made under an identifier other
  * than the current one.
@@ -106,11 +118,19 @@ export async function drainSpool(options: DrainOptions): Promise<void> {
   const files = options.onlyFile !== undefined ? [options.onlyFile] : listReadyFiles();
   for (const file of files) {
     if (Date.now() >= options.deadline) return;
+    // Read before claiming, so a file queued elsewhere is never taken from the spool, even briefly.
+    const peeked = readSpoolFile(file);
+    if (peeked !== undefined && !isQueuedFor(peeked, options.endpoint)) continue;
     const claimed = claimFile(file);
     if (claimed === undefined) continue;
     const content = readSpoolFile(claimed);
     if (content === undefined) {
       deleteFile(claimed);
+      continue;
+    }
+    // The claimed file decides: the peek reads nothing while another sender holds the file claimed.
+    if (!isQueuedFor(content, options.endpoint)) {
+      releaseClaim(claimed);
       continue;
     }
     const kept = eventsToPost(claimed, content.events);
@@ -119,7 +139,7 @@ export async function drainSpool(options: DrainOptions): Promise<void> {
       continue;
     }
     const verdict = await postBatch(options.endpoint, kept, options.deadline - Date.now());
-    if (verdict === "retry") giveBack(claimed, kept, content.events.length);
+    if (verdict === "retry") giveBack(claimed, content, kept);
     else deleteFile(claimed);
   }
 }

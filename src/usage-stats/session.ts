@@ -185,10 +185,11 @@ export class UsageStatsSession {
 }
 
 /**
- * Hand the event to a sender. A CLI writes it to the spool and starts a detached sender, which
- * posts the whole spool within ten seconds while the command exits at once. In CI or a container,
- * where the sender would be killed with the step, and when it cannot be started, the command posts
- * its own file before it exits, within one second, through a child process it waits for.
+ * Hand the event to a sender. A CLI writes it to the spool, queued for the endpoint it resolved,
+ * and starts a detached sender posting there, which posts every file queued for that endpoint
+ * within ten seconds while the command exits at once. In CI or a container, where the sender would
+ * be killed with the step, and when it cannot be started, the command posts its own file before it
+ * exits, within one second, through a child process it waits for.
  *
  * An event under a process-local identifier, made when the identifier could not be saved, is never
  * spooled, since a sender would drop it as made under another identifier: the event itself is handed
@@ -206,7 +207,7 @@ function deliver(event: Envelope, installation: Installation): void {
     if (waits || !startDetachedSender(endpoint, target)) runSenderAndWait(endpoint, target);
     return;
   }
-  const file = writeSpoolFile([event]);
+  const file = writeSpoolFile(endpoint, [event]);
   if (waits || !startDetachedSender(endpoint)) runSenderAndWait(endpoint, ["--file", file]);
 }
 

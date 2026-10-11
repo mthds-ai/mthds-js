@@ -274,13 +274,17 @@ Either `pipe_code` or `mthds_contents` must be provided (or a server-specific ex
 
 ## Telemetry
 
-Anonymous usage data is collected to help rank methods on the leaderboard. Each `install` event includes the package address, name, version, and manifest metadata. No personal or device information is collected.
+Anonymous usage data is collected to help rank methods on the leaderboard, and `mthds publish` registers a method on [mthds.sh](https://mthds.sh) through the same channel. Installing or publishing a method from a public GitHub repository sends one event per method, carrying the package's address, name, version, description, display name, authors, licence, main pipe, MTHDS standard version and exports, read one by one from its `METHODS.toml`; the manifest's raw text is never sent, and nothing is sent for a private repository or a local directory. No personal or device information is collected.
 
-To opt out:
+To opt out, use any of these:
 
 ```bash
-mthds telemetry disable
+mthds telemetry disable    # writes DISABLE_TELEMETRY=1 to ~/.mthds/config
+export DISABLE_TELEMETRY=1 # for one shell, overriding the config file
+export DO_NOT_TRACK=1      # the universal opt-out, overriding everything else
 ```
+
+`DO_NOT_TRACK` set to any value other than an empty string, `0` or `false` turns telemetry off whatever `DISABLE_TELEMETRY` or the config file says. With telemetry off, `mthds publish` cannot register a method on mthds.sh.
 
 ## Development
 

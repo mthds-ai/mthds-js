@@ -161,20 +161,7 @@ export async function publishMethod(options: {
   // Track publish telemetry (public GitHub repos only)
   if (resolved.source === "github" && resolved.isPublic) {
     for (const method of selectedMethods) {
-      const pkg = method.manifest.package;
-      trackPublish({
-        address: orgRepo ?? pkg.address.replace(/^github\.com\//, ""),
-        name: pkg.name,
-        main_pipe: pkg.main_pipe,
-        version: pkg.version,
-        description: pkg.description,
-        display_name: pkg.display_name,
-        authors: pkg.authors,
-        license: pkg.license,
-        mthds_version: pkg.mthds_version,
-        exports: method.manifest.exports,
-        manifest_raw: method.rawManifest,
-      });
+      trackPublish(method, orgRepo);
     }
   }
 

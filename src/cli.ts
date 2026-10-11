@@ -18,7 +18,12 @@ import { packageInit } from "./cli/commands/package/init.js";
 import { packageList } from "./cli/commands/package/list.js";
 import { packageValidate } from "./cli/commands/package/validate.js";
 import { RUNNER_NAMES } from "./runners/types.js";
-import { isTelemetryEnabled, setTelemetryEnabled, getTelemetrySource } from "./config/config.js";
+import {
+  isTelemetryEnabled,
+  setTelemetryEnabled,
+  getTelemetrySource,
+  getTelemetryDisablingEnvVar,
+} from "./config/config.js";
 import type { RunnerType } from "./runners/types.js";
 import type { Command as Cmd } from "commander";
 
@@ -445,7 +450,14 @@ telemetry
     printLogo();
     p.intro("mthds telemetry");
     setTelemetryEnabled(true);
-    p.log.success("Telemetry enabled.");
+    const disablingEnvVar = getTelemetryDisablingEnvVar();
+    if (disablingEnvVar) {
+      p.log.warn(
+        `Telemetry enabled in ~/.mthds/config, but ${disablingEnvVar} is set in your environment and keeps it off.`,
+      );
+    } else {
+      p.log.success("Telemetry enabled.");
+    }
     p.outro("");
   });
 
@@ -470,7 +482,14 @@ telemetry
     p.intro("mthds telemetry");
     const enabled = isTelemetryEnabled();
     const source = getTelemetrySource();
-    const sourceLabel = source === "env" ? " (from env)" : source === "default" ? " (default)" : "";
+    const disablingEnvVar = getTelemetryDisablingEnvVar();
+    const sourceLabel = disablingEnvVar
+      ? ` (by ${disablingEnvVar})`
+      : source === "env"
+        ? " (from env)"
+        : source === "default"
+          ? " (default)"
+          : "";
     p.log.info(`Telemetry is ${enabled ? "enabled" : "disabled"}${sourceLabel}`);
     p.outro("");
   });

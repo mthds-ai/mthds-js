@@ -126,12 +126,7 @@ describe("agentPublish", () => {
 
     await agentPublish("mthds-ai/contract-analysis", {});
 
-    expect(mockedTrackPublish).toHaveBeenCalledWith(
-      expect.objectContaining({
-        address: "mthds-ai/contract-analysis",
-        name: "contract-analysis",
-      }),
-    );
+    expect(mockedTrackPublish).toHaveBeenCalledWith(fakeMethod, "mthds-ai/contract-analysis");
     expect(mockedShutdown).toHaveBeenCalled();
     expect(mockedAgentSuccess).toHaveBeenCalledWith(
       expect.objectContaining({

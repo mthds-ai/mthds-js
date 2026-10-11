@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [v0.31.0] - 2026-10-11
 
 ### Changed
 
@@ -19,7 +19,7 @@
 ### Removed
 
 - **`ConceptAbstract`'s `description`, `structure_class_name` and `refines` (Breaking)**: the protocol's concept shape keeps `code` and `domain_code`, as the trimmed Python model in the `mthds` PyPI package does, since a concept's definition belongs to the library the method loads and never travels beside a stuff. Code that built a `ConceptAbstract` drops those three members, and a runtime that needs one of them in memory declares it on its own extension of the interface; `conceptRef()` is unchanged.
-- **The concept object as a stuff's `concept` on the pipelex runner (Breaking)**: `PipelexRunner.execute`, behind `mthds run pipe` and `mthds run bundle` on the pipelex runner, passes each stuff's `concept` through as the ref string pipelex writes, a dependency's package-qualified crate key included, where it rebuilt a `<domain>.<Code>` ref from a concept object and turned a missing concept into an empty string. A working memory whose stuff carries the concept object or no concept at all is now refused with an error naming the stuff, so a pipelex old enough to write one is upgraded.
+- **The concept object as a stuff's `concept` on the pipelex runner (Breaking)**: `PipelexRunner.execute`, behind `mthds run pipe` and `mthds run bundle` on the pipelex runner, passes each stuff's `concept` through as the ref string pipelex writes, whatever its form, where it rebuilt a `<domain>.<Code>` ref from a concept object and turned a missing concept into an empty string. A working memory whose stuff carries the concept object or no concept at all is now refused with an error naming the stuff, so a pipelex old enough to write one is upgraded.
 - **`mthds-agent accept-gateway-terms` and the Pipelex Gateway wording (Breaking)**: the pipelex runner no longer forwards `accept-gateway-terms` to `pipelex-agent`, whose command pipelex 0.73.0 deleted along with the `pipelex_gateway` backend, so `mthds-agent accept-gateway-terms` now fails as an unknown command on either runner. `mthds login` no longer names the Gateway, and `CLI.md` drops `pipelex_gateway` and `accept_gateway_terms` from the `init` examples and the `--config` schema, showing bring-your-own-keys backends such as `openai`, `anthropic` and `mistral` instead.
 - **`manifest_raw` in the `method_install` and `method_publish` events**: the telemetry events still send a method's manifest fields one by one, and no longer send the whole text of its `METHODS.toml` beside them, which counting installs and publishes does not need.
 

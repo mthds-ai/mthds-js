@@ -23,7 +23,7 @@ We are open to contributions in all areas of our core Pipelex library:
 ## Contribution Process
 
 1. **Fork and clone the repository**
-   - Fork the [mthds-js repository](https://github.com/pipelex/mthds-js)
+   - Fork the [mthds-js repository](https://github.com/mthds-ai/mthds-js)
    - Clone your fork locally
 
 2. **Install dependencies**

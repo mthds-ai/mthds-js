@@ -444,7 +444,7 @@ Default runner: pipelex
 
 ## Telemetry
 
-Manage the anonymous usage statistics that every Pipelex and MTHDS tool on the machine shares. The `mthds` and `mthds-agent` CLIs send one `command_completed` event per command, saying which command ran and how it ended; the first command that sends one prints a notice once. What is sent, every switch, the shared state and the delivery are described in [docs/usage-statistics.md](docs/usage-statistics.md).
+Manage the anonymous usage statistics that every Pipelex and MTHDS tool on the machine shares. The `mthds` and `mthds-agent` CLIs send one `command_completed` event per command, saying which command ran and how it ended; the first `mthds` command that sends one prints a notice once, and `mthds-agent` never prints it. What is sent, every switch, the shared state and the delivery are described in [docs/usage-statistics.md](docs/usage-statistics.md).
 
 Statistics are off while any of these says so: `DO_NOT_TRACK` set to anything but empty, `0` or `false`; `PIPELEX_USAGE_STATS=0` (or `false`, `no`, `off`); `DISABLE_TELEMETRY=1` in the environment; the machine's choice made by `mthds telemetry disable` or another tool's disable command; a legacy `DISABLE_TELEMETRY=1` in `~/.mthds/config`; `[usage_stats] enabled = false` in the project's `.pipelex/pipelex.toml`; or a `PIPELEX_USAGE_STATS_ENDPOINT` that is not a loopback `http` origin. The group's own commands never send an event or print the notice.
 

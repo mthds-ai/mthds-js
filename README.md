@@ -274,7 +274,7 @@ Either `pipe_code` or `mthds_contents` must be provided (or a server-specific ex
 
 ## Usage statistics
 
-The `mthds` and `mthds-agent` CLIs send anonymous usage statistics, shared with every Pipelex and MTHDS tool: one event per command, saying which command ran, how it ended and how long it took, with the CLI's version, the operating system family and whether it ran in CI. They never send your methods, prompts, inputs, outputs, file names, pipe names or command arguments. The first command that sends statistics prints a notice once. Details are in [docs/usage-statistics.md](docs/usage-statistics.md) and at [docs.pipelex.com/latest/setup/usage-statistics](https://docs.pipelex.com/latest/setup/usage-statistics/).
+The `mthds` and `mthds-agent` CLIs send anonymous usage statistics, shared with every Pipelex and MTHDS tool: one event per command, saying which command ran, how it ended and how long it took, with the CLI's version, the operating system family and whether it ran in CI. They never send your methods, prompts, inputs, outputs, file names, pipe names or command arguments. The first `mthds` command that sends statistics prints a notice once; `mthds-agent` never prints it. Details are in [docs/usage-statistics.md](docs/usage-statistics.md) and at [docs.pipelex.com/latest/setup/usage-statistics](https://docs.pipelex.com/latest/setup/usage-statistics/).
 
 To turn them off, use any of these:
 

@@ -1,6 +1,11 @@
 /**
  * When `mthds-agent` may print the usage-statistics notice: never on a stderr a program reads.
  *
+ * It prints it as it exits, and not at all once it wrote JSON to stderr, an error document or a
+ * warning line: its own failures are JSON on every path, whatever the format options say, so only
+ * at exit is it known whether the stream stayed one a person reads. A tool it ran that printed the
+ * notice itself has recorded it, and then `mthds-agent` does not print it again.
+ *
  * Its native commands' errors are always JSON, so they never print it. A command it runs on a
  * runner may, unless the invocation's errors are JSON: `--error-format json`, or `--format json`
  * without `--error-format`. On the API runner only `validate bundle` and `validate pipe` print

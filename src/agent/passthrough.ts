@@ -4,7 +4,7 @@
  */
 
 import { spawnSync } from "node:child_process";
-import { agentError, AGENT_ERROR_DOMAINS } from "./output.js";
+import { agentError, agentWarning, AGENT_ERROR_DOMAINS } from "./output.js";
 import { BINARY_RECOVERY, buildInstallCommand } from "./binaries.js";
 import { checkBinaryVersion } from "../installer/runtime/version-check.js";
 import { uvToolInstallSync } from "../installer/runtime/installer.js";
@@ -64,12 +64,9 @@ export function passthrough(
                 recovery,
               });
             } else if (postCheck.status !== "ok") {
-              process.stderr.write(
-                JSON.stringify({
-                  warning: true,
-                  message: `Install of ${bin} may not have taken effect (status: ${postCheck.status}, installed: ${postCheck.installed_version}, needs: ${recovery.version_constraint}).`,
-                }) + "\n",
-              );
+              agentWarning({
+                message: `Install of ${bin} may not have taken effect (status: ${postCheck.status}, installed: ${postCheck.installed_version}, needs: ${recovery.version_constraint}).`,
+              });
             }
           }
         } else {
@@ -101,12 +98,9 @@ export function passthrough(
           {
             const recheck = checkBinaryVersion(recovery);
             if (recheck.status !== "ok") {
-              process.stderr.write(
-                JSON.stringify({
-                  warning: true,
-                  message: `Upgrade of ${bin} may not have taken effect (status: ${recheck.status}, installed: ${recheck.installed_version}, needs: ${recovery.version_constraint}).`,
-                }) + "\n",
-              );
+              agentWarning({
+                message: `Upgrade of ${bin} may not have taken effect (status: ${recheck.status}, installed: ${recheck.installed_version}, needs: ${recovery.version_constraint}).`,
+              });
             }
           }
         } else {
@@ -124,13 +118,10 @@ export function passthrough(
 
       case "unparseable":
         // Warn to stderr but don't block execution
-        process.stderr.write(
-          JSON.stringify({
-            warning: true,
-            message: `Could not parse version for ${bin}. Proceeding anyway.`,
-            version_constraint: check.version_constraint,
-          }) + "\n",
-        );
+        agentWarning({
+          message: `Could not parse version for ${bin}. Proceeding anyway.`,
+          version_constraint: check.version_constraint,
+        });
         break;
     }
   }

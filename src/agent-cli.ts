@@ -489,6 +489,7 @@ const usageStats = installUsageStats(program, {
   surface: "mthds-agent",
   toolVersion: pkg.version,
   noticeAllowed: (invocation) => agentNoticeAllowed(invocation, isApiRunner),
+  noticeAtExit: true,
 });
 
 // ── Unknown commands ─────────────────────────────────────────────────

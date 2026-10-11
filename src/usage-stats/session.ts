@@ -4,7 +4,8 @@
  *
  * `installUsageStats` hooks a Commander program. The command a process runs is the deepest command
  * Commander dispatched to; when its action is about to run, the session reads every switch, after
- * the legacy migration, and prints the notice where it may. When the process exits, whether the
+ * the legacy migration, and prints the notice where it may (`mthds` there, `mthds-agent` as it
+ * exits, once it knows its stderr stayed free of JSON). When the process exits, whether the
  * command returned, called `process.exit` or failed to parse, the session builds the event and
  * either prints it (the debug variable) or writes it to the spool and starts the sender.
  *
@@ -48,6 +49,12 @@ export interface UsageStatsOptions {
   toolVersion: string;
   /** Whether the notice may be printed for this command, or whether its stderr is a machine contract. */
   noticeAllowed: (invocation: Invocation) => boolean;
+  /**
+   * Print the notice as the command exits rather than before it runs: `mthds-agent`'s own failures
+   * write JSON to stderr on every path, so only at exit is it known whether the stream stayed one a
+   * person reads.
+   */
+  noticeAtExit?: boolean;
   /** Top-level groups whose commands send nothing: the statistics group. */
   silentGroups?: readonly string[];
   argv?: readonly string[];
@@ -140,16 +147,25 @@ export class UsageStatsSession {
     try {
       runLegacyMigration();
       this.enabled = usageStatsOffBy().length === 0;
-      if (
-        this.enabled &&
-        noticeVersionSeen() < NOTICE_VERSION &&
-        this.options.noticeAllowed({ path, command: this.leaf!, argv: this.argv })
-      ) {
-        writeStderrLine(NOTICE_TEXT);
-        recordNoticeShown();
-      }
+      if (!this.options.noticeAtExit) this.showNotice(path);
     } catch {
       this.enabled = false;
+    }
+  }
+
+  /**
+   * Print the notice and record it, once per machine, while statistics are on, unless this command's
+   * stderr is one a program reads: by the CLI's own rule, or because the command wrote JSON to it.
+   */
+  private showNotice(path: string): void {
+    if (
+      this.enabled &&
+      !outcomeNotes().jsonOnStderr &&
+      noticeVersionSeen() < NOTICE_VERSION &&
+      this.options.noticeAllowed({ path, command: this.leaf!, argv: this.argv })
+    ) {
+      writeStderrLine(NOTICE_TEXT);
+      recordNoticeShown();
     }
   }
 
@@ -162,6 +178,7 @@ export class UsageStatsSession {
       this.begin();
       // A command that turned statistics off on the machine is not counted.
       if (!this.enabled || isMachineDisabled()) return;
+      if (this.options.noticeAtExit) this.showNotice(path);
       const notes = outcomeNotes();
       const outcome = notes.cancelled ? "cancelled" : exitCode === 0 ? "succeeded" : "failed";
       const installation = obtainInstallationId();

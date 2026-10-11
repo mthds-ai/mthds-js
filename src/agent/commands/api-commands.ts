@@ -13,6 +13,7 @@ import {
   agentSuccess,
   agentMarkdownSuccess,
   agentMarkdownError,
+  agentWarning,
   AGENT_ERROR_DOMAINS,
   runnerProblemExtras,
 } from "../output.js";
@@ -570,12 +571,9 @@ function warnGraphNotDrawn(options: Record<string, unknown>): void {
   const given = GRAPH_OPTIONS.filter(([key]) => options[key] !== undefined).map(([, flag]) => flag);
   if (given.length === 0) return;
   const one = given.length === 1;
-  process.stderr.write(
-    JSON.stringify({
-      warning: true,
-      message: `${given.join(", ")} ${one ? "was" : "were"} not applied: the API runner validated the method but cannot draw its graph, which only the pipelex runner draws. Re-run with --runner pipelex for the graph. On the API runner, the JSON verdict (--format json) carries the method's graph as graph_spec.`,
-    }) + "\n",
-  );
+  agentWarning({
+    message: `${given.join(", ")} ${one ? "was" : "were"} not applied: the API runner validated the method but cannot draw its graph, which only the pipelex runner draws. Re-run with --runner pipelex for the graph. On the API runner, the JSON verdict (--format json) carries the method's graph as graph_spec.`,
+  });
 }
 
 function resolveContentForRun(

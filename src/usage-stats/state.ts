@@ -23,8 +23,13 @@ import {
   writeFileSync,
   writeSync,
 } from "node:fs";
-import { homedir } from "node:os";
 import { join } from "node:path";
+import {
+  configFilePath,
+  mthdsHomeDir,
+  readConfigFile,
+  writeConfigFile,
+} from "../config/config-file.js";
 import { parseDotenv } from "../config/dotenv.js";
 import {
   INSTALLATION_ID_PATTERN,
@@ -40,7 +45,7 @@ const ID_TEMP_PREFIX = `${STATE_FILES.id}.tmp-`;
 // ── Paths ───────────────────────────────────────────────────────────
 
 export function mthdsDir(): string {
-  return join(homedir(), ".mthds");
+  return mthdsHomeDir();
 }
 
 export function stateDir(): string {
@@ -49,7 +54,7 @@ export function stateDir(): string {
 
 /** `~/.mthds/config`, where today's `mthds` CLI kept its opt-out as `DISABLE_TELEMETRY`. */
 export function legacyConfigPath(): string {
-  return join(mthdsDir(), "config");
+  return configFilePath();
 }
 
 function statePath(name: string): string {
@@ -306,6 +311,18 @@ export function legacyOptOutPending(): boolean {
 }
 
 /**
+ * Whether the legacy opt-out is on and already carried into the shared state, or turned back on by
+ * `enable` since: `DISABLE_TELEMETRY` means off, and the `legacy-migrated` marker is at least as
+ * recent as the file. A write of the file for another setting must not make it pending again.
+ */
+export function legacyOptOutSettled(): boolean {
+  const legacy = readLegacyOptOut();
+  if (!legacy?.off) return false;
+  const marker = legacyMarkerMtimeMs();
+  return marker !== undefined && legacy.mtimeMs <= marker;
+}
+
+/**
  * Set the `legacy-migrated` marker's modification time to the later of now and the config file's,
  * so the opt-out it records is not migrated again. One millisecond is added to the file's time, so
  * a timestamp the filesystem stores more coarsely than it reports never leaves the marker older
@@ -319,6 +336,29 @@ export function markLegacyMigrated(): void {
   const targetMs = Math.max(Date.now(), configMtimeMs === undefined ? 0 : configMtimeMs + 1);
   const seconds = targetMs / 1000;
   utimesSync(marker, seconds, seconds);
+}
+
+/**
+ * Turn usage statistics on for the machine, as `enable` does: delete `disabled`, take a
+ * `DISABLE_TELEMETRY` an older `mthds` left in `~/.mthds/config` out of the file, and set the
+ * `legacy-migrated` marker past the file. Taking the key out matters as much as the marker: left in,
+ * the old opt-out would come back with the next write of the file for any other setting, such as
+ * `mthds runner setup`, which dates the file past the marker. The file is rewritten only when it
+ * holds the key, and a file that cannot be rewritten leaves the marker to keep the old opt-out from
+ * applying again.
+ */
+export function enableOnMachine(): void {
+  removeDisabledFile();
+  try {
+    const entries = readConfigFile();
+    if (LEGACY_KEY in entries) {
+      delete entries[LEGACY_KEY];
+      writeConfigFile(entries);
+    }
+  } catch {
+    // The marker below still keeps the old opt-out from applying again.
+  }
+  markLegacyMigrated();
 }
 
 /**

@@ -1,18 +1,17 @@
-import { join } from "node:path";
-import { homedir } from "node:os";
-import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { Runners } from "../runners/types.js";
 import type { RunnerType } from "../runners/types.js";
 import { parseDotenv, serializeDotenv } from "./dotenv.js";
+import { readConfigFile, writeConfigFile } from "./config-file.js";
 import { ENV, SWITCH_VALUES } from "../usage-stats/contract.js";
 import { isMthdsDisableOn, normalizedValue } from "../usage-stats/environment.js";
 import {
   createDisabledFile,
   deleteEverySpool,
+  enableOnMachine,
   isMachineDisabled,
   legacyOptOutPending,
+  legacyOptOutSettled,
   markLegacyMigrated,
-  removeDisabledFile,
 } from "../usage-stats/state.js";
 import { isDoNotTrack, toolSwitchSaysOff } from "../usage-stats/switches.js";
 
@@ -41,11 +40,6 @@ export interface MthdsConfig {
 export type ConfigKey = keyof MthdsConfig | "telemetry";
 
 export type ConfigSource = "env" | "file" | "default";
-
-// ── Paths ──────────────────────────────────────────────────────────
-
-const CONFIG_DIR = join(homedir(), ".mthds");
-const CONFIG_PATH = join(CONFIG_DIR, "config");
 
 // ── Config keys ───────────────────────────────────────────────────
 
@@ -123,26 +117,6 @@ export function resolveKey(cliKey: string): ConfigKey | undefined {
   return KEY_ALIASES[cliKey];
 }
 
-// ── File I/O ───────────────────────────────────────────────────────
-
-function readConfigFile(): Record<string, string> {
-  if (!existsSync(CONFIG_PATH)) return {};
-  try {
-    return parseDotenv(readFileSync(CONFIG_PATH, "utf-8"));
-  } catch {
-    return {};
-  }
-}
-
-function writeConfigFile(entries: Record<string, string>): void {
-  mkdirSync(CONFIG_DIR, { recursive: true });
-  // The file stores MTHDS_API_KEY — it MUST be owner-only (0600), per the config
-  // file spec. `mode` only applies when the file is created (and is masked by the
-  // umask), so chmod explicitly to also tighten a pre-existing file.
-  writeFileSync(CONFIG_PATH, serializeDotenv(entries), { encoding: "utf-8", mode: 0o600 });
-  chmodSync(CONFIG_PATH, 0o600);
-}
-
 // ── Public API ─────────────────────────────────────────────────────
 
 function coerceValue(key: keyof MthdsConfig, raw: string): string | boolean {
@@ -213,7 +187,19 @@ export function setConfigValue(key: ConfigKey, value: string): void {
   } else {
     file[fileKey] = value;
   }
+  // The legacy opt-out is migrated when the file is newer than its marker. A write for another
+  // setting leaves `DISABLE_TELEMETRY` as it was, so an opt-out already carried into the shared
+  // state, or turned back on since by any tool's `enable`, is dated past the write again rather
+  // than migrated a second time.
+  const legacySettled = legacyOptOutSettled();
   writeConfigFile(file);
+  if (legacySettled) {
+    try {
+      markLegacyMigrated();
+    } catch {
+      // A pending migration keeps statistics off: the safe side.
+    }
+  }
 }
 
 /**
@@ -250,7 +236,8 @@ export function listConfig(): Array<{
 // means usage statistics are off, "0" that they are on. It reports and sets the machine's choice in
 // the shared state, the `disabled` file every reporting tool reads, and never writes
 // `DISABLE_TELEMETRY` to `~/.mthds/config` any more; a `DISABLE_TELEMETRY` already in that file is
-// carried into the shared state by the legacy migration. `mthds telemetry status` is the full
+// carried into the shared state by the legacy migration, and taken out of the file when the
+// setting turns statistics back on. `mthds telemetry status` is the full
 // answer, with every switch that keeps statistics off.
 
 /** The environment variable holding usage statistics off, if one does. */
@@ -291,8 +278,7 @@ function setTelemetryValue(value: string): void {
     throw new Error(`Invalid value for telemetry: ${value}. ${TELEMETRY_VALUE_HINT}`);
   }
   if (on) {
-    removeDisabledFile();
-    markLegacyMigrated();
+    enableOnMachine();
   } else {
     createDisabledFile();
     deleteEverySpool();

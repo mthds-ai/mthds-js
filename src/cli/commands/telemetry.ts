@@ -15,11 +15,10 @@ import { isCi, isContainer } from "../../usage-stats/environment.js";
 import {
   createDisabledFile,
   deleteEverySpool,
+  enableOnMachine,
   isInternalMachine,
-  markLegacyMigrated,
   noticeVersionSeen,
   readInstallationId,
-  removeDisabledFile,
   replaceInstallationId,
   stateDir,
 } from "../../usage-stats/state.js";
@@ -102,8 +101,7 @@ export function telemetryEnable(): void {
   printLogo();
   p.intro("mthds telemetry");
   try {
-    removeDisabledFile();
-    markLegacyMigrated();
+    enableOnMachine();
   } catch (err) {
     fail(`Could not turn usage statistics on: ${(err as Error).message}`);
   }

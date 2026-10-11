@@ -240,8 +240,78 @@ describe("config", () => {
       expect(existsSync(join(configDir, "usage-stats", "disabled"))).toBe(false);
       expect(existsSync(join(configDir, "usage-stats", "legacy-migrated"))).toBe(true);
       expect(getConfigValue("telemetry")).toEqual({ value: "0", source: "default" });
-      // The file is left as it was: the marker, not an edit, keeps the old opt-out from applying again.
-      expect(readFileSync(join(configDir, "config"), "utf-8")).toBe("DISABLE_TELEMETRY=1\n");
+      // The old opt-out is taken out of the file, and the file is dated no later than the marker.
+      expect(readFileSync(join(configDir, "config"), "utf-8")).not.toContain("DISABLE_TELEMETRY");
+      expect(
+        statSync(join(configDir, "usage-stats", "legacy-migrated")).mtimeMs,
+      ).toBeGreaterThanOrEqual(statSync(join(configDir, "config")).mtimeMs);
+    });
+
+    it("keeps the other settings when turning usage statistics back on", async () => {
+      const configDir = join(tempHome, ".mthds");
+      mkdirSync(configDir, { recursive: true });
+      writeFileSync(
+        join(configDir, "config"),
+        "MTHDS_RUNNER=api\nDISABLE_TELEMETRY=1\nMTHDS_BASE_URL=http://localhost:8081\n",
+        "utf-8",
+      );
+      const { setConfigValue, getConfigValue } = await importConfig();
+
+      setConfigValue("telemetry", "true");
+      expect(getConfigValue("runner")).toEqual({ value: "api", source: "file" });
+      expect(getConfigValue("baseUrl")).toEqual({ value: "http://localhost:8081", source: "file" });
+      expect(readFileSync(join(configDir, "config"), "utf-8")).not.toContain("DISABLE_TELEMETRY");
+    });
+
+    it("stays on after turning it on and then writing another setting", async () => {
+      const configDir = join(tempHome, ".mthds");
+      mkdirSync(configDir, { recursive: true });
+      writeFileSync(join(configDir, "config"), "DISABLE_TELEMETRY=1\n", "utf-8");
+      const { setConfigValue, getConfigValue } = await importConfig();
+      const { runLegacyMigration } = await import("../../../src/usage-stats/state.js");
+      expect(runLegacyMigration()).toBe(true);
+      expect(getConfigValue("telemetry").value).toBe("1");
+
+      setConfigValue("telemetry", "true");
+      setConfigValue("runner", "api");
+
+      expect(runLegacyMigration()).toBe(false);
+      expect(existsSync(join(configDir, "usage-stats", "disabled"))).toBe(false);
+      expect(getConfigValue("telemetry")).toEqual({ value: "0", source: "default" });
+    });
+
+    it("does not migrate an opt-out again when another setting is written after any tool's enable", async () => {
+      // Another tool's `enable` (pipelex, plxt) leaves DISABLE_TELEMETRY in the file and sets only
+      // the marker; a later `mthds config set` for another setting must not bring the opt-out back.
+      const configDir = join(tempHome, ".mthds");
+      mkdirSync(configDir, { recursive: true });
+      writeFileSync(join(configDir, "config"), "DISABLE_TELEMETRY=1\n", "utf-8");
+      const { setConfigValue, getConfigValue } = await importConfig();
+      const state = await import("../../../src/usage-stats/state.js");
+      expect(state.runLegacyMigration()).toBe(true);
+      state.removeDisabledFile();
+      state.markLegacyMigrated();
+
+      setConfigValue("runner", "api");
+
+      expect(readFileSync(join(configDir, "config"), "utf-8")).toContain("DISABLE_TELEMETRY=1");
+      expect(state.legacyOptOutPending()).toBe(false);
+      expect(state.runLegacyMigration()).toBe(false);
+      expect(getConfigValue("telemetry")).toEqual({ value: "0", source: "default" });
+    });
+
+    it("leaves a pending opt-out pending when another setting is written", async () => {
+      const configDir = join(tempHome, ".mthds");
+      mkdirSync(configDir, { recursive: true });
+      writeFileSync(join(configDir, "config"), "DISABLE_TELEMETRY=1\n", "utf-8");
+      const { setConfigValue } = await importConfig();
+      const state = await import("../../../src/usage-stats/state.js");
+
+      setConfigValue("runner", "api");
+
+      expect(state.legacyOptOutPending()).toBe(true);
+      expect(state.runLegacyMigration()).toBe(true);
+      expect(existsSync(join(configDir, "usage-stats", "disabled"))).toBe(true);
     });
 
     it.each(["true", "1", "YES", " on "])("reads %j as on", async (value) => {

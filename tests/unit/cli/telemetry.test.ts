@@ -197,6 +197,20 @@ describe("telemetry enable", () => {
     expect(p.log.success).toHaveBeenCalled();
   });
 
+  it("takes the old opt-out out of ~/.mthds/config, so a later write of the file cannot bring it back", () => {
+    const configPath = join(tempHome, ".mthds", "config");
+    mkdirSync(join(tempHome, ".mthds"), { recursive: true });
+    writeFileSync(configPath, "MTHDS_RUNNER=api\nDISABLE_TELEMETRY=1\n");
+
+    telemetryEnable();
+
+    expect(readFileSync(configPath, "utf-8")).toBe("MTHDS_RUNNER=api\n");
+    // Any later rewrite of the file, by any program, is no opt-out.
+    const later = new Date(Date.now() + 3_600_000);
+    utimesSync(configPath, later, later);
+    expect(statusJson()["off_by"]).toEqual([]);
+  });
+
   it("names every switch that still keeps statistics off, rather than claiming success", () => {
     vi.stubEnv("DO_NOT_TRACK", "1");
     vi.stubEnv("PIPELEX_USAGE_STATS", "off");

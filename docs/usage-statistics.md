@@ -45,7 +45,7 @@ The project is found the way pipelex finds it: walking up from the working direc
 
 ### The legacy opt-out
 
-Earlier versions of these CLIs wrote `DISABLE_TELEMETRY=1` to `~/.mthds/config`. That choice still holds: the first command to see it creates the shared `disabled` file, deletes every queued event, and sets `~/.mthds/usage-stats/legacy-migrated` to the config file's modification time, so the migration runs once per change of the file. The CLIs never write `DISABLE_TELEMETRY` to the config file any more.
+Earlier versions of these CLIs wrote `DISABLE_TELEMETRY=1` to `~/.mthds/config`. That choice still holds: the first command to see it creates the shared `disabled` file, deletes every queued event, and sets `~/.mthds/usage-stats/legacy-migrated` to the config file's modification time, so the migration runs once per change of the file. The CLIs never write `DISABLE_TELEMETRY` to the config file any more. Turning statistics back on (`mthds telemetry enable`, or `mthds config set telemetry true`) takes the key out of the file, so the old opt-out cannot return with a later write of the file; and when `mthds config set` writes another setting while the old opt-out is already carried over, or was turned back on by any tool, it dates the marker past that write, since a write for another setting is no new opt-out.
 
 ## Commands
 
@@ -56,7 +56,7 @@ The `mthds telemetry` group reads and writes the state every tool shares, so a c
 | `mthds telemetry status` | Says whether statistics are on and, when they are not, every switch keeping them off. Read-only: it creates nothing and migrates nothing. |
 | `mthds telemetry status --format json` | Prints the contract's status object alone on stdout: `tool`, `enabled`, `off_by` (the switches' tokens, in the contract's order), `installation_id` (or `null`), `notice_version`, `internal`, `ci`, `container` and `state_dir`. |
 | `mthds telemetry disable` | Creates the shared `disabled` file and deletes every tool's queued events. |
-| `mthds telemetry enable` | Deletes the `disabled` file and settles the legacy opt-out; when a switch still keeps statistics off, it names it rather than claiming success. |
+| `mthds telemetry enable` | Deletes the `disabled` file, takes a legacy `DISABLE_TELEMETRY` out of `~/.mthds/config` and settles the legacy opt-out; when a switch still keeps statistics off, it names it rather than claiming success. |
 | `mthds telemetry reset-id` | Replaces the installation identifier, prints the new one, and deletes every tool's queued events, which were made under the old one. |
 
 The `telemetry` configuration key reads and writes the same state. `mthds config set telemetry false` (or `0`, `no`, `off`) does what `disable` does, and `true` (or `1`, `yes`, `on`) what `enable` does. `mthds config get telemetry` answers in the `DISABLE_TELEMETRY` encoding, `1` meaning off: from `env` when a variable keeps statistics off, from `file` when the machine's choice or the legacy opt-out does.

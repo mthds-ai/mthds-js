@@ -486,7 +486,7 @@ mthds telemetry disable
 
 ### `mthds telemetry enable`
 
-Turns them back on for this machine, including over a legacy `DISABLE_TELEMETRY=1` in `~/.mthds/config`. When a variable or the project setting still keeps them off, it names it instead of claiming success.
+Turns them back on for this machine, including over a legacy `DISABLE_TELEMETRY=1` in `~/.mthds/config`, which it takes out of the file so that no later write of the file brings it back. When a variable or the project setting still keeps them off, it names it instead of claiming success.
 
 ```bash
 mthds telemetry enable

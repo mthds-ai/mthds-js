@@ -43,6 +43,7 @@ src/
 │   └── pipelex/runner.ts           # Pipelex CLI runner
 ├── config/
 │   ├── config.ts                   # ~/.mthds/config handling
+│   ├── config-file.ts              # the config file's path, read and write
 │   └── dotenv.ts                   # the config file's dotenv format
 ├── usage-stats/                    # Anonymous usage statistics (command_completed) — see docs/usage-statistics.md
 │   ├── contract.ts                 # The shared contract's constants, checked against tests/fixtures/usage-statistics.json

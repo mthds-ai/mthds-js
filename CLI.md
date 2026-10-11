@@ -310,7 +310,7 @@ Configuration values are resolved in this order: **environment variables > confi
 | `runner` | `MTHDS_RUNNER` | `pipelex` | Default runner (`api` or `pipelex`) |
 | `base-url` | `MTHDS_BASE_URL` | `https://api.pipelex.com` | API base URL — host only, no version prefix; endpoints compose as `{base}/v1/{endpoint}` |
 | `api-key` | `MTHDS_API_KEY` | (empty) | The API runner's authentication key. The pipelex runner never reads it: pipelex's hosted runs use `PIPELEX_API_KEY`, which [`mthds login`](#login) saves |
-| `telemetry` | `DISABLE_TELEMETRY` | `0` | Set to `1` to disable telemetry |
+| `telemetry` | `DISABLE_TELEMETRY` | `0` | Set to `1` to disable telemetry. `DO_NOT_TRACK` outranks it: set to anything but an empty string, `0` or `false`, it turns telemetry off and `config get telemetry` reports `1` from `env` |
 
 ### `mthds config set`
 
@@ -444,9 +444,16 @@ Default runner: pipelex
 
 ## Telemetry
 
-Manage anonymous usage telemetry. Telemetry can also be controlled via the `DISABLE_TELEMETRY=1` environment variable, which takes precedence over the config file.
+Manage anonymous usage telemetry: the `method_install` and `method_publish` events sent when a method from a public GitHub repository is installed or published. Each carries the package's manifest fields one by one (address, name, version, description, display name, authors, licence, main pipe, MTHDS standard version and exports), never the manifest's raw text.
+
+Telemetry can also be controlled from the environment, which takes precedence over the config file:
+
+- `DISABLE_TELEMETRY=1` disables it, and `DISABLE_TELEMETRY=0` enables it.
+- `DO_NOT_TRACK`, the universal opt-out, disables it when set to anything but an empty string, `0` or `false`, whatever `DISABLE_TELEMETRY` or the config file says. It only ever disables: a falsy `DO_NOT_TRACK` leaves the setting to `DISABLE_TELEMETRY` and the file.
 
 ### `mthds telemetry enable`
+
+Writes `DISABLE_TELEMETRY=0` to `~/.mthds/config`. When `DO_NOT_TRACK` or `DISABLE_TELEMETRY=1` is set in the environment, it warns that the variable keeps telemetry off.
 
 ```bash
 mthds telemetry enable
@@ -460,7 +467,7 @@ mthds telemetry disable
 
 ### `mthds telemetry status`
 
-Show whether telemetry is currently enabled or disabled, and its source (env, file, or default).
+Show whether telemetry is currently enabled or disabled, and its source: the environment variable holding it off (`DO_NOT_TRACK` or `DISABLE_TELEMETRY`), `env`, the config file, or the default.
 
 ```bash
 mthds telemetry status
@@ -514,7 +521,7 @@ mthds install org/repo/methods/specific
 
 ## Publish
 
-Publish method packages to [mthds.sh](https://mthds.sh). Sends `method_publish` telemetry for public GitHub repos. No files are written, no runner is installed.
+Publish method packages to [mthds.sh](https://mthds.sh). Sends `method_publish` telemetry for public GitHub repos, which is how mthds.sh registers a method, so while [telemetry](#telemetry) is off, `DO_NOT_TRACK` included, it refuses to publish a public repository and exits non-zero, naming the switch that holds telemetry off. No files are written, no runner is installed.
 
 ### `mthds publish`
 
@@ -534,7 +541,7 @@ The publish flow is interactive:
 1. Resolves methods from the address or local directory
 2. Displays a summary of found methods (valid/skipped)
 3. If multiple methods: lets you select which ones to publish (multiselect)
-4. Sends `method_publish` telemetry (public GitHub repos only)
+4. Sends `method_publish` telemetry (public GitHub repos only; with telemetry off, a public repository is refused before step 3)
 5. Prints success
 
 **Examples:**
@@ -743,7 +750,7 @@ mthds-agent init -g --config '{"execution": "hosted"}'
 
 ### `mthds-agent publish`
 
-Publish methods to mthds.sh (non-interactive). Sends `method_publish` telemetry for public GitHub repos. No files are written.
+Publish methods to mthds.sh (non-interactive). Sends `method_publish` telemetry for public GitHub repos, which is how mthds.sh registers a method, so while [telemetry](#telemetry) is off, `DO_NOT_TRACK` included, a public repository is refused with a `PublishError` naming the switch that holds telemetry off. No files are written.
 
 ```bash
 mthds-agent publish [address] [OPTIONS]

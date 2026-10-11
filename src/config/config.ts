@@ -49,6 +49,21 @@ const FILE_KEYS: Record<keyof MthdsConfig, string> = {
   updateCheck: "MTHDS_UPDATE_CHECK",
 };
 
+/**
+ * The universal telemetry opt-out (https://consoledonottrack.com). Set to anything but an
+ * empty string, `0` or `false` — the reading the pipelex runtime gives it — it turns telemetry
+ * off whatever `DISABLE_TELEMETRY` or the config file says. It only ever disables: unset or
+ * falsy, it leaves the telemetry setting to the usual resolution.
+ */
+export const DO_NOT_TRACK_ENV = "DO_NOT_TRACK";
+
+const DO_NOT_TRACK_FALSY: ReadonlySet<string> = new Set(["", "0", "false"]);
+
+export function isDoNotTrackSet(): boolean {
+  const value = process.env[DO_NOT_TRACK_ENV];
+  return value !== undefined && !DO_NOT_TRACK_FALSY.has(value.trim().toLowerCase());
+}
+
 /** Hosted default — host only; endpoints compose as `{base}/v1/{endpoint}`. */
 export const DEFAULT_BASE_URL = "https://api.pipelex.com";
 
@@ -191,10 +206,18 @@ export function loadConfig(): MthdsConfig {
     }
   }
 
+  if (isDoNotTrackSet()) merged.telemetry = false;
+
   return merged as unknown as MthdsConfig;
 }
 
 export function getConfigValue(key: keyof MthdsConfig): { value: string; source: ConfigSource } {
+  // DO_NOT_TRACK outranks DISABLE_TELEMETRY and the file; reported in the
+  // DISABLE_TELEMETRY encoding, where "1" means telemetry is off.
+  if (key === "telemetry" && isDoNotTrackSet()) {
+    return { value: "1", source: "env" };
+  }
+
   const envName = ENV_NAMES[key];
   const envVal = process.env[envName];
   if (envVal !== undefined) {
@@ -270,4 +293,17 @@ export function setTelemetryEnabled(enabled: boolean): void {
 
 export function getTelemetrySource(): ConfigSource {
   return getConfigValue("telemetry").source;
+}
+
+/**
+ * The environment variable holding telemetry off, if one does: `DO_NOT_TRACK`,
+ * which outranks everything, or a truthy `DISABLE_TELEMETRY`. Either beats the
+ * file that `mthds telemetry enable` writes.
+ */
+export function getTelemetryDisablingEnvVar(): string | undefined {
+  if (isDoNotTrackSet()) return DO_NOT_TRACK_ENV;
+  const envName = ENV_NAMES.telemetry;
+  const envVal = process.env[envName];
+  if (envVal !== undefined && coerceValue("telemetry", envVal) === false) return envName;
+  return undefined;
 }

@@ -1,6 +1,10 @@
 import * as p from "@clack/prompts";
 import chalk from "chalk";
-import { trackPublish, shutdown } from "../../installer/telemetry/posthog.js";
+import {
+  trackPublish,
+  publishBlockedByTelemetry,
+  shutdown,
+} from "../../installer/telemetry/posthog.js";
 import { printLogo } from "./index.js";
 import { parseAddress } from "../../installer/resolver/address.js";
 import { resolveFromGitHub } from "../../installer/resolver/github.js";
@@ -114,6 +118,16 @@ export async function publishMethod(options: {
     process.exit(1);
   }
 
+  // The publish event is the one way a method reaches mthds.sh, so a public
+  // repository is refused before the selection while telemetry is off.
+  const registrable = resolved.source === "github" && resolved.isPublic;
+  const blocked = registrable ? publishBlockedByTelemetry() : undefined;
+  if (blocked) {
+    p.log.error(blocked);
+    p.outro("");
+    process.exit(1);
+  }
+
   // Let the user select which methods to publish
   let selectedMethods = resolved.methods;
 
@@ -159,22 +173,9 @@ export async function publishMethod(options: {
   const selectedCount = selectedMethods.length;
 
   // Track publish telemetry (public GitHub repos only)
-  if (resolved.source === "github" && resolved.isPublic) {
+  if (registrable) {
     for (const method of selectedMethods) {
-      const pkg = method.manifest.package;
-      trackPublish({
-        address: orgRepo ?? pkg.address.replace(/^github\.com\//, ""),
-        name: pkg.name,
-        main_pipe: pkg.main_pipe,
-        version: pkg.version,
-        description: pkg.description,
-        display_name: pkg.display_name,
-        authors: pkg.authors,
-        license: pkg.license,
-        mthds_version: pkg.mthds_version,
-        exports: method.manifest.exports,
-        manifest_raw: method.rawManifest,
-      });
+      trackPublish(method, orgRepo);
     }
   }
 

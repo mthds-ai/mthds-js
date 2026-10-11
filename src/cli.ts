@@ -18,7 +18,7 @@ import { packageInit } from "./cli/commands/package/init.js";
 import { packageList } from "./cli/commands/package/list.js";
 import { packageValidate } from "./cli/commands/package/validate.js";
 import { RUNNER_NAMES } from "./runners/types.js";
-import { isTelemetryEnabled, setTelemetryEnabled, getTelemetrySource } from "./config/config.js";
+import { telemetryEnable, telemetryDisable, telemetryStatus } from "./cli/commands/telemetry.js";
 import type { RunnerType } from "./runners/types.js";
 import type { Command as Cmd } from "commander";
 
@@ -441,39 +441,19 @@ telemetry
   .command("enable")
   .description("Enable anonymous telemetry")
   .exitOverride()
-  .action(() => {
-    printLogo();
-    p.intro("mthds telemetry");
-    setTelemetryEnabled(true);
-    p.log.success("Telemetry enabled.");
-    p.outro("");
-  });
+  .action(telemetryEnable);
 
 telemetry
   .command("disable")
   .description("Disable anonymous telemetry")
   .exitOverride()
-  .action(() => {
-    printLogo();
-    p.intro("mthds telemetry");
-    setTelemetryEnabled(false);
-    p.log.success("Telemetry disabled.");
-    p.outro("");
-  });
+  .action(telemetryDisable);
 
 telemetry
   .command("status")
   .description("Show current telemetry status")
   .exitOverride()
-  .action(() => {
-    printLogo();
-    p.intro("mthds telemetry");
-    const enabled = isTelemetryEnabled();
-    const source = getTelemetrySource();
-    const sourceLabel = source === "env" ? " (from env)" : source === "default" ? " (default)" : "";
-    p.log.info(`Telemetry is ${enabled ? "enabled" : "disabled"}${sourceLabel}`);
-    p.outro("");
-  });
+  .action(telemetryStatus);
 
 // ── mthds package <subcommand> ──────────────────────────────────────
 const packageCmd = program

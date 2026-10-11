@@ -2,10 +2,17 @@
  * This tool's spool, `~/.mthds/usage-stats/spool/mthds/`: the events written when a command ends,
  * waiting for a sender.
  *
- * A file is named `<created-ms>-<random>.json` and holds `{"spool_version": 1, "events": [...]}`.
- * It is written under a name starting with a dot and renamed into place, so a reader never sees it
- * partial. A sender claims a file by renaming it to `<name>.sending-<random>`, so two senders never
- * post one file, and after its attempt deletes the file or renames it back.
+ * A file is named `<created-ms>-<random>.json` and holds
+ * `{"spool_version": 1, "endpoint": "<origin>", "events": [...]}`, where `endpoint` is the origin
+ * of the capture endpoint the events were queued for, written exactly as the command resolved it:
+ * PostHog's capture host, or the loopback origin of `PIPELEX_USAGE_STATS_ENDPOINT`. These CLIs
+ * always write it, and pipelex writes the same string for the same endpoint. A sender posts a file
+ * only to the origin it names, and a file naming none to any, so events queued under a test's
+ * loopback override never reach PostHog.
+ *
+ * A file is written under a name starting with a dot and renamed into place, so a reader never
+ * sees it partial. A sender claims a file by renaming it to `<name>.sending-<random>`, so two
+ * senders never post one file, and after its attempt deletes the file or renames it back.
  */
 
 import { randomBytes } from "node:crypto";
@@ -32,9 +39,42 @@ const SPOOL_VERSION = 1;
 const CLAIM_MARKER = ".sending-";
 const READY_NAME = /^(\d+)-[0-9a-f]+\.json$/;
 
-export interface SpoolFile {
+/** A spool file as it is written: the contract's shape, plus the endpoint its events were queued for. */
+interface SpoolFile {
   spool_version: number;
+  endpoint?: string;
   events: Envelope[];
+}
+
+/**
+ * What a spool file holds: the origin its events were queued for, undefined for a file naming
+ * none (one written before files named it, or by a tool that does not), and the events.
+ */
+export interface SpoolContent {
+  endpoint: string | undefined;
+  events: Envelope[];
+}
+
+/**
+ * Whether a sender posting to `origin` may post `content`'s events: the file names that origin,
+ * byte for byte, or names none. A file queued for another endpoint is left for a sender posting
+ * there.
+ */
+export function isQueuedFor(content: SpoolContent, origin: string): boolean {
+  return content.endpoint === undefined || content.endpoint === origin;
+}
+
+/**
+ * The text of a spool file holding `content`, its keys in the order pipelex writes them; an
+ * undefined endpoint is left out, as `JSON.stringify` drops it.
+ */
+function serialize(content: SpoolContent): string {
+  const file: SpoolFile = {
+    spool_version: SPOOL_VERSION,
+    endpoint: content.endpoint,
+    events: content.events,
+  };
+  return JSON.stringify(file);
 }
 
 export function spoolDir(): string {
@@ -70,10 +110,11 @@ export function listReadyFiles(): string[] {
 }
 
 /**
- * Write `events` as one new spool file, keeping at most the contract's number of files by deleting
- * the oldest. Answers the file's path.
+ * Write `events`, queued for `endpoint`, the origin the command resolved, as one new spool file,
+ * keeping at most the contract's number of files, whatever endpoint each names, by deleting the
+ * oldest. Answers the file's path.
  */
-export function writeSpoolFile(events: Envelope[]): string {
+export function writeSpoolFile(endpoint: string, events: Envelope[]): string {
   ensureStateDir();
   const directory = spoolDir();
   mkdirSync(directory, { recursive: true, mode: 0o700 });
@@ -86,8 +127,7 @@ export function writeSpoolFile(events: Envelope[]): string {
   }
   const name = `${Date.now()}-${randomSuffix()}.json`;
   const temporary = join(directory, `.${name}.${randomSuffix()}.tmp`);
-  const content: SpoolFile = { spool_version: SPOOL_VERSION, events };
-  writeFileSync(temporary, JSON.stringify(content), { encoding: "utf-8", mode: 0o600 });
+  writeFileSync(temporary, serialize({ endpoint, events }), { encoding: "utf-8", mode: 0o600 });
   const path = join(directory, name);
   renameSync(temporary, path);
   return path;
@@ -127,24 +167,35 @@ export function deleteFile(path: string): void {
   rmSync(path, { force: true });
 }
 
-/** Read a spool file; undefined when it is not one this sender can read, which it then deletes. */
-export function readSpoolFile(path: string): SpoolFile | undefined {
+/**
+ * Read a spool file; undefined when it is not one this sender can read, which it then deletes. An
+ * `endpoint` that is absent or null names none, as pipelex reads it; one that is not a string
+ * makes the file unreadable.
+ */
+export function readSpoolFile(path: string): SpoolContent | undefined {
   try {
-    const parsed = JSON.parse(readFileSync(path, "utf-8")) as Partial<SpoolFile>;
+    const parsed = JSON.parse(readFileSync(path, "utf-8")) as {
+      spool_version?: unknown;
+      endpoint?: unknown;
+      events?: unknown;
+    } | null;
+    if (parsed === null || typeof parsed !== "object") return undefined;
     if (parsed.spool_version !== SPOOL_VERSION || !Array.isArray(parsed.events)) return undefined;
-    return { spool_version: SPOOL_VERSION, events: parsed.events };
+    const endpoint = parsed.endpoint ?? undefined;
+    if (endpoint !== undefined && typeof endpoint !== "string") return undefined;
+    return { endpoint, events: parsed.events as Envelope[] };
   } catch {
     return undefined;
   }
 }
 
 /**
- * Rewrite a file this sender holds claimed, with the events it keeps; false when the file is gone.
- * It is written in place, opened without creating it, so a file that `disable`, `reset-id` or the
- * legacy migration deleted meanwhile is never written again. No other sender reads a claimed file.
+ * Rewrite a file this sender holds claimed, with the events it keeps and the endpoint it named;
+ * false when the file is gone. It is written in place, opened without creating it, so a file that
+ * `disable`, `reset-id` or the legacy migration deleted meanwhile is never written again. No other
+ * sender reads a claimed file.
  */
-export function rewriteClaimed(claimed: string, events: Envelope[]): boolean {
-  const content: SpoolFile = { spool_version: SPOOL_VERSION, events };
+export function rewriteClaimed(claimed: string, content: SpoolContent): boolean {
   let descriptor: number;
   try {
     descriptor = openSync(claimed, "r+");
@@ -153,7 +204,7 @@ export function rewriteClaimed(claimed: string, events: Envelope[]): boolean {
   }
   try {
     ftruncateSync(descriptor, 0);
-    writeSync(descriptor, JSON.stringify(content), 0, "utf-8");
+    writeSync(descriptor, serialize(content), 0, "utf-8");
     return true;
   } catch {
     return false;

@@ -1,10 +1,12 @@
 /**
  * The sender process: started by a command as it ends, it posts the spool and exits.
  *
- * Detached, with no terminal and no output, it outlives the command and drains this tool's spool
- * within ten seconds. A command in CI or a container runs it instead as a child it waits for, with
- * `--file` and a one-second budget, so its events are posted before it exits. It never prints, and
- * it always exits 0: nothing it does can concern the person who ran the command.
+ * Detached, with no terminal and no output, it outlives the command and posts, within ten seconds,
+ * the files of this tool's spool queued for `--endpoint` or naming no endpoint, leaving the others
+ * for a sender posting where they were queued. A command in CI or a container runs it instead as a
+ * child it waits for, with `--file` and a one-second budget, so its events are posted before it
+ * exits. It never prints, and it always exits 0: nothing it does can concern the person who ran
+ * the command.
  *
  * Usage: node sender-main.js --endpoint <origin> --budget-ms <n> [--file <spool file> | --events <base64 JSON>]
  */

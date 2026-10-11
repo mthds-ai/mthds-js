@@ -51,6 +51,8 @@ import { PROJECT_TOKEN } from "../../../src/usage-stats/contract.js";
 const OTHER_ID = "0f8fad5b-d9cb-469f-a165-70867728950e";
 
 let server: LoopbackServer;
+/** Another loopback server, the endpoint a file was queued for when it was not `server`. */
+let elsewhere: LoopbackServer;
 
 function event(distinctId?: string): Envelope {
   const installation = distinctId
@@ -74,18 +76,37 @@ function spoolNames(): string[] {
   }
 }
 
+/**
+ * Put a file in the spool by hand, holding `content` as it is, the way another tool or an earlier
+ * version could have left it. Answers its path.
+ */
+function placeSpoolFile(content: Record<string, unknown>, createdMs = Date.now()): string {
+  mkdirSync(spoolDir(), { recursive: true });
+  const path = join(spoolDir(), `${createdMs}-${Math.random().toString(16).slice(2, 10)}.json`);
+  writeFileSync(path, JSON.stringify(content));
+  return path;
+}
+
+function readHeld(path: string): Record<string, unknown> {
+  return JSON.parse(readFileSync(path, "utf-8")) as Record<string, unknown>;
+}
+
 beforeAll(async () => {
   server = await startLoopbackServer();
+  elsewhere = await startLoopbackServer();
 });
 
 afterAll(async () => {
   await server.close();
+  await elsewhere.close();
 });
 
 beforeEach(() => {
   tempHome = mkdtempSync(join(tmpdir(), "mthds-sender-"));
   server.requests.length = 0;
   server.respond(() => ({ status: 200, body: { status: "Ok" } }));
+  elsewhere.requests.length = 0;
+  elsewhere.respond(() => ({ status: 200, body: { status: "Ok" } }));
   vi.mocked(readInstallationId).mockClear();
 });
 
@@ -128,8 +149,8 @@ describe("postBatch", () => {
 
 describe("drainSpool", () => {
   it("posts every spooled file and deletes each one delivered", async () => {
-    writeSpoolFile([event()]);
-    writeSpoolFile([event()]);
+    writeSpoolFile(server.origin, [event()]);
+    writeSpoolFile(server.origin, [event()]);
     await drainSpool({ endpoint: server.origin, deadline: deadline() });
     expect(server.requests).toHaveLength(2);
     expect(listReadyFiles()).toEqual([]);
@@ -137,20 +158,20 @@ describe("drainSpool", () => {
 
   it("gives a file back to the spool when the post should be retried", async () => {
     server.respond(() => ({ status: 503 }));
-    const path = writeSpoolFile([event()]);
+    const path = writeSpoolFile(server.origin, [event()]);
     await drainSpool({ endpoint: server.origin, deadline: deadline() });
     expect(listReadyFiles()).toEqual([path]);
   });
 
   it("deletes a file the endpoint refused", async () => {
     server.respond(() => ({ status: 400 }));
-    writeSpoolFile([event()]);
+    writeSpoolFile(server.origin, [event()]);
     await drainSpool({ endpoint: server.origin, deadline: deadline() });
     expect(spoolNames()).toEqual([]);
   });
 
   it("deletes what it claimed, unsent, once statistics are off on the machine", async () => {
-    writeSpoolFile([event()]);
+    writeSpoolFile(server.origin, [event()]);
     writeFileSync(join(stateDir(), "disabled"), "");
     await drainSpool({ endpoint: server.origin, deadline: deadline() });
     expect(server.requests).toEqual([]);
@@ -158,7 +179,7 @@ describe("drainSpool", () => {
   });
 
   it("runs the legacy migration first, so a legacy opt-out stops the send", async () => {
-    writeSpoolFile([event()]);
+    writeSpoolFile(server.origin, [event()]);
     writeFileSync(join(tempHome, ".mthds", "config"), "DISABLE_TELEMETRY=1\n");
     await drainSpool({ endpoint: server.origin, deadline: deadline() });
     expect(server.requests).toEqual([]);
@@ -166,9 +187,9 @@ describe("drainSpool", () => {
   });
 
   it("runs the legacy migration before each post: an opt-out written between two posts stops the second", async () => {
-    writeSpoolFile([event()]);
-    writeSpoolFile([event()]);
-    writeSpoolFile([event()]);
+    writeSpoolFile(server.origin, [event()]);
+    writeSpoolFile(server.origin, [event()]);
+    writeSpoolFile(server.origin, [event()]);
     // `~/.mthds/config` exists and says nothing of the opt-out when the drain starts.
     mkdirSync(join(tempHome, ".mthds"), { recursive: true });
     writeFileSync(join(tempHome, ".mthds", "config"), "MTHDS_RUNNER=api\n");
@@ -187,7 +208,7 @@ describe("drainSpool", () => {
   });
 
   it("posts nothing when statistics are turned off between its claim and its post", async () => {
-    writeSpoolFile([event(OTHER_ID), event()]);
+    writeSpoolFile(server.origin, [event(OTHER_ID), event()]);
     const actual = await vi.importActual<typeof import("../../../src/usage-stats/state.js")>(
       "../../../src/usage-stats/state.js",
     );
@@ -202,7 +223,7 @@ describe("drainSpool", () => {
   });
 
   it("posts nothing when the file it claimed was deleted before its post", async () => {
-    writeSpoolFile([event()]);
+    writeSpoolFile(server.origin, [event()]);
     const actual = await vi.importActual<typeof import("../../../src/usage-stats/state.js")>(
       "../../../src/usage-stats/state.js",
     );
@@ -222,7 +243,7 @@ describe("drainSpool", () => {
       disableOnMachine();
       return { status: 503 };
     });
-    writeSpoolFile([event(OTHER_ID), event()]);
+    writeSpoolFile(server.origin, [event(OTHER_ID), event()]);
     await drainSpool({ endpoint: server.origin, deadline: deadline() });
     expect(server.requests).toHaveLength(1);
     expect(spoolNames()).toEqual([]);
@@ -233,7 +254,7 @@ describe("drainSpool", () => {
       deleteEverySpool();
       return { status: 503 };
     });
-    writeSpoolFile([event(OTHER_ID), event()]);
+    writeSpoolFile(server.origin, [event(OTHER_ID), event()]);
     await drainSpool({ endpoint: server.origin, deadline: deadline() });
     expect(spoolNames()).toEqual([]);
   });
@@ -241,7 +262,7 @@ describe("drainSpool", () => {
   it("gives a retried file back without the events made under another identifier", async () => {
     server.respond(() => ({ status: 503 }));
     const current = event();
-    const path = writeSpoolFile([event(OTHER_ID), current]);
+    const path = writeSpoolFile(server.origin, [event(OTHER_ID), current]);
     await drainSpool({ endpoint: server.origin, deadline: deadline() });
     expect(listReadyFiles()).toEqual([path]);
     const kept = JSON.parse(readFileSync(path, "utf-8")) as { events: Envelope[] };
@@ -250,8 +271,8 @@ describe("drainSpool", () => {
 
   it("drops every event made under an identifier other than the current one", async () => {
     const current = event();
-    writeSpoolFile([event(OTHER_ID), current]);
-    writeSpoolFile([event(OTHER_ID)]);
+    writeSpoolFile(server.origin, [event(OTHER_ID), current]);
+    writeSpoolFile(server.origin, [event(OTHER_ID)]);
     await drainSpool({ endpoint: server.origin, deadline: deadline() });
     expect(server.requests).toHaveLength(1);
     const batch = (server.requests[0]!.body as { batch: Envelope[] }).batch;
@@ -260,25 +281,136 @@ describe("drainSpool", () => {
   });
 
   it("posts only the file it was given, leaving the rest for a later sender", async () => {
-    const first = writeSpoolFile([event()]);
-    const second = writeSpoolFile([event()]);
+    const first = writeSpoolFile(server.origin, [event()]);
+    const second = writeSpoolFile(server.origin, [event()]);
     await drainSpool({ endpoint: server.origin, deadline: deadline(), onlyFile: second });
     expect(server.requests).toHaveLength(1);
     expect(listReadyFiles()).toEqual([first]);
   });
 
   it("leaves a file another sender claimed", async () => {
-    const path = writeSpoolFile([event()]);
+    const path = writeSpoolFile(server.origin, [event()]);
     expect(claimFile(path)).toBeDefined();
     await drainSpool({ endpoint: server.origin, deadline: deadline() });
     expect(server.requests).toEqual([]);
   });
 
   it("stops at the deadline", async () => {
-    writeSpoolFile([event()]);
+    writeSpoolFile(server.origin, [event()]);
     await drainSpool({ endpoint: server.origin, deadline: Date.now() - 1 });
     expect(server.requests).toEqual([]);
     expect(listReadyFiles()).toHaveLength(1);
+  });
+});
+
+describe("the endpoint a spool file was queued for", () => {
+  it("is written into every file, as the origin it was given, before the events", () => {
+    const events = [event()];
+    const path = writeSpoolFile(server.origin, events);
+    const held = readHeld(path);
+    expect(Object.keys(held)).toEqual(["spool_version", "endpoint", "events"]);
+    expect(held).toEqual({
+      spool_version: 1,
+      endpoint: server.origin,
+      events: JSON.parse(JSON.stringify(events)),
+    });
+  });
+
+  it("is written exactly as the command resolved it", () => {
+    expect(readHeld(writeSpoolFile("http://localhost:8080", [])).endpoint).toBe(
+      "http://localhost:8080",
+    );
+    expect(readHeld(writeSpoolFile("https://eu.i.posthog.com", [])).endpoint).toBe(
+      "https://eu.i.posthog.com",
+    );
+  });
+
+  it("keeps a file queued for another endpoint out of the post, in the spool", async () => {
+    const queued = event();
+    const path = placeSpoolFile({
+      spool_version: 1,
+      endpoint: elsewhere.origin,
+      events: [queued],
+    });
+    await drainSpool({ endpoint: server.origin, deadline: deadline() });
+    expect(server.requests).toEqual([]);
+    expect(listReadyFiles()).toEqual([path]);
+    expect(readHeld(path)).toMatchObject({ endpoint: elsewhere.origin });
+
+    // A sender posting where the file was queued posts it.
+    await drainSpool({ endpoint: elsewhere.origin, deadline: deadline() });
+    expect(elsewhere.requests).toHaveLength(1);
+    const batch = (elsewhere.requests[0]!.body as { batch: Envelope[] }).batch;
+    expect(batch.map((sent) => sent.uuid)).toEqual([queued.uuid]);
+    expect(spoolNames()).toEqual([]);
+  });
+
+  it("posts the files queued for its endpoint around one queued elsewhere", async () => {
+    const before = writeSpoolFile(server.origin, [event()]);
+    const other = placeSpoolFile({
+      spool_version: 1,
+      endpoint: elsewhere.origin,
+      events: [event()],
+    });
+    const after = writeSpoolFile(server.origin, [event()]);
+    await drainSpool({ endpoint: server.origin, deadline: deadline() });
+    expect(server.requests).toHaveLength(2);
+    expect(elsewhere.requests).toEqual([]);
+    expect(listReadyFiles()).toEqual([other]);
+    expect([before, after].filter((path) => existsSync(path))).toEqual([]);
+  });
+
+  it("leaves a file queued elsewhere even when it is the one file it was given", async () => {
+    const path = placeSpoolFile({
+      spool_version: 1,
+      endpoint: elsewhere.origin,
+      events: [event()],
+    });
+    await drainSpool({ endpoint: server.origin, deadline: deadline(), onlyFile: path });
+    expect(server.requests).toEqual([]);
+    expect(listReadyFiles()).toEqual([path]);
+  });
+
+  it.each([
+    ["no endpoint", {}],
+    ["a null endpoint", { endpoint: null }],
+  ])("posts a file naming %s to whichever endpoint the sender posts to", async (_case, extra) => {
+    const queued = event();
+    placeSpoolFile({ spool_version: 1, ...extra, events: [queued] });
+    await drainSpool({ endpoint: server.origin, deadline: deadline() });
+    expect(server.requests).toHaveLength(1);
+    const batch = (server.requests[0]!.body as { batch: Envelope[] }).batch;
+    expect(batch.map((sent) => sent.uuid)).toEqual([queued.uuid]);
+    expect(spoolNames()).toEqual([]);
+  });
+
+  it("deletes unsent a file whose endpoint is not a string", async () => {
+    placeSpoolFile({ spool_version: 1, endpoint: 8080, events: [event()] });
+    await drainSpool({ endpoint: server.origin, deadline: deadline() });
+    expect(server.requests).toEqual([]);
+    expect(spoolNames()).toEqual([]);
+  });
+
+  it("is kept when a retried file is given back without some of its events", async () => {
+    server.respond(() => ({ status: 503 }));
+    const current = event();
+    const path = placeSpoolFile({
+      spool_version: 1,
+      endpoint: server.origin,
+      events: [event(OTHER_ID), current],
+    });
+    await drainSpool({ endpoint: server.origin, deadline: deadline() });
+    expect(listReadyFiles()).toEqual([path]);
+    const held = readHeld(path);
+    expect(held.endpoint).toBe(server.origin);
+    expect((held.events as Envelope[]).map((kept) => kept.uuid)).toEqual([current.uuid]);
+  });
+
+  it("stays absent when a retried file naming none is given back", async () => {
+    server.respond(() => ({ status: 503 }));
+    const path = placeSpoolFile({ spool_version: 1, events: [event(OTHER_ID), event()] });
+    await drainSpool({ endpoint: server.origin, deadline: deadline() });
+    expect(Object.keys(readHeld(path))).toEqual(["spool_version", "events"]);
   });
 });
 
@@ -307,7 +439,7 @@ describe("the spool's housekeeping", () => {
         '{"spool_version":1,"events":[]}',
       );
     }
-    writeSpoolFile([]);
+    writeSpoolFile(server.origin, []);
     const ready = listReadyFiles();
     expect(ready).toHaveLength(100);
     expect(ready[0]).toContain(`${base + 1}-abc.json`);

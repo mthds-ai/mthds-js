@@ -181,31 +181,41 @@ export class UsageStatsSession {
  * Hand the event to a sender. A CLI writes it to the spool and starts a detached sender, which
  * posts the whole spool within ten seconds while the command exits at once. In CI or a container,
  * where the sender would be killed with the step, and when it cannot be started, the command posts
- * its own file before it exits, within one second, through a child process it waits for. An event
- * under a process-local identifier is never spooled, since a sender would drop it as made under
- * another identifier: it is posted the same way, and lost if that fails.
+ * its own file before it exits, within one second, through a child process it waits for.
+ *
+ * An event under a process-local identifier, made when the identifier could not be saved, is never
+ * spooled, since a sender would drop it as made under another identifier: the event itself is handed
+ * to the sender on its command line, and lost if the post fails. Outside CI and containers that
+ * sender is detached too, so a machine whose identifier cannot be saved never makes every command
+ * wait at exit.
  */
 function deliver(event: Envelope, installation: Installation): void {
   const endpoint = resolveEndpoint();
   if (endpoint === undefined) return;
+  const waits = isCi() || isContainer();
   if (!installation.persisted) {
     const encoded = Buffer.from(JSON.stringify([event]), "utf-8").toString("base64");
-    runSenderAndWait(endpoint, ["--events", encoded]);
+    const target = ["--events", encoded];
+    if (waits || !startDetachedSender(endpoint, target)) runSenderAndWait(endpoint, target);
     return;
   }
   const file = writeSpoolFile([event]);
-  if (isCi() || isContainer()) {
-    runSenderAndWait(endpoint, ["--file", file]);
-    return;
-  }
-  if (!startDetachedSender(endpoint)) runSenderAndWait(endpoint, ["--file", file]);
+  if (waits || !startDetachedSender(endpoint)) runSenderAndWait(endpoint, ["--file", file]);
 }
 
-function startDetachedSender(endpoint: string): boolean {
+/** Start a sender that outlives the command, draining the spool or posting `target`'s events. */
+function startDetachedSender(endpoint: string, target: string[] = []): boolean {
   try {
     const child = spawn(
       process.execPath,
-      [senderMainPath(), "--endpoint", endpoint, "--budget-ms", String(BUDGETS_MS.detachedSender)],
+      [
+        senderMainPath(),
+        "--endpoint",
+        endpoint,
+        "--budget-ms",
+        String(BUDGETS_MS.detachedSender),
+        ...target,
+      ],
       { detached: true, stdio: "ignore", windowsHide: true },
     );
     // A failed start leaves the child without a process id; its error event would come too late.

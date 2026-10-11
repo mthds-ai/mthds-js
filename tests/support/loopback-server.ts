@@ -17,6 +17,8 @@ export interface RecordedRequest {
 export interface Reply {
   status: number;
   body?: unknown;
+  /** Wait this long before answering, as a slow capture host would. */
+  delayMs?: number;
 }
 
 export type Responder = (request: RecordedRequest) => Reply;
@@ -25,6 +27,8 @@ export interface LoopbackServer {
   /** The server's origin, `http://127.0.0.1:<port>`. */
   origin: string;
   requests: RecordedRequest[];
+  /** When each request of `requests` was received, in epoch milliseconds. */
+  receivedAt: number[];
   /** Change what the server answers from now on. */
   respond(responder: Responder): void;
   close(): Promise<void>;
@@ -44,6 +48,7 @@ export async function startLoopbackServer(
 ): Promise<LoopbackServer> {
   let current = responder;
   const requests: RecordedRequest[] = [];
+  const receivedAt: number[] = [];
   const server: Server = createServer((request: IncomingMessage, response: ServerResponse) => {
     void readBody(request).then((text) => {
       let body: unknown = text;
@@ -58,9 +63,15 @@ export async function startLoopbackServer(
         body,
       };
       requests.push(recorded);
+      receivedAt.push(Date.now());
       const reply = current(recorded);
-      response.writeHead(reply.status, { "Content-Type": "application/json" });
-      response.end(reply.body === undefined ? "" : JSON.stringify(reply.body));
+      const answer = (): void => {
+        if (response.destroyed) return;
+        response.writeHead(reply.status, { "Content-Type": "application/json" });
+        response.end(reply.body === undefined ? "" : JSON.stringify(reply.body));
+      };
+      if (reply.delayMs === undefined) answer();
+      else setTimeout(answer, reply.delayMs).unref();
     });
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
@@ -68,6 +79,7 @@ export async function startLoopbackServer(
   return {
     origin: `http://127.0.0.1:${port}`,
     requests,
+    receivedAt,
     respond(next: Responder) {
       current = next;
     },

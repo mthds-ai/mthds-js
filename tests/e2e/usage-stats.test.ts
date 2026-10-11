@@ -124,6 +124,7 @@ beforeEach(() => {
   work = join(home, "work");
   mkdirSync(work);
   server.requests.length = 0;
+  server.receivedAt.length = 0;
   server.respond(() => ({ status: 200, body: { status: "Ok" } }));
 });
 
@@ -226,6 +227,34 @@ describe.skipIf(process.platform === "win32")("mthds usage statistics (e2e)", ()
     expect(events[0]!.properties["id_new"]).toBe(true);
     expect(spooled()).toEqual([]);
     expect(readFileSync(join(stateDir(), "id"), "utf-8")).toBe("not-an-identifier\n");
+  });
+
+  it("does not wait at exit for the post of an event made under a process-local identifier", async () => {
+    // A capture host slow to answer: a command that waited for its sender would stay until the
+    // one-second budget ran out, long after the post arrived.
+    server.respond(() => ({ status: 200, body: { status: "Ok" }, delayMs: 3_000 }));
+    mkdirSync(stateDir(), { recursive: true });
+    writeFileSync(join(stateDir(), "id"), "not-an-identifier\n");
+    let exitedAt = 0;
+    const result = await run(MTHDS, ["config", "list"]).then((done) => {
+      exitedAt = Date.now();
+      return done;
+    });
+    expect(result.status).toBe(0);
+    const events = await postedEvents(1);
+    expect(events).toHaveLength(1);
+    expect(events[0]!.properties["id_new"]).toBe(true);
+    expect(exitedAt - server.receivedAt[0]!).toBeLessThan(500);
+    expect(spooled()).toEqual([]);
+  });
+
+  it("posts an event made under a process-local identifier before exiting in CI", async () => {
+    mkdirSync(stateDir(), { recursive: true });
+    writeFileSync(join(stateDir(), "id"), "not-an-identifier\n");
+    const result = await run(MTHDS, ["config", "list"], { CI: "true" });
+    expect(result.status).toBe(0);
+    expect(server.requests).toHaveLength(1);
+    expect(spooled()).toEqual([]);
   });
 
   it("gives first runs racing on a fresh machine one identifier, created once", async () => {

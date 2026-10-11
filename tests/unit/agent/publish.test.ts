@@ -16,6 +16,7 @@ vi.mock("../../../src/installer/resolver/local.js", () => ({
 
 vi.mock("../../../src/installer/telemetry/posthog.js", () => ({
   trackPublish: vi.fn(),
+  publishBlockedByTelemetry: vi.fn().mockReturnValue(undefined),
   shutdown: vi.fn().mockResolvedValue(undefined),
 }));
 
@@ -48,7 +49,11 @@ vi.mock("../../../src/agent/output.js", () => ({
 import { parseAddress } from "../../../src/installer/resolver/address.js";
 import { resolveFromGitHub } from "../../../src/installer/resolver/github.js";
 import { resolveFromLocal } from "../../../src/installer/resolver/local.js";
-import { trackPublish, shutdown } from "../../../src/installer/telemetry/posthog.js";
+import {
+  trackPublish,
+  publishBlockedByTelemetry,
+  shutdown,
+} from "../../../src/installer/telemetry/posthog.js";
 import { agentSuccess, agentError } from "../../../src/agent/output.js";
 import { agentPublish } from "../../../src/agent/commands/publish.js";
 import type { ResolvedRepo } from "../../../src/package/manifest/types.js";
@@ -57,6 +62,7 @@ const mockedParseAddress = vi.mocked(parseAddress);
 const mockedResolveFromGitHub = vi.mocked(resolveFromGitHub);
 const mockedResolveFromLocal = vi.mocked(resolveFromLocal);
 const mockedTrackPublish = vi.mocked(trackPublish);
+const mockedPublishBlockedByTelemetry = vi.mocked(publishBlockedByTelemetry);
 const mockedShutdown = vi.mocked(shutdown);
 const mockedAgentSuccess = vi.mocked(agentSuccess);
 const mockedAgentError = vi.mocked(agentError);
@@ -91,6 +97,7 @@ const fakeResolved: ResolvedRepo = {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mockedPublishBlockedByTelemetry.mockReturnValue(undefined);
 });
 
 describe("agentPublish", () => {
@@ -135,6 +142,38 @@ describe("agentPublish", () => {
         address: "mthds-ai/contract-analysis",
       }),
     );
+  });
+
+  it("refuses a public repository while telemetry is off, instead of reporting success", async () => {
+    mockedParseAddress.mockReturnValue({
+      org: "mthds-ai",
+      repo: "contract-analysis",
+      subpath: null,
+    });
+    mockedResolveFromGitHub.mockResolvedValue(fakeResolved);
+    mockedPublishBlockedByTelemetry.mockReturnValue(
+      "Nothing was published: telemetry is off (DO_NOT_TRACK is set).",
+    );
+
+    await expect(agentPublish("mthds-ai/contract-analysis", {})).rejects.toThrow(AgentErrorThrow);
+
+    expect(mockedAgentError).toHaveBeenCalledWith(
+      "Nothing was published: telemetry is off (DO_NOT_TRACK is set).",
+      "PublishError",
+      { error_domain: "install", skipped_methods: [] },
+    );
+    expect(mockedTrackPublish).not.toHaveBeenCalled();
+    expect(mockedAgentSuccess).not.toHaveBeenCalled();
+  });
+
+  it("does not consult telemetry for a local source, which never sends", async () => {
+    mockedResolveFromLocal.mockReturnValue({ ...fakeResolved, source: "local", isPublic: false });
+    mockedPublishBlockedByTelemetry.mockReturnValue("telemetry is off");
+
+    await agentPublish(undefined, { local: "/some/path" });
+
+    expect(mockedPublishBlockedByTelemetry).not.toHaveBeenCalled();
+    expect(mockedAgentSuccess).toHaveBeenCalled();
   });
 
   it("does not track telemetry for private repos", async () => {

@@ -284,7 +284,7 @@ export DISABLE_TELEMETRY=1 # for one shell, overriding the config file
 export DO_NOT_TRACK=1      # the universal opt-out, overriding everything else
 ```
 
-`DO_NOT_TRACK` set to any value other than an empty string, `0` or `false` turns telemetry off whatever `DISABLE_TELEMETRY` or the config file says. With telemetry off, `mthds publish` cannot register a method on mthds.sh.
+`DO_NOT_TRACK` set to any value other than an empty string, `0` or `false` turns telemetry off whatever `DISABLE_TELEMETRY` or the config file says. With telemetry off, `mthds publish` cannot register a method on mthds.sh, so it refuses to publish a public repository and says which switch holds telemetry off.
 
 ## Development
 

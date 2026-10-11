@@ -15,17 +15,20 @@ vi.mock("posthog-node", () => {
 
 vi.mock("../../../../src/config/config.js", () => ({
   isTelemetryEnabled: vi.fn().mockReturnValue(true),
+  getTelemetryDisablingEnvVar: vi.fn().mockReturnValue(undefined),
 }));
 
-import { isTelemetryEnabled } from "../../../../src/config/config.js";
+import { isTelemetryEnabled, getTelemetryDisablingEnvVar } from "../../../../src/config/config.js";
 import {
   trackPublish,
   trackInstall,
+  publishBlockedByTelemetry,
   shutdown,
 } from "../../../../src/installer/telemetry/posthog.js";
 import type { ResolvedMethod } from "../../../../src/package/manifest/types.js";
 
 const mockedIsTelemetryEnabled = vi.mocked(isTelemetryEnabled);
+const mockedGetTelemetryDisablingEnvVar = vi.mocked(getTelemetryDisablingEnvVar);
 
 beforeEach(async () => {
   // Drop the client a previous test created, so each test sees getClient()
@@ -33,6 +36,7 @@ beforeEach(async () => {
   await shutdown();
   vi.clearAllMocks();
   mockedIsTelemetryEnabled.mockReturnValue(true);
+  mockedGetTelemetryDisablingEnvVar.mockReturnValue(undefined);
 });
 
 const sampleMethod: ResolvedMethod = {
@@ -138,6 +142,31 @@ describe("trackPublish vs trackInstall", () => {
     const publishKeys = Object.keys(publishCall.properties).sort();
     const installKeys = Object.keys(installCall.properties).sort();
     expect(publishKeys).toEqual(installKeys);
+  });
+});
+
+describe("publishBlockedByTelemetry", () => {
+  it("is undefined while telemetry is on", () => {
+    expect(publishBlockedByTelemetry()).toBeUndefined();
+  });
+
+  it("names the environment variable holding telemetry off", () => {
+    mockedIsTelemetryEnabled.mockReturnValue(false);
+    mockedGetTelemetryDisablingEnvVar.mockReturnValue("DO_NOT_TRACK");
+
+    const reason = publishBlockedByTelemetry();
+
+    expect(reason).toMatch(/^Nothing was published/);
+    expect(reason).toContain("DO_NOT_TRACK is set in your environment");
+  });
+
+  it("points at mthds telemetry enable when the config file holds it off", () => {
+    mockedIsTelemetryEnabled.mockReturnValue(false);
+
+    const reason = publishBlockedByTelemetry();
+
+    expect(reason).toContain("~/.mthds/config");
+    expect(reason).toContain("mthds telemetry enable");
   });
 });
 

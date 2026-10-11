@@ -521,7 +521,7 @@ mthds install org/repo/methods/specific
 
 ## Publish
 
-Publish method packages to [mthds.sh](https://mthds.sh). Sends `method_publish` telemetry for public GitHub repos, and sends nothing while [telemetry](#telemetry) is off, `DO_NOT_TRACK` included. No files are written, no runner is installed.
+Publish method packages to [mthds.sh](https://mthds.sh). Sends `method_publish` telemetry for public GitHub repos, which is how mthds.sh registers a method, so while [telemetry](#telemetry) is off, `DO_NOT_TRACK` included, it refuses to publish a public repository and exits non-zero, naming the switch that holds telemetry off. No files are written, no runner is installed.
 
 ### `mthds publish`
 
@@ -541,7 +541,7 @@ The publish flow is interactive:
 1. Resolves methods from the address or local directory
 2. Displays a summary of found methods (valid/skipped)
 3. If multiple methods: lets you select which ones to publish (multiselect)
-4. Sends `method_publish` telemetry (public GitHub repos only, and only while telemetry is on)
+4. Sends `method_publish` telemetry (public GitHub repos only; with telemetry off, a public repository is refused before step 3)
 5. Prints success
 
 **Examples:**
@@ -750,7 +750,7 @@ mthds-agent init -g --config '{"execution": "hosted"}'
 
 ### `mthds-agent publish`
 
-Publish methods to mthds.sh (non-interactive). Sends `method_publish` telemetry for public GitHub repos, and sends nothing while [telemetry](#telemetry) is off, `DO_NOT_TRACK` included. No files are written.
+Publish methods to mthds.sh (non-interactive). Sends `method_publish` telemetry for public GitHub repos, which is how mthds.sh registers a method, so while [telemetry](#telemetry) is off, `DO_NOT_TRACK` included, a public repository is refused with a `PublishError` naming the switch that holds telemetry off. No files are written.
 
 ```bash
 mthds-agent publish [address] [OPTIONS]

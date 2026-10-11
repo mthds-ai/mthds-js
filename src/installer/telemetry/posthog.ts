@@ -1,5 +1,5 @@
 import { PostHog } from "posthog-node";
-import { isTelemetryEnabled } from "../../config/config.js";
+import { isTelemetryEnabled, getTelemetryDisablingEnvVar } from "../../config/config.js";
 import type { ResolvedMethod } from "../../package/manifest/types.js";
 
 const POSTHOG_API_KEY = "phc_LRwe2lybfPTNCzAT1ScpnsWznrxAvmc1pmCaXEr1hwJ";
@@ -44,6 +44,20 @@ function trackEvent(eventName: string, method: ResolvedMethod, orgRepo?: string)
       timestamp: new Date().toISOString(),
     },
   });
+}
+
+/**
+ * Why a publish cannot reach mthds.sh, or undefined when it can. mthds.sh
+ * registers a method from its `method_publish` event alone, so with telemetry
+ * off a publish would register nothing while reporting success.
+ */
+export function publishBlockedByTelemetry(): string | undefined {
+  if (isTelemetryEnabled()) return undefined;
+  const envVar = getTelemetryDisablingEnvVar();
+  const cause = envVar
+    ? `${envVar} is set in your environment; run the command without it to publish`
+    : "it is disabled in ~/.mthds/config; `mthds telemetry enable` turns it back on";
+  return `Nothing was published: mthds.sh registers a method from the CLI's telemetry event, and telemetry is off (${cause}).`;
 }
 
 export function trackPublish(method: ResolvedMethod, orgRepo?: string): void {

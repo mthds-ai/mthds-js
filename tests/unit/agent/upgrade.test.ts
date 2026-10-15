@@ -11,7 +11,6 @@ vi.mock("../../../src/config/config.js", () => ({
     runner: "api",
     baseUrl: "",
     apiKey: "",
-    telemetry: true,
     autoUpgrade: false,
     updateCheck: true,
   })),
@@ -73,7 +72,6 @@ describe("agentUpgrade", () => {
       runner: "api" as const,
       baseUrl: "",
       apiKey: "",
-      telemetry: true,
       autoUpgrade: false,
       updateCheck: true,
     });
@@ -119,7 +117,6 @@ describe("agentUpgrade", () => {
       runner: "pipelex" as const,
       baseUrl: "",
       apiKey: "",
-      telemetry: true,
       autoUpgrade: false,
       updateCheck: true,
     });
@@ -167,7 +164,6 @@ describe("agentUpgrade", () => {
       runner: "pipelex" as const,
       baseUrl: "",
       apiKey: "",
-      telemetry: true,
       autoUpgrade: false,
       updateCheck: true,
     });
@@ -225,7 +221,6 @@ describe("agentUpgrade", () => {
       runner: "pipelex" as const,
       baseUrl: "",
       apiKey: "",
-      telemetry: true,
       autoUpgrade: false,
       updateCheck: true,
     });
@@ -329,7 +324,6 @@ describe("agentUpgrade", () => {
       runner: "pipelex" as const,
       baseUrl: "",
       apiKey: "",
-      telemetry: true,
       autoUpgrade: false,
       updateCheck: true,
     });

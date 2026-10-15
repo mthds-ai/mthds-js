@@ -83,3 +83,6 @@ export type {
   MoveKeyOp,
   RemapValueOp,
 } from "./runners/api/models.js";
+
+// ── Method tree (src/method-tree — Node-side: listing reads the file system) ──
+export * from "./method-tree/index.js";

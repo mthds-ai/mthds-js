@@ -42,6 +42,7 @@ import { findUnknownSubcommand } from "./cli/commands/unknown-subcommand.js";
 import { createRunner } from "./runners/registry.js";
 import { Runners, RUNNER_NAMES } from "./runners/types.js";
 import type { RunnerType, Runner } from "./runners/types.js";
+import { installUsageStats } from "./usage-stats/session.js";
 import type { Command as Cmd } from "commander";
 
 const require = createRequire(import.meta.url);
@@ -159,7 +160,7 @@ program
   .argument("[address]", "GitHub repo (org/repo or https://github.com/org/repo)")
   .option("--local <path>", "Publish from a local directory")
   .option("--method <name>", "Publish only the specified method (by name)")
-  .description("Publish a method package to mthds.sh (telemetry only, no install)")
+  .description("Publish a method package to mthds.sh through its registry route (no install)")
   .exitOverride()
   .action(
     async (
@@ -471,12 +472,23 @@ if (isApiRunner) {
   registerPipelexRunnerCommands(program, () => getAutoInstall(program));
 }
 
+// ── Usage statistics ─────────────────────────────────────────────────
+// One `command_completed` per command (src/usage-stats/). mthds-agent never prints or records the
+// notice, whatever --format or --error-format say: its stderr is a machine contract (the
+// usage-statistics contract, Notice). A pipelex-agent it runs applies its own rule.
+
 // Default action — no command at all. An unknown command never reaches it: it is
 // refused below, before Commander parses.
 program.action(() => {
   agentError("No command specified. Run mthds-agent --help for usage.", "ArgumentError", {
     error_domain: AGENT_ERROR_DOMAINS.ARGUMENT,
   });
+});
+
+const usageStats = installUsageStats(program, {
+  surface: "mthds-agent",
+  toolVersion: pkg.version,
+  printsNotice: false,
 });
 
 // ── Unknown commands ─────────────────────────────────────────────────
@@ -500,6 +512,8 @@ if (unknownCommand !== undefined) {
 program.parseAsync(process.argv).catch((err: unknown) => {
   if (err instanceof CommanderError) {
     if (err.exitCode === 0) {
+      // --help and --version send nothing.
+      usageStats.silence();
       process.exit(0);
     }
     const message = err.message.replace(/^error: /, "").replace(/^Error: /, "");

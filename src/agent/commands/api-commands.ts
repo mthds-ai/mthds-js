@@ -982,7 +982,7 @@ export async function runProtocolValidate(
         : undefined;
     if (report.is_valid === false) {
       if (errorWantsMarkdown && renderedMarkdown !== undefined) {
-        agentMarkdownError(renderedMarkdown);
+        agentMarkdownError(renderedMarkdown, AGENT_ERROR_DOMAINS.VALIDATION);
       }
       agentError(report.message, "ValidateBundleError", {
         error_domain: AGENT_ERROR_DOMAINS.VALIDATION,

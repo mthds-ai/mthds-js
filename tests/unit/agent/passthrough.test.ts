@@ -48,6 +48,7 @@ import { uvToolInstallSync } from "../../../src/installer/runtime/installer.js";
 import { agentError } from "../../../src/agent/output.js";
 import { passthrough } from "../../../src/agent/passthrough.js";
 import { BINARY_RECOVERY } from "../../../src/agent/binaries.js";
+import { outcomeNotes, resetOutcomeNotes } from "../../../src/usage-stats/outcome.js";
 
 const PX_CONSTRAINT = BINARY_RECOVERY["pipelex"].version_constraint;
 
@@ -83,8 +84,53 @@ describe("passthrough", () => {
 
     expect(mockedSpawnSync).toHaveBeenCalledWith("pipelex-agent", ["run", "--pipe", "test"], {
       stdio: "inherit",
+      env: expect.objectContaining({ PIPELEX_USAGE_STATS_HOST: "mthds-agent" }),
     });
     expect(mockExit).toHaveBeenCalledWith(0);
+  });
+
+  it("tells the spawned tool that mthds-agent runs it, over a host the caller declared", () => {
+    vi.stubEnv("PIPELEX_USAGE_STATS_HOST", "cocode");
+    mockedSpawnSync.mockReturnValue(OK_SPAWN);
+
+    passthrough("plxt", ["lint"], { skipVersionCheck: true });
+
+    const options = mockedSpawnSync.mock.calls.at(-1)![2] as { env: NodeJS.ProcessEnv };
+    expect(options.env["PIPELEX_USAGE_STATS_HOST"]).toBe("mthds-agent");
+    expect(process.env["PIPELEX_USAGE_STATS_HOST"]).toBe("cocode");
+    vi.unstubAllEnvs();
+  });
+
+  it("reports a tool killed by the interrupt as a cancelled command", () => {
+    resetOutcomeNotes();
+    mockedSpawnSync.mockReturnValue({ ...OK_SPAWN, status: null, signal: "SIGINT" } as never);
+
+    passthrough("plxt", ["lint"], { skipVersionCheck: true });
+
+    expect(mockExit).toHaveBeenCalledWith(130);
+    expect(outcomeNotes().cancelled).toBe(true);
+    resetOutcomeNotes();
+  });
+
+  it("reports a tool that handled Ctrl-C and exited 130 as a cancelled command", () => {
+    resetOutcomeNotes();
+    mockedSpawnSync.mockReturnValue({ ...OK_SPAWN, status: 130, signal: null } as never);
+
+    passthrough("pipelex-agent", ["run", "pipe", "x"], { skipVersionCheck: true });
+
+    expect(mockExit).toHaveBeenCalledWith(130);
+    expect(outcomeNotes().cancelled).toBe(true);
+    resetOutcomeNotes();
+  });
+
+  it("reports a tool that failed with another status as not cancelled", () => {
+    resetOutcomeNotes();
+    mockedSpawnSync.mockReturnValue({ ...OK_SPAWN, status: 1, signal: null } as never);
+
+    passthrough("pipelex-agent", ["run", "pipe", "x"], { skipVersionCheck: true });
+
+    expect(mockExit).toHaveBeenCalledWith(1);
+    expect(outcomeNotes().cancelled).toBe(false);
   });
 
   it("emits BinaryNotFoundError on ENOENT when no recovery info", () => {
@@ -309,6 +355,9 @@ describe("passthrough", () => {
     });
 
     expect(mockedCheckBinaryVersion).not.toHaveBeenCalled();
-    expect(mockedSpawnSync).toHaveBeenCalledWith("pipelex-agent", ["run"], { stdio: "inherit" });
+    expect(mockedSpawnSync).toHaveBeenCalledWith("pipelex-agent", ["run"], {
+      stdio: "inherit",
+      env: expect.objectContaining({ PIPELEX_USAGE_STATS_HOST: "mthds-agent" }),
+    });
   });
 });

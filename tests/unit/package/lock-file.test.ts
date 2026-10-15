@@ -1,15 +1,21 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdirSync, mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync, rmSync, symlinkSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
+import { createHash } from "node:crypto";
 import {
-  computeDirectoryHash,
+  computePackageDigest,
   parseLockFile,
   serializeLockFile,
   generateLockFile,
   verifyLockedPackage,
 } from "../../../src/package/lock-file.js";
 import { LockFileError, IntegrityError } from "../../../src/package/exceptions.js";
+import { MethodTreeError } from "../../../src/method-tree/index.js";
+
+function sha256(text: string): string {
+  return createHash("sha256").update(text).digest("hex");
+}
 
 describe("lock-file", () => {
   let tempDir: string;
@@ -22,47 +28,55 @@ describe("lock-file", () => {
     rmSync(tempDir, { recursive: true, force: true });
   });
 
-  describe("computeDirectoryHash", () => {
-    it("returns sha256: prefixed hash", () => {
-      writeFileSync(join(tempDir, "file.txt"), "hello");
-      const hash = computeDirectoryHash(tempDir);
-      expect(hash).toMatch(/^sha256:[0-9a-f]{64}$/);
+  describe("computePackageDigest", () => {
+    it("is the tree digest of the package's method tree", async () => {
+      writeFileSync(join(tempDir, "METHODS.toml"), "[package]\n");
+      writeFileSync(join(tempDir, "main.mthds"), 'domain = "x"\n');
+      const listing = [
+        `${sha256("[package]\n")}  METHODS.toml\n`,
+        `${sha256('domain = "x"\n')}  main.mthds\n`,
+      ].join("");
+      expect(await computePackageDigest(tempDir)).toBe(`sha256:${sha256(listing)}`);
     });
 
-    it("is deterministic (same content = same hash)", () => {
-      writeFileSync(join(tempDir, "a.txt"), "content");
-      const hash1 = computeDirectoryHash(tempDir);
-      const hash2 = computeDirectoryHash(tempDir);
-      expect(hash1).toBe(hash2);
-    });
-
-    it("changes when file content changes", () => {
+    it("changes when file content changes", async () => {
       writeFileSync(join(tempDir, "a.txt"), "v1");
-      const hash1 = computeDirectoryHash(tempDir);
+      const first = await computePackageDigest(tempDir);
       writeFileSync(join(tempDir, "a.txt"), "v2");
-      const hash2 = computeDirectoryHash(tempDir);
-      expect(hash1).not.toBe(hash2);
+      expect(await computePackageDigest(tempDir)).not.toBe(first);
     });
 
-    it("skips .git directory", () => {
+    it("leaves out what the membership rule excludes, .git included", async () => {
       writeFileSync(join(tempDir, "a.txt"), "content");
-      const hash1 = computeDirectoryHash(tempDir);
-
+      const first = await computePackageDigest(tempDir);
       mkdirSync(join(tempDir, ".git"));
       writeFileSync(join(tempDir, ".git", "HEAD"), "ref: main");
-      const hash2 = computeDirectoryHash(tempDir);
-      expect(hash1).toBe(hash2);
+      mkdirSync(join(tempDir, "__pycache__"));
+      writeFileSync(join(tempDir, "__pycache__", "a.pyc"), "x");
+      expect(await computePackageDigest(tempDir)).toBe(first);
     });
 
-    it("throws LockFileError for non-existent directory", () => {
-      expect(() => computeDirectoryHash(join(tempDir, "nonexistent"))).toThrow(LockFileError);
+    it("roots the tree at the package directory, whatever manifest lies above it", async () => {
+      writeFileSync(join(tempDir, "METHODS.toml"), "[package]\n");
+      const sub = join(tempDir, "sub");
+      mkdirSync(sub);
+      writeFileSync(join(sub, "a.txt"), "a");
+      expect(await computePackageDigest(sub)).toBe(`sha256:${sha256(`${sha256("a")}  a.txt\n`)}`);
     });
 
-    it("handles nested directories", () => {
-      mkdirSync(join(tempDir, "sub"));
-      writeFileSync(join(tempDir, "sub", "nested.txt"), "deep");
-      const hash = computeDirectoryHash(tempDir);
-      expect(hash).toMatch(/^sha256:/);
+    it("raises a tree the standard refuses as a LockFileError, never a MethodTreeError", async () => {
+      writeFileSync(join(tempDir, "main.mthds"), 'domain = "x"\n');
+      symlinkSync("main.mthds", join(tempDir, "link.mthds"));
+      const err = await computePackageDigest(tempDir).catch((caught: unknown) => caught);
+      expect(err).toBeInstanceOf(LockFileError);
+      expect(err).not.toBeInstanceOf(MethodTreeError);
+      expect((err as Error).message).toContain("link.mthds");
+    });
+
+    it("throws LockFileError for non-existent directory", async () => {
+      await expect(computePackageDigest(join(tempDir, "nonexistent"))).rejects.toThrow(
+        LockFileError,
+      );
     });
   });
 
@@ -81,13 +95,13 @@ describe("lock-file", () => {
       const content = `
 ["github.com/org/repo"]
 version = "1.0.0"
-hash = "sha256:${"a".repeat(64)}"
+digest = "sha256:${"a".repeat(64)}"
 source = "https://github.com/org/repo"
 `;
       const lock = parseLockFile(content);
       expect(lock.packages["github.com/org/repo"]).toEqual({
         version: "1.0.0",
-        hash: `sha256:${"a".repeat(64)}`,
+        digest: `sha256:${"a".repeat(64)}`,
         source: "https://github.com/org/repo",
       });
     });
@@ -96,12 +110,12 @@ source = "https://github.com/org/repo"
       const content = `
 ["github.com/org/a"]
 version = "1.0.0"
-hash = "sha256:${"a".repeat(64)}"
+digest = "sha256:${"a".repeat(64)}"
 source = "https://github.com/org/a"
 
 ["github.com/org/b"]
 version = "2.0.0"
-hash = "sha256:${"b".repeat(64)}"
+digest = "sha256:${"b".repeat(64)}"
 source = "https://github.com/org/b"
 `;
       const lock = parseLockFile(content);
@@ -112,11 +126,34 @@ source = "https://github.com/org/b"
       expect(() => parseLockFile("not [[ valid toml")).toThrow(LockFileError);
     });
 
-    it("throws LockFileError for invalid hash", () => {
+    it("throws LockFileError for invalid digest", () => {
       const content = `
 ["github.com/org/repo"]
 version = "1.0.0"
-hash = "md5:invalid"
+digest = "md5:invalid"
+source = "https://github.com/org/repo"
+`;
+      expect(() => parseLockFile(content)).toThrow(LockFileError);
+    });
+
+    it("refuses a lock written before tree digests, saying how to regenerate it", () => {
+      const content = `
+["github.com/org/repo"]
+version = "1.0.0"
+hash = "sha256:${"a".repeat(64)}"
+source = "https://github.com/org/repo"
+`;
+      expect(() => parseLockFile(content)).toThrow(
+        /predates tree digests .*run 'lock' to regenerate it/,
+      );
+    });
+
+    it("refuses an entry carrying a hash beside its digest", () => {
+      const content = `
+["github.com/org/repo"]
+version = "1.0.0"
+digest = "sha256:${"a".repeat(64)}"
+hash = "sha256:${"a".repeat(64)}"
 source = "https://github.com/org/repo"
 `;
       expect(() => parseLockFile(content)).toThrow(LockFileError);
@@ -126,7 +163,7 @@ source = "https://github.com/org/repo"
       const content = `
 ["github.com/org/repo"]
 version = "not-semver"
-hash = "sha256:${"a".repeat(64)}"
+digest = "sha256:${"a".repeat(64)}"
 source = "https://github.com/org/repo"
 `;
       expect(() => parseLockFile(content)).toThrow(LockFileError);
@@ -136,7 +173,7 @@ source = "https://github.com/org/repo"
       const content = `
 ["github.com/org/repo"]
 version = "1.0.0"
-hash = "sha256:${"a".repeat(64)}"
+digest = "sha256:${"a".repeat(64)}"
 source = "http://github.com/org/repo"
 `;
       expect(() => parseLockFile(content)).toThrow(LockFileError);
@@ -154,12 +191,12 @@ source = "http://github.com/org/repo"
         packages: {
           "github.com/org/z": {
             version: "1.0.0",
-            hash: `sha256:${"a".repeat(64)}`,
+            digest: `sha256:${"a".repeat(64)}`,
             source: "https://github.com/org/z",
           },
           "github.com/org/a": {
             version: "2.0.0",
-            hash: `sha256:${"b".repeat(64)}`,
+            digest: `sha256:${"b".repeat(64)}`,
             source: "https://github.com/org/a",
           },
         },
@@ -174,7 +211,7 @@ source = "http://github.com/org/repo"
       const content = `
 ["github.com/org/repo"]
 version = "1.0.0"
-hash = "sha256:${"a".repeat(64)}"
+digest = "sha256:${"a".repeat(64)}"
 source = "https://github.com/org/repo"
 `;
       const first = parseLockFile(content);
@@ -185,7 +222,7 @@ source = "https://github.com/org/repo"
   });
 
   describe("generateLockFile", () => {
-    it("generates lock entries for remote dependencies", () => {
+    it("generates lock entries for remote dependencies", async () => {
       writeFileSync(join(tempDir, "file.txt"), "content");
 
       const resolvedDeps = [
@@ -203,14 +240,14 @@ source = "https://github.com/org/repo"
         },
       ];
 
-      const lock = generateLockFile(resolvedDeps);
+      const lock = await generateLockFile(resolvedDeps);
       expect(lock.packages["github.com/org/dep"]).toBeDefined();
       expect(lock.packages["github.com/org/dep"]!.version).toBe("1.0.0");
-      expect(lock.packages["github.com/org/dep"]!.hash).toMatch(/^sha256:/);
+      expect(lock.packages["github.com/org/dep"]!.digest).toMatch(/^sha256:[0-9a-f]{64}$/);
       expect(lock.packages["github.com/org/dep"]!.source).toBe("https://github.com/org/dep");
     });
 
-    it("throws LockFileError for remote dep without manifest", () => {
+    it("throws LockFileError for remote dep without manifest", async () => {
       const resolvedDeps = [
         {
           alias: "dep",
@@ -220,20 +257,55 @@ source = "https://github.com/org/repo"
         },
       ];
 
-      expect(() => generateLockFile(resolvedDeps)).toThrow(LockFileError);
+      await expect(generateLockFile(resolvedDeps)).rejects.toThrow(LockFileError);
     });
   });
 
   describe("verifyLockedPackage", () => {
-    it("throws IntegrityError when cached package is missing", () => {
+    it("throws IntegrityError when cached package is missing", async () => {
       const locked = {
         version: "1.0.0",
-        hash: `sha256:${"a".repeat(64)}`,
+        digest: `sha256:${"a".repeat(64)}`,
         source: "https://github.com/org/repo",
       };
-      expect(() => verifyLockedPackage(locked, "github.com/org/repo", tempDir)).toThrow(
+      await expect(verifyLockedPackage(locked, "github.com/org/repo", tempDir)).rejects.toThrow(
         IntegrityError,
       );
+    });
+
+    it("accepts a cached package whose tree has the locked digest, and refuses one changed", async () => {
+      const cached = join(tempDir, "github.com", "org", "repo", "1.0.0");
+      mkdirSync(cached, { recursive: true });
+      writeFileSync(join(cached, "main.mthds"), 'domain = "x"\n');
+      const locked = {
+        version: "1.0.0",
+        digest: await computePackageDigest(cached),
+        source: "https://github.com/org/repo",
+      };
+      await expect(
+        verifyLockedPackage(locked, "github.com/org/repo", tempDir),
+      ).resolves.toBeUndefined();
+      writeFileSync(join(cached, "main.mthds"), 'domain = "y"\n');
+      await expect(verifyLockedPackage(locked, "github.com/org/repo", tempDir)).rejects.toThrow(
+        IntegrityError,
+      );
+    });
+
+    it("raises a cached package whose tree the standard refuses as an IntegrityError", async () => {
+      const cached = join(tempDir, "github.com", "org", "repo", "1.0.0");
+      mkdirSync(cached, { recursive: true });
+      writeFileSync(join(cached, "main.mthds"), 'domain = "x"\n');
+      const locked = {
+        version: "1.0.0",
+        digest: await computePackageDigest(cached),
+        source: "https://github.com/org/repo",
+      };
+      symlinkSync("main.mthds", join(cached, "link.mthds"));
+      const err = await verifyLockedPackage(locked, "github.com/org/repo", tempDir).catch(
+        (caught: unknown) => caught,
+      );
+      expect(err).toBeInstanceOf(IntegrityError);
+      expect(err).not.toBeInstanceOf(MethodTreeError);
     });
   });
 });

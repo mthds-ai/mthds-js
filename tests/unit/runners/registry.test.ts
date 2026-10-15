@@ -14,7 +14,6 @@ vi.mock("../../../src/config/config.js", async (importOriginal) => {
       runner: "api",
       baseUrl: "https://api.pipelex.com",
       apiKey: "",
-      telemetry: true,
     })),
     getConfigValue: vi.fn(() => ({ value: "https://api.pipelex.com", source: "default" })),
     findLegacyUrlKey: vi.fn(() => undefined),
@@ -52,7 +51,6 @@ describe("createRunner", () => {
       runner: "pipelex",
       baseUrl: "https://api.pipelex.com",
       apiKey: "",
-      telemetry: true,
       autoUpgrade: false,
       updateCheck: true,
     });
@@ -67,7 +65,6 @@ describe("createRunner", () => {
       runner: "api",
       baseUrl: "https://api.pipelex.com",
       apiKey: "test-key",
-      telemetry: true,
       autoUpgrade: false,
       updateCheck: true,
     });
@@ -113,7 +110,6 @@ describe("createRunner caller identity (client-identification spec)", () => {
       runner: "api",
       baseUrl: "https://api.pipelex.com",
       apiKey: "k",
-      telemetry: true,
       autoUpgrade: false,
       updateCheck: true,
     });

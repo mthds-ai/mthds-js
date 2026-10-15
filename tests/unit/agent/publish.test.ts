@@ -16,9 +16,15 @@ vi.mock("../../../src/installer/resolver/local.js", () => ({
 
 vi.mock("../../../src/installer/telemetry/posthog.js", () => ({
   trackPublish: vi.fn(),
-  publishBlockedByTelemetry: vi.fn().mockReturnValue(undefined),
   shutdown: vi.fn().mockResolvedValue(undefined),
 }));
+
+// The route is faked at the client's request function; reading its answers stays real.
+vi.mock("../../../src/installer/registry/client.js", async (importOriginal) => {
+  const original =
+    await importOriginal<typeof import("../../../src/installer/registry/client.js")>();
+  return { ...original, registerMethods: vi.fn(), resolveHubUrl: vi.fn() };
+});
 
 class AgentErrorThrow extends Error {
   constructor(
@@ -49,20 +55,22 @@ vi.mock("../../../src/agent/output.js", () => ({
 import { parseAddress } from "../../../src/installer/resolver/address.js";
 import { resolveFromGitHub } from "../../../src/installer/resolver/github.js";
 import { resolveFromLocal } from "../../../src/installer/resolver/local.js";
-import {
-  trackPublish,
-  publishBlockedByTelemetry,
-  shutdown,
-} from "../../../src/installer/telemetry/posthog.js";
+import { trackPublish, shutdown } from "../../../src/installer/telemetry/posthog.js";
+import { registerMethods, resolveHubUrl } from "../../../src/installer/registry/client.js";
+import type {
+  MethodRegistration,
+  RegistrationAnswer,
+} from "../../../src/installer/registry/client.js";
 import { agentSuccess, agentError } from "../../../src/agent/output.js";
-import { agentPublish } from "../../../src/agent/commands/publish.js";
+import { agentPublish, LOCAL_PUBLISH_MESSAGE } from "../../../src/agent/commands/publish.js";
 import type { ResolvedRepo } from "../../../src/package/manifest/types.js";
 
 const mockedParseAddress = vi.mocked(parseAddress);
 const mockedResolveFromGitHub = vi.mocked(resolveFromGitHub);
 const mockedResolveFromLocal = vi.mocked(resolveFromLocal);
 const mockedTrackPublish = vi.mocked(trackPublish);
-const mockedPublishBlockedByTelemetry = vi.mocked(publishBlockedByTelemetry);
+const mockedRegisterMethods = vi.mocked(registerMethods);
+const mockedResolveHubUrl = vi.mocked(resolveHubUrl);
 const mockedShutdown = vi.mocked(shutdown);
 const mockedAgentSuccess = vi.mocked(agentSuccess);
 const mockedAgentError = vi.mocked(agentError);
@@ -95,9 +103,54 @@ const fakeResolved: ResolvedRepo = {
   isPublic: true,
 };
 
+function acceptedAnswer(name: string, address = "Mthds-AI/contract-analysis"): RegistrationAnswer {
+  return {
+    outcome: "registered",
+    method: {
+      address,
+      name,
+      version: "1.0.0",
+      commit_sha: "8d39d1dca38a4de613c20e85fbaa05dd75024835",
+      url: `https://mthds.sh/methods/${address}/${name}`,
+    },
+    validation: "queued",
+  };
+}
+
+const refusedAnswer: RegistrationAnswer = {
+  outcome: "refused",
+  reason: "manifest_invalid",
+  message: "methods/contract-analysis/METHODS.toml cannot be registered.",
+  errors: ["[package.version] is required and must be a semantic version, such as 1.0.0."],
+};
+
+const unavailableAnswer: RegistrationAnswer = {
+  outcome: "error",
+  error: {
+    code: "upstream_unavailable",
+    message: "GitHub could not be read.",
+    retryable: true,
+  },
+};
+
+/** Make the route answer every method with `answer(name)`. */
+function routeAnswers(answer: (name: string) => RegistrationAnswer): void {
+  mockedRegisterMethods.mockImplementation(async (requests) =>
+    requests.map(
+      (request): MethodRegistration => ({ name: request.name, answer: answer(request.name) }),
+    ),
+  );
+}
+
+function givenGitHubRepo(resolved: ResolvedRepo = fakeResolved): void {
+  mockedParseAddress.mockReturnValue({ org: "mthds-ai", repo: "contract-analysis", subpath: null });
+  mockedResolveFromGitHub.mockResolvedValue(resolved);
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
-  mockedPublishBlockedByTelemetry.mockReturnValue(undefined);
+  mockedResolveHubUrl.mockReturnValue({ ok: true, url: "https://mthds.sh" });
+  routeAnswers((name) => acceptedAnswer(name));
 });
 
 describe("agentPublish", () => {
@@ -123,82 +176,147 @@ describe("agentPublish", () => {
     );
   });
 
-  it("publishes from GitHub and tracks telemetry for public repos", async () => {
-    mockedParseAddress.mockReturnValue({
-      org: "mthds-ai",
-      repo: "contract-analysis",
-      subpath: null,
-    });
-    mockedResolveFromGitHub.mockResolvedValue(fakeResolved);
+  it("publishes through the registry route, one request per method, and reports its answers", async () => {
+    givenGitHubRepo();
 
     await agentPublish("mthds-ai/contract-analysis", {});
 
-    expect(mockedTrackPublish).toHaveBeenCalledWith(fakeMethod, "mthds-ai/contract-analysis");
-    expect(mockedShutdown).toHaveBeenCalled();
-    expect(mockedAgentSuccess).toHaveBeenCalledWith(
-      expect.objectContaining({
-        success: true,
-        published_methods: ["contract-analysis"],
-        address: "mthds-ai/contract-analysis",
-      }),
+    expect(mockedRegisterMethods).toHaveBeenCalledWith(
+      [{ address: "mthds-ai/contract-analysis", name: "contract-analysis" }],
+      expect.objectContaining({ hubUrl: "https://mthds.sh" }),
     );
+    expect(mockedAgentSuccess).toHaveBeenCalledWith({
+      success: true,
+      published_methods: ["contract-analysis"],
+      address: "mthds-ai/contract-analysis",
+      skipped_methods: [],
+      registrations: [{ name: "contract-analysis", ...acceptedAnswer("contract-analysis") }],
+    });
   });
 
-  it("refuses a public repository while telemetry is off, instead of reporting success", async () => {
-    mockedParseAddress.mockReturnValue({
-      org: "mthds-ai",
-      repo: "contract-analysis",
-      subpath: null,
-    });
-    mockedResolveFromGitHub.mockResolvedValue(fakeResolved);
-    mockedPublishBlockedByTelemetry.mockReturnValue(
-      "Nothing was published: telemetry is off (DO_NOT_TRACK is set).",
-    );
+  it("counts a publish under the address mthds.sh lists the method under", async () => {
+    givenGitHubRepo();
+
+    await agentPublish("mthds-ai/contract-analysis", {});
+
+    expect(mockedTrackPublish).toHaveBeenCalledWith(fakeMethod, "Mthds-AI/contract-analysis");
+    expect(mockedShutdown).toHaveBeenCalled();
+  });
+
+  it("fails, method by method, when the route listed nothing", async () => {
+    givenGitHubRepo();
+    routeAnswers(() => refusedAnswer);
 
     await expect(agentPublish("mthds-ai/contract-analysis", {})).rejects.toThrow(AgentErrorThrow);
 
-    expect(mockedAgentError).toHaveBeenCalledWith(
-      "Nothing was published: telemetry is off (DO_NOT_TRACK is set).",
-      "PublishError",
-      { error_domain: "install", skipped_methods: [] },
-    );
+    const [message, errorType, extras] = mockedAgentError.mock.calls[0]!;
+    expect(errorType).toBe("PublishError");
+    expect(message).toMatch(/^Nothing was published/);
+    expect(message).toContain("manifest_invalid");
+    expect(message).toContain("[package.version] is required");
+    expect(extras).toMatchObject({
+      error_domain: "install",
+      skipped_methods: [],
+      registrations: [{ name: "contract-analysis", ...refusedAnswer }],
+    });
+    expect(extras).not.toHaveProperty("retryable", true);
     expect(mockedTrackPublish).not.toHaveBeenCalled();
     expect(mockedAgentSuccess).not.toHaveBeenCalled();
   });
 
-  it("does not consult telemetry for a local source, which never sends", async () => {
+  it("says a failure is retryable when every method failed in a way a retry can fix", async () => {
+    givenGitHubRepo();
+    routeAnswers(() => unavailableAnswer);
+
+    await expect(agentPublish("mthds-ai/contract-analysis", {})).rejects.toThrow(AgentErrorThrow);
+
+    expect(mockedAgentError.mock.calls[0]![2]).toMatchObject({ retryable: true });
+  });
+
+  it("names only the methods the route listed when some were refused", async () => {
+    givenGitHubRepo({
+      ...fakeResolved,
+      methods: [
+        fakeMethod,
+        {
+          ...fakeMethod,
+          name: "other-method",
+          manifest: {
+            ...fakeMethod.manifest,
+            package: { ...fakeMethod.manifest.package, name: "other-method" },
+          },
+        },
+      ],
+    });
+    routeAnswers((name) => (name === "other-method" ? refusedAnswer : acceptedAnswer(name)));
+
+    await agentPublish("mthds-ai/contract-analysis", {});
+
+    const envelope = mockedAgentSuccess.mock.calls[0]![0];
+    expect(envelope.published_methods).toEqual(["contract-analysis"]);
+    expect(
+      (envelope.registrations as Array<{ name: string; outcome: string }>).map((r) => [
+        r.name,
+        r.outcome,
+      ]),
+    ).toEqual([
+      ["contract-analysis", "registered"],
+      ["other-method", "refused"],
+    ]);
+    expect(mockedTrackPublish).toHaveBeenCalledTimes(1);
+  });
+
+  it("refuses a private repository without asking the hub", async () => {
+    givenGitHubRepo({ ...fakeResolved, isPublic: false });
+
+    await expect(agentPublish("mthds-ai/contract-analysis", {})).rejects.toThrow(AgentErrorThrow);
+
+    const [message, , extras] = mockedAgentError.mock.calls[0]!;
+    expect(message).toContain("is a private repository");
+    expect(extras).toMatchObject({ skipped_methods: [] });
+    expect(mockedRegisterMethods).not.toHaveBeenCalled();
+    expect(mockedTrackPublish).not.toHaveBeenCalled();
+  });
+
+  it("refuses a subdirectory address before reading the repository", async () => {
+    mockedParseAddress.mockReturnValue({ org: "mthds-ai", repo: "tools", subpath: "sub/dir" });
+
+    await expect(agentPublish("mthds-ai/tools/sub/dir", {})).rejects.toThrow(AgentErrorThrow);
+
+    const [message, , extras] = mockedAgentError.mock.calls[0]!;
+    expect(message).toContain("names a subdirectory");
+    expect(extras).not.toHaveProperty("skipped_methods");
+    expect(mockedResolveFromGitHub).not.toHaveBeenCalled();
+  });
+
+  it("refuses a hub override that is not a loopback origin", async () => {
+    givenGitHubRepo();
+    mockedResolveHubUrl.mockReturnValue({
+      ok: false,
+      message: "MTHDS_HUB_URL is set to something else.",
+    });
+
+    await expect(agentPublish("mthds-ai/contract-analysis", {})).rejects.toThrow(AgentErrorThrow);
+
+    expect(mockedAgentError.mock.calls[0]![2]).toMatchObject({ error_domain: "config" });
+    expect(mockedRegisterMethods).not.toHaveBeenCalled();
+  });
+
+  it("registers nothing from a local directory, and says so", async () => {
     mockedResolveFromLocal.mockReturnValue({ ...fakeResolved, source: "local", isPublic: false });
-    mockedPublishBlockedByTelemetry.mockReturnValue("telemetry is off");
 
     await agentPublish(undefined, { local: "/some/path" });
 
-    expect(mockedPublishBlockedByTelemetry).not.toHaveBeenCalled();
-    expect(mockedAgentSuccess).toHaveBeenCalled();
-  });
-
-  it("does not track telemetry for private repos", async () => {
-    mockedParseAddress.mockReturnValue({ org: "org", repo: "repo", subpath: null });
-    mockedResolveFromGitHub.mockResolvedValue({
-      ...fakeResolved,
-      isPublic: false,
-    });
-
-    await agentPublish("org/repo", {});
-
+    expect(mockedRegisterMethods).not.toHaveBeenCalled();
     expect(mockedTrackPublish).not.toHaveBeenCalled();
-    expect(mockedAgentSuccess).toHaveBeenCalled();
-  });
-
-  it("does not track telemetry for local sources", async () => {
-    mockedResolveFromLocal.mockReturnValue({
-      ...fakeResolved,
-      source: "local",
+    expect(mockedAgentSuccess).toHaveBeenCalledWith({
+      success: true,
+      published_methods: ["contract-analysis"],
+      address: "mthds-ai/contract-analysis",
+      skipped_methods: [],
+      registrations: [],
+      message: LOCAL_PUBLISH_MESSAGE,
     });
-
-    await agentPublish(undefined, { local: "/some/path" });
-
-    expect(mockedTrackPublish).not.toHaveBeenCalled();
-    expect(mockedAgentSuccess).toHaveBeenCalled();
   });
 
   it("does not include share_urls in output", async () => {
@@ -271,7 +389,8 @@ describe("agentPublish", () => {
 
     await agentPublish("org/repo", {});
 
-    // Only telemetry + success — no file system or runner calls
+    // Only the route, the publish count and the envelope — no file system or runner calls
+    expect(mockedRegisterMethods).toHaveBeenCalledTimes(1);
     expect(mockedTrackPublish).toHaveBeenCalledTimes(1);
     expect(mockedShutdown).toHaveBeenCalledTimes(1);
     expect(mockedAgentSuccess).toHaveBeenCalledTimes(1);

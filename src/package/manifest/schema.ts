@@ -49,7 +49,7 @@ export const RESERVED_DOMAINS: ReadonlySet<string> = new Set(["native", "mthds",
  * (`satisfiesMthdsStandardVersion` below) and what `mthds package init` writes as
  * the floor of a new package's constraint.
  */
-export const MTHDS_STANDARD_VERSION = "4.0.0";
+export const MTHDS_STANDARD_VERSION = "7.0.0";
 
 // ---------------------------------------------------------------------------
 // Standalone validation helpers (used outside the parser too)
@@ -138,6 +138,7 @@ export const PackageSectionSchema = z
     license: z.string().optional(),
     mthds_version: z.string().optional(),
     main_pipe: z.string().optional(),
+    exclude: z.array(z.string()).optional(),
   })
   .strict();
 
@@ -179,5 +180,10 @@ export interface ParsedManifest {
   readonly license?: string;
   readonly mthdsVersion?: string;
   readonly mainPipe?: string;
+  /** `[package] exclude`: patterns in `.gitignore` syntax keeping files out of the method tree. */
+  readonly exclude?: string[];
   readonly exports: Record<string, DomainExports>;
 }
+
+// One rule for the manifest's reader and the method tree's lister, which reads the patterns too.
+export { isValidExcludePattern } from "../../method-tree/membership.js";

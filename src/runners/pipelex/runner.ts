@@ -16,7 +16,7 @@ import type {
   ValidationResult,
   VersionInfo,
 } from "../../protocol/models.js";
-import { MODEL_CATEGORIES, MTHDS_PROTOCOL_VERSION } from "../../protocol/models.js";
+import { MODEL_CATEGORIES } from "../../protocol/models.js";
 import type { DictPipeOutput, DictRunResultExecute } from "../api/models.js";
 
 const execFileAsync = promisify(execFile);
@@ -66,12 +66,56 @@ export interface PipelexRunFlags {
   hosted?: boolean;
 }
 
+/** How a `PipelexRunner` starts the `pipelex` and `pipelex-agent` processes it runs. */
+export interface PipelexRunnerOptions {
+  /**
+   * Their environment; this process's when absent. `mthds-agent` passes its own plus
+   * `PIPELEX_USAGE_STATS_HOST=mthds-agent`, so their usage statistics say that it ran them.
+   */
+  env?: NodeJS.ProcessEnv;
+}
+
+/**
+ * The numbers `pipelex --version` reports, one `<label> <version>` line each since pipelex 0.57.0:
+ * `pipelex <version>`, `mthds-protocol <version>` and `mthds-standard <version>`. The protocol
+ * version is the one the installed pipelex speaks, which need not be the one this package follows,
+ * so it is read from pipelex rather than restated. A pipelex that prints no protocol line is older
+ * than the handshake and cannot say which protocol it speaks, so its version is refused.
+ */
+export function parsePipelexVersionReport(stdout: string): {
+  pipelexVersion: string;
+  protocolVersion: string;
+} {
+  const lines = stdout
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line !== "");
+  const labelled = (label: string): string | undefined => {
+    for (const line of lines) {
+      const [first, second, ...rest] = line.split(/\s+/);
+      if (first === label && second !== undefined && rest.length === 0) return second;
+    }
+    return undefined;
+  };
+  // The first line was the version alone before pipelex named itself on it.
+  const pipelexVersion = labelled("pipelex") ?? lines[0]?.split(/\s+/).pop() ?? "";
+  const protocolVersion = labelled("mthds-protocol");
+  if (protocolVersion === undefined) {
+    throw new Error(
+      `pipelex ${pipelexVersion} does not report the MTHDS Protocol version it speaks; upgrade pipelex to 0.57.0 or later.`,
+    );
+  }
+  return { pipelexVersion, protocolVersion };
+}
+
 export class PipelexRunner implements Runner {
   readonly type: RunnerType = Runners.PIPELEX;
   private readonly libraryDirs: string[];
+  private readonly env: NodeJS.ProcessEnv | undefined;
 
-  constructor(libraryDirs?: string[]) {
+  constructor(libraryDirs?: string[], options: PipelexRunnerOptions = {}) {
     this.libraryDirs = libraryDirs ?? [];
+    this.env = options.env;
   }
 
   private libraryArgs(): string[] {
@@ -81,6 +125,7 @@ export class PipelexRunner implements Runner {
   private async exec(args: string[]): Promise<{ stdout: string; stderr: string }> {
     return execFileAsync("pipelex", [...args, ...this.libraryArgs()], {
       encoding: "utf-8",
+      env: this.env,
     });
   }
 
@@ -92,6 +137,7 @@ export class PipelexRunner implements Runner {
     return new Promise<void>((resolve, reject) => {
       const child = spawn("pipelex", [...args, ...this.libraryArgs()], {
         stdio: [inheritStdin ? "inherit" : "ignore", "inherit", "inherit"],
+        env: this.env,
       });
       child.on("error", (err) => reject(new Error(`pipelex not found: ${err.message}`)));
       child.on("close", (code) => {
@@ -134,9 +180,9 @@ export class PipelexRunner implements Runner {
 
   async version(): Promise<VersionInfo> {
     const { stdout } = await this.exec(["--version"]);
-    const pipelexVersion = stdout.trim();
+    const { pipelexVersion, protocolVersion } = parsePipelexVersionReport(stdout);
     return {
-      protocol_version: MTHDS_PROTOCOL_VERSION,
+      protocol_version: protocolVersion,
       runner_version: pipelexVersion,
       // Implementation identity rides the protocol's extension-open VersionInfo.
       implementation: "pipelex",
@@ -160,6 +206,7 @@ export class PipelexRunner implements Runner {
     const args = ["check-model", request.reference, "--type", request.type, "--format", "json"];
     const { stdout } = await execFileAsync("pipelex-agent", args, {
       encoding: "utf-8",
+      env: this.env,
     });
     return JSON.parse(stdout) as CheckModelResponse;
   }
@@ -173,6 +220,7 @@ export class PipelexRunner implements Runner {
     args.push("--format", "json");
     const { stdout } = await execFileAsync("pipelex-agent", args, {
       encoding: "utf-8",
+      env: this.env,
     });
     return toModelDeck(JSON.parse(stdout));
   }

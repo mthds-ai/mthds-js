@@ -1,0 +1,6 @@
+{
+  "source": "conformance/tests/method_tree/fixtures/method-tree-corpus.json",
+  "conformance_commit": "d0aa7d361418a2d5e4059a0676f381167a3b9167",
+  "uncommitted_changes_at_copy": false,
+  "sha256": "88d082f2a1203e72685d0c0571581412991ea58aef90faf15c0a8d9c9ff58c8d"
+}

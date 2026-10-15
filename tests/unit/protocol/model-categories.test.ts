@@ -4,7 +4,7 @@ import type { ModelCategory, ModelDeck, ModelInfo } from "../../../src/protocol/
 import { MthdsApiClient } from "../../../src/runners/api/client.js";
 
 /**
- * The protocol's model categories, as MTHDS Protocol 0.7.0 states them
+ * The protocol's model categories, as the MTHDS Protocol states them from 0.7.0 on
  * (`mthds/docs/spec/protocol.md`, "Discovery"): a category is a settings family
  * of the language, `judgment` is the fifth, and a client reading a model list
  * MUST NOT fail it because an entry carries a category it does not recognize; it
@@ -50,8 +50,8 @@ describe("MODEL_CATEGORIES", () => {
 });
 
 describe("MTHDS_PROTOCOL_VERSION", () => {
-  it("is the protocol release that defines the judgment category", () => {
-    expect(MTHDS_PROTOCOL_VERSION).toBe("0.7.0");
+  it("is the protocol release this package follows, which keeps the judgment category", () => {
+    expect(MTHDS_PROTOCOL_VERSION).toBe("1.0.0");
   });
 });
 

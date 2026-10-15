@@ -35,6 +35,17 @@ export { assertExclusiveRunSources, hasBundlePayload } from "./options.js";
 export type { MethodFile } from "./method_files.js";
 export { serializeMethodFiles, parseMethodFiles } from "./method_files.js";
 
+// ── File entries (a method tree as it travels) ───────────────────────
+// The wire form of a tree, `MethodFiles`; types only. Listing a tree and
+// reading a map as a receiver does need Node and live in `src/method-tree/`.
+export type {
+  TextFileEntry,
+  Base64FileEntry,
+  HashFileEntry,
+  FileEntry,
+  MethodFiles,
+} from "./file_entries.js";
+
 // ── Wire models ──────────────────────────────────────────────────────
 export { MTHDS_PROTOCOL_VERSION, MODEL_CATEGORIES } from "./models.js";
 export type {

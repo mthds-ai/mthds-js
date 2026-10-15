@@ -1,15 +1,13 @@
-import { createHash } from "node:crypto";
-import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
-import { join, relative, posix, sep } from "node:path";
+import { existsSync, statSync } from "node:fs";
 import { parse, stringify } from "smol-toml";
+import { TREE_DIGEST_PATTERN } from "../method-tree/digest.js";
+import { MethodTreeError } from "../method-tree/exceptions.js";
+import { listMethodTree } from "../method-tree/lister.js";
 import { IntegrityError, LockFileError } from "./exceptions.js";
 import { isValidSemver, type ParsedManifest } from "./manifest/schema.js";
 import { getCachedPackagePath } from "./package-cache.js";
 
 export const LOCK_FILENAME = "methods.lock";
-export const HASH_PREFIX = "sha256:";
-
-const HASH_PATTERN = /^sha256:[0-9a-f]{64}$/;
 
 // ---------------------------------------------------------------------------
 // Models
@@ -17,7 +15,8 @@ const HASH_PATTERN = /^sha256:[0-9a-f]{64}$/;
 
 export interface LockedPackage {
   readonly version: string;
-  readonly hash: string;
+  /** The tree digest of the package's tree (mthds/docs/spec/method-tree.md, "The Tree Digest"). */
+  readonly digest: string;
   readonly source: string;
 }
 
@@ -26,54 +25,36 @@ export interface LockFile {
 }
 
 // ---------------------------------------------------------------------------
-// Hash computation
+// Tree digest
 // ---------------------------------------------------------------------------
 
-function collectFilesRecursive(dir: string, baseDir: string, result: string[]): void {
-  const entries = readdirSync(dir, { withFileTypes: true });
-  for (const entry of entries) {
-    const fullPath = join(dir, entry.name);
-    const relPath = relative(baseDir, fullPath);
-    const posixRelPath = relPath.split(sep).join(posix.sep);
-
-    // Skip .git
-    if (posixRelPath.split(posix.sep).includes(".git")) continue;
-
-    if (entry.isFile()) {
-      result.push(fullPath);
-    } else if (entry.isDirectory()) {
-      collectFilesRecursive(fullPath, baseDir, result);
-    }
-  }
+/**
+ * The tree digest of the package rooted at `directory`: its method tree, listed under the
+ * membership rule with the directory as its root, whatever lies above it.
+ */
+export async function computePackageDigest(directory: string): Promise<string> {
+  return packageDigest(directory, (message) => new LockFileError(message));
 }
 
 /**
- * Compute a deterministic SHA-256 hash of a directory's contents.
- * Sorts by POSIX-normalized relative path for cross-platform determinism.
+ * The tree digest of the package at `directory`, a refused tree raised as the error the caller's
+ * path raises, so a `MethodTreeError` never escapes the package errors.
  */
-export function computeDirectoryHash(directory: string): string {
+async function packageDigest(
+  directory: string,
+  toError: (message: string) => LockFileError | IntegrityError,
+): Promise<string> {
   if (!existsSync(directory) || !statSync(directory).isDirectory()) {
-    throw new LockFileError(`Directory '${directory}' does not exist or is not a directory`);
+    throw toError(`Directory '${directory}' does not exist or is not a directory`);
   }
-
-  const hasher = createHash("sha256");
-  const filePaths: string[] = [];
-  collectFilesRecursive(directory, directory, filePaths);
-
-  // Sort by POSIX relative path
-  filePaths.sort((a, b) => {
-    const relA = relative(directory, a).split(sep).join(posix.sep);
-    const relB = relative(directory, b).split(sep).join(posix.sep);
-    return relA < relB ? -1 : relA > relB ? 1 : 0;
-  });
-
-  for (const filePath of filePaths) {
-    const relativePosix = relative(directory, filePath).split(sep).join(posix.sep);
-    hasher.update(relativePosix, "utf-8");
-    hasher.update(readFileSync(filePath));
+  try {
+    return (await listMethodTree(directory, { discover: false })).digest;
+  } catch (err) {
+    if (err instanceof MethodTreeError) {
+      throw toError(`Cannot compute the tree digest of '${directory}': ${err.message}`);
+    }
+    throw err;
   }
-
-  return `${HASH_PREFIX}${hasher.digest("hex")}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -81,14 +62,23 @@ export function computeDirectoryHash(directory: string): string {
 // ---------------------------------------------------------------------------
 
 function validateLockedPackage(address: string, entry: Record<string, unknown>): LockedPackage {
+  // A lock written before standard 7.0.0 records a `hash`, computed by an algorithm two different
+  // directories could share; it is refused, never verified (mthds/docs/spec/lock-format.md). The
+  // message names `lock` as the standard does: this package has no lock command of its own.
+  if ("hash" in entry) {
+    throw new LockFileError(
+      `The lock entry for '${address}' records a 'hash', so this lock predates tree digests (MTHDS standard 7.0.0) and cannot be verified; run 'lock' to regenerate it.`,
+    );
+  }
+
   const version = entry["version"];
   if (typeof version !== "string" || !isValidSemver(version)) {
     throw new LockFileError(`Invalid version '${version}' for '${address}' in lock file`);
   }
 
-  const hash = entry["hash"];
-  if (typeof hash !== "string" || !HASH_PATTERN.test(hash)) {
-    throw new LockFileError(`Invalid hash for '${address}' in lock file`);
+  const digest = entry["digest"];
+  if (typeof digest !== "string" || !TREE_DIGEST_PATTERN.test(digest)) {
+    throw new LockFileError(`Invalid digest for '${address}' in lock file`);
   }
 
   const source = entry["source"];
@@ -96,7 +86,7 @@ function validateLockedPackage(address: string, entry: Record<string, unknown>):
     throw new LockFileError(`Invalid source '${source}' for '${address}' in lock file`);
   }
 
-  return { version, hash, source };
+  return { version, digest, source };
 }
 
 export function parseLockFile(content: string): LockFile {
@@ -130,7 +120,7 @@ export function serializeLockFile(lockFile: LockFile): string {
     const locked = lockFile.packages[address]!;
     doc[address] = {
       version: locked.version,
-      hash: locked.hash,
+      digest: locked.digest,
       source: locked.source,
     };
   }
@@ -148,7 +138,7 @@ export interface ResolvedDepForLock {
   readonly packageRoot: string;
 }
 
-export function generateLockFile(resolvedDeps: ResolvedDepForLock[]): LockFile {
+export async function generateLockFile(resolvedDeps: ResolvedDepForLock[]): Promise<LockFile> {
   const packages: Record<string, LockedPackage> = {};
 
   for (const resolved of resolvedDeps) {
@@ -160,10 +150,10 @@ export function generateLockFile(resolvedDeps: ResolvedDepForLock[]): LockFile {
 
     const address = resolved.address;
     const version = resolved.manifest.version;
-    const hash = computeDirectoryHash(resolved.packageRoot);
+    const digest = await computePackageDigest(resolved.packageRoot);
     const source = `https://${address}`;
 
-    packages[address] = { version, hash, source };
+    packages[address] = { version, digest, source };
   }
 
   return { packages };
@@ -173,11 +163,16 @@ export function generateLockFile(resolvedDeps: ResolvedDepForLock[]): LockFile {
 // Verification
 // ---------------------------------------------------------------------------
 
-export function verifyLockedPackage(
+/**
+ * Check a cached package against its lock entry's digest. The cache holds a copy of the fetched
+ * checkout with its `.git` removed rather than a tree written out, so its digest is that of the
+ * tree the membership rule lists from it, the same reading the lock was generated with.
+ */
+export async function verifyLockedPackage(
   locked: LockedPackage,
   address: string,
   cacheRoot?: string,
-): void {
+): Promise<void> {
   const cachedPath = getCachedPackagePath(address, locked.version, cacheRoot);
 
   if (!existsSync(cachedPath) || !statSync(cachedPath).isDirectory()) {
@@ -186,16 +181,16 @@ export function verifyLockedPackage(
     );
   }
 
-  const actualHash = computeDirectoryHash(cachedPath);
-  if (actualHash !== locked.hash) {
+  const actualDigest = await packageDigest(cachedPath, (message) => new IntegrityError(message));
+  if (actualDigest !== locked.digest) {
     throw new IntegrityError(
-      `Integrity check failed for '${address}@${locked.version}': expected ${locked.hash}, got ${actualHash}`,
+      `Integrity check failed for '${address}@${locked.version}': expected ${locked.digest}, got ${actualDigest}`,
     );
   }
 }
 
-export function verifyLockFile(lockFile: LockFile, cacheRoot?: string): void {
+export async function verifyLockFile(lockFile: LockFile, cacheRoot?: string): Promise<void> {
   for (const [address, locked] of Object.entries(lockFile.packages)) {
-    verifyLockedPackage(locked, address, cacheRoot);
+    await verifyLockedPackage(locked, address, cacheRoot);
   }
 }

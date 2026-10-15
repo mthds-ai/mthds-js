@@ -291,15 +291,26 @@ describe("PipelexRunner", () => {
   });
 
   describe("version", () => {
-    it("wraps the local pipelex version in a VersionInfo handshake", async () => {
-      execFileAsync.mockResolvedValue({ stdout: "0.32.0\n", stderr: "" });
+    it("reads the pipelex version and the protocol version pipelex speaks from its handshake", async () => {
+      execFileAsync.mockResolvedValue({
+        stdout: "pipelex 0.83.0\nmthds-protocol 0.7.0\nmthds-standard 6.0.0\n",
+        stderr: "",
+      });
 
       const info = await runner.version();
 
       expect(info.implementation).toBe("pipelex");
-      expect(info.implementation_version).toBe("0.32.0");
-      expect(info.runtime_version).toBe("0.32.0");
-      expect(info.protocol_version).toBeTruthy();
+      expect(info.implementation_version).toBe("0.83.0");
+      expect(info.runtime_version).toBe("0.83.0");
+      expect(info.runner_version).toBe("0.83.0");
+      // pipelex's own protocol version, not the one this package follows.
+      expect(info.protocol_version).toBe("0.7.0");
+    });
+
+    it("refuses a pipelex too old to report the protocol it speaks", async () => {
+      execFileAsync.mockResolvedValue({ stdout: "0.32.0\n", stderr: "" });
+
+      await expect(runner.version()).rejects.toThrow(/0\.32\.0 does not report the MTHDS Protocol/);
     });
   });
 

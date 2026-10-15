@@ -5,7 +5,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 // say that mthds-agent ran them; one started for the mthds CLI carries no host of ours.
 
 const { execFileAsync } = vi.hoisted(() => ({
-  execFileAsync: vi.fn().mockResolvedValue({ stdout: "pipelex 0.0.0\n", stderr: "" }),
+  execFileAsync: vi
+    .fn()
+    .mockResolvedValue({ stdout: "pipelex 0.0.0\nmthds-protocol 0.7.0\n", stderr: "" }),
 }));
 
 vi.mock("node:child_process", () => {
@@ -65,7 +67,7 @@ async function spawnEnvironments(
 
 beforeEach(() => {
   vi.clearAllMocks();
-  execFileAsync.mockResolvedValue({ stdout: "pipelex 0.0.0\n", stderr: "" });
+  execFileAsync.mockResolvedValue({ stdout: "pipelex 0.0.0\nmthds-protocol 0.7.0\n", stderr: "" });
 });
 
 describe("the pipelex runner's spawns", () => {

@@ -26,7 +26,7 @@
  * is the `info.version` of `mthds-protocol.openapi.yaml` and what a runner reports
  * as `protocol_version` from `GET /version`.
  */
-export const MTHDS_PROTOCOL_VERSION = "0.7.0";
+export const MTHDS_PROTOCOL_VERSION = "1.0.0";
 
 // ── Run responses (`POST /execute` 200, `POST /start` 202) ───────────
 

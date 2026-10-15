@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help install check c test t clean build rebuild run dev pack all depcruise
+.PHONY: help install check c test t clean build rebuild run dev pack all depcruise vendor-tree-corpus case-folding
 
 # Colors
 BLUE := \033[0;34m
@@ -34,6 +34,9 @@ make clean      - Remove build artifacts
 make run        - Build and run the CLI banner
 make depcruise  - Check architectural boundaries
 
+make vendor-tree-corpus - Copy the method-tree corpus from ../conformance (or CONFORMANCE=<checkout>)
+make case-folding       - Regenerate the case folding table from scripts/unicode/
+
 make pack       - Create tarball for local npx testing
 
 make c          - Shorthand -> check
@@ -64,6 +67,14 @@ depcruise:
 	$(call PRINT_TITLE,"Checking Architectural Boundaries")
 	@npm run depcruise
 	@echo "$(GREEN)✓ protocol/ boundary intact$(NC)"
+
+vendor-tree-corpus:
+	$(call PRINT_TITLE,"Vendoring the method-tree corpus")
+	@node scripts/vendor-method-tree-corpus.mjs $(CONFORMANCE)
+
+case-folding:
+	$(call PRINT_TITLE,"Generating the case folding table")
+	@node scripts/gen-case-folding.mjs
 
 check:
 	@npm run check

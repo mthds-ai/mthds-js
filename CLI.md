@@ -264,6 +264,35 @@ mthds validate bundle ./bundle.mthds --pipe my_pipe
 
 ---
 
+## Files
+
+### `mthds files`
+
+List the method tree of a directory or of a `.mthds` file: the files that travel with the method, each with its size, and the tree digest, read from the file system alone, before anything travels. The tree follows the standard's membership rule: a file belongs unless a segment of its path starts with a dot, it lies in a `__pycache__`, `node_modules`, Python virtual environment, nested repository or nested package, or a `.gitignore` file of the tree or the manifest's `[package] exclude` ignores it. A directory or a `.mthds` file is rooted at the nearest `METHODS.toml` at or above it; with none, a directory is its own root and a `.mthds` file named alone is a tree of that one file. See [docs/method-tree.md](docs/method-tree.md).
+
+```bash
+mthds files [path] [OPTIONS]
+```
+
+| Argument / Option | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `path` | string | no | `.` | Method directory or `.mthds` file |
+| `--format <format>` | string | no | `text` | `text`, or `json` for an object with `root` (`null` for a lone file with no manifest), `entry`, `files` (each `path`, `size`, `sha256`), `file_count`, `total_size` and `digest` |
+
+A tree the standard refuses, such as one holding a symbolic link, two paths differing only in case, or a `.gitignore` file that is not UTF-8, fails with exit code 1 and a message naming what to change.
+
+**Examples:**
+
+```bash
+# What the method in this directory carries
+mthds files
+
+# The tree a bundle belongs to, as JSON
+mthds files ./methods/my-method/main.mthds --format json
+```
+
+---
+
 ## Build
 
 The `build` group has one command, `build inputs`, and delegates it to a runner. With the pipelex runner, it passes its arguments through to the `pipelex build` CLI directly.

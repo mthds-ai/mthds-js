@@ -1,38 +1,19 @@
-import { existsSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
+import { findManifestDirectory } from "../method-tree/discovery.js";
+import { MANIFEST_NAME } from "../method-tree/membership.js";
 import { parseMethodsToml } from "./manifest/parser.js";
 import type { ParsedManifest } from "./manifest/schema.js";
 
-export const MANIFEST_FILENAME = "METHODS.toml";
+export const MANIFEST_FILENAME = MANIFEST_NAME;
 
 /**
- * Walk up from a bundle file's directory to find the nearest METHODS.toml.
- *
- * Stops at the first METHODS.toml found, or when a .git/ directory is
- * encountered, or at the filesystem root.
+ * Walk up from a bundle file's directory to find the nearest METHODS.toml, by Manifest Discovery:
+ * stops at the first METHODS.toml found, at a directory holding an entry named `.git` of any kind,
+ * or at the filesystem root (`src/method-tree/discovery.ts`).
  */
 export function findPackageManifest(bundlePath: string): ParsedManifest | null {
-  let current = resolve(dirname(bundlePath));
-
-  while (true) {
-    const manifestPath = join(current, MANIFEST_FILENAME);
-    if (existsSync(manifestPath)) {
-      const content = readFileSync(manifestPath, "utf-8");
-      return parseMethodsToml(content);
-    }
-
-    // Stop at .git boundary
-    const gitDir = join(current, ".git");
-    if (existsSync(gitDir)) {
-      return null;
-    }
-
-    // Stop at filesystem root
-    const parent = dirname(current);
-    if (parent === current) {
-      return null;
-    }
-
-    current = parent;
-  }
+  const directory = findManifestDirectory(resolve(dirname(bundlePath)));
+  if (directory === null) return null;
+  return parseMethodsToml(readFileSync(join(directory, MANIFEST_FILENAME), "utf-8"));
 }

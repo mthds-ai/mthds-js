@@ -35,6 +35,8 @@ src/protocol/                 PURE — the MTHDS Protocol mirror (imports nothin
                               input-form descriptor (mirror of mthds/protocol/inputs_template.py)
   toml_emitter.ts             the deterministic TOML layout the two projections share, TemplateFloat and the
                               TemplateValue shapes (mirror of mthds/protocol/toml_emitter.py)
+  file_entries.ts             TextFileEntry / Base64FileEntry / HashFileEntry, FileEntry, MethodFiles — how a
+                              method's file travels in a `files` map (types only; reading one is method-tree/'s)
   concept.ts                  ConceptAbstract (code + domain_code: a concept as a stuff names it, never its
                               definition) + conceptRef()
   stuff.ts                    StuffAbstract<TConcept, TContent>, StuffContentAbstract
@@ -53,7 +55,10 @@ src/runners/pipelex/
 src/runners/
   types.ts                    Runner interface (extends MTHDSProtocol<DictPipeOutput>) + Runners enum + pipe-io types
   registry.ts                 createRunner() factory
-src/index.ts                  public barrel → re-exports protocol/ + runners/
+src/method-tree/              the method tree, Node-side: listMethodTree + MethodTree, the membership rule with git's
+                              .gitignore matching, tree paths and case folding, the tree digest, file references,
+                              function names, reading a map of file entries — see method-tree.md
+src/index.ts                  public barrel → re-exports protocol/ + runners/ + method-tree/
 src/errors.ts                 client-safe error subpath (mthds/errors) → re-exports the exception classes only
 ```
 
@@ -63,7 +68,7 @@ The package's entry points differ in what they drag into a bundler's graph:
 
 | Import | Source | Carries | Bundles where | Use for |
 |---|---|---|---|---|
-| `mthds` | `src/index.ts` | protocol surface + `MthdsApiClient` + error classes | **server/Node** (statically pulls `MthdsApiClient → config/ → node:fs`) | the full SDK |
+| `mthds` | `src/index.ts` | protocol surface + `MthdsApiClient` + error classes + the method tree | **server/Node** (statically pulls `MthdsApiClient → config/ → node:fs`) | the full SDK |
 | `mthds/protocol` | `src/protocol/index.ts` | the pure protocol surface — types + runtime values (`PipelineRequestError`, `MTHDS_PROTOCOL_VERSION`/`MODEL_CATEGORIES`/`FIELD_KINDS`, `conceptRef`, the run-source predicates `assertExclusiveRunSources`/`hasBundlePayload`, the method-file serialization `serializeMethodFiles`/`parseMethodFiles`, the inputs-template projection `renderInputsTemplate`/`projectInputsTemplate`/`projectConceptComments`/`formatSlotSignature` with `INPUTS_TEMPLATE_FORMATS`, `TemplateFloat` and the two errors `InputsTemplateError`/`TomlEmissionError`) | isomorphic | the protocol surface, with no runner or Node deps |
 | `mthds/errors` | `src/errors.ts` | the exception classes only | **client-safe** (no `node:fs`) | `instanceof` checks in client code |
 
@@ -157,4 +162,5 @@ There is one class, not a client wrapped by a runner. `MthdsApiClient implements
 - [errors.md](./errors.md) — the full exception taxonomy (`mthds/errors`): each class, its fields, when it is thrown, and client-side classification.
 - [run-lifecycle.md](./run-lifecycle.md) — the `execute` / `start` run model these types back.
 - [api-runner.md](./api-runner.md) — pointing the client at a hosted or self-hosted runner.
+- [method-tree.md](./method-tree.md) — listing a method's files, the tree digest, file references and file entries, against the conformance corpus.
 - [client-identification.md](./client-identification.md) — the `User-Agent` every request carries, the `appInfo` option, and how the two CLIs name themselves.

@@ -1,6 +1,7 @@
 import { parse } from "smol-toml";
 import type { MethodsManifest, ExportNode, Exports } from "./types.js";
 import {
+  isValidExcludePattern,
   isValidVersionConstraint,
   METHOD_NAME_RE,
   MTHDS_STANDARD_VERSION,
@@ -206,6 +207,24 @@ export function validateManifest(raw: string): ValidationResult {
     }
   }
 
+  // package.exclude (optional) — patterns in .gitignore syntax, one per entry
+  if (pkg["exclude"] !== undefined) {
+    if (!Array.isArray(pkg["exclude"])) {
+      errors.push("[package.exclude] must be an array of strings.");
+    } else {
+      for (const pattern of pkg["exclude"] as unknown[]) {
+        if (typeof pattern !== "string") {
+          errors.push("[package.exclude] must contain only strings.");
+          break;
+        }
+        if (!isValidExcludePattern(pattern)) {
+          errors.push("[package.exclude] patterns must not hold a line break.");
+          break;
+        }
+      }
+    }
+  }
+
   // --- [exports] section (required, hierarchical) ---
   const exports = parsed["exports"] as Record<string, unknown> | undefined;
   if (!exports || typeof exports !== "object" || Object.keys(exports).length === 0) {
@@ -265,6 +284,7 @@ export function validateManifest(raw: string): ValidationResult {
       ? { mthds_version: pkg["mthds_version"] as string }
       : {}),
     ...(pkg["main_pipe"] !== undefined ? { main_pipe: pkg["main_pipe"] as string } : {}),
+    ...(pkg["exclude"] !== undefined ? { exclude: pkg["exclude"] as string[] } : {}),
   };
 
   const manifest: MethodsManifest = {

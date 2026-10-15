@@ -27,6 +27,7 @@ src/
 │   ├── config.ts                   # mthds config set|get|list
 │   ├── setup.ts                    # mthds runner setup
 │   ├── install.ts                  # mthds install (JS-only)
+│   ├── files.ts                    # mthds files: a method tree, its sizes and digest
 │   └── package/stubs.ts            # mthds package <cmd> (stubs)
 ├── protocol/                       # PURE MTHDS Protocol (interface + wire models) — see docs/architecture.md
 │   ├── protocol.ts                 # MTHDSProtocol<PipeOutputT> (generic)
@@ -52,6 +53,7 @@ src/
 │   ├── event.ts / outcome.ts       # Building the event
 │   ├── session.ts                  # Commander hooks: notice, exit handler, delivery
 │   └── sender.ts / sender-main.ts  # The sender process posting to PostHog
+├── method-tree/                    # The method tree: lister, .gitignore matching, tree paths, case folding, digest, references, file entries — see docs/method-tree.md
 ├── package/
 │   ├── manifest/
 │   │   ├── types.ts                # Manifest types

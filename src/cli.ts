@@ -17,6 +17,7 @@ import { validateMethod, validatePipe, validateBundle } from "./cli/commands/val
 import { packageInit } from "./cli/commands/package/init.js";
 import { packageList } from "./cli/commands/package/list.js";
 import { packageValidate } from "./cli/commands/package/validate.js";
+import { listFiles } from "./cli/commands/files.js";
 import { RUNNER_NAMES } from "./runners/types.js";
 import {
   telemetryEnable,
@@ -436,6 +437,22 @@ runnerCmd
   .exitOverride()
   .action(async () => {
     await runnerStatus();
+  });
+
+// ── mthds files [path] ──────────────────────────────────────────────
+// The method tree of a directory or a .mthds file: what will travel with the method.
+program
+  .command("files")
+  .description(
+    "List the method tree of a directory or a .mthds file: each file with its size, and the tree digest",
+  )
+  .argument("[path]", "Method directory or .mthds file (defaults to the current directory)", ".")
+  .addOption(
+    new Option("--format <format>", "Output format").choices(["text", "json"]).default("text"),
+  )
+  .exitOverride()
+  .action(async (path: string, options: { format?: string }) => {
+    await listFiles(path, options);
   });
 
 // ── mthds telemetry status|enable|disable|reset-id ──────────────────

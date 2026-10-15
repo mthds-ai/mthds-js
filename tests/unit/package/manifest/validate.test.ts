@@ -576,3 +576,25 @@ describe("collectAllExportedPipes", () => {
     expect(pipes).toHaveLength(3);
   });
 });
+
+// ---------------------------------------------------------------------------
+// validateManifest — package.exclude
+// ---------------------------------------------------------------------------
+describe("validateManifest — package.exclude", () => {
+  const withExclude = (value: string): string =>
+    minimal.replace("[package]\n", `[package]\nexclude = ${value}\n`);
+
+  it("accepts a list of patterns", () => {
+    const r = validateManifest(withExclude('["samples/", "!keep.csv"]'));
+    expect(r.valid).toBe(true);
+    expect(r.manifest!.package.exclude).toEqual(["samples/", "!keep.csv"]);
+  });
+
+  it("rejects a pattern holding a line break, and a value that is not a list of strings", () => {
+    for (const value of ['["a\\rb"]', '"samples/"', "[1]"]) {
+      const r = validateManifest(withExclude(value));
+      expect(r.valid).toBe(false);
+      expect(r.errors).toContainEqual(expect.stringContaining("[package.exclude]"));
+    }
+  });
+});

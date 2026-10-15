@@ -7,6 +7,7 @@ import {
   isValidAddress,
   isValidMethodName,
   isReservedDomainPath,
+  isValidExcludePattern,
   MethodsTomlSchema,
   DomainExportsSchema,
   type ParsedManifest,
@@ -247,6 +248,18 @@ export function parseMethodsToml(content: string): ParsedManifest {
     mainPipe = pkg.main_pipe;
   }
 
+  let exclude: string[] | undefined;
+  if (pkg.exclude !== undefined) {
+    for (const [idx, pattern] of pkg.exclude.entries()) {
+      if (!isValidExcludePattern(pattern)) {
+        throw new ManifestValidationError(
+          `Exclude pattern at index ${idx} holds a line break; each entry is one pattern.`,
+        );
+      }
+    }
+    exclude = [...pkg.exclude];
+  }
+
   // Step 3: Process and validate exports
   let exports: Record<string, DomainExports> = {};
   if (validated.exports) {
@@ -286,6 +299,7 @@ export function parseMethodsToml(content: string): ParsedManifest {
     ...(license !== undefined ? { license } : {}),
     ...(mthdsVersion !== undefined ? { mthdsVersion } : {}),
     ...(mainPipe !== undefined ? { mainPipe } : {}),
+    ...(exclude !== undefined ? { exclude } : {}),
   };
 }
 
@@ -321,6 +335,9 @@ export function serializeManifestToToml(manifest: ParsedManifest): string {
   }
   if (manifest.mainPipe !== undefined) {
     packageSection["main_pipe"] = manifest.mainPipe;
+  }
+  if (manifest.exclude !== undefined) {
+    packageSection["exclude"] = manifest.exclude;
   }
   doc["package"] = packageSection;
 

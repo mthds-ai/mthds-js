@@ -50,6 +50,7 @@ export function parsedManifestToLegacy(parsed: ParsedManifest): MethodsManifest 
       ...(parsed.license !== undefined ? { license: parsed.license } : {}),
       ...(parsed.mthdsVersion !== undefined ? { mthds_version: parsed.mthdsVersion } : {}),
       ...(parsed.mainPipe !== undefined ? { main_pipe: parsed.mainPipe } : {}),
+      ...(parsed.exclude !== undefined ? { exclude: [...parsed.exclude] } : {}),
     },
     ...(exports !== undefined ? { exports } : {}),
   };
@@ -80,6 +81,7 @@ export function legacyToParsedManifest(legacy: MethodsManifest): ParsedManifest 
       ? { mthdsVersion: legacy.package.mthds_version }
       : {}),
     ...(legacy.package.main_pipe !== undefined ? { mainPipe: legacy.package.main_pipe } : {}),
+    ...(legacy.package.exclude !== undefined ? { exclude: [...legacy.package.exclude] } : {}),
   };
 }
 

@@ -400,3 +400,30 @@ pipes = ["extract_clause", "analyze_nda"]
     expect(second.exports).toEqual(first.exports);
   });
 });
+
+// ---------------------------------------------------------------------------
+// [package] exclude
+// ---------------------------------------------------------------------------
+describe("parseMethodsToml — exclude", () => {
+  const withExclude = (value: string): string =>
+    MINIMAL_TOML.replace("[package]\n", `[package]\nexclude = ${value}\n`);
+
+  it("reads the patterns and serializes them back", () => {
+    const manifest = parseMethodsToml(withExclude('["samples/", "*.psd"]'));
+    expect(manifest.exclude).toEqual(["samples/", "*.psd"]);
+    expect(parseMethodsToml(serializeManifestToToml(manifest)).exclude).toEqual([
+      "samples/",
+      "*.psd",
+    ]);
+  });
+
+  it("leaves exclude out when the manifest has none", () => {
+    expect(parseMethodsToml(MINIMAL_TOML).exclude).toBeUndefined();
+  });
+
+  it("refuses a pattern holding a line break, or exclude that is not a list of strings", () => {
+    expect(() => parseMethodsToml(withExclude('["a\\nb"]'))).toThrow(ManifestValidationError);
+    expect(() => parseMethodsToml(withExclude('"samples/"'))).toThrow(ManifestValidationError);
+    expect(() => parseMethodsToml(withExclude("[1]"))).toThrow(ManifestValidationError);
+  });
+});

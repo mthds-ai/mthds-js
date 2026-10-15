@@ -4,12 +4,11 @@
  * one from a directory or a `.mthds` file.
  */
 
-import { readFile, readdir } from "node:fs/promises";
+import { readdir } from "node:fs/promises";
 import { sep } from "node:path";
-import type { MethodFiles } from "../protocol/file_entries.js";
-import { sha256Hex } from "./digest.js";
-import { entryKindOfDirent } from "./entries.js";
+import type { FileEntry, MethodFiles } from "../protocol/file_entries.js";
 import { namesExcludedDirectory, type ExclusionRule, MethodTreeError } from "./exceptions.js";
+import { readMember } from "./file-reading.js";
 import { locateFunction, type FunctionLocation } from "./function-names.js";
 import {
   resolveFileReference,
@@ -17,6 +16,7 @@ import {
   type ReferenceContext,
   type ReferenceRefusalCode,
 } from "./references.js";
+import { entryKindOf } from "./membership.js";
 import { directoriesOf } from "./tree-path.js";
 
 /** A file of a listed tree. */
@@ -126,6 +126,7 @@ export class MethodTree {
   /** The total of the files' sizes, in bytes. */
   readonly totalSize: number;
   private readonly absolutes: ReadonlyMap<string, Buffer>;
+  private readonly byPath: ReadonlyMap<string, MethodTreeFile>;
   private readonly exclusions: ReadonlyMap<string, RecordedExclusion>;
 
   constructor(init: MethodTreeInit) {
@@ -135,6 +136,7 @@ export class MethodTree {
     this.digest = init.digest;
     this.totalSize = init.files.reduce((total, file) => total + file.size, 0);
     this.absolutes = init.absolutes;
+    this.byPath = new Map(init.files.map((file) => [file.path, file]));
     this.exclusions = init.exclusions;
   }
 
@@ -148,17 +150,25 @@ export class MethodTree {
     return this.absolutes.has(treePath);
   }
 
-  /** A file's bytes, read again and checked against the hash the listing recorded. */
+  /**
+   * A file's bytes, read again as the listing read them, never through a link, and checked against
+   * the hash the listing recorded.
+   */
   async readFile(treePath: string): Promise<Buffer> {
     const absolute = this.absolutes.get(treePath);
-    const listed = this.files.find((file) => file.path === treePath);
+    const listed = this.byPath.get(treePath);
     if (absolute === undefined || listed === undefined) {
       throw new MethodTreeError("not_found", `'${treePath}' is not a file of the method tree.`, {
         names: [treePath],
       });
     }
-    const bytes = await readFile(absolute);
-    if (sha256Hex(bytes) !== listed.sha256) {
+    const { bytes, sha256 } = await readMember(
+      absolute,
+      treePath,
+      this.root ?? absolute.toString(),
+      true,
+    );
+    if (sha256 !== listed.sha256 || bytes === null) {
       throw new MethodTreeError(
         "not_listable",
         `'${treePath}' changed since the method tree was listed; list it again.`,
@@ -182,7 +192,15 @@ export class MethodTree {
       } catch {
         text = null;
       }
-      entries[file.path] = text ?? { base64: bytes.toString("base64") };
+      const value: FileEntry = text ?? { base64: bytes.toString("base64") };
+      // Defined as an own property, since assigning to a key such as `__proto__`, a tree path like
+      // any other, would set the object's prototype instead of adding the file.
+      Object.defineProperty(entries, file.path, {
+        value,
+        enumerable: true,
+        writable: true,
+        configurable: true,
+      });
     }
     return entries;
   }
@@ -236,6 +254,8 @@ export class MethodTree {
     for (const prefix of prefixes) {
       const exclusion = this.exclusions.get(prefix);
       if (exclusion === undefined) continue;
+      // Only a real directory holds files: an excluded link is never followed to look inside it.
+      if (!exclusion.isDirectory) return null;
       const below = (prefix === "" ? treePath : treePath.slice(prefix.length + 1)).split("/");
       return (await holdsFileBelow(exclusion.absolute, below)) ? exclusion : null;
     }
@@ -268,7 +288,7 @@ async function holdsFileBelow(absolute: Buffer, segments: readonly string[]): Pr
       return name.normalize("NFC") === segments[index];
     });
     if (found === undefined) return false;
-    const kind = entryKindOfDirent(found);
+    const kind = entryKindOf(found);
     if (last) return kind !== "directory";
     if (kind !== "directory") return false;
     current = Buffer.concat([current, Buffer.from(sep), found.name]);

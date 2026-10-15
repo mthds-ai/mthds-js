@@ -51,7 +51,6 @@ export type { FunctionLocation, FunctionNameRefusalCode } from "./function-names
 export {
   EMPTY_BLOB_STORE,
   decodeCanonicalBase64,
-  isExcludedName,
   readFileEntryMap,
   readFileEntryMapValue,
 } from "./file-entries.js";
@@ -59,3 +58,11 @@ export type { BlobStore, ReadFile, ReadTree } from "./file-entries.js";
 export { JsonDocumentError, parseJsonDocument } from "./json-document.js";
 export type { JsonValue } from "./json-document.js";
 export { findManifestDirectory } from "./discovery.js";
+export {
+  DEFAULT_EXCLUDED_DIRECTORY_NAMES,
+  GIT_ENTRY_NAME,
+  MANIFEST_NAME,
+  VENV_MARKER_NAME,
+  isExcludedName,
+  isValidExcludePattern,
+} from "./membership.js";

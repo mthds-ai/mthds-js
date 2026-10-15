@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdirSync, mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync, rmSync, symlinkSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { createHash } from "node:crypto";
@@ -11,6 +11,7 @@ import {
   verifyLockedPackage,
 } from "../../../src/package/lock-file.js";
 import { LockFileError, IntegrityError } from "../../../src/package/exceptions.js";
+import { MethodTreeError } from "../../../src/method-tree/index.js";
 
 function sha256(text: string): string {
   return createHash("sha256").update(text).digest("hex");
@@ -61,6 +62,15 @@ describe("lock-file", () => {
       mkdirSync(sub);
       writeFileSync(join(sub, "a.txt"), "a");
       expect(await computePackageDigest(sub)).toBe(`sha256:${sha256(`${sha256("a")}  a.txt\n`)}`);
+    });
+
+    it("raises a tree the standard refuses as a LockFileError, never a MethodTreeError", async () => {
+      writeFileSync(join(tempDir, "main.mthds"), 'domain = "x"\n');
+      symlinkSync("main.mthds", join(tempDir, "link.mthds"));
+      const err = await computePackageDigest(tempDir).catch((caught: unknown) => caught);
+      expect(err).toBeInstanceOf(LockFileError);
+      expect(err).not.toBeInstanceOf(MethodTreeError);
+      expect((err as Error).message).toContain("link.mthds");
     });
 
     it("throws LockFileError for non-existent directory", async () => {
@@ -279,6 +289,23 @@ source = "https://github.com/org/repo"
       await expect(verifyLockedPackage(locked, "github.com/org/repo", tempDir)).rejects.toThrow(
         IntegrityError,
       );
+    });
+
+    it("raises a cached package whose tree the standard refuses as an IntegrityError", async () => {
+      const cached = join(tempDir, "github.com", "org", "repo", "1.0.0");
+      mkdirSync(cached, { recursive: true });
+      writeFileSync(join(cached, "main.mthds"), 'domain = "x"\n');
+      const locked = {
+        version: "1.0.0",
+        digest: await computePackageDigest(cached),
+        source: "https://github.com/org/repo",
+      };
+      symlinkSync("main.mthds", join(cached, "link.mthds"));
+      const err = await verifyLockedPackage(locked, "github.com/org/repo", tempDir).catch(
+        (caught: unknown) => caught,
+      );
+      expect(err).toBeInstanceOf(IntegrityError);
+      expect(err).not.toBeInstanceOf(MethodTreeError);
     });
   });
 });

@@ -9,7 +9,7 @@ import { compareUtf8, holdsLoneSurrogate, pathCollisions, treePathViolation } fr
 import { sha256Hex, treeDigest } from "./digest.js";
 import { MethodTreeError, type MapRefusalCode } from "./exceptions.js";
 import { JsonDocumentError, parseJsonDocument, type JsonValue } from "./json-document.js";
-import { MANIFEST_NAME, VENV_MARKER_NAME } from "./discovery.js";
+import { isExcludedName } from "./membership.js";
 
 /** A receiver's store of bytes it already holds, keyed by their SHA-256 in lowercase hexadecimal. */
 export interface BlobStore {
@@ -36,27 +36,39 @@ export interface ReadTree {
 }
 
 const SHA256_HEX = /^[0-9a-f]{64}$/;
-const BASE64 = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
 const INTEGER_LEXEME = /^-?(?:0|[1-9][0-9]*)$/;
-const DEFAULT_DIRECTORY_NAMES: ReadonlySet<string> = new Set(["__pycache__", "node_modules"]);
+const EQUALS_SIGN = 0x3d;
 
-/**
- * Whether a key names a file the membership rule could never admit: one holding a segment that
- * starts with a dot, inside a `__pycache__` or `node_modules` directory, a file `pyvenv.cfg`, or
- * `METHODS.toml` below the root.
- */
-export function isExcludedName(treePath: string): boolean {
-  const segments = treePath.split("/");
-  if (segments.some((segment) => segment.startsWith("."))) return true;
-  if (segments.slice(0, -1).some((segment) => DEFAULT_DIRECTORY_NAMES.has(segment))) return true;
-  const last = segments[segments.length - 1];
-  if (last === VENV_MARKER_NAME) return true;
-  return last === MANIFEST_NAME && segments.length > 1;
+/** Whether a UTF-16 code unit is a character of the standard Base64 alphabet. */
+function isBase64Character(code: number): boolean {
+  return (
+    (code >= 0x41 && code <= 0x5a) || // A-Z
+    (code >= 0x61 && code <= 0x7a) || // a-z
+    (code >= 0x30 && code <= 0x39) || // 0-9
+    code === 0x2b || // +
+    code === 0x2f // /
+  );
 }
 
-/** Decode canonical padded standard Base64 with no line break, or `null` for anything else. */
+/**
+ * Decode canonical padded standard Base64 with no line break, or `null` for anything else. The
+ * check is a loop rather than a regular expression, whose backtracking would exhaust the stack on a
+ * payload of a few megabytes.
+ */
 export function decodeCanonicalBase64(encoded: string): Uint8Array | null {
-  if (!BASE64.test(encoded)) return null;
+  if (encoded.length % 4 !== 0) return null;
+  // At most two padding characters, at the very end.
+  let end = encoded.length;
+  for (
+    let padding = 0;
+    padding < 2 && end > 0 && encoded.charCodeAt(end - 1) === EQUALS_SIGN;
+    padding += 1
+  ) {
+    end -= 1;
+  }
+  for (let index = 0; index < end; index += 1) {
+    if (!isBase64Character(encoded.charCodeAt(index))) return null;
+  }
   const bytes = Buffer.from(encoded, "base64");
   // Re-encoding gives the input back only when the pad bits are zero.
   return bytes.toString("base64") === encoded ? new Uint8Array(bytes) : null;

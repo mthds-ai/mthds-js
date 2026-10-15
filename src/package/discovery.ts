@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
-import { findManifestDirectory, MANIFEST_NAME } from "../method-tree/discovery.js";
+import { findManifestDirectory } from "../method-tree/discovery.js";
+import { MANIFEST_NAME } from "../method-tree/membership.js";
 import { parseMethodsToml } from "./manifest/parser.js";
 import type { ParsedManifest } from "./manifest/schema.js";
 

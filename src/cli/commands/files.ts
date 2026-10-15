@@ -44,7 +44,9 @@ export function renderFilesText(listing: FilesListing): string {
     if (listing.entry !== null) lines.push(`Entry: ${listing.entry}`);
   }
   lines.push("");
-  const width = Math.max(...listing.files.map((file) => String(file.size).length));
+  // A loop, since spreading every size into Math.max overflows the stack on a large tree.
+  let width = 0;
+  for (const file of listing.files) width = Math.max(width, String(file.size).length);
   for (const file of listing.files) {
     lines.push(`${String(file.size).padStart(width)}  ${file.path}`);
   }

@@ -1,6 +1,7 @@
 import { existsSync, statSync } from "node:fs";
 import { parse, stringify } from "smol-toml";
 import { TREE_DIGEST_PATTERN } from "../method-tree/digest.js";
+import { MethodTreeError } from "../method-tree/exceptions.js";
 import { listMethodTree } from "../method-tree/lister.js";
 import { IntegrityError, LockFileError } from "./exceptions.js";
 import { isValidSemver, type ParsedManifest } from "./manifest/schema.js";
@@ -32,10 +33,28 @@ export interface LockFile {
  * membership rule with the directory as its root, whatever lies above it.
  */
 export async function computePackageDigest(directory: string): Promise<string> {
+  return packageDigest(directory, (message) => new LockFileError(message));
+}
+
+/**
+ * The tree digest of the package at `directory`, a refused tree raised as the error the caller's
+ * path raises, so a `MethodTreeError` never escapes the package errors.
+ */
+async function packageDigest(
+  directory: string,
+  toError: (message: string) => LockFileError | IntegrityError,
+): Promise<string> {
   if (!existsSync(directory) || !statSync(directory).isDirectory()) {
-    throw new LockFileError(`Directory '${directory}' does not exist or is not a directory`);
+    throw toError(`Directory '${directory}' does not exist or is not a directory`);
   }
-  return (await listMethodTree(directory, { discover: false })).digest;
+  try {
+    return (await listMethodTree(directory, { discover: false })).digest;
+  } catch (err) {
+    if (err instanceof MethodTreeError) {
+      throw toError(`Cannot compute the tree digest of '${directory}': ${err.message}`);
+    }
+    throw err;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -162,7 +181,7 @@ export async function verifyLockedPackage(
     );
   }
 
-  const actualDigest = await computePackageDigest(cachedPath);
+  const actualDigest = await packageDigest(cachedPath, (message) => new IntegrityError(message));
   if (actualDigest !== locked.digest) {
     throw new IntegrityError(
       `Integrity check failed for '${address}@${locked.version}': expected ${locked.digest}, got ${actualDigest}`,

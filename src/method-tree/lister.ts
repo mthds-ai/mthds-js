@@ -14,29 +14,34 @@ import { lstat, readFile, readdir, realpath, stat } from "node:fs/promises";
 import type { Dirent } from "node:fs";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { parse as parseToml } from "smol-toml";
-import {
-  entryKindOf,
-  exactEntryKind,
-  findManifestDirectory,
-  GIT_ENTRY_NAME,
-  MANIFEST_NAME,
-  VENV_MARKER_NAME,
-  type EntryKind,
-} from "./discovery.js";
-import { sha256Hex, treeDigest } from "./digest.js";
-import { entryKindOfDirent } from "./entries.js";
+import { exactEntryKind, findManifestDirectory } from "./discovery.js";
+import { treeDigest } from "./digest.js";
 import {
   MethodTreeError,
+  namesExcludedDirectory,
   TreeLimitExceededError,
   type ExclusionRule,
   type TreeRefusalCode,
 } from "./exceptions.js";
+import { readMember } from "./file-reading.js";
 import {
   excludingSource,
   parseExcludePatterns,
   parseGitignore,
   type PatternList,
 } from "./gitignore.js";
+import {
+  entryKindOf,
+  GITIGNORE_NAME,
+  isDefaultExcludedDirectory,
+  isDotSegment,
+  isMarkerRule,
+  isValidExcludePattern,
+  MANIFEST_NAME,
+  MARKER_RULES,
+  markerRule,
+  type EntryKind,
+} from "./membership.js";
 import { compareUtf8, directoriesOf, pathCollisions, treePathViolation } from "./tree-path.js";
 import { MethodTree, type MethodTreeFile, type RecordedExclusion } from "./tree.js";
 
@@ -61,8 +66,6 @@ export interface ListMethodTreeOptions {
   readonly discover?: boolean;
 }
 
-const GITIGNORE_NAME = ".gitignore";
-const DEFAULT_DIRECTORY_NAMES: ReadonlySet<string> = new Set(["__pycache__", "node_modules"]);
 const UTF8_BOM = Buffer.from([0xef, 0xbb, 0xbf]);
 const SEPARATOR = Buffer.from(sep);
 const SLASH = Buffer.from("/");
@@ -150,6 +153,19 @@ function describeIoError(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
+/** A member's size from `lstat`, which the limits count before anything is read. */
+async function lstatSize(absolute: Buffer | string, path: string, where: string): Promise<number> {
+  try {
+    return (await lstat(absolute)).size;
+  } catch (err) {
+    throw new MethodTreeError(
+      "not_listable",
+      `Cannot read '${path}' under ${where}: ${describeIoError(err)}`,
+      { names: [path] },
+    );
+  }
+}
+
 /** Read a directory's entries as bytes, sorted byte for byte by name. */
 async function readEntries(absolute: Buffer, displayPath: string): Promise<ListedEntry[]> {
   let dirents: Dirent<Buffer>[];
@@ -180,7 +196,7 @@ async function readEntries(absolute: Buffer, displayPath: string): Promise<Liste
         rawName,
         validUtf8,
         matchBytes: validUtf8 ? Buffer.from(name, "utf8") : nameBytes,
-        kind: entryKindOfDirent(dirent),
+        kind: entryKindOf(dirent),
       };
     })
     .sort((left, right) => Buffer.compare(left.nameBytes, right.nameBytes));
@@ -191,22 +207,38 @@ function findEntry(entries: readonly ListedEntry[], name: string): ListedEntry |
 }
 
 /**
- * The default that excludes a directory for what it holds, or `null`: a `pyvenv.cfg` that is a file
- * or a link, a `.git` entry of any kind, or a `METHODS.toml` file. `belowRoot` is false for the root
- * itself, whose `.git` entry and manifest exclude nothing.
+ * The default that excludes a directory for what it holds (`markerRule`), or `null`, the first in
+ * `MARKER_RULES` order when several apply. `belowRoot` is false for the root itself.
  */
 function markerExclusion(
   entries: readonly ListedEntry[],
   belowRoot: boolean,
 ): ExclusionRule | null {
-  const venvMarker = findEntry(entries, VENV_MARKER_NAME);
-  if (venvMarker !== undefined && (venvMarker.kind === "file" || venvMarker.kind === "symlink")) {
-    return "virtual_environment";
+  let found: ExclusionRule | null = null;
+  for (const entry of entries) {
+    if (!entry.validUtf8) continue;
+    const rule = markerRule(entry.rawName, entry.kind, belowRoot);
+    if (
+      rule !== null &&
+      (found === null || MARKER_RULES.indexOf(rule) < MARKER_RULES.indexOf(found))
+    ) {
+      found = rule;
+    }
   }
-  if (!belowRoot) return null;
-  if (findEntry(entries, GIT_ENTRY_NAME) !== undefined) return "nested_repository";
-  if (findEntry(entries, MANIFEST_NAME)?.kind === "file") return "nested_package";
-  return null;
+  return found;
+}
+
+/** A directory's entries when it can be listed, or `null` when it cannot. */
+async function tryReadEntries(
+  absolute: Buffer,
+  displayPath: string,
+): Promise<ListedEntry[] | null> {
+  try {
+    return await readEntries(absolute, displayPath);
+  } catch (err) {
+    if (err instanceof MethodTreeError) return null;
+    throw err;
+  }
 }
 
 /** The patterns of a directory's `.gitignore` file, or `null` when it holds no regular one. */
@@ -277,31 +309,35 @@ async function walk(listing: Listing, directory: WalkedDirectory): Promise<void>
 
     let rule: ExclusionRule | null = null;
     let children: ListedEntry[] | null = null;
-    if (entry.nameBytes[0] === 0x2e) {
+    if (isDotSegment(entry.rawName)) {
       rule = "dot_segment";
-    } else if (isDirectory && DEFAULT_DIRECTORY_NAMES.has(entry.rawName)) {
+    } else if (isDirectory && isDefaultExcludedDirectory(entry.rawName)) {
       rule = "pycache_or_node_modules";
     } else {
+      // The patterns are decided first, so a directory they exclude is pruned without having to be
+      // listed. A marker inside it still names the rule, which outranks the patterns, when the
+      // directory can be listed; one that cannot be holds no marker the walk can see.
+      const patternRule = excludingSource(
+        gitignoreLists,
+        listing.manifestPatterns,
+        matchPath,
+        entry.matchBytes,
+        isDirectory,
+      );
       if (isDirectory) {
-        children = await readEntries(absolute, `${listing.root}${sep}${rawPath}`);
-        rule = markerExclusion(children, true);
+        const displayPath = `${listing.root}${sep}${rawPath}`;
+        children =
+          patternRule === null
+            ? await readEntries(absolute, displayPath)
+            : await tryReadEntries(absolute, displayPath);
+        if (children !== null) rule = markerExclusion(children, true);
       }
-      if (rule === null) {
-        rule = excludingSource(
-          gitignoreLists,
-          listing.manifestPatterns,
-          matchPath,
-          entry.matchBytes,
-          isDirectory,
-        );
-      }
+      rule ??= patternRule;
     }
     if (rule !== null) {
-      const marksDirectory =
-        rule === "virtual_environment" || rule === "nested_repository" || rule === "nested_package";
       listing.exclusions.set(path, {
         rule,
-        directory: marksDirectory ? path : null,
+        directory: isMarkerRule(rule) ? path : null,
         isDirectory,
         absolute,
       });
@@ -344,17 +380,7 @@ async function walk(listing: Listing, directory: WalkedDirectory): Promise<void>
             [path],
           );
         }
-        let size: number;
-        try {
-          size = (await lstat(absolute)).size;
-        } catch (err) {
-          throw new MethodTreeError(
-            "not_listable",
-            `Cannot read '${path}' under ${listing.root}: ${describeIoError(err)}`,
-            { names: [path] },
-          );
-        }
-        listing.count(path, size);
+        listing.count(path, await lstatSize(absolute, path, listing.root));
         listing.members.push({ path, absolute });
         continue;
       }
@@ -385,7 +411,7 @@ async function readManifestPatterns(root: string): Promise<PatternList | null> {
   if (exclude === undefined) return null;
   if (
     !Array.isArray(exclude) ||
-    !exclude.every((pattern) => typeof pattern === "string" && !/[\n\r]/.test(pattern))
+    !exclude.every((pattern) => typeof pattern === "string" && isValidExcludePattern(pattern))
   ) {
     throw new MethodTreeError(
       "manifest_invalid",
@@ -410,13 +436,14 @@ function exclusionCovering(
 
 async function hashMembers(
   members: readonly Member[],
+  where: string,
 ): Promise<{ files: MethodTreeFile[]; absolutes: Map<string, Buffer> }> {
   const sorted = [...members].sort((left, right) => compareUtf8(left.path, right.path));
   const files: MethodTreeFile[] = [];
   const absolutes = new Map<string, Buffer>();
   for (const member of sorted) {
-    const bytes = await readFile(member.absolute);
-    files.push({ path: member.path, size: bytes.length, sha256: sha256Hex(bytes) });
+    const { size, sha256 } = await readMember(member.absolute, member.path, where, false);
+    files.push({ path: member.path, size, sha256 });
     absolutes.set(member.path, member.absolute);
   }
   return { files, absolutes };
@@ -460,8 +487,11 @@ async function listOneFileTree(
     throw refusal("invalid_tree_path", `'${name}' is not a tree path: ${violation}.`, [name]);
   }
   const listing = new Listing(file, null, limits);
-  listing.count(name, (await lstat(file)).size);
-  const { files, absolutes } = await hashMembers([{ path: name, absolute: Buffer.from(file) }]);
+  listing.count(name, await lstatSize(file, name, file));
+  const { files, absolutes } = await hashMembers(
+    [{ path: name, absolute: Buffer.from(file) }],
+    file,
+  );
   return new MethodTree({
     root: null,
     entry: name,
@@ -487,7 +517,12 @@ async function readHandedOver(handedOver: string): Promise<HandedOver> {
     if (stats.isDirectory() || (stats.isSymbolicLink() && (await isDirectoryBehind(absolute)))) {
       return { kind: "directory", directory: await realpath(absolute) };
     }
-    const file = join(await realpath(dirname(absolute)), basename(absolute));
+    // A link keeps the name it was handed over by, its parent alone resolved. Any other file takes
+    // the name the file system holds, so a name typed in another case on a case-insensitive file
+    // system names the same tree path, and the suffix check reads the real name.
+    const file = stats.isSymbolicLink()
+      ? join(await realpath(dirname(absolute)), basename(absolute))
+      : await realpath(absolute);
     return { kind: "lone", file, entryKind: entryKindOf(stats) };
   } catch (err) {
     throw new MethodTreeError("not_found", `Cannot read '${handedOver}': ${describeIoError(err)}`, {
@@ -603,8 +638,7 @@ export async function listMethodTree(
           ? {}
           : {
               excludedBy: exclusion.rule,
-              ...(exclusion.directory !== null &&
-              (exclusion.rule === "nested_repository" || exclusion.rule === "nested_package")
+              ...(exclusion.directory !== null && namesExcludedDirectory(exclusion.rule)
                 ? { excludedDirectory: exclusion.directory }
                 : {}),
             },
@@ -619,7 +653,7 @@ export async function listMethodTree(
     );
   }
 
-  const { files, absolutes } = await hashMembers(listing.members);
+  const { files, absolutes } = await hashMembers(listing.members, root);
   return new MethodTree({
     root,
     entry,

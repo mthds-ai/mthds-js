@@ -58,9 +58,27 @@ describe("decodeCanonicalBase64", () => {
   it("decodes canonical padded Base64 and refuses anything else", () => {
     expect(Buffer.from(decodeCanonicalBase64("aGk=")!).toString()).toBe("hi");
     expect(decodeCanonicalBase64("")).toEqual(new Uint8Array());
-    for (const encoded of ["aGl=", "aGk", "aG k=", "-_8=", "YR=="]) {
+    for (const encoded of [
+      "aGl=",
+      "aGk",
+      "aG k=",
+      "-_8=",
+      "YR==",
+      "a===",
+      "====",
+      "aG=k",
+      "aGk\n",
+    ]) {
       expect(decodeCanonicalBase64(encoded), encoded).toBeNull();
     }
+  });
+
+  it("decodes a payload of several megabytes without exhausting the stack", () => {
+    const bytes = Buffer.alloc(6 * 1024 * 1024 + 1, 0xa7);
+    const decoded = decodeCanonicalBase64(bytes.toString("base64"));
+    expect(decoded).not.toBeNull();
+    expect(Buffer.from(decoded!).equals(bytes)).toBe(true);
+    expect(decodeCanonicalBase64(`${bytes.toString("base64").slice(0, -4)}!AAA`)).toBeNull();
   });
 });
 

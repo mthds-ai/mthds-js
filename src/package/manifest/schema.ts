@@ -185,7 +185,5 @@ export interface ParsedManifest {
   readonly exports: Record<string, DomainExports>;
 }
 
-/** Whether an `exclude` pattern is acceptable: one pattern, holding no line break. */
-export function isValidExcludePattern(pattern: string): boolean {
-  return !/[\n\r]/.test(pattern);
-}
+// One rule for the manifest's reader and the method tree's lister, which reads the patterns too.
+export { isValidExcludePattern } from "../../method-tree/membership.js";

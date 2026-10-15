@@ -4,7 +4,17 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  symlinkSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -17,6 +27,21 @@ import {
 const MANIFEST = `[package]\naddress = "github.com/acme/x"\nversion = "1.0.0"\ndescription = "x"\n`;
 
 let workspace: string;
+
+/** Whether the scratch directory's file system answers a name in another case. */
+function probeCaseInsensitive(): boolean {
+  const probe = mkdtempSync(join(tmpdir(), "mthds-case-probe-"));
+  try {
+    writeFileSync(join(probe, "probe"), "");
+    return existsSync(join(probe, "PROBE"));
+  } finally {
+    rmSync(probe, { recursive: true, force: true });
+  }
+}
+
+const CASE_INSENSITIVE = probeCaseInsensitive();
+// A directory with no permission is still listable by the superuser.
+const RUNS_AS_ROOT = process.getuid?.() === 0;
 
 beforeEach(() => {
   workspace = mkdtempSync(join(tmpdir(), "mthds-lister-"));
@@ -199,5 +224,184 @@ describe("a listed tree", () => {
         excludedDirectory: "vendor",
       },
     });
+  });
+});
+
+describe("a tree's files as they travel", () => {
+  it("round-trips a binary file of several megabytes through its map of file entries", async () => {
+    write("main.mthds", 'domain = "x"\n');
+    write("data/blob.bin", Buffer.alloc(6 * 1024 * 1024, 0xff));
+    const tree = await listMethodTree(workspace);
+    const entries = await tree.toMethodFiles();
+    expect(entries["data/blob.bin"]).toHaveProperty("base64");
+    const read = await readFileEntryMap(JSON.stringify(entries));
+    expect(read.digest).toBe(tree.digest);
+  });
+
+  it("keeps a file named __proto__, as text and in Base64", async () => {
+    write("main.mthds", "x");
+    write("__proto__", "text\n");
+    write("data/__proto__", Buffer.from([0xff, 0x00]));
+    const tree = await listMethodTree(workspace);
+    const entries = await tree.toMethodFiles();
+    expect(Object.getPrototypeOf(entries)).toBe(Object.prototype);
+    expect(Object.keys(entries).sort()).toEqual(["__proto__", "data/__proto__", "main.mthds"]);
+    expect(Object.getOwnPropertyDescriptor(entries, "__proto__")?.value).toBe("text\n");
+    expect(Object.getOwnPropertyDescriptor(entries, "data/__proto__")?.value).toEqual({
+      base64: "/wA=",
+    });
+    const read = await readFileEntryMap(JSON.stringify(entries));
+    expect(read.files.map((file) => file.path)).toEqual([
+      "__proto__",
+      "data/__proto__",
+      "main.mthds",
+    ]);
+    expect(read.digest).toBe(tree.digest);
+  });
+});
+
+describe.skipIf(RUNS_AS_ROOT)("a directory that cannot be listed", () => {
+  /** Run `body` with the directory at `path` unreadable, restoring it whatever happens. */
+  async function whileUnreadable(path: string, body: () => Promise<void>): Promise<void> {
+    const absolute = join(workspace, ...path.split("/"));
+    chmodSync(absolute, 0o000);
+    try {
+      await body();
+    } finally {
+      chmodSync(absolute, 0o755);
+    }
+  }
+
+  it("is pruned when a .gitignore file excludes it", async () => {
+    write("main.mthds", "x");
+    write(".gitignore", "private/\n");
+    write("private/secret.txt", "x");
+    await whileUnreadable("private", async () => {
+      const tree = await listMethodTree(workspace);
+      expect(tree.files.map((file) => file.path)).toEqual(["main.mthds"]);
+    });
+  });
+
+  it("is pruned when the manifest's exclude patterns exclude it", async () => {
+    write("METHODS.toml", `${MANIFEST}exclude = ["private/"]\n`);
+    write("main.mthds", "x");
+    write("private/secret.txt", "x");
+    await whileUnreadable("private", async () => {
+      const tree = await listMethodTree(workspace);
+      expect(tree.files.map((file) => file.path)).toEqual(["METHODS.toml", "main.mthds"]);
+    });
+  });
+
+  it("refuses the tree when no rule excludes it", async () => {
+    write("main.mthds", "x");
+    write("private/secret.txt", "x");
+    await whileUnreadable("private", async () => {
+      const err = await refusalOf(listMethodTree(workspace));
+      expect(err.code).toBe("not_listable");
+    });
+  });
+
+  it("still names a marker inside an excluded directory it can list", async () => {
+    write("main.mthds", "x");
+    write(".gitignore", "vendor/\n");
+    write("vendor/.git", "gitdir: nowhere\n");
+    write("vendor/lib.py", "x");
+    const tree = await listMethodTree(workspace);
+    const resolution = await tree.resolveReference({
+      holder: "main.mthds",
+      reference: "vendor/lib.py",
+      context: "path",
+    });
+    expect(resolution).toMatchObject({
+      refusal: { excludedBy: "nested_repository", excludedDirectory: "vendor" },
+    });
+  });
+});
+
+describe.skipIf(!CASE_INSENSITIVE)("a lone file named in another case", () => {
+  it("takes the name the file system holds", async () => {
+    write("main.mthds", 'domain = "x"\n');
+    const typed = await listMethodTree(join(workspace, "MAIN.mthds"));
+    const exact = await listMethodTree(join(workspace, "main.mthds"));
+    expect(typed.entry).toBe("main.mthds");
+    expect(typed.files.map((file) => file.path)).toEqual(["main.mthds"]);
+    expect(typed.digest).toBe(exact.digest);
+  });
+
+  it("names its entry as the tree holds it under a manifest", async () => {
+    write("METHODS.toml", MANIFEST);
+    write("bundles/flow.mthds", "x");
+    const tree = await listMethodTree(join(workspace, "BUNDLES", "FLOW.mthds"));
+    expect(tree.entry).toBe("bundles/flow.mthds");
+  });
+
+  it("checks the suffix on the name the file system holds", async () => {
+    write("flow.MTHDS", "x");
+    const err = await refusalOf(listMethodTree(join(workspace, "flow.mthds")));
+    expect(err.code).toBe("not_listable");
+  });
+});
+
+describe("a file changed after the tree was listed", () => {
+  beforeEach(() => {
+    write("main.mthds", 'domain = "x"\n');
+    write("other.txt", "other\n");
+  });
+
+  it("is refused as a link when it became one, the link never followed", async () => {
+    const tree = await listMethodTree(workspace);
+    unlinkSync(join(workspace, "main.mthds"));
+    symlinkSync("other.txt", join(workspace, "main.mthds"));
+    const err = await refusalOf(tree.readFile("main.mthds"));
+    expect(err.code).toBe("symbolic_link");
+    expect(err.names).toEqual(["main.mthds"]);
+  });
+
+  it("is refused as a special file when it became a named pipe, without blocking", async (context) => {
+    const tree = await listMethodTree(workspace);
+    unlinkSync(join(workspace, "main.mthds"));
+    try {
+      execFileSync("mkfifo", [join(workspace, "main.mthds")], { stdio: "ignore" });
+    } catch {
+      context.skip();
+    }
+    const err = await refusalOf(tree.readFile("main.mthds"));
+    expect(err.code).toBe("special_file");
+  });
+
+  it("is refused as a MethodTreeError when it is gone or became a directory", async () => {
+    const tree = await listMethodTree(workspace);
+    unlinkSync(join(workspace, "main.mthds"));
+    const gone = await refusalOf(tree.readFile("main.mthds"));
+    expect(gone.code).toBe("not_listable");
+    expect(gone.names).toEqual(["main.mthds"]);
+    mkdirSync(join(workspace, "main.mthds"));
+    const directory = await refusalOf(tree.readFile("main.mthds"));
+    expect(directory.code).toBe("not_listable");
+  });
+});
+
+describe("a reference into an excluded link", () => {
+  it("is not followed to find the file it names", async () => {
+    const outside = mkdtempSync(join(tmpdir(), "mthds-outside-"));
+    try {
+      writeFileSync(join(outside, "a.txt"), "x");
+      write("main.mthds", "x");
+      write(".gitignore", "linked\n");
+      symlinkSync(outside, join(workspace, "linked"));
+      const tree = await listMethodTree(workspace);
+      const resolution = await tree.resolveReference({
+        holder: "main.mthds",
+        reference: "linked/a.txt",
+        context: "path",
+      });
+      expect(resolution).toMatchObject({
+        kind: "refused",
+        refusal: { code: "reference_not_in_tree", resolved: "linked/a.txt" },
+      });
+      if (resolution.kind === "refused") expect(resolution.refusal.excludedBy).toBeUndefined();
+    } finally {
+      rmSync(outside, { recursive: true, force: true });
+    }
   });
 });

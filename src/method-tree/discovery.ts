@@ -7,20 +7,7 @@
 
 import { lstatSync, readdirSync, type Stats } from "node:fs";
 import { dirname, join } from "node:path";
-
-export const MANIFEST_NAME = "METHODS.toml";
-export const GIT_ENTRY_NAME = ".git";
-export const VENV_MARKER_NAME = "pyvenv.cfg";
-
-/** What an entry is, read without following a symbolic link. */
-export type EntryKind = "file" | "directory" | "symlink" | "other";
-
-export function entryKindOf(stats: Stats): EntryKind {
-  if (stats.isSymbolicLink()) return "symlink";
-  if (stats.isFile()) return "file";
-  if (stats.isDirectory()) return "directory";
-  return "other";
-}
+import { entryKindOf, GIT_ENTRY_NAME, MANIFEST_NAME, type EntryKind } from "./membership.js";
 
 /**
  * The kind of the entry named exactly `name` in `directory`, never following a link, or `null`

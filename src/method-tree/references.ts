@@ -1,7 +1,7 @@
 /**
  * File references (mthds/docs/spec/method-tree.md, "File References"): a path a file of a tree
- * writes to name another file of the same tree, resolved in seven steps against the directory of
- * the file that holds it. This module is the pure procedure; a listed tree adds to a refusal the
+ * writes to name another file of the same tree, resolved by the standard's ordered steps against the
+ * directory of the file that holds it. This module is the pure procedure; a listed tree adds to a refusal the
  * rule that keeps a file out of the tree (`MethodTree.resolveReference`).
  */
 
@@ -155,9 +155,9 @@ export interface ResolveFileReferenceInput {
 }
 
 /**
- * Resolve a file reference by the standard's seven steps; the first step that fails decides the
- * refusal. In the one-file tree of a lone file, a reference that passes the first six steps and
- * names no file of the tree is refused as made from a one-file tree, since the author has to run
+ * Resolve a file reference by the standard's ordered steps; the first step that fails decides the
+ * refusal. In the one-file tree of a lone file, a reference that passes every step before the last
+ * and names no file of the tree is refused as made from a one-file tree, since the author has to run
  * the method's directory or add a manifest; one refused earlier keeps its refusal.
  */
 export function resolveFileReference(input: ResolveFileReferenceInput): BareReferenceResolution {

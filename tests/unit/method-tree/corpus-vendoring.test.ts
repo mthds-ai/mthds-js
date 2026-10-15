@@ -1,13 +1,14 @@
 /**
  * The vendored method-tree corpus is the conformance repository's file, byte for byte: its bytes
  * hash to what tests/fixtures/method-tree-corpus.source.json recorded when it was copied, and they
- * equal the conformance checkout beside this repository when there is one. Re-vendor with
- * `make vendor-tree-corpus`, never by hand.
+ * equal the file at the recorded commit in the conformance checkout beside this repository, when
+ * that checkout holds the commit. Re-vendor with `make vendor-tree-corpus`, never by hand.
  */
 
 import { describe, expect, it } from "vitest";
+import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { CORPUS_PATH, CORPUS_SOURCE_PATH, loadCorpus } from "./corpus.js";
 
@@ -33,25 +34,22 @@ describe("the vendored method-tree corpus", () => {
     expect(corpus.format).toBe(1);
   });
 
-  it("is the conformance repository's file when that repository is checked out beside this one", () => {
+  it("is the conformance repository's file at the recorded commit, when a checkout beside this one holds it", () => {
     // tests/fixtures/ sits two levels below the repository, whose siblings hold `conformance`.
-    const canonical = join(
-      dirname(CORPUS_PATH),
-      "..",
-      "..",
-      "..",
-      "conformance",
-      "tests",
-      "method_tree",
-      "fixtures",
-      "method-tree-corpus.json",
-    );
-    let canonicalBytes: Buffer;
+    const conformance = join(dirname(CORPUS_PATH), "..", "..", "..", "conformance");
+    if (!existsSync(join(conformance, ".git"))) return; // Not checked out here, as in CI.
+    const corpusPath = record.source.replace(/^conformance\//, "");
+    let committedBytes: Buffer;
     try {
-      canonicalBytes = readFileSync(canonical);
+      // The recorded commit, not the working tree, which may be on another branch or edited.
+      committedBytes = execFileSync(
+        "git",
+        ["-C", conformance, "show", `${record.conformance_commit}:${corpusPath}`],
+        { stdio: ["ignore", "pipe", "ignore"], maxBuffer: 64 * 1024 * 1024 },
+      );
     } catch {
-      return; // Not checked out here, as in CI: conformance's own drift check compares the copies.
+      return; // The checkout does not hold the commit yet; fetching it is the developer's call.
     }
-    expect(bytes.equals(canonicalBytes)).toBe(true);
+    expect(bytes.equals(committedBytes)).toBe(true);
   });
 });

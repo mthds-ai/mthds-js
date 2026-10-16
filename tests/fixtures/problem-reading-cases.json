@@ -90,6 +90,99 @@
       "name": "unknown-code-in-an-unknown-family"
     },
     {
+      "description": "A problem whose code is unknown in the auth family and whose step kind is unknown reads as received; its step kind reads as report, since the auth codes do not all give the same step kind to the actor and to the other reader, while its known domain and retry read as sent.",
+      "expected": {
+        "code": "auth.passkey_expired",
+        "detail": "The passkey the request presents has expired.",
+        "domain": "account",
+        "next_step": {
+          "detail": "Ask the account's owner to register a new passkey.",
+          "kind": "escalate"
+        },
+        "retry": "no",
+        "status": 401,
+        "title": "The passkey has expired",
+        "type": "https://mthds.ai/errors/auth.passkey_expired"
+      },
+      "input": {
+        "body": "{\"type\":\"https://mthds.ai/errors/auth.passkey_expired\",\"title\":\"The passkey has expired\",\"status\":401,\"detail\":\"The passkey the request presents has expired.\",\"code\":\"auth.passkey_expired\",\"domain\":\"account\",\"retry\":\"no\",\"next_step\":{\"kind\":\"escalate\",\"detail\":\"Ask the account's owner to register a new passkey.\"}}",
+        "headers": {
+          "content-type": "application/problem+json"
+        },
+        "kind": "response",
+        "route": "GET /models",
+        "status": 401
+      },
+      "name": "unknown-step-kind-in-the-auth-family",
+      "reading": {
+        "domain": "account",
+        "retry": "no",
+        "step_kind": "report"
+      }
+    },
+    {
+      "description": "A problem whose code is unknown in the input family, with an unknown domain and an unknown step kind, reads as received; its domain reads as input, the domain every input code shares, and its step kind as report, since the input codes give the actor and the other reader different steps.",
+      "expected": {
+        "code": "input.smudged",
+        "detail": "The input 'contract' is too smudged to read.",
+        "domain": "steward",
+        "next_step": {
+          "detail": "Ask the steward for a cleaner copy of the input 'contract'.",
+          "kind": "escalate"
+        },
+        "retry": "no",
+        "status": 422,
+        "title": "An input is smudged",
+        "type": "https://mthds.ai/errors/input.smudged"
+      },
+      "input": {
+        "body": "{\"type\":\"https://mthds.ai/errors/input.smudged\",\"title\":\"An input is smudged\",\"status\":422,\"detail\":\"The input 'contract' is too smudged to read.\",\"code\":\"input.smudged\",\"domain\":\"steward\",\"retry\":\"no\",\"next_step\":{\"kind\":\"escalate\",\"detail\":\"Ask the steward for a cleaner copy of the input 'contract'.\"}}",
+        "headers": {
+          "content-type": "application/problem+json"
+        },
+        "kind": "response",
+        "route": "GET /models",
+        "status": 422
+      },
+      "name": "unknown-domain-in-the-input-family",
+      "reading": {
+        "domain": "input",
+        "retry": "no",
+        "step_kind": "report"
+      }
+    },
+    {
+      "description": "A problem whose code is unknown in the request family, with an unknown domain and an unknown step kind, reads as received; it reads as runtime and report, since the request codes share neither a domain nor a step kind.",
+      "expected": {
+        "code": "request.smudged",
+        "detail": "The request is too smudged to read.",
+        "domain": "steward",
+        "next_step": {
+          "detail": "Ask the steward to send the request again.",
+          "kind": "escalate"
+        },
+        "retry": "no",
+        "status": 400,
+        "title": "The request is smudged",
+        "type": "https://mthds.ai/errors/request.smudged"
+      },
+      "input": {
+        "body": "{\"type\":\"https://mthds.ai/errors/request.smudged\",\"title\":\"The request is smudged\",\"status\":400,\"detail\":\"The request is too smudged to read.\",\"code\":\"request.smudged\",\"domain\":\"steward\",\"retry\":\"no\",\"next_step\":{\"kind\":\"escalate\",\"detail\":\"Ask the steward to send the request again.\"}}",
+        "headers": {
+          "content-type": "application/problem+json"
+        },
+        "kind": "response",
+        "route": "GET /models",
+        "status": 400
+      },
+      "name": "unknown-domain-in-a-family-whose-domains-differ",
+      "reading": {
+        "domain": "runtime",
+        "retry": "no",
+        "step_kind": "report"
+      }
+    },
+    {
       "description": "A problem with a code under a registered extension prefix reads as received, its extra member kept.",
       "expected": {
         "code": "pipelex.billing.credit_exhausted",
@@ -293,7 +386,33 @@
       "name": "json-constant-nan"
     },
     {
-      "description": "A proxy's HTML error page is no problem document, so it reads as an unreadable answer naming its status.",
+      "description": "A proxy's HTML error page on a route that creates a run is no problem document, and the run may have started behind the proxy, so it reads as client.outcome_unknown.",
+      "expected": {
+        "code": "client.outcome_unknown",
+        "detail": "The connection was lost after a request that creates a run had left, so the run may exist.",
+        "domain": "runtime",
+        "next_step": {
+          "detail": "Read the run if its id is known, and otherwise leave the outcome unknown rather than send the request again automatically.",
+          "kind": "read_run"
+        },
+        "params": {},
+        "retry": "outcome_unknown",
+        "title": "The call may have created a run",
+        "type": "https://mthds.ai/errors/client.outcome_unknown"
+      },
+      "input": {
+        "body": "<html><head><title>502 Bad Gateway</title></head><body><center><h1>502 Bad Gateway</h1></center><hr><center>nginx</center></body></html>",
+        "headers": {
+          "content-type": "text/html"
+        },
+        "kind": "response",
+        "route": "POST /start",
+        "status": 502
+      },
+      "name": "html-502"
+    },
+    {
+      "description": "A proxy's HTML error page on a route that creates nothing is no problem document, so it reads as an unreadable answer naming its status.",
       "expected": {
         "code": "client.response_unreadable",
         "detail": "The runtime answered with the HTTP status 502 and a body that is not a problem document the client can read.",
@@ -315,10 +434,10 @@
           "content-type": "text/html"
         },
         "kind": "response",
-        "route": "POST /start",
+        "route": "GET /models",
         "status": 502
       },
-      "name": "html-502"
+      "name": "html-502-on-a-read"
     },
     {
       "description": "An empty 503 on a route that creates nothing reads as runtime.unavailable, the one core code of that status, with retry_after from the header.",
@@ -349,21 +468,184 @@
       "name": "empty-503-with-retry-after"
     },
     {
-      "description": "An empty 503 on a route that creates a run reads as an unreadable answer, since an answer that is no problem document never invites a repeat of a run.",
+      "description": "A Retry-After in the IMF-fixdate form, a date in the past, gives a retry_after of 0.",
       "expected": {
-        "code": "client.response_unreadable",
-        "detail": "The runtime answered with the HTTP status 503 and a body that is not a problem document the client can read.",
+        "code": "runtime.unavailable",
+        "detail": "The runtime, or a service it depends on, is unavailable.",
         "domain": "runtime",
         "next_step": {
-          "detail": "Report this to whoever runs the runtime, with the status and the body.",
-          "kind": "report"
+          "detail": "Send the request again after a while.",
+          "kind": "retry"
         },
-        "params": {
-          "status": 503
+        "params": {},
+        "retry": "yes",
+        "retry_after": 0,
+        "status": 503,
+        "title": "The runtime or a service it depends on is unavailable",
+        "type": "https://mthds.ai/errors/runtime.unavailable"
+      },
+      "input": {
+        "body": "",
+        "headers": {
+          "retry-after": "Sun, 06 Nov 1994 08:49:37 GMT"
         },
-        "retry": "no",
-        "title": "The runtime's answer could not be read",
-        "type": "https://mthds.ai/errors/client.response_unreadable"
+        "kind": "response",
+        "route": "GET /models",
+        "status": 503
+      },
+      "name": "retry-after-imf-fixdate"
+    },
+    {
+      "description": "A Retry-After in the obsolete RFC 850 form gives a retry_after of 0: its two-digit year 94 would be more than 50 years ahead as 2094, so it reads as 1994, a date in the past.",
+      "expected": {
+        "code": "runtime.unavailable",
+        "detail": "The runtime, or a service it depends on, is unavailable.",
+        "domain": "runtime",
+        "next_step": {
+          "detail": "Send the request again after a while.",
+          "kind": "retry"
+        },
+        "params": {},
+        "retry": "yes",
+        "retry_after": 0,
+        "status": 503,
+        "title": "The runtime or a service it depends on is unavailable",
+        "type": "https://mthds.ai/errors/runtime.unavailable"
+      },
+      "input": {
+        "body": "",
+        "headers": {
+          "retry-after": "Sunday, 06-Nov-94 08:49:37 GMT"
+        },
+        "kind": "response",
+        "route": "GET /models",
+        "status": 503
+      },
+      "name": "retry-after-rfc850-date"
+    },
+    {
+      "description": "A Retry-After in the asctime form, its one-digit day padded with a space, a date in the past, gives a retry_after of 0.",
+      "expected": {
+        "code": "runtime.unavailable",
+        "detail": "The runtime, or a service it depends on, is unavailable.",
+        "domain": "runtime",
+        "next_step": {
+          "detail": "Send the request again after a while.",
+          "kind": "retry"
+        },
+        "params": {},
+        "retry": "yes",
+        "retry_after": 0,
+        "status": 503,
+        "title": "The runtime or a service it depends on is unavailable",
+        "type": "https://mthds.ai/errors/runtime.unavailable"
+      },
+      "input": {
+        "body": "",
+        "headers": {
+          "retry-after": "Sun Nov  6 08:49:37 1994"
+        },
+        "kind": "response",
+        "route": "GET /models",
+        "status": 503
+      },
+      "name": "retry-after-asctime-date"
+    },
+    {
+      "description": "A Retry-After date with a numeric zone is in none of the three forms an HTTP recipient accepts, so it gives no retry_after.",
+      "expected": {
+        "code": "runtime.unavailable",
+        "detail": "The runtime, or a service it depends on, is unavailable.",
+        "domain": "runtime",
+        "next_step": {
+          "detail": "Send the request again after a while.",
+          "kind": "retry"
+        },
+        "params": {},
+        "retry": "yes",
+        "status": 503,
+        "title": "The runtime or a service it depends on is unavailable",
+        "type": "https://mthds.ai/errors/runtime.unavailable"
+      },
+      "input": {
+        "body": "",
+        "headers": {
+          "retry-after": "Sun, 06 Nov 1994 08:49:37 +0000"
+        },
+        "kind": "response",
+        "route": "GET /models",
+        "status": 503
+      },
+      "name": "retry-after-date-with-a-numeric-zone"
+    },
+    {
+      "description": "A Retry-After date without its day name is in none of the three forms an HTTP recipient accepts, so it gives no retry_after.",
+      "expected": {
+        "code": "runtime.unavailable",
+        "detail": "The runtime, or a service it depends on, is unavailable.",
+        "domain": "runtime",
+        "next_step": {
+          "detail": "Send the request again after a while.",
+          "kind": "retry"
+        },
+        "params": {},
+        "retry": "yes",
+        "status": 503,
+        "title": "The runtime or a service it depends on is unavailable",
+        "type": "https://mthds.ai/errors/runtime.unavailable"
+      },
+      "input": {
+        "body": "",
+        "headers": {
+          "retry-after": "06 Nov 1994 08:49:37 GMT"
+        },
+        "kind": "response",
+        "route": "GET /models",
+        "status": 503
+      },
+      "name": "retry-after-date-without-a-day-name"
+    },
+    {
+      "description": "A Retry-After date whose leap second carries it past the end of the year 9999 names no moment a reader holds, so it gives no delay.",
+      "expected": {
+        "code": "runtime.unavailable",
+        "detail": "The runtime, or a service it depends on, is unavailable.",
+        "domain": "runtime",
+        "next_step": {
+          "detail": "Send the request again after a while.",
+          "kind": "retry"
+        },
+        "params": {},
+        "retry": "yes",
+        "status": 503,
+        "title": "The runtime or a service it depends on is unavailable",
+        "type": "https://mthds.ai/errors/runtime.unavailable"
+      },
+      "input": {
+        "body": "",
+        "headers": {
+          "retry-after": "Fri, 31 Dec 9999 23:59:60 GMT"
+        },
+        "kind": "response",
+        "route": "GET /models",
+        "status": 503
+      },
+      "name": "retry-after-leap-second-past-the-year-9999"
+    },
+    {
+      "description": "An empty 503 on a route that creates a run is no problem document, so it never invites a repeat, and the run may have started behind whatever answered, so it reads as client.outcome_unknown rather than runtime.unavailable.",
+      "expected": {
+        "code": "client.outcome_unknown",
+        "detail": "The connection was lost after a request that creates a run had left, so the run may exist.",
+        "domain": "runtime",
+        "next_step": {
+          "detail": "Read the run if its id is known, and otherwise leave the outcome unknown rather than send the request again automatically.",
+          "kind": "read_run"
+        },
+        "params": {},
+        "retry": "outcome_unknown",
+        "title": "The call may have created a run",
+        "type": "https://mthds.ai/errors/client.outcome_unknown"
       },
       "input": {
         "body": "",
@@ -431,21 +713,19 @@
       "name": "bare-404"
     },
     {
-      "description": "A JSON object that is not a problem document reads as an unreadable answer naming its status.",
+      "description": "A JSON object that is not a problem document, answered with a 500 on a route that creates a run, leaves the outcome unknown, since the run may have started.",
       "expected": {
-        "code": "client.response_unreadable",
-        "detail": "The runtime answered with the HTTP status 500 and a body that is not a problem document the client can read.",
+        "code": "client.outcome_unknown",
+        "detail": "The connection was lost after a request that creates a run had left, so the run may exist.",
         "domain": "runtime",
         "next_step": {
-          "detail": "Report this to whoever runs the runtime, with the status and the body.",
-          "kind": "report"
+          "detail": "Read the run if its id is known, and otherwise leave the outcome unknown rather than send the request again automatically.",
+          "kind": "read_run"
         },
-        "params": {
-          "status": 500
-        },
-        "retry": "no",
-        "title": "The runtime's answer could not be read",
-        "type": "https://mthds.ai/errors/client.response_unreadable"
+        "params": {},
+        "retry": "outcome_unknown",
+        "title": "The call may have created a run",
+        "type": "https://mthds.ai/errors/client.outcome_unknown"
       },
       "input": {
         "body": "{\"detail\":\"Internal Server Error\"}",
@@ -457,6 +737,32 @@
         "status": 500
       },
       "name": "json-not-a-problem-500"
+    },
+    {
+      "description": "A gateway's 504 on /execute after its own time limit, with a JSON body that is no problem document, leaves the outcome unknown, since the run may have started behind the gateway.",
+      "expected": {
+        "code": "client.outcome_unknown",
+        "detail": "The connection was lost after a request that creates a run had left, so the run may exist.",
+        "domain": "runtime",
+        "next_step": {
+          "detail": "Read the run if its id is known, and otherwise leave the outcome unknown rather than send the request again automatically.",
+          "kind": "read_run"
+        },
+        "params": {},
+        "retry": "outcome_unknown",
+        "title": "The call may have created a run",
+        "type": "https://mthds.ai/errors/client.outcome_unknown"
+      },
+      "input": {
+        "body": "{\"message\":\"Endpoint request timed out\"}",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "kind": "response",
+        "route": "POST /execute",
+        "status": 504
+      },
+      "name": "gateway-504-on-execute"
     },
     {
       "description": "A body nested deeper than any decoder accepts reads as an unreadable answer naming its status.",
@@ -487,7 +793,64 @@
       "name": "nested-past-the-decoder-limit"
     },
     {
-      "description": "A 200 whose body is not the route's answer reads as an unreadable answer naming its status.",
+      "description": "A 202 on /execute whose body nests exactly 512 levels deep, its own object counted, is within the body nesting limit every reader pins, so it names its run and reads as client.follow_failed.",
+      "expected": {
+        "code": "client.follow_failed",
+        "detail": "The client stopped following the run 'run_7f3a', which may still be going.",
+        "domain": "runtime",
+        "next_step": {
+          "detail": "Read the run 'run_7f3a' by its id rather than start it again.",
+          "kind": "read_run"
+        },
+        "params": {
+          "pipeline_run_id": "run_7f3a"
+        },
+        "pipeline_run_id": "run_7f3a",
+        "retry": "outcome_unknown",
+        "title": "Following a started run stopped",
+        "type": "https://mthds.ai/errors/client.follow_failed"
+      },
+      "input": {
+        "body": "{\"pipeline_run_id\":\"run_7f3a\",\"trace\":[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]}",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "kind": "response",
+        "route": "POST /execute",
+        "status": 202
+      },
+      "name": "nested-at-the-body-limit"
+    },
+    {
+      "description": "A problem body whose extra member nests it 513 levels deep, its own object counted, passes the body nesting limit of 512 that every reader pins, so it reads as an unreadable answer rather than as its problem.",
+      "expected": {
+        "code": "client.response_unreadable",
+        "detail": "The runtime answered with the HTTP status 500 and a body that is not a problem document the client can read.",
+        "domain": "runtime",
+        "next_step": {
+          "detail": "Report this to whoever runs the runtime, with the status and the body.",
+          "kind": "report"
+        },
+        "params": {
+          "status": 500
+        },
+        "retry": "no",
+        "title": "The runtime's answer could not be read",
+        "type": "https://mthds.ai/errors/client.response_unreadable"
+      },
+      "input": {
+        "body": "{\"type\":\"https://mthds.ai/errors/runtime.unexpected\",\"title\":\"An unexpected error occurred\",\"status\":500,\"detail\":\"The runtime met an unexpected error.\",\"code\":\"runtime.unexpected\",\"domain\":\"runtime\",\"retry\":\"no\",\"next_step\":{\"kind\":\"report\",\"detail\":\"Report this to whoever runs the runtime.\"},\"trace\":[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]}",
+        "headers": {
+          "content-type": "application/problem+json"
+        },
+        "kind": "response",
+        "route": "GET /models",
+        "status": 500
+      },
+      "name": "nested-past-the-body-limit"
+    },
+    {
+      "description": "A 200 on a route that creates nothing whose body is not the route's answer reads as an unreadable answer naming its status.",
       "expected": {
         "code": "client.response_unreadable",
         "detail": "The runtime answered with the HTTP status 200 and a body that is not a problem document the client can read.",
@@ -509,13 +872,120 @@
           "content-type": "text/plain"
         },
         "kind": "response",
-        "route": "POST /execute",
+        "route": "GET /models",
         "status": 200
       },
       "name": "success-body-not-json"
     },
     {
-      "description": "A 202 on /execute acknowledges a run the client does not follow, so it reads as client.follow_failed naming the run.",
+      "description": "A 200 on /execute whose body is not the route's answer says the runtime accepted the request, so the run may exist, and it reads as client.outcome_unknown, naming no run when the body names none.",
+      "expected": {
+        "code": "client.outcome_unknown",
+        "detail": "The connection was lost after a request that creates a run had left, so the run may exist.",
+        "domain": "runtime",
+        "next_step": {
+          "detail": "Read the run if its id is known, and otherwise leave the outcome unknown rather than send the request again automatically.",
+          "kind": "read_run"
+        },
+        "params": {},
+        "retry": "outcome_unknown",
+        "title": "The call may have created a run",
+        "type": "https://mthds.ai/errors/client.outcome_unknown"
+      },
+      "input": {
+        "body": "OK",
+        "headers": {
+          "content-type": "text/plain"
+        },
+        "kind": "response",
+        "route": "POST /execute",
+        "status": 200
+      },
+      "name": "success-body-not-json-on-execute"
+    },
+    {
+      "description": "A 200 on /execute that names its run but whose pipe_output is not an output reads as client.outcome_unknown naming the run, in its params and as the problem's pipeline_run_id, since the run exists.",
+      "expected": {
+        "code": "client.outcome_unknown",
+        "detail": "The connection was lost after a request that creates a run had left, so the run may exist.",
+        "domain": "runtime",
+        "next_step": {
+          "detail": "Read the run if its id is known, and otherwise leave the outcome unknown rather than send the request again automatically.",
+          "kind": "read_run"
+        },
+        "params": {
+          "pipeline_run_id": "run_7f3a"
+        },
+        "pipeline_run_id": "run_7f3a",
+        "retry": "outcome_unknown",
+        "title": "The call may have created a run",
+        "type": "https://mthds.ai/errors/client.outcome_unknown"
+      },
+      "input": {
+        "body": "{\"pipeline_run_id\":\"run_7f3a\",\"pipe_output\":42}",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "kind": "response",
+        "route": "POST /execute",
+        "status": 200
+      },
+      "name": "execute-success-whose-output-is-unreadable"
+    },
+    {
+      "description": "A 202 on /start whose pipeline_run_id is no string is not the route's answer and names no run the client can read, so it reads as client.outcome_unknown naming no run.",
+      "expected": {
+        "code": "client.outcome_unknown",
+        "detail": "The connection was lost after a request that creates a run had left, so the run may exist.",
+        "domain": "runtime",
+        "next_step": {
+          "detail": "Read the run if its id is known, and otherwise leave the outcome unknown rather than send the request again automatically.",
+          "kind": "read_run"
+        },
+        "params": {},
+        "retry": "outcome_unknown",
+        "title": "The call may have created a run",
+        "type": "https://mthds.ai/errors/client.outcome_unknown"
+      },
+      "input": {
+        "body": "{\"pipeline_run_id\":42}",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "kind": "response",
+        "route": "POST /start",
+        "status": 202
+      },
+      "name": "start-accepted-with-a-run-id-that-is-no-string"
+    },
+    {
+      "description": "A 202 on /start whose pipeline_run_id is the empty string names no run the client can read, so it reads as client.outcome_unknown naming no run, as a 202 on /execute naming none does.",
+      "expected": {
+        "code": "client.outcome_unknown",
+        "detail": "The connection was lost after a request that creates a run had left, so the run may exist.",
+        "domain": "runtime",
+        "next_step": {
+          "detail": "Read the run if its id is known, and otherwise leave the outcome unknown rather than send the request again automatically.",
+          "kind": "read_run"
+        },
+        "params": {},
+        "retry": "outcome_unknown",
+        "title": "The call may have created a run",
+        "type": "https://mthds.ai/errors/client.outcome_unknown"
+      },
+      "input": {
+        "body": "{\"pipeline_run_id\":\"\"}",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "kind": "response",
+        "route": "POST /start",
+        "status": 202
+      },
+      "name": "start-success-with-an-empty-run-id"
+    },
+    {
+      "description": "A 202 on /execute acknowledges a run the client does not follow, so it reads as client.follow_failed naming the run, in its params and as the problem's pipeline_run_id, since the run exists.",
       "expected": {
         "code": "client.follow_failed",
         "detail": "The client stopped following the run 'run_7f3a', which may still be going.",
@@ -527,6 +997,7 @@
         "params": {
           "pipeline_run_id": "run_7f3a"
         },
+        "pipeline_run_id": "run_7f3a",
         "retry": "outcome_unknown",
         "title": "Following a started run stopped",
         "type": "https://mthds.ai/errors/client.follow_failed"
@@ -543,6 +1014,84 @@
         "status": 202
       },
       "name": "execute-accepted-asynchronously"
+    },
+    {
+      "description": "A 202 on /execute whose body names no run says the runtime accepted the request, so the run may exist under an id the client never learned, and it reads as client.outcome_unknown.",
+      "expected": {
+        "code": "client.outcome_unknown",
+        "detail": "The connection was lost after a request that creates a run had left, so the run may exist.",
+        "domain": "runtime",
+        "next_step": {
+          "detail": "Read the run if its id is known, and otherwise leave the outcome unknown rather than send the request again automatically.",
+          "kind": "read_run"
+        },
+        "params": {},
+        "retry": "outcome_unknown",
+        "title": "The call may have created a run",
+        "type": "https://mthds.ai/errors/client.outcome_unknown"
+      },
+      "input": {
+        "body": "{}",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "kind": "response",
+        "route": "POST /execute",
+        "status": 202
+      },
+      "name": "execute-accepted-naming-no-run"
+    },
+    {
+      "description": "A 202 on /execute whose pipeline_run_id is no string names no run the client can read, so it reads as client.outcome_unknown naming no run.",
+      "expected": {
+        "code": "client.outcome_unknown",
+        "detail": "The connection was lost after a request that creates a run had left, so the run may exist.",
+        "domain": "runtime",
+        "next_step": {
+          "detail": "Read the run if its id is known, and otherwise leave the outcome unknown rather than send the request again automatically.",
+          "kind": "read_run"
+        },
+        "params": {},
+        "retry": "outcome_unknown",
+        "title": "The call may have created a run",
+        "type": "https://mthds.ai/errors/client.outcome_unknown"
+      },
+      "input": {
+        "body": "{\"pipeline_run_id\":42}",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "kind": "response",
+        "route": "POST /execute",
+        "status": 202
+      },
+      "name": "execute-accepted-with-a-run-id-that-is-no-string"
+    },
+    {
+      "description": "A 202 on /execute whose pipeline_run_id is the empty string names no run, so it reads as client.outcome_unknown naming no run.",
+      "expected": {
+        "code": "client.outcome_unknown",
+        "detail": "The connection was lost after a request that creates a run had left, so the run may exist.",
+        "domain": "runtime",
+        "next_step": {
+          "detail": "Read the run if its id is known, and otherwise leave the outcome unknown rather than send the request again automatically.",
+          "kind": "read_run"
+        },
+        "params": {},
+        "retry": "outcome_unknown",
+        "title": "The call may have created a run",
+        "type": "https://mthds.ai/errors/client.outcome_unknown"
+      },
+      "input": {
+        "body": "{\"pipeline_run_id\":\"\"}",
+        "headers": {
+          "content-type": "application/json"
+        },
+        "kind": "response",
+        "route": "POST /execute",
+        "status": 202
+      },
+      "name": "execute-accepted-with-an-empty-run-id"
     },
     {
       "description": "A runtime the client cannot connect to reads as client.unreachable naming the configured base URL.",

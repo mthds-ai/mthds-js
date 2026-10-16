@@ -57,11 +57,12 @@ describe("errorPath", () => {
 });
 
 describe("toolInstallProblem", () => {
-  it("reads an install that ran and failed as runtime.unavailable, worth a retry", () => {
+  it("reads an install that ran and failed as client.tool_missing naming the tool", () => {
     const err = new ToolInstallError("uv tool install failed", "install_failed", "pipelex");
     expect(toolInstallProblem(err, "pipelex", "Failed")).toMatchObject({
-      code: "runtime.unavailable",
-      retry: "yes",
+      code: "client.tool_missing",
+      retry: "no",
+      params: { tool: "pipelex" },
       message: "Failed",
     });
   });

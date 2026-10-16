@@ -315,7 +315,7 @@ describe("passthrough", () => {
     );
   });
 
-  it("reports an auto-install uv ran and failed as runtime.unavailable, worth a retry", () => {
+  it("reports an auto-install uv ran and failed as client.tool_missing naming the tool", () => {
     mockedCheckBinaryVersion.mockReturnValue({
       status: "missing",
       installed_version: null,
@@ -331,8 +331,9 @@ describe("passthrough", () => {
 
     expect(mockedAgentError).toHaveBeenCalledWith(
       expect.objectContaining({
-        code: "runtime.unavailable",
-        retry: "yes",
+        code: "client.tool_missing",
+        retry: "no",
+        params: { tool: "pipelex" },
         message: expect.stringContaining("offline"),
       }),
       { recovery: PX_AGENT_RECOVERY },

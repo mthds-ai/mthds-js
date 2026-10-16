@@ -36,15 +36,12 @@ export function errorPath(err: unknown, fallback: string): string {
 }
 
 /**
- * The problem of a tool `tool` that could not be installed: `runtime.unavailable`, worth a retry,
- * when the install ran and failed, which a later attempt may get past, and `client.tool_missing`
- * when the tool is absent and cannot be installed now, naming `uv` when uv itself is missing, or
- * when the install succeeded and the tool is still not on the PATH.
+ * The problem of a tool `tool` that could not be installed: `client.tool_missing`, as the core
+ * registry reads a tool that is missing, cannot be spawned or failed to install, naming `uv` when
+ * uv itself is missing, and the tool when the install ran and failed or succeeded with the tool
+ * still not on the PATH. The command's sentence in `message` says which.
  */
 export function toolInstallProblem(err: unknown, tool: string, message: string): Problem {
-  if (err instanceof ToolInstallError && err.reason === "install_failed") {
-    return agentProblem("runtime.unavailable", {}, message);
-  }
   const missing = err instanceof ToolInstallError ? err.tool : tool;
   return agentProblem("client.tool_missing", { tool: missing }, message);
 }

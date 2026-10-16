@@ -204,6 +204,35 @@ describe("MthdsApiClient.execute argument validation", () => {
 });
 
 describe("MthdsApiClient transport failures", () => {
+  it.each([
+    ["execute", "client.outcome_unknown"],
+    ["models", "client.unreachable"],
+  ] as const)(
+    "gives up the request when %s's answer fails half way through its body, as %s",
+    async (call, code) => {
+      const client = makeClient();
+      let signal: AbortSignal | undefined;
+      vi.spyOn(globalThis, "fetch").mockImplementation(async (_url, init) => {
+        signal = init?.signal ?? undefined;
+        const body = new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(new TextEncoder().encode('{"pipeline_run_id":'));
+          },
+          pull(controller) {
+            controller.error(networkError("ECONNRESET", "read"));
+          },
+        });
+        return new Response(body, { status: 200 });
+      });
+      const run = call === "execute" ? client.execute({ pipe_code: "p" }) : client.models();
+      const err = await rejection(run);
+      expect(err).toBeInstanceOf(ApiTransportError);
+      expect((err as ApiTransportError).code).toBe(code);
+      // The request is aborted, which releases the connection and what arrived of the body.
+      expect(signal?.aborted).toBe(true);
+    },
+  );
+
   it("reads a refused connection as client.unreachable, even on a route that creates a run", async () => {
     const client = makeClient();
     vi.spyOn(globalThis, "fetch").mockRejectedValue(networkError("ECONNREFUSED", "connect"));

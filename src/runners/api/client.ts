@@ -276,6 +276,10 @@ export class MthdsApiClient implements Runner {
         body,
       };
     } catch (err) {
+      // Whatever failed, the request is given up: aborting it releases the connection and the
+      // answer's body, should it have started arriving before the failure, as when reading it
+      // fails half way.
+      controller.abort();
       throw new ApiTransportError(
         this.transportProblem(route, err, timedOut),
         { apiUrl: this.baseUrl, networkCode: networkErrorCode(err) },

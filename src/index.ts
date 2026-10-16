@@ -19,12 +19,16 @@
 export * from "./protocol/index.js";
 
 // ── API runner / client (runners/api) ────────────────────────────────
-export { MthdsApiClient, DEFAULT_API_BASE_URL } from "./runners/api/client.js";
-export type {
-  MthdsApiClientOptions,
-  MthdsFile,
-  ValidateFilesOptions,
-} from "./runners/api/client.js";
+export { MthdsApiClient, DEFAULT_API_BASE_URL, HANDSHAKE_TTL_MS } from "./runners/api/client.js";
+export type { MthdsApiClientOptions } from "./runners/api/client.js";
+// How a sender chooses between inline and by hash, and what it reads from a handshake.
+export {
+  INLINE_TREE_MAX_BYTES,
+  announcedTreeLimits,
+  declaresBlobStore,
+  listerLimitsOf,
+} from "./runners/api/tree-sending.js";
+export type { AnnouncedTreeLimits } from "./runners/api/tree-sending.js";
 export type { AppInfo } from "./runners/api/user-agent.js";
 export { MTHDS_JS_VERSION } from "./version.js";
 
@@ -44,7 +48,9 @@ export type {
 export {
   ApiResponseError,
   ApiUnreachableError,
+  BlobUploadError,
   ClientAuthenticationError,
+  MalformedBlobsAnswerError,
   PipelineExecuteTimeoutError,
   RunStillRunningError,
 } from "./runners/api/exceptions.js";

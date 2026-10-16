@@ -6,7 +6,7 @@
 
 import { readdir } from "node:fs/promises";
 import { sep } from "node:path";
-import type { FileEntry, MethodFiles } from "../protocol/file_entries.js";
+import type { MethodFiles, MethodTreeSource } from "../protocol/file_entries.js";
 import { namesExcludedDirectory, type ExclusionRule, MethodTreeError } from "./exceptions.js";
 import { readMember } from "./file-reading.js";
 import { locateFunction, type FunctionLocation } from "./function-names.js";
@@ -17,6 +17,7 @@ import {
   type ReferenceRefusalCode,
 } from "./references.js";
 import { entryKindOf } from "./membership.js";
+import { defineFileEntry, inlineFileEntry } from "./file-entry-encoding.js";
 import { directoriesOf } from "./tree-path.js";
 
 /** A file of a listed tree. */
@@ -113,8 +114,11 @@ function referenceMessage(refusal: Omit<ReferenceRefusal, "message">): string {
   }
 }
 
-/** A method tree, listed from the file system. */
-export class MethodTree {
+/**
+ * A method tree, listed from the file system. It is a `MethodTreeSource`, so it can be handed to a
+ * client's `execute`, `start` or `validate` as `tree`, which sends it inline or by hash.
+ */
+export class MethodTree implements MethodTreeSource {
   /** The absolute path of the root, or `null` for the one-file tree of a `.mthds` file alone. */
   readonly root: string | null;
   /** The tree path of the `.mthds` file handed over alone, or `null` for a directory. */
@@ -148,6 +152,15 @@ export class MethodTree {
   /** Whether `treePath` names a file of the tree. */
   has(treePath: string): boolean {
     return this.absolutes.has(treePath);
+  }
+
+  /**
+   * The absolute path of a file of the tree as the file system spells it, which can differ from its
+   * tree path, normalized to NFC (a name written decomposed, for one), or `undefined` for a tree path
+   * the tree does not hold.
+   */
+  onDiskPath(treePath: string): string | undefined {
+    return this.absolutes.get(treePath)?.toString();
   }
 
   /**
@@ -185,22 +198,8 @@ export class MethodTree {
   async toMethodFiles(): Promise<MethodFiles> {
     const entries: MethodFiles = {};
     for (const file of this.files) {
-      const bytes = await this.readFile(file.path);
-      let text: string | null;
-      try {
-        text = strictUtf8.decode(bytes);
-      } catch {
-        text = null;
-      }
-      const value: FileEntry = text ?? { base64: bytes.toString("base64") };
-      // Defined as an own property, since assigning to a key such as `__proto__`, a tree path like
-      // any other, would set the object's prototype instead of adding the file.
-      Object.defineProperty(entries, file.path, {
-        value,
-        enumerable: true,
-        writable: true,
-        configurable: true,
-      });
+      // Each an own property, so a file named `__proto__` travels like any other.
+      defineFileEntry(entries, file.path, inlineFileEntry(await this.readFile(file.path)));
     }
     return entries;
   }

@@ -20,8 +20,10 @@ src/protocol/                 PURE — the MTHDS Protocol mirror (imports nothin
   protocol.ts                 MTHDSProtocol<PipeOutputT> — execute/start/validate/models/version (GENERIC)
   models.ts                   RunResultExecute<T>, RunResultStart, ModelDeck/Info/Category,
                               ValidationResult (ValidationReport | InvalidValidationReport) + ValidationError,
-                              VersionInfo, MTHDS_PROTOCOL_VERSION — slim + extension-open
-  options.ts                  RunRequest/StartRequest, RunOptions/StartOptions, ExtensionOptions (the arg surface)
+                              VersionInfo, MTHDS_PROTOCOL_VERSION, the blob routes' BlobRef/MissingBlobsRequest/
+                              MissingBlobsResult — slim + extension-open
+  options.ts                  RunRequest/StartRequest, RunOptions/StartOptions, ExtensionOptions (the arg surface:
+                              `files` or the client-only `tree`, never both), ValidateSource, assertOneMethodSource
   pipeline_inputs.ts          StuffContentOrData, PipelineInputs
   pipe_output.ts              VariableMultiplicity, PipeOutputAbstract<TWorkingMemory>
   pipe_io_contracts.ts        PipeIOContracts (pipe_ref → PipeIOContract: inputs → PipeInputContract, output →
@@ -36,7 +38,8 @@ src/protocol/                 PURE — the MTHDS Protocol mirror (imports nothin
   toml_emitter.ts             the deterministic TOML layout the two projections share, TemplateFloat and the
                               TemplateValue shapes (mirror of mthds/protocol/toml_emitter.py)
   file_entries.ts             TextFileEntry / Base64FileEntry / HashFileEntry, FileEntry, MethodFiles — how a
-                              method's file travels in a `files` map (types only; reading one is method-tree/'s)
+                              method's file travels in a `files` map — and MethodTreeSource, what a sender reads a
+                              tree through (types only; listing and reading one is method-tree/'s)
   concept.ts                  ConceptAbstract (code + domain_code: a concept as a stuff names it, never its
                               definition) + conceptRef()
   stuff.ts                    StuffAbstract<TConcept, TContent>, StuffContentAbstract
@@ -44,15 +47,20 @@ src/protocol/                 PURE — the MTHDS Protocol mirror (imports nothin
   exceptions.ts               PipelineRequestError (protocol-level base)
 src/runners/api/
   client.ts                   MthdsApiClient — IS the api runner: implements Runner (protocol + health), plus pipeIo
+                              and the blob routes (findMissingBlobs, uploadBlob) a tree sent by hash needs
+  tree-sending.ts             the inline-or-by-hash choice, the runner's announced tree limits, the two maps — pure
   models.ts                   DictStuff/DictWorkingMemory/DictPipeOutput + DictRunResultExecute (default binding);
                               ValidationErrorItem/Category (the pipe-io verdict's and run refusal's item) — the Pipelex
                               /v1/validate narrowing (PipelexValidationResult) now lives in @pipelex/sdk
   exceptions.ts               ApiResponseError (+ validationErrors and the problem members: type, title, instance,
-                              requestId, errorDomain, retryable, userAction), ApiUnreachableError, ClientAuthenticationError,
-                              RunStillRunningError, PipelineExecuteTimeoutError
+                              requestId, errorDomain, retryable, userAction, missingBlobs), ApiUnreachableError,
+                              ClientAuthenticationError, RunStillRunningError, PipelineExecuteTimeoutError, BlobUploadError,
+                              MalformedBlobsAnswerError
 src/runners/pipelex/
   runner.ts                   PipelexRunner (drives the pipelex CLI on this machine)
 src/runners/
+  method-target.ts            resolveMethodTarget: a command line's path or --content and -L into one method tree
+  bundle.ts                   writing a files map to disk for the pipelex runner; the .mthds closure /v1/pipe-io takes
   types.ts                    Runner interface (extends MTHDSProtocol<DictPipeOutput>) + Runners enum + pipe-io types
   registry.ts                 createRunner() factory
 src/method-tree/              the method tree, Node-side: listMethodTree + MethodTree, the membership rule with git's
@@ -103,7 +111,7 @@ What a client *reads* is wider. The protocol says that "a client reading a model
 
 ### `/validate` is a 200-diagnostic surface
 
-`POST /validate` is a diagnostic endpoint: **every produced verdict rides a `200`**, discriminated in the body on the mandatory `is_valid` field. A non-2xx is reserved for *no-verdict* conditions — a malformed request, an `mthds_sources` length mismatch, auth, a server fault — which throw `ApiResponseError`. A consumer pattern-matches `is_valid`; it never branches on a status code or a caught exception body.
+`POST /validate` is a diagnostic endpoint: **every produced verdict rides a `200`**, discriminated in the body on the mandatory `is_valid` field. A non-2xx is reserved for *no-verdict* conditions — a malformed request, a `files` map that is not a tree, auth, a server fault — which throw `ApiResponseError`. A consumer pattern-matches `is_valid`; it never branches on a status code or a caught exception body.
 
 The protocol layer models the verdict as `ValidationResult = ValidationReport (is_valid: true) | InvalidValidationReport (is_valid: false)`, and that neutral union is what `MthdsApiClient.validate()` returns — the standard's client speaks the standard's verdict:
 
@@ -113,7 +121,7 @@ The protocol layer models the verdict as `ValidationResult = ValidationReport (i
 | `InvalidValidationReport` | `is_valid: false` | `validation_errors[]` (typed `ValidationError` = `category` + `message`, non-empty on every invalid verdict), `pending_signatures`, `is_runnable: false`, `message` |
 
 - **The Pipelex-API narrowing lives in `@pipelex/sdk`, not here.** `PipelexValidationResult` (its `PipelexValidationReport` / `PipelexInvalidReport` arms typing `bundle_blueprint`, `graph_spec`, `validated_pipes`, the closed-vocabulary `validation_errors[]`, and the opt-in `rendered_markdown`) is owned by the runtime SDK. A consumer that wants the typed Pipelex artifacts uses `@pipelex/sdk`'s `PipelexApiClient`; `mthds` keeps to the standard. This is the MTHDS/Pipelex brand boundary: the standard's client returns the standard's neutral verdict. The two artifacts the standard itself owns — `pipe_io_contracts` and `input_form` — are the exception, typed here and imported by the SDK rather than restated (see the next section).
-- `mthds_sources` (a third, optional, parallel-array arg to `validate()`) names each submitted content so the server threads `blueprint.source` for cross-file diagnostics (an unnamed content yields `source: null`).
+- `validate()` takes the method's tree, as a `files` map or as a `tree` the client sends inline or by hash like a run's (see [api-runner.md](./api-runner.md#sending-a-methods-tree)), and each diagnostic's `source` names its file by tree path.
 - `ValidationErrorItem` (+ the closed `ValidationErrorCategory`, incl. `dry_run`) — the one structured per-error item — stays in `mthds` because the `200` invalid verdict of **`pipe-io`** carries it (`CrateInvalidReport.validation_errors`) and a **run route's** `422` refusal parses it onto `ApiResponseError.validationErrors` (`undefined` for any error with no per-error list). It is neutrally named, so no brand violation; the SDK's `/v1/validate` narrowing reuses the same shape.
 - `VersionInfo.implementation_version` — the one well-known `VersionInfo` extension is typed (still optional) so capability gating reads `version().implementation_version` directly.
 

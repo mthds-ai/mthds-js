@@ -10,6 +10,8 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
+  realpathSync,
   rmSync,
   symlinkSync,
   unlinkSync,
@@ -403,5 +405,20 @@ describe("a reference into an excluded link", () => {
     } finally {
       rmSync(outside, { recursive: true, force: true });
     }
+  });
+});
+
+describe("MethodTree.onDiskPath", () => {
+  it("gives a file's own spelling on disk, which a decomposed name keeps while its tree path is NFC", async () => {
+    const decomposed = "cafe\u0301.mthds";
+    writeFileSync(join(workspace, "METHODS.toml"), MANIFEST);
+    writeFileSync(join(workspace, decomposed), "domain = 'x'\n");
+    const tree = await listMethodTree(workspace);
+
+    expect(tree.has("caf\u00e9.mthds")).toBe(true);
+    // The name as the file system holds it, which a normalization-preserving one keeps decomposed.
+    const held = readdirSync(workspace).find((name) => name.endsWith(".mthds"))!;
+    expect(tree.onDiskPath("caf\u00e9.mthds")).toBe(join(realpathSync(workspace), held));
+    expect(tree.onDiskPath("missing.mthds")).toBeUndefined();
   });
 });

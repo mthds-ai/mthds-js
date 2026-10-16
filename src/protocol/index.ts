@@ -24,10 +24,11 @@ export type {
   RunOptions,
   StartOptions,
   ExtensionOptions,
+  ValidateSource,
 } from "./options.js";
-// Run-source predicates — invariants of the request shape itself, so every
+// Method-source predicates — invariants of the request shape itself, so every
 // client that builds a `RunRequest` enforces them from one definition.
-export { assertExclusiveRunSources, hasBundlePayload } from "./options.js";
+export { EMPTY_METHOD_TREE_MESSAGE, assertOneMethodSource, hasMethodSource } from "./options.js";
 
 // ── Method-file (catalog) serialization ──────────────────────────────
 // The canonical `[{ name, content }]` form a stored method's source/`python`
@@ -44,6 +45,8 @@ export type {
   HashFileEntry,
   FileEntry,
   MethodFiles,
+  MethodTreeSource,
+  MethodTreeSourceFile,
 } from "./file_entries.js";
 
 // ── Wire models ──────────────────────────────────────────────────────
@@ -59,6 +62,11 @@ export type {
   InvalidValidationReport,
   ValidationResult,
   VersionInfo,
+  BlobRef,
+  MissingBlobsRequest,
+  UploadTarget,
+  MissingBlob,
+  MissingBlobsResult,
 } from "./models.js";
 export type { VariableMultiplicity, PipeOutputAbstract } from "./pipe_output.js";
 export type { StuffContentOrData, PipelineInputs } from "./pipeline_inputs.js";

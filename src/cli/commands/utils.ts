@@ -14,10 +14,10 @@ export function isPipelexRunner(runner: Runner): runner is PipelexRunner {
 }
 
 /**
- * Narrow to the concrete API client. The `mthds_sources` per-content attribution
- * argument is a Pipelex-API extension (not part of the pure `MTHDSProtocol`), so
- * reaching it requires the concrete client — this guard is the type-safe way to
- * do that without polluting the protocol interface.
+ * Narrow to the concrete API client. Its Pipelex-API extensions (the `render`
+ * argument of `validate`, the runner's announced tree limits) are not part of the
+ * pure `MTHDSProtocol`, so reaching them requires the concrete client — this guard
+ * is the type-safe way to do that without polluting the protocol interface.
  */
 export function isApiRunner(runner: Runner): runner is MthdsApiClient {
   return runner.type === Runners.API;

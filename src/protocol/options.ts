@@ -1,13 +1,13 @@
 /**
  * The MTHDS Protocol's request-argument surface — the named arguments of
- * `execute` / `start`.
+ * `execute` / `start` / `validate`.
  *
  * The protocol has no request *model*: a runner takes the request's basic
  * arguments as named parameters and serializes the wire body directly, merging
  * any server-specific extension args (`extra`) as top-level properties. These
  * option/request shapes are the TS expression of that argument surface.
  *
- * The run-source predicates below travel with the request shape rather than
+ * The method-source predicates below travel with the request shape rather than
  * with any one runner: which source combinations are legal is an invariant of
  * `RunRequest` itself, so every client that builds one — the API runner, the
  * local pipelex runner, `@pipelex/sdk` — enforces it from this single
@@ -15,19 +15,27 @@
  */
 
 import { PipelineRequestError } from "./exceptions.js";
+import type { MethodFiles, MethodTreeSource } from "./file_entries.js";
 import type { VariableMultiplicity } from "./pipe_output.js";
 import type { PipelineInputs } from "./pipeline_inputs.js";
 
 /**
  * Body of the protocol's `POST /execute` — mirrors `RunRequest` in
- * `mthds-protocol.openapi.yaml`. At least one of `pipe_code` /
- * `mthds_contents` is required.
+ * `mthds-protocol.openapi.yaml`. At least one of `pipe_code` / `files` is
+ * required. With `files` and no `pipe_code`, the run starts at the manifest's
+ * `main_pipe`, or, in a method with no manifest, at the one `main_pipe` its
+ * bundles declare.
  */
 export interface RunRequest {
-  /** Code of the pipe to execute (registered, or defined in `mthds_contents`). */
+  /** Code of the pipe to execute: a pipe the runner already holds, or one defined in a bundle of `files`. */
   pipe_code?: string | null;
-  /** MTHDS bundle contents to load (always an array, even for one file). */
-  mthds_contents?: string[] | null;
+  /**
+   * The method to load, as its whole method tree: a map from tree path to file
+   * entry, each the file's text, `{ base64 }`, or `{ sha256, size }` naming bytes
+   * the runner holds in its blob store. Its bundles, its manifest when it has one,
+   * and every other file a step may read or that travels with the method.
+   */
+  files?: MethodFiles | null;
   /** Method inputs: map of input name to content (loose here, strict in the runtime). */
   inputs?: PipelineInputs | Record<string, unknown> | null;
   /** Name of the output slot to return as the main output. */
@@ -36,22 +44,6 @@ export interface RunRequest {
   output_multiplicity?: VariableMultiplicity | null;
   /** Override for the dynamic output concept reference. */
   dynamic_output_concept_ref?: string | null;
-  /**
-   * PIPELEX-API EXTENSION (not part of the pure MTHDS Protocol) — the whole
-   * method bundle as a `{ relativePath: text }` map (the `.mthds` plus its
-   * `funcs/*.py`, `structures/*.py`, `requirements.txt`). Lets custom PipeFunc
-   * Python travel with the method: the runner materializes it into a temporary
-   * library directory before the run, rather than only loading the inline
-   * `.mthds` text. Mutually exclusive with `bundle_b64` and with `mthds_contents`
-   * (a bundle carries its own `.mthds`).
-   */
-  files?: Record<string, string> | null;
-  /**
-   * PIPELEX-API EXTENSION — the same method bundle as a base64-encoded zip
-   * archive (the compressed equivalent of `files`). Mutually exclusive with
-   * `files` and with `mthds_contents`.
-   */
-  bundle_b64?: string | null;
 }
 
 /**
@@ -69,70 +61,89 @@ export type StartRequest = RunRequest;
  * request body as top-level properties — the server you call defines and
  * handles them; this SDK only passes them through. Protocol args inside
  * `extra` are rejected client-side.
+ *
+ * It also carries the two client-only options, which are never sent as such.
  */
 export interface ExtensionOptions {
   extra?: Record<string, unknown> | null;
   /**
-   * CLIENT-ONLY entrypoint hint — NEVER sent on the wire. The bundle-relative
-   * path of the `.mthds` a `run` target selected, so a local runner points
-   * `run bundle` at exactly the file the caller named instead of re-inferring
-   * the main from a multi-method directory. Set by `resolveRunBundle`; the API
-   * request builders name wire fields explicitly and ignore it.
+   * CLIENT-ONLY — the method as a tree the sender holds, in place of `files`.
+   * The client chooses how each file travels: the whole tree inline when the
+   * runner keeps no blob store or the tree is small, and otherwise every file by
+   * hash, after asking `POST /blobs/missing` which blobs the runner lacks and
+   * uploading those. Sent as `files`; mutually exclusive with `files`.
+   */
+  tree?: MethodTreeSource | null;
+  /**
+   * CLIENT-ONLY entrypoint hint — NEVER sent on the wire. The tree path of the
+   * `.mthds` file a `run` target named, so a local runner points `run bundle` at
+   * exactly that file instead of inferring the entry from a tree holding several
+   * methods. The API runner ignores it: on the wire, the entry is chosen by
+   * `pipe_code` or by the runner.
    */
   bundleMain?: string;
 }
 
 /**
  * Options for `MTHDSProtocol.execute` — the `RunRequest` fields plus the
- * generic `extra` extension passthrough. (The options surface and the wire
- * body are intentionally the same shape.)
+ * generic `extra` extension passthrough and the client-only `tree`. (The
+ * options surface and the wire body are intentionally the same shape.)
  */
 export type RunOptions = RunRequest & ExtensionOptions;
 
 /**
  * Options for `MTHDSProtocol.start` — the `StartRequest` wire fields (the
  * protocol's basic execution arguments) plus the generic `extra` extension
- * passthrough (server-specific args, merged into the body).
+ * passthrough (server-specific args, merged into the body) and the client-only
+ * `tree`.
  */
 export type StartOptions = StartRequest & ExtensionOptions;
 
 /**
- * Enforce the run-source exclusivity contract shared by every client: a method
- * bundle is self-contained (`files` / `bundle_b64` carry their own `.mthds`),
- * so it cannot be combined with `mthds_contents`, and `files` / `bundle_b64`
- * are two encodings of one bundle. Exclusivity keys off PRESENCE, not emptiness
- * — a caller who supplies `files: {}` alongside `bundle_b64` still expressed two
- * encodings — while `mthds_contents` counts only when non-empty (an empty array
- * is "no contents"). Throws `PipelineRequestError`; the API client, the local
- * runner, and `@pipelex/sdk` all call it so they reject the same combinations
- * identically. Wording mirrors the server's validator.
+ * What `MTHDSProtocol.validate` judges: the method's tree, either as the `files`
+ * map to send as it is, or as a tree the sender holds, which the client sends
+ * inline or by hash as it does for a run.
  */
-export function assertExclusiveRunSources(options: RunRequest): void {
-  const hasFiles = options.files != null;
-  const hasZip = options.bundle_b64 != null;
-  const hasContents = options.mthds_contents != null && options.mthds_contents.length > 0;
-  if (hasFiles && hasZip) {
+export type ValidateSource = { files: MethodFiles } | { tree: MethodTreeSource };
+
+/** The one refusal of a method's tree that holds no file, whichever route it was given to. */
+export const EMPTY_METHOD_TREE_MESSAGE =
+  "The method's tree holds no file; a tree holds at least one, so give the method's files or leave the method out.";
+
+/**
+ * Enforce that a request names its method at most once, and not as an empty tree:
+ * `files` is the map sent as given, `tree` the tree the client turns into that map,
+ * so both together would be two methods, keyed off presence (a caller who supplies
+ * `files: {}` beside a `tree` still named two); and a tree holding no file is no
+ * method, which the standard refuses (`empty_tree`), so `files: {}` or a tree with
+ * no file is refused whatever else the request carries, before anything is read or
+ * sent. Throws `PipelineRequestError`; the API client, the local runner and
+ * `@pipelex/sdk` all call it on every route that takes a method, so they refuse the
+ * same requests with the same message.
+ */
+export function assertOneMethodSource(options: RunOptions): void {
+  if (options.files != null && options.tree != null) {
     throw new PipelineRequestError(
-      "files and bundle_b64 are two encodings of the same bundle and are mutually exclusive; provide one.",
+      "files and tree are two forms of the method's tree and are mutually exclusive; provide one.",
     );
   }
-  if ((hasFiles || hasZip) && hasContents) {
-    throw new PipelineRequestError(
-      "A method bundle (files/bundle_b64) is self-contained; it cannot be combined with mthds_contents.",
-    );
+  const empty =
+    (options.files != null && Object.keys(options.files).length === 0) ||
+    (options.tree != null && options.tree.files.length === 0);
+  if (empty) {
+    throw new PipelineRequestError(EMPTY_METHOD_TREE_MESSAGE);
   }
 }
 
 /**
- * Does the request carry a method bundle (the pipelex-api `files` / `bundle_b64`
- * extension)? A bundle satisfies the "something to run" precondition on its own —
- * it carries its own `.mthds`, so neither `pipe_code` nor `mthds_contents` is
- * required alongside it. Unlike {@link assertExclusiveRunSources}, this keys off
- * a RUNNABLE payload: an empty map / string carries no method, so it does not
- * satisfy the precondition.
+ * Does the request carry a method to load? A non-empty `files` map or a `tree`
+ * holding a file satisfies the "something to run" precondition on its own, since
+ * the runner then starts at the method's `main_pipe` when no `pipe_code` is given.
+ * Unlike {@link assertOneMethodSource}, this keys off a RUNNABLE payload: an empty
+ * map or tree carries no method, so it does not satisfy the precondition.
  */
-export function hasBundlePayload(options: RunRequest): boolean {
+export function hasMethodSource(options: RunOptions): boolean {
   const hasFiles = options.files != null && Object.keys(options.files).length > 0;
-  const hasZip = options.bundle_b64 != null && options.bundle_b64.length > 0;
-  return hasFiles || hasZip;
+  const hasTree = options.tree != null && options.tree.files.length > 0;
+  return hasFiles || hasTree;
 }

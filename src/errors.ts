@@ -24,7 +24,9 @@ export { PipelineRequestError } from "./protocol/exceptions.js";
 export {
   ApiResponseError,
   ApiUnreachableError,
+  BlobUploadError,
   ClientAuthenticationError,
+  MalformedBlobsAnswerError,
   PipelineExecuteTimeoutError,
   RunStillRunningError,
 } from "./runners/api/exceptions.js";

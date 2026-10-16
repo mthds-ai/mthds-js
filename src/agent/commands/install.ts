@@ -61,7 +61,7 @@ export async function agentInstall(
 
   if (options.local) {
     try {
-      resolved = resolveFromLocal(options.local);
+      resolved = await resolveFromLocal(options.local);
     } catch (err) {
       agentError(`Failed to resolve local methods: ${(err as Error).message}`, "InstallError", {
         error_domain: AGENT_ERROR_DOMAINS.INSTALL,

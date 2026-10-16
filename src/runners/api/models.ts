@@ -79,9 +79,8 @@ export type ValidationErrorCategory =
  *
  * Only `category` and `message` are always present; the rest are populated per
  * `category` and dropped from the wire when unset (`exclude_none` server-side).
- * `source` is the declaring file path (CLI) or the per-content `mthds_sources` name
- * the API threads onto the in-memory load path — the owning file for cross-file
- * diagnostics.
+ * `source` is the declaring file path (CLI) or the file's tree path in the `files`
+ * map the request carried — the owning file for cross-file diagnostics.
  *
  * `suggested_fix` is the next step of a refusal: when the runner can derive one
  * deterministic correction for the error, it rides the item as structured patch

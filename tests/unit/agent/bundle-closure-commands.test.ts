@@ -6,12 +6,13 @@ import { Command } from "commander";
 import { registerApiRunnerCommands } from "../../../src/agent/commands/api-commands.js";
 import { MthdsApiClient } from "../../../src/runners/api/client.js";
 
-// On the API runner, `validate bundle` and `inputs bundle` must send a method split
-// across files whole, as the pipelex runner loads it: every `.mthds` file of a
-// directory target and of each `-L` directory, the entrypoint first. `-L` must reach
-// the subcommand when written after it, and the graph options, which only the
-// pipelex runner can honour, must be named in a warning rather than swallowed,
-// without keeping the bundle from being validated.
+// On the API runner, `validate` sends the method's tree as the standard's lister defines it, each
+// file under its tree path, and `-L` can only root a lone file's tree at a directory holding it.
+// `inputs` still sends a closure of `.mthds` files, since `/v1/pipe-io` takes no tree: every
+// `.mthds` file of a directory target and of each `-L` directory, the entrypoint first. `-L` must
+// reach the subcommand when written after it, and the graph options, which only the pipelex runner
+// can honour, must be named in a warning rather than swallowed, without keeping the bundle from
+// being validated.
 
 const ROOT = 'domain = "demo"\nmain_pipe = "main"\n';
 const CHILD = 'domain = "demo"\nmain_pipe = "step"\n[pipe.step]\ntype = "PipeLLM"\n';
@@ -58,7 +59,7 @@ function pipeIoAnswer(body: Record<string, unknown>): Record<string, unknown> {
   };
 }
 
-describe("API-runner validate and inputs send the whole bundle", () => {
+describe("API-runner validate sends the method's tree, inputs the whole bundle", () => {
   let dir: string;
   let method: string;
   let shared: string;
@@ -86,6 +87,13 @@ describe("API-runner validate and inputs send the whole bundle", () => {
     requests = [];
     vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
       const url = String(input);
+      // The handshake: a runner with no blob store, so every tree travels inline.
+      if (url.endsWith("/version")) {
+        return new Response(JSON.stringify({ protocol_version: "1.0.0" }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
       const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
       requests.push({ url, body });
       const answer = url.endsWith("/pipe-io") ? pipeIoAnswer(body) : VALIDATE_ANSWER;
@@ -123,59 +131,103 @@ describe("API-runner validate and inputs send the whole bundle", () => {
     return JSON.parse(String(stderrSpy.mock.calls[0]![0])) as Record<string, unknown>;
   }
 
+  describe("run start", () => {
+    it("roots a lone file's tree at the -L directory holding it, so the files beside it travel", async () => {
+      await agent("run", "start", join(method, "child.mthds"), "-L", method);
+
+      expect(requests).toHaveLength(1);
+      expect(requests[0]!.url).toMatch(/\/v1\/start$/);
+      expect(requests[0]!.body.files).toEqual({ "bundle.mthds": ROOT, "child.mthds": CHILD });
+      expect(requests[0]!.body.pipe_code).toBe("step");
+    });
+
+    it("reads -L written before the subcommand too", async () => {
+      await agent("-L", method, "run", "start", join(method, "child.mthds"));
+
+      expect(requests[0]!.body.files).toEqual({ "bundle.mthds": ROOT, "child.mthds": CHILD });
+    });
+
+    it("starts inline --content beside a global -L, which does not apply to it", async () => {
+      await agent("-L", shared, "run", "start", "--content", ROOT);
+
+      expect(requests).toHaveLength(1);
+      expect(requests[0]!.url).toMatch(/\/v1\/start$/);
+      expect(requests[0]!.body.files).toEqual({ "bundle.mthds": ROOT });
+    });
+
+    it("refuses an -L directory outside the tree, starting nothing", async () => {
+      await expect(
+        agent("run", "start", join(method, "child.mthds"), "-L", method, "-L", shared),
+      ).rejects.toThrow("__exit__");
+
+      expect(requests).toHaveLength(0);
+      expect(String(firstStderrJson().message)).toContain("outside that tree");
+    });
+  });
+
   describe("validate bundle", () => {
-    it("sends every file of a directory target, its main file first", async () => {
+    it("sends a directory target as its tree, each file under its tree path", async () => {
       await agent("validate", "bundle", method, "--format", "json");
 
       expect(requests).toHaveLength(1);
       expect(requests[0]!.url).toMatch(/\/v1\/validate$/);
-      expect(requests[0]!.body.mthds_contents).toEqual([ROOT, CHILD]);
-      expect(requests[0]!.body.mthds_sources).toEqual([
-        join(method, "bundle.mthds"),
-        join(method, "child.mthds"),
-      ]);
+      // The client always asks for the rendered Markdown, a Pipelex-API extension.
+      expect(requests[0]!.body).toEqual({
+        files: { "bundle.mthds": ROOT, "child.mthds": CHILD },
+        allow_signatures: false,
+        render: ["markdown"],
+      });
       expect(JSON.parse(String(stdoutSpy.mock.calls[0]![0]))).toMatchObject({ is_valid: true });
     });
 
-    it("reads -L written after the subcommand, sending the named file first and once", async () => {
+    it("roots a named file at an -L directory holding it, written after the subcommand", async () => {
       const child = join(method, "child.mthds");
       await agent("validate", "bundle", child, "-L", `${method}/`, "--allow-signatures");
 
-      expect(requests[0]!.body.mthds_contents).toEqual([CHILD, ROOT]);
-      expect(requests[0]!.body.mthds_sources).toEqual([child, join(method, "bundle.mthds")]);
+      expect(requests[0]!.body.files).toEqual({ "bundle.mthds": ROOT, "child.mthds": CHILD });
       expect(requests[0]!.body.allow_signatures).toBe(true);
     });
 
-    it("reads -L written before the subcommand too, beside one written after it", async () => {
-      const root = join(method, "bundle.mthds");
-      await agent("-L", shared, "validate", "bundle", root, "--library-dir", method);
+    it("reads -L written before the subcommand too", async () => {
+      const child = join(method, "child.mthds");
+      await agent("-L", method, "validate", "bundle", child);
 
-      expect(requests[0]!.body.mthds_contents).toEqual([ROOT, SHARED, CHILD]);
+      expect(requests[0]!.body.files).toEqual({ "bundle.mthds": ROOT, "child.mthds": CHILD });
+    });
+
+    it("refuses an -L directory that would add a second tree, sending nothing", async () => {
+      const root = join(method, "bundle.mthds");
+      await expect(
+        agent("-L", shared, "validate", "bundle", root, "--library-dir", method),
+      ).rejects.toThrow("__exit__");
+
+      expect(requests).toHaveLength(0);
+      expect(firstStderrJson()).toMatchObject({
+        error_type: "ArgumentError",
+        error_domain: "argument",
+      });
+      expect(String(firstStderrJson().message)).toContain("outside that tree");
     });
 
     it("sends a named file alone when no library directory is given", async () => {
-      const root = join(method, "bundle.mthds");
-      await agent("validate", "bundle", root);
+      await agent("validate", "bundle", join(method, "bundle.mthds"));
 
-      expect(requests[0]!.body.mthds_contents).toEqual([ROOT]);
-      expect(requests[0]!.body.mthds_sources).toEqual([root]);
+      expect(requests[0]!.body.files).toEqual({ "bundle.mthds": ROOT });
     });
 
-    it("labels inline --content when library files ride beside it", async () => {
-      await agent("validate", "bundle", "--content", ROOT, "-L", shared);
-
-      expect(requests[0]!.body.mthds_contents).toEqual([ROOT, SHARED]);
-      expect(requests[0]!.body.mthds_sources).toEqual([
-        "inline://file-1.mthds",
-        join(shared, "shared.mthds"),
-      ]);
-    });
-
-    it("sends no sources for inline --content alone", async () => {
+    it("sends inline --content as a one-file tree, with no handshake", async () => {
       await agent("validate", "bundle", "--content", ROOT);
 
-      expect(requests[0]!.body.mthds_contents).toEqual([ROOT]);
-      expect(requests[0]!.body).not.toHaveProperty("mthds_sources");
+      expect(requests).toHaveLength(1);
+      expect(requests[0]!.body.files).toEqual({ "bundle.mthds": ROOT });
+      expect(vi.mocked(globalThis.fetch)).toHaveBeenCalledTimes(1);
+    });
+
+    it("sends inline --content alone beside a library directory, which does not apply to it", async () => {
+      await agent("validate", "bundle", "--content", ROOT, "-L", shared);
+
+      expect(requests).toHaveLength(1);
+      expect(requests[0]!.body.files).toEqual({ "bundle.mthds": ROOT });
     });
 
     it.each([
@@ -184,10 +236,10 @@ describe("API-runner validate and inputs send the whole bundle", () => {
       [["--view"], "--view was"],
       [["--graph-format", "reactflow"], "--graph-format was"],
     ])("validates with %j and warns that no graph was drawn", async (flags, named) => {
-      await agent("validate", "bundle", method, "-L", shared, ...flags, "--format", "json");
+      await agent("validate", "bundle", method, ...flags, "--format", "json");
 
       expect(requests).toHaveLength(1);
-      expect(requests[0]!.body.mthds_contents).toEqual([ROOT, CHILD, SHARED]);
+      expect(requests[0]!.body.files).toEqual({ "bundle.mthds": ROOT, "child.mthds": CHILD });
       expect(JSON.parse(String(stdoutSpy.mock.calls[0]![0]))).toMatchObject({ is_valid: true });
       expect(stderrSpy).toHaveBeenCalledTimes(1);
       const warning = firstStderrJson();
@@ -251,11 +303,11 @@ describe("API-runner validate and inputs send the whole bundle", () => {
   });
 
   describe("validate pipe", () => {
-    it("sends the named file and the -L directory's files", async () => {
+    it("sends the tree of the -L directory holding the named file", async () => {
       const child = join(method, "child.mthds");
       await agent("validate", "pipe", child, "-L", method);
 
-      expect(requests[0]!.body.mthds_contents).toEqual([CHILD, ROOT]);
+      expect(requests[0]!.body.files).toEqual({ "bundle.mthds": ROOT, "child.mthds": CHILD });
     });
   });
 

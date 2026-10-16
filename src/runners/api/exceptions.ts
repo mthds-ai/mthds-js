@@ -135,6 +135,11 @@ export interface ProblemDetails {
   retryable?: boolean;
   /** The body's `user_action` — what the caller should do next. */
   userAction?: UserAction;
+  /**
+   * The body's `missing_blobs` — on a `422` refusing hash entries, every hash the
+   * runner does not hold, in lowercase hexadecimal (the protocol's Problem member).
+   */
+  missingBlobs?: string[];
 }
 
 /** The last constructor argument of `ApiResponseError`: the error's `cause`, and the parsed problem members. */
@@ -190,6 +195,13 @@ export class ApiResponseError extends PipelineRequestError {
   /** The body's `user_action`: what the caller should do next, when the runner can say. */
   public readonly userAction: UserAction | undefined;
   /**
+   * The body's `missing_blobs`: on a `422` refusing hash entries, every hash of the
+   * request the runner does not hold, so a sender learns in one answer what to
+   * upload. `MthdsApiClient` uploads them and resends once when it sent the tree
+   * itself; this member is what is left when it could not.
+   */
+  public readonly missingBlobs: string[] | undefined;
+  /**
    * Structured per-error diagnostics on a problem body that carries a top-level
    * `validation_errors[]` — the **run routes** (`POST /v1/execute`, `POST /v1/start`)
    * when a runner refuses to run an invalid method with a 422 instead of spending
@@ -233,5 +245,56 @@ export class ApiResponseError extends PipelineRequestError {
     this.errorDomain = problem?.errorDomain;
     this.retryable = problem?.retryable;
     this.userAction = problem?.userAction;
+    this.missingBlobs = problem?.missingBlobs;
+  }
+}
+
+/**
+ * Thrown when uploading a blob to the target `POST /blobs/missing` named fails: the
+ * target answered neither a success nor a `412` (the bytes are already held), or it
+ * could not be reached. The target URL is a bearer capability, so neither the message
+ * nor any member carries it; `host` names where the upload went.
+ */
+export class BlobUploadError extends PipelineRequestError {
+  /** The SHA-256 of the blob, in lowercase hexadecimal. */
+  public readonly sha256: string;
+  /** The status the target answered, or `undefined` when it could not be reached. */
+  public readonly status: number | undefined;
+  /** The host of the upload target. */
+  public readonly host: string;
+
+  constructor(
+    message: string,
+    sha256: string,
+    status: number | undefined,
+    host: string,
+    options?: { cause?: unknown },
+  ) {
+    super(message, options);
+    this.name = "BlobUploadError";
+    this.sha256 = sha256;
+    this.status = status;
+    this.host = host;
+  }
+}
+
+/**
+ * Thrown when a runner's answer to `POST /blobs/missing` is not shaped as the protocol
+ * says: a body that is not JSON, no `missing` list, or an entry that is not a missing
+ * blob with a well-formed upload target. No upload was started and no request carrying
+ * the tree was sent. An entry's upload URL is a bearer capability, so the message never
+ * quotes it.
+ */
+export class MalformedBlobsAnswerError extends PipelineRequestError {
+  /** The position of the faulty entry in `missing`, or `undefined` when the answer as a whole is malformed. */
+  public readonly index: number | undefined;
+  /** The faulty entry's SHA-256 when it carries a well-formed one, else `undefined`. */
+  public readonly sha256: string | undefined;
+
+  constructor(message: string, index?: number, sha256?: string) {
+    super(message);
+    this.name = "MalformedBlobsAnswerError";
+    this.index = index;
+    this.sha256 = sha256;
   }
 }

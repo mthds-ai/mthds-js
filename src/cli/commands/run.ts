@@ -1,8 +1,8 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import * as p from "@clack/prompts";
 import { printLogo } from "./index.js";
-import { resolveRunBundle } from "../../runners/bundle.js";
-import { isPipelexRunner, extractPassthroughArgs } from "./utils.js";
+import { MethodTargetError, resolveMethodTarget } from "../../runners/method-target.js";
+import { isApiRunner, isPipelexRunner, extractPassthroughArgs } from "./utils.js";
 import { formatCliError } from "./error-output.js";
 import { createRunner } from "../../runners/registry.js";
 import type { PipelexRunFlags } from "../../runners/pipelex/runner.js";
@@ -57,6 +57,40 @@ function pipelexRunFlags(runner: Runner, cli: RunOptions): PipelexRunFlags {
     process.exit(1);
   }
   return {};
+}
+
+/**
+ * Resolve a bundle target into the run options that send its method tree. On the
+ * API runner the tree is listed within the runner's announced limits and the `-L`
+ * directories must belong to it (`resolveMethodTarget`); the pipelex runner hands
+ * `-L` to pipelex itself, so only the target is listed. A `.mthds` file target
+ * runs its own `main_pipe` unless `--pipe` says otherwise, and is the entry a
+ * local runner points `run bundle` at.
+ */
+async function bundleRunOptions(
+  runner: Runner,
+  target: string,
+  cli: RunOptions,
+): Promise<StartOptions> {
+  const api = isApiRunner(runner);
+  const limits = api ? await runner.methodTreeLimits() : {};
+  const resolved = await resolveMethodTarget(
+    { path: target },
+    api ? (cli.libraryDir ?? []) : [],
+    limits,
+  );
+  const options: StartOptions = { ...resolved.method };
+  if (resolved.entry !== null) options.bundleMain = resolved.entry;
+  const pipeCode = cli.pipe || resolved.entryMainPipe;
+  // A named bundle runs its own `main_pipe`. Without one, the runner would start where
+  // the tree's manifest or another bundle says, which is not the bundle that was named.
+  if (!pipeCode && resolved.entry !== null) {
+    throw new MethodTargetError(
+      `Could not determine pipe code: ${resolved.entry} declares no main_pipe. Use --pipe to specify it.`,
+    );
+  }
+  if (pipeCode) options.pipe_code = pipeCode;
+  return withInputs(options, cli.inputs);
 }
 
 /** Merge an optional JSON inputs file into the run options. */
@@ -164,23 +198,11 @@ export async function runBundle(target: string, options: RunOptions): Promise<vo
 
   let runOptions: StartOptions;
   try {
-    // A bundle target is a directory (or a `.mthds` with sibling `funcs/*.py`):
-    // ship the whole method as `files` so custom PipeFunc Python travels with it.
-    // A plain `.mthds` stays on the lighter `mthds_contents` path. `main` carries
-    // the selected entrypoint through as `bundleMain` so a local runner points
-    // `run bundle` at the named `.mthds`, never a sibling in the same directory.
-    const resolved = resolveRunBundle(target);
-    runOptions = {
-      files: resolved.files,
-      mthds_contents: resolved.mthds_contents,
-      bundleMain: resolved.main,
-    };
-    if (options.pipe) {
-      runOptions.pipe_code = options.pipe;
-    }
-    withInputs(runOptions, options.inputs);
+    // A bundle target is a directory or a `.mthds` file: its method tree travels
+    // whole, so the Python, templates and other files of the method travel with it.
+    runOptions = await bundleRunOptions(runner, target, options);
   } catch (err) {
-    p.log.error((err as Error).message);
+    p.log.error(formatCliError(err));
     p.outro("");
     process.exit(1);
   }
@@ -200,17 +222,11 @@ export async function runPipe(target: string, options: RunOptions): Promise<void
 
   let runOptions: StartOptions;
   try {
-    if (isBundlePath) {
-      runOptions = resolveRunBundle(target);
-      if (options.pipe) {
-        runOptions.pipe_code = options.pipe;
-      }
-    } else {
-      runOptions = { pipe_code: target };
-    }
-    withInputs(runOptions, options.inputs);
+    runOptions = isBundlePath
+      ? await bundleRunOptions(runner, target, options)
+      : withInputs({ pipe_code: target }, options.inputs);
   } catch (err) {
-    p.log.error((err as Error).message);
+    p.log.error(formatCliError(err));
     p.outro("");
     process.exit(1);
   }

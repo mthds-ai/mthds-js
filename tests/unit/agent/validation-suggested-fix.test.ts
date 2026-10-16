@@ -83,9 +83,9 @@ describe("mthds-agent invalid-verdict envelope keeps each item's next step", () 
       validate: vi.fn().mockResolvedValue(report),
     } as unknown as Runner;
 
-    await expect(runProtocolValidate(runner, ["x"], false, undefined, "json")).rejects.toThrow(
-      "__exit__",
-    );
+    await expect(
+      runProtocolValidate(runner, { files: { "x.mthds": "x" } }, false, "json"),
+    ).rejects.toThrow("__exit__");
 
     const envelope = stderrEnvelope();
     expect(envelope.error_type).toBe("ValidateBundleError");
@@ -106,7 +106,9 @@ describe("mthds-agent invalid-verdict envelope keeps each item's next step", () 
       validate: vi.fn().mockResolvedValue(report),
     } as unknown as Runner;
 
-    await expect(runProtocolValidate(runner, ["x"], false)).rejects.toThrow("__exit__");
+    await expect(runProtocolValidate(runner, { files: { "x.mthds": "x" } }, false)).rejects.toThrow(
+      "__exit__",
+    );
 
     const items = stderrEnvelope().validation_errors as ValidationErrorItem[];
     expect(items[0]!.suggested_fix?.description).toBe(

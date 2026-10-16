@@ -20,6 +20,7 @@ src/method-tree/
   references.ts        the standard's ordered file reference steps, pure
   function-names.ts    locating a PipeFunc's function_name in the tree, pure
   file-entries.ts      reading a map of file entries, as a receiver does
+  file-entry-encoding.ts  giving bytes as an inline file entry (text or Base64), as a sender does, pure
   json-document.ts     a strict JSON reader that keeps duplicate keys and number lexemes
   exceptions.ts        MethodTreeError, TreeLimitExceededError and their codes
 ```
@@ -61,9 +62,21 @@ An excluded directory is never entered, so no `.gitignore` file inside it is rea
 
 `readFileEntryMap(document, blobStore)` reads the `files` map a runner receives, from its JSON text, with the strict reader in `json-document.ts`, because the rules need what `JSON.parse` hides: a key given twice inside an entry object, and a `size` written `13.0` or `1.3e1` rather than as an integer. It refuses a key that is not already in NFC or not a tree path, a name the membership rule would exclude, Base64 that is not canonical (padded, standard alphabet, zero pad bits, checked by a loop so a payload of many megabytes is read like a small one), a `size` too large to be exact, a hash entry whose blob the store does not hold or whose bytes do not hash to its key, and colliding paths. The blob store is consulted only when the map is otherwise sound. A document that is not a JSON object is `malformed_document`. It returns the files with their bytes, and the tree digest.
 
+## Sending a tree
+
+A sender reads a tree through `MethodTreeSource` (`src/protocol/file_entries.ts`): its files with their tree paths, sizes and SHA-256, its digest, and `readFile(treePath)`. The interface is pure, so the protocol layer can name it, and `MethodTree` implements it, so the tree the lister returns is what `MthdsApiClient` takes as a run's or a validation's `tree`; a caller holding its files elsewhere implements the interface itself. The client chooses whether the tree travels inline or by hash, as [api-runner.md](./api-runner.md#sending-a-methods-tree) describes, and builds the inline map with `file-entry-encoding.ts`: `inlineFileEntry(bytes)` gives bytes that are UTF-8 as their text, a byte order mark kept, and any other bytes as canonical padded Base64 (`encodeBase64`), and `defineFileEntry` adds an entry as an own property, so a file named `__proto__` travels like any other. `utf8TextOf` is the strict decoding both rely on. The module uses no Node built-in, so it runs wherever the client does.
+
 ## The lock
 
 A locked package's entry records `digest`, the tree digest of the package, in place of the old `hash` (`src/package/lock-file.ts`). A lock entry still carrying `hash` is refused when the lock is parsed, with a message saying that running `lock` regenerates it (this package has no lock command of its own; nothing outside its tests reads a lock yet), and no old hash is ever verified. The digest is computed by listing the package directory with the membership rule, rooted at the directory (`discover: false`); a tree the standard refuses is raised as a `LockFileError`, or an `IntegrityError` when a cached package is verified. The standard reads a fetched package from its resolved commit's git objects as stored and takes a cached copy's files as written, without applying the rule again; listing a directory gives the same tree only when the directory is a clean checkout of that commit with no line-ending conversion, so reading a fetched package from its commit is still to be ported.
+
+## Installing a method
+
+`mthds install`, `mthds publish` and `mthds share` resolve each method of a repository's `methods/` folder as its whole tree, rooted at the method's directory (`discover: false`), each file with its exact bytes (`src/installer/resolver/method-tree-files.ts`). From a local directory, the lister lists it.
+
+From GitHub, the resolver accepts exactly the trees the lister accepts from a checkout. It reads the method directory's git tree (`git/trees/{sha}?recursive=1`), and its `METHODS.toml` from that tree's blob, so the manifest and every file come from one commit whatever the default branch does meanwhile; a truncated git tree skips the method rather than install part of it. It leaves out what the defaults exclude by name or by marker whatever else the tree holds (dotted names other than `.gitignore`, `__pycache__` and `node_modules`, a directory below the root holding a `pyvenv.cfg` or a `METHODS.toml` file, a submodule), and writes the rest into a scratch directory as a skeleton: the manifest and each `.gitignore` with their bytes, every other file empty, since its bytes do not change what the rule admits, and a link as a link. The lister lists that skeleton, so the whole membership rule decides first, `.gitignore` files and the manifest's `exclude` included, names are normalized to NFC, and an invalid name, a collision or a link is refused only when the rule admits it. Names the machine's file system cannot hold apart are refused when one of them reaches a member. Only then are the blobs of the admitted files fetched, each once.
+
+A method whose tree the standard refuses is skipped with the refusal. The install validates that tree with the configured runner and writes it into `.mthds/methods/<name>/` (`src/installer/methods/writer.ts`): the tree is written into a scratch directory beside it, the earlier install is renamed aside, the new one renamed into place, and the earlier one deleted only once it is, or renamed back when the move fails, so a failed install leaves the earlier one whole. The `METHODS.toml` the resolver validated is written at the root should a `.gitignore` or the manifest's own `exclude` have left it out (`src/installer/methods/method-files.ts`).
 
 ## `mthds files`
 

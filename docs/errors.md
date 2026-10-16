@@ -200,7 +200,7 @@ The Codex hook (`mthds-agent codex hook`) runs `pipelex-agent validate bundle --
 
 ## The vendored registry
 
-The registry's JSON snapshot is vendored byte for byte at `scripts/registry/mthds-error-registry.json`, with where it came from in `scripts/registry/mthds-error-registry.source.json` (the mthds commit, the version and the snapshot's SHA-256). `scripts/gen-error-registry.mjs` generates `src/problems/registry.generated.ts` from it: the version, the base URL, the extension prefixes and families, a constant per code, the typed parameters of every code, and every entry's title, domain, retry verdict, status, templates and steps. It refuses a template holding a lone `{` or `}`, or naming a parameter its code does not declare, and `renderTemplate` throws on a lone brace too. Never edit either by hand.
+The registry's JSON snapshot is vendored byte for byte at `scripts/registry/mthds-error-registry.json`, with where it came from in `scripts/registry/mthds-error-registry.source.json` (the mthds commit, the version and the snapshot's SHA-256). `scripts/gen-error-registry.mjs` generates `src/problems/registry.generated.ts` from it: the version, the base URL, the extension prefixes and families, a constant per code, the typed parameters of every code, and every entry's title, domain, retry verdict, status, templates and steps. It refuses a template holding a lone `{` or `}`, or naming a parameter its code does not declare, and `renderTemplate` throws on a lone brace too, and on a placeholder naming a parameter the occurrence does not give, since a template names only parameters every occurrence of its code gives. Never edit either by hand.
 
 To move to another registry:
 

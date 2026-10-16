@@ -172,7 +172,23 @@ describe("building a problem from the registry", () => {
 
   it("joins a list parameter and keeps a doubled brace literal", () => {
     expect(renderTemplate("Pick {candidates}.", { candidates: ["a", "b"] })).toBe("Pick a, b.");
-    expect(renderTemplate("A {{literal}} and {missing}.", {})).toBe("A {literal} and {missing}.");
+    expect(renderTemplate("A {{literal}} and {name}.", { name: "x" })).toBe("A {literal} and x.");
+  });
+
+  it("refuses a template naming a parameter the occurrence does not give", () => {
+    expect(() => renderTemplate("A {missing} one.", {})).toThrow(/'missing', which is not given/);
+    expect(() => renderTemplate("A {gone} one.", { gone: undefined })).toThrow(/not given/);
+  });
+
+  it("builds every core code with its required parameters, so no template names an optional one", () => {
+    for (const entry of Object.values(CORE_REGISTRY)) {
+      const params = Object.fromEntries(
+        Object.entries(entry.params)
+          .filter(([, spec]) => spec.optional !== true && spec.operator_only !== true)
+          .map(([name]) => [name, "x"]),
+      );
+      expect(() => buildProblem(entry.code as never, params as never), entry.code).not.toThrow();
+    }
   });
 });
 

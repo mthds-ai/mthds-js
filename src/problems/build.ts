@@ -62,9 +62,10 @@ export function templateParams(template: string): string[] {
 
 /**
  * Fill a registry template: each `{name}` becomes the parameter's value, a list written as its
- * items joined by a comma and a space, and a doubled brace is a literal one. A placeholder naming
- * a parameter the occurrence does not give is left as written. A lone `{` or `}` makes the
- * template malformed, and this throws on it, as on an unclosed placeholder.
+ * items joined by a comma and a space, and a doubled brace is a literal one. A template names only
+ * parameters every occurrence gives (mthds/docs/spec/error-registry.md, "Templates"), so this
+ * throws on a placeholder naming a parameter `params` does not give, as on a lone `{` or `}`,
+ * which makes the template malformed, and on an unclosed placeholder.
  */
 export function renderTemplate(
   template: string,
@@ -76,7 +77,11 @@ export function renderTemplate(
     if (name === undefined) {
       throw new Error(`A lone brace at ${offset} makes the template malformed: ${template}`);
     }
-    if (params[name] === undefined) return match;
+    if (params[name] === undefined) {
+      throw new Error(
+        `The template names the parameter '${name}', which is not given: ${template}`,
+      );
+    }
     return writeValue(params[name]);
   });
 }

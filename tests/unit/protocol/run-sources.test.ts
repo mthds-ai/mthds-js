@@ -1,54 +1,50 @@
 import { describe, it, expect } from "vitest";
-import { assertExclusiveRunSources, hasBundlePayload } from "../../../src/protocol/options.js";
+import { assertOneMethodSource, hasMethodSource } from "../../../src/protocol/options.js";
 import { PipelineRequestError } from "../../../src/protocol/exceptions.js";
+import type { MethodTreeSource } from "../../../src/protocol/file_entries.js";
 
-describe("assertExclusiveRunSources", () => {
-  it("accepts a single run source", () => {
-    expect(() => assertExclusiveRunSources({ files: { "m.mthds": "x" } })).not.toThrow();
-    expect(() => assertExclusiveRunSources({ bundle_b64: "UEs=" })).not.toThrow();
-    expect(() => assertExclusiveRunSources({ mthds_contents: ["x"] })).not.toThrow();
+function tree(paths: string[]): MethodTreeSource {
+  return {
+    files: paths.map((path) => ({ path, size: 1, sha256: "0".repeat(64) })),
+    digest: `sha256:${"0".repeat(64)}`,
+    readFile: () => Promise.resolve(new Uint8Array([0x78])),
+  };
+}
+
+describe("assertOneMethodSource", () => {
+  it("accepts a method named once, as files or as a tree, with or without a pipe code", () => {
+    expect(() => assertOneMethodSource({ files: { "m.mthds": "x" } })).not.toThrow();
+    expect(() => assertOneMethodSource({ tree: tree(["m.mthds"]) })).not.toThrow();
     expect(() =>
-      assertExclusiveRunSources({ pipe_code: "p", files: { "m.mthds": "x" } }),
+      assertOneMethodSource({ pipe_code: "p", files: { "m.mthds": "x" } }),
     ).not.toThrow();
+    expect(() => assertOneMethodSource({ pipe_code: "p" })).not.toThrow();
   });
 
-  it("rejects both bundle encodings (presence, even if one is empty)", () => {
+  it("refuses files beside a tree, on presence even when one is empty", () => {
     expect(() =>
-      assertExclusiveRunSources({ files: { "m.mthds": "x" }, bundle_b64: "UEs=" }),
+      assertOneMethodSource({ files: { "m.mthds": "x" }, tree: tree(["m.mthds"]) }),
     ).toThrow(PipelineRequestError);
-    expect(() => assertExclusiveRunSources({ files: {}, bundle_b64: "UEs=" })).toThrow(
+    expect(() => assertOneMethodSource({ files: {}, tree: tree(["m.mthds"]) })).toThrow(
       PipelineRequestError,
     );
-  });
-
-  it("rejects a bundle combined with non-empty mthds_contents", () => {
-    expect(() =>
-      assertExclusiveRunSources({ files: { "m.mthds": "x" }, mthds_contents: ["y"] }),
-    ).toThrow(PipelineRequestError);
-    expect(() => assertExclusiveRunSources({ bundle_b64: "UEs=", mthds_contents: ["y"] })).toThrow(
-      PipelineRequestError,
-    );
-  });
-
-  it("ignores an empty mthds_contents array (no contents)", () => {
-    expect(() =>
-      assertExclusiveRunSources({ files: { "m.mthds": "x" }, mthds_contents: [] }),
-    ).not.toThrow();
   });
 });
 
-describe("hasBundlePayload", () => {
-  it("is true for a runnable bundle in either encoding", () => {
-    expect(hasBundlePayload({ files: { "m.mthds": "x" } })).toBe(true);
-    expect(hasBundlePayload({ bundle_b64: "UEs=" })).toBe(true);
+describe("hasMethodSource", () => {
+  it("is true for a map or a tree holding a file", () => {
+    expect(hasMethodSource({ files: { "m.mthds": "x" } })).toBe(true);
+    expect(hasMethodSource({ files: { "m.mthds": { sha256: "0".repeat(64), size: 1 } } })).toBe(
+      true,
+    );
+    expect(hasMethodSource({ tree: tree(["m.mthds"]) })).toBe(true);
   });
 
-  it("is false for no bundle, or an empty encoding carrying no method", () => {
-    expect(hasBundlePayload({})).toBe(false);
-    expect(hasBundlePayload({ pipe_code: "p", mthds_contents: ["x"] })).toBe(false);
-    // Empty encodings are present-but-not-runnable: exclusivity still counts
-    // them (see assertExclusiveRunSources), the "something to run" test does not.
-    expect(hasBundlePayload({ files: {} })).toBe(false);
-    expect(hasBundlePayload({ bundle_b64: "" })).toBe(false);
+  it("is false for no method, or an empty map or tree carrying none", () => {
+    expect(hasMethodSource({})).toBe(false);
+    expect(hasMethodSource({ pipe_code: "p" })).toBe(false);
+    expect(hasMethodSource({ files: {} })).toBe(false);
+    expect(hasMethodSource({ files: null })).toBe(false);
+    expect(hasMethodSource({ tree: tree([]) })).toBe(false);
   });
 });

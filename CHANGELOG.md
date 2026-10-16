@@ -1,5 +1,20 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- **Sending a method's tree by hash**: when a tree's inline map, measured as its JSON in UTF-8, weighs more than 256 KiB or the runner's announced `max_inline_bytes`, and the runner's handshake declares a blob store, `MthdsApiClient` asks `POST /v1/blobs/missing` which blobs the runner lacks, uploads only those with exactly the method and headers the runner gave, and sends the tree as hash entries; a `422` naming `missing_blobs` is answered by uploading them and sending the request once more. `findMissingBlobs`, `uploadBlob` and `prepareMethodFiles` expose the steps, `methodTreeLimits` gives the runner's announced tree limits as lister limits, the protocol gains `VersionInfo.blob_store` and the blob routes' types, `ApiResponseError.missingBlobs` carries a refusal's blobs, and a failed upload raises `BlobUploadError`, which keeps the target's host and never its URL.
+- **`MethodTreeSource` and the file-entry encoding helpers**: the protocol's `MethodTreeSource` is what a sender reads a tree through (its files' paths, sizes and hashes, its digest and `readFile`), `MethodTree` implements it, and `inlineFileEntry`, `encodeBase64`, `utf8TextOf` and `defineFileEntry` build an inline `files` map from a file's bytes.
+
+### Changed
+
+- **Run requests carry the method's tree as `files` (Breaking)**: `RunRequest` loses `mthds_contents` and `bundle_b64`, its `files` is a `MethodFiles` map from tree path to file entry, and the run options take a `tree` instead, which the client sends inline or by hash and which is exclusive with `files`. `assertOneMethodSource` and `hasMethodSource` replace `assertExclusiveRunSources` and `hasBundlePayload` in `mthds/protocol`.
+- **`validate()` takes the method's tree (Breaking)**: `MthdsApiClient.validate(source, allowSignatures?, render?)` and `Runner.validate` take `{ files }` or `{ tree }` and post `files` to `POST /v1/validate`, each diagnostic naming its file by tree path; the `mthds_sources` argument, `validateFiles`, `MthdsFile` and `ValidateFilesOptions` are gone.
+- **The CLIs send a method's tree on the API runner (Breaking)**: `mthds run pipe`, `mthds run bundle`, `mthds validate pipe`, `mthds-agent validate bundle`, `mthds-agent validate pipe` and `mthds-agent run start` send the tree the standard's lister defines, its Python, templates, images and manifest included. A `.mthds` file with no `METHODS.toml` above it now travels alone, a library directory (`-L`) can only root such a file's tree at a directory holding it, `-L` beside `--content` is refused, and the hosted API's announced limits refuse an oversized folder while it is listed, before anything is read.
+- **The pipelex runner writes the tree it is given (Breaking)**: `PipelexRunner` writes the `files` map or the tree to a temporary directory under its tree paths, Base64 entries decoded, before running or validating it, and refuses a hash entry; `mthds run` of a `.mthds` file with no manifest above it no longer brings the Python beside it, so name the method's directory, or pass `-L`, which pipelex reads itself.
+- **`mthds install` validates a method as a tree**: the configured runner validates the method's manifest and `.mthds` files together, each under its tree path.
+
 ## [v0.32.0] - 2026-10-16
 
 ### Added

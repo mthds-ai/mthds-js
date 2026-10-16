@@ -5,10 +5,12 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { Runners } from "../types.js";
 import { materializeBundleFiles } from "../bundle.js";
-import { assertExclusiveRunSources } from "../../protocol/options.js";
+import { inlineMethodFiles } from "../api/tree-sending.js";
+import { assertOneMethodSource } from "../../protocol/options.js";
 import { PipelineRequestError } from "../../protocol/exceptions.js";
 import type { Runner, RunnerType, CheckModelRequest, CheckModelResponse } from "../types.js";
-import type { RunOptions, StartOptions } from "../../protocol/options.js";
+import type { MethodFiles } from "../../protocol/file_entries.js";
+import type { RunOptions, StartOptions, ValidateSource } from "../../protocol/options.js";
 import type {
   ModelCategory,
   ModelDeck,
@@ -26,21 +28,15 @@ function makeTmpDir(): string {
 }
 
 /**
- * Materialize bare `.mthds` contents into a temp directory so the local CLI can load
- * them, for the MTHDS Protocol routes that ride bare strings (`execute` / `start` /
- * `validate`). Returns the path of the first file, `bundle.mthds`, which the CLI is
- * pointed at; the rest sit beside it as `extra_<n>.mthds` and are picked up via
- * `-L <tmp>`.
+ * A method's tree as inline entries, for writing to disk: a `tree` read in full, or
+ * `files` as given. `undefined` when the request carries no method or an empty map.
  */
-function writeMthdsContents(tmp: string, contents: string[]): string {
-  if (contents.length === 0) {
-    throw new Error("At least one MTHDS file is required.");
-  }
-  contents.forEach((content, index) => {
-    const name = index === 0 ? "bundle.mthds" : `extra_${index}.mthds`;
-    writeFileSync(join(tmp, name), content, "utf-8");
-  });
-  return join(tmp, "bundle.mthds");
+async function inlineFilesOf(source: {
+  files?: MethodFiles | null;
+  tree?: RunOptions["tree"];
+}): Promise<MethodFiles | undefined> {
+  if (source.tree != null) return inlineMethodFiles(source.tree);
+  return source.files != null && Object.keys(source.files).length > 0 ? source.files : undefined;
 }
 
 /** How a stuff's `concept` reads when it is not the ref string, for the refusal that names it. */
@@ -233,37 +229,24 @@ export class PipelexRunner implements Runner {
   // `start` primitive is unsupported (use the API runner for that).
 
   async execute(options: RunOptions, flags: PipelexRunFlags = {}): Promise<DictRunResultExecute> {
-    // Reject conflicting run sources up front — the same contract the API client
-    // enforces — so a bundle combined with `mthds_contents` (or both encodings)
-    // fails clearly instead of the branch order below silently preferring one.
-    assertExclusiveRunSources(options);
-    // The local runner materializes `files` to disk; it has no zip decoder, so
-    // the `bundle_b64` transport form is API-runner-only. Reject it explicitly
-    // rather than dispatching `run` with no target (which fails cryptically).
-    if (options.bundle_b64 != null) {
-      throw new PipelineRequestError(
-        "The local pipelex runner does not support the bundle_b64 (zip) transport; pass the bundle as `files`, or use the API runner.",
-      );
-    }
+    // Refuse a method given twice up front — the same contract the API client
+    // enforces — so `files` beside a `tree` fails clearly instead of one winning.
+    assertOneMethodSource(options);
+    // The local runner keeps no blob store: a tree is read in full and written to
+    // disk, and a hash entry in a caller's `files` is refused while writing.
+    const files = await inlineFilesOf(options);
     const tmp = makeTmpDir();
     try {
       // The pipelex CLI dispatches through `run bundle <path>` / `run pipe <code>`.
       const args: string[] = ["run"];
 
-      if (options.files && Object.keys(options.files).length > 0) {
-        // A full method bundle (custom PipeFunc Python travels with the method).
-        // Materialize it to disk preserving `funcs/*.py`, then run the main
-        // `.mthds` with the temp dir as its library so the funcs resolve. The
-        // caller-selected entrypoint (`bundleMain`) is honored so a directory of
-        // several methods runs the one that was named, not a re-guessed sibling.
-        const bundlePath = materializeBundleFiles(tmp, options.files, options.bundleMain);
-        args.push("bundle", bundlePath);
-        args.push("-L", tmp);
-        if (options.pipe_code) {
-          args.push("--pipe", options.pipe_code);
-        }
-      } else if (options.mthds_contents?.length) {
-        const bundlePath = writeMthdsContents(tmp, options.mthds_contents);
+      if (files !== undefined) {
+        // The method's whole tree (its Python, templates and other files beside its
+        // bundles). Write it to disk, then run the entry `.mthds` with the temp dir as
+        // its library so its files resolve. The caller-selected entry (`bundleMain`)
+        // is honored so a tree of several methods runs the one that was named, not a
+        // re-guessed sibling.
+        const bundlePath = materializeBundleFiles(tmp, files, options.bundleMain);
         args.push("bundle", bundlePath);
         args.push("-L", tmp);
         if (options.pipe_code) {
@@ -343,12 +326,18 @@ export class PipelexRunner implements Runner {
   }
 
   // ── Validation ──────────────────────────────────────────────────
-  // pipelex validate bundle <bundle.mthds> [--allow-signatures]
+  // pipelex validate bundle <entry.mthds> -L <the tree, written to disk> [--allow-signatures]
 
-  async validate(mthdsContents: string[], allowSignatures = false): Promise<ValidationResult> {
+  async validate(source: ValidateSource, allowSignatures = false): Promise<ValidationResult> {
+    const files = await inlineFilesOf(source);
+    if (files === undefined) {
+      throw new PipelineRequestError(
+        "validate() needs the method's tree, holding at least one file, as files or tree.",
+      );
+    }
     const tmp = makeTmpDir();
     try {
-      const bundlePath = writeMthdsContents(tmp, mthdsContents);
+      const bundlePath = materializeBundleFiles(tmp, files);
       const args = ["validate", "bundle", bundlePath, "-L", tmp];
       if (allowSignatures) {
         args.push("--allow-signatures");

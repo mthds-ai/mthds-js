@@ -55,7 +55,20 @@ When using the **pipelex** runner, `run method`, `validate` and `build` act as t
 
 `run pipe` and `run bundle` do not forward their arguments. They build their own `pipelex run` command from the target, `--pipe`, `--inputs` and `-L`, and add the pipelex flags they declare: `--dry-run`, `--mock-inputs`, `--hosted` and `--local`. They refuse any other flag as an unknown option, on either runner, rather than drop it and run anyway.
 
-The `--runner` flag is consumed by mthds and not forwarded. The `-L/--library-dir` flags are forwarded to pipelex. With the API runner, `validate pipe` and `build inputs pipe` send every `.mthds` file of each `-L` directory beside the bundle file, so a method split across files validates and gets its inputs template as it does on the pipelex runner.
+The `--runner` flag is consumed by mthds and not forwarded. The `-L/--library-dir` flags are forwarded to pipelex. With the API runner, `run pipe`, `run bundle` and `validate pipe` send the method's tree, as the next section describes, and `build inputs pipe` sends every `.mthds` file of each `-L` directory beside the bundle file, so a method split across files gets its inputs template as it does on the pipelex runner.
+
+### What the API runner sends
+
+A method is the tree of files under its root, so its Python, templates, images and manifest travel with its bundles. With the API runner, `run pipe`, `run bundle` and `validate pipe` send that tree, as the MTHDS standard's lister defines it:
+
+- a directory sends the tree it belongs to, rooted at the nearest `METHODS.toml` at or above it, else at the directory itself;
+- a `.mthds` file under a `METHODS.toml` sends that manifest's tree, and the file is the bundle that runs;
+- a `.mthds` file with no manifest above it travels alone, with nothing beside it: name its directory, or add a `METHODS.toml`, to send the files beside it;
+- the files the standard leaves out stay behind: hidden files and folders, `__pycache__`, `node_modules`, virtual environments, nested repositories and packages, and whatever a `.gitignore` of the tree or the manifest's `exclude` ignores.
+
+A request carries one tree, so `-L` cannot add a second one. A library directory inside the tree's root adds nothing; a library directory holding a `.mthds` file named alone becomes the root of its tree, so `mthds run bundle ./method/child.mthds -L ./method/` sends the whole directory and runs `child.mthds`; any other library directory is refused with a message saying how to make one tree of the files, or to pass `--runner pipelex`.
+
+A tree of 256 KiB or less travels inside the request. A larger one travels by hash when the runner keeps a blob store, as the hosted Pipelex API does: the runner names the files it does not already hold, the CLI uploads only those, and a run of an unchanged method uploads nothing. The hosted API's limits on a tree are checked while it is listed, so a folder handed over by mistake is refused before it is read. [docs/api-runner.md](docs/api-runner.md#sending-a-methods-tree) has the details.
 
 ### Where the pipelex runner executes a run
 
@@ -142,7 +155,7 @@ mthds run pipe <target> [OPTIONS]
 | `--mock-inputs` | flag | no | -- | Generate mock data for missing required inputs (requires `--dry-run`); pipelex runner only |
 | `--hosted` / `--local` | flag | no | pipelex's `[run] execution` | Have pipelex run it on the hosted Pipelex API or on this machine; pipelex runner only |
 
-`run pipe` refuses any other flag as an unknown option. With the API runner, the run is a blocking `POST /v1/execute`, which has no dry run: `--dry-run`, `--mock-inputs`, `--hosted` and `--local` are refused before anything is sent, and `mthds validate bundle` checks a bundle without running it. With the pipelex runner, the run is a `pipelex run` that executes where pipelex is set to execute it, unless `--hosted` or `--local` says otherwise (see [Where the pipelex runner executes a run](#where-the-pipelex-runner-executes-a-run)).
+`run pipe` refuses any other flag as an unknown option. With the API runner, the run is a blocking `POST /v1/execute`, which carries a bundle file's method tree (see [What the API runner sends](#what-the-api-runner-sends)) and has no dry run: `--dry-run`, `--mock-inputs`, `--hosted` and `--local` are refused before anything is sent, and `mthds validate bundle` checks a bundle without running it. With the pipelex runner, the run is a `pipelex run` that executes where pipelex is set to execute it, unless `--hosted` or `--local` says otherwise (see [Where the pipelex runner executes a run](#where-the-pipelex-runner-executes-a-run)).
 
 ### `mthds run bundle`
 
@@ -223,7 +236,7 @@ mthds validate pipe <target> [OPTIONS]
 | `--pipe <code>` | string | no | -- | Pipe code that must exist in the bundle |
 | `--bundle <file>` | string | no | -- | Bundle file path (alternative to positional) |
 
-With the API runner, the bundle file is sent first, followed by every `.mthds` file of each `-L` directory, and `--pipe` is ignored, since the runner validates every pipe of what it receives.
+With the API runner, the bundle file's method tree is sent (see [What the API runner sends](#what-the-api-runner-sends)), and `--pipe` is ignored, since the runner validates every pipe of what it receives.
 
 ### `mthds validate bundle`
 
@@ -907,7 +920,7 @@ mthds-agent share --local ./my-methods --platform x
 
 ### `mthds-agent run method|pipe|bundle`
 
-Execute a pipeline via the pipelex runner. All three subcommands are passthroughs that forward every argument to `pipelex-agent run`, except `--runner`, which `mthds-agent` keeps for itself, so the options are `pipelex-agent run`'s own, and `pipelex-agent run bundle <target> --help` lists them all. On the API runner, `run method` answers `UnsupportedError`, `run pipe` and `run bundle` do not exist, and `run start` submits a run and returns its id.
+Execute a pipeline via the pipelex runner. All three subcommands are passthroughs that forward every argument to `pipelex-agent run`, except `--runner`, which `mthds-agent` keeps for itself, so the options are `pipelex-agent run`'s own, and `pipelex-agent run bundle <target> --help` lists them all. On the API runner, `run method` answers `UnsupportedError`, `run pipe` and `run bundle` do not exist, and `run start` submits a run, sending its target's method tree as `validate bundle` does below, and returns its id.
 
 ```bash
 mthds-agent run method <name> [OPTIONS]
@@ -963,7 +976,7 @@ mthds-agent validate bundle [target] [OPTIONS]
 |---|---|---|---|---|
 | `target` | string | unless `--content` | -- | `.mthds` bundle file or directory |
 | `--content <mthds>` | string | no | -- | Bundle content as a string, in place of `target` |
-| `-L, --library-dir <dir>` | path, repeatable | no | -- | Directory whose `.mthds` files join the bundle; may be written before or after the subcommand |
+| `-L, --library-dir <dir>` | path, repeatable | no | -- | Library directory; on the API runner, one holding a `.mthds` file named alone becomes the root of the tree sent; may be written before or after the subcommand |
 | `--allow-signatures` | flag | no | -- | Tolerate unimplemented pipe signatures |
 | `--format <fmt>` | string | no | `markdown` | Success output format: `markdown` or `json` |
 | `--error-format <fmt>` | string | no | `--format` | Failure output format: `markdown` or `json` |
@@ -972,17 +985,19 @@ mthds-agent validate bundle [target] [OPTIONS]
 
 With the **pipelex runner**, every argument is forwarded to `pipelex-agent validate bundle`.
 
-With the **API runner**, the command posts the whole bundle to `POST /v1/validate`, the way the pipelex runner loads it, so a method split across several `.mthds` files validates there too:
+With the **API runner**, the command posts the method's tree to `POST /v1/validate`, so its Python, templates and other files are validated with its bundles and a method split across several `.mthds` files validates there too:
 
-- a directory target sends every `.mthds` file under it, its entry file first, chosen as the pipelex runner chooses it: `bundle.mthds` at its root, else the only `.mthds` file there. A directory with several root files and no `bundle.mthds`, or none at its root, is refused, as it is by the pipelex runner;
-- a `.mthds` file target sends that file first, and its sibling files only through `-L`, as on the pipelex runner;
-- each `-L` directory adds every `.mthds` file under it, and a file reached twice, as in `validate bundle <file> -L <its dir>/`, is sent once;
-- a directory walk skips the folders pipelex's library scan skips (`venv/`, `.venv/`, `env/`, `virtualenv/`, `results/`, `node_modules/`, `.git/` and the Python caches), so a virtual environment holding pipelex's own `.mthds` files is never sent, and it skips a folder you may not list, as pipelex does;
-- each file is named by its path, so a diagnostic's `source` says which file it is about.
+- a directory target sends the tree it belongs to, rooted at the nearest `METHODS.toml` at or above it, else at the directory itself;
+- a `.mthds` file target under a `METHODS.toml` sends that manifest's tree; with no manifest above it, the file travels alone, unless an `-L` directory holds it, which then becomes the root of the tree sent, as in `validate bundle <file> -L <its dir>/`;
+- `--content` sends a one-file tree of its own, under the tree path `bundle.mthds`, and takes no `-L`;
+- the files the standard leaves out stay behind: hidden files and folders, `__pycache__`, `node_modules`, virtual environments, nested repositories and packages, and whatever a `.gitignore` of the tree or the manifest's `exclude` ignores;
+- each diagnostic's `source` names its file by tree path.
 
-The graph options are not applied, because the graph is drawn locally by the pipelex runner. The bundle is still validated, and after a valid verdict a warning on stderr (`{"warning": true, "message": …}`) names the options that were not applied; the JSON verdict (`--format json`) carries the method's graph as `graph_spec`. `--pipe` is ignored, since the runner validates every pipe it receives. A target that is neither a `.mthds` file nor a directory whose entry file can be chosen is an `ArgumentError`, and an unreadable file, target directory or `-L` directory is an `IOError`.
+A tree of 256 KiB or less travels inside the request; a larger one travels by hash when the runner keeps a blob store, uploading only the files the runner lacks (see [docs/api-runner.md](docs/api-runner.md#sending-a-methods-tree)).
 
-`validate pipe <file>`, `inputs bundle` and `inputs pipe` send the same closure on the API runner, and take `-L` in the same two positions. When the closure holds several files, the template is for the entry's own `main_pipe` (the named file's, or the directory's entry file's) unless `--pipe` says otherwise, which is the pipe the pipelex runner templates.
+The graph options are not applied, because the graph is drawn locally by the pipelex runner. The bundle is still validated, and after a valid verdict a warning on stderr (`{"warning": true, "message": …}`) names the options that were not applied; the JSON verdict (`--format json`) carries the method's graph as `graph_spec`. `--pipe` is ignored, since the runner validates every pipe it receives. A target that is neither a `.mthds` file nor a directory, a tree holding no `.mthds` file, a tree the standard refuses, an `-L` directory that would add a second tree and `-L` beside `--content` are each an `ArgumentError`, and an unreadable file, target directory or `-L` directory is an `IOError`.
+
+`validate pipe <file>` sends the same tree on the API runner, and takes `-L` in the same two positions.
 
 **Examples:**
 
@@ -1011,7 +1026,15 @@ mthds-agent inputs method <target> [OPTIONS]
 | `--format <fmt>` | string | no | `json` | `json` prints the result envelope; `toml` prints the raw TOML template on stdout |
 | `--explicit` | flag | no | -- | Keep the `{concept, content}` envelope on every input instead of the light values |
 
-With the **API runner**, the command reads the pipe's input form from `POST /v1/pipe-io` and projects the template locally with the `mthds` package's projection, whose TOML output `mthds-python` reproduces byte for byte. `bundle` and `pipe` send the bundle's whole closure, as `validate bundle` does above, and pick the entry's own `main_pipe` when `--pipe` is omitted and the closure holds several files. The `method` target is a published method's address (`github.com/<owner>/<repo>[/<selector>][@<tag>]`), which the runner fetches, or a hosted catalog id (`mt_…`), which only a hosted API resolves; a bare name or a local path is refused with an `ArgumentError`. With the **pipelex runner**, every subcommand forwards to `pipelex-agent inputs`, where the `method` target is an installed method's name.
+With the **API runner**, the command reads the pipe's input form from `POST /v1/pipe-io` and projects the template locally with the `mthds` package's projection, whose TOML output `mthds-python` reproduces byte for byte. `POST /v1/pipe-io` takes `.mthds` files rather than a method's tree, so `bundle` and `pipe` send the bundle's closure of `.mthds` files, the way the pipelex runner loads it:
+
+- a directory target sends every `.mthds` file under it, its entry file first, chosen as the pipelex runner chooses it: `bundle.mthds` at its root, else the only `.mthds` file there. A directory with several root files and no `bundle.mthds`, or none at its root, is refused, as it is by the pipelex runner;
+- a `.mthds` file target sends that file first, and its sibling files only through `-L`, as on the pipelex runner;
+- each `-L` directory adds every `.mthds` file under it, and a file reached twice, as in `inputs bundle <file> -L <its dir>/`, is sent once; `-L` may be written before or after the subcommand;
+- a directory walk skips the folders pipelex's library scan skips (`venv/`, `.venv/`, `env/`, `virtualenv/`, `results/`, `node_modules/`, `.git/` and the Python caches), so a virtual environment holding pipelex's own `.mthds` files is never sent, and it skips a folder you may not list, as pipelex does;
+- each file is named by its path, so a diagnostic's `source` says which file it is about.
+
+When the closure holds several files and `--pipe` is omitted, the template is for the entry's own `main_pipe` (the named file's, or the directory's entry file's), which is the pipe the pipelex runner templates. The `method` target is a published method's address (`github.com/<owner>/<repo>[/<selector>][@<tag>]`), which the runner fetches, or a hosted catalog id (`mt_…`), which only a hosted API resolves; a bare name or a local path is refused with an `ArgumentError`. With the **pipelex runner**, every subcommand forwards to `pipelex-agent inputs`, where the `method` target is an installed method's name.
 
 The JSON output is `{ "success": true, "pipe_ref": "<domain.pipe_code>", "inputs": { … } }`, where `pipe_ref` is the pipe the runner resolved. A pipe that declares no inputs prints `inputs: {}`, or a TOML comment saying so.
 

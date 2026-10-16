@@ -15,6 +15,7 @@ import { describeUnusableMethod } from "../../installer/resolver/skipped.js";
 import { runInstallFlow } from "../../installer/methods/install-flow.js";
 import type { InstallFlowResult } from "../../installer/methods/install-flow.js";
 import { InstallLocation } from "../../installer/methods/types.js";
+import { resolvedMethodFiles } from "../../installer/methods/method-files.js";
 import { createRunner } from "../../runners/registry.js";
 import type { ParsedAddress, ResolvedRepo } from "../../package/manifest/types.js";
 import type { Runner, RunnerType } from "../../runners/types.js";
@@ -161,21 +162,20 @@ export async function installMethod(options: {
     runner = null;
   }
 
-  // Step 1c: Validate each method with the runner. The protocol validate
-  // (`validate(mthds_contents)`) parses + dry-runs the whole bundle, so every
-  // pipe in the method is covered in one call.
+  // Step 1c: Validate each method with the runner. The protocol validate parses
+  // and dry-runs the method's tree, its manifest and its bundles, so every pipe in
+  // the method is covered in one call.
   if (runner) {
     const valSpinner = p.spinner();
     let allValid = true;
     for (const method of resolved.methods) {
-      const contents = method.files.map((file) => file.content);
-      if (contents.length === 0) {
-        continue; // Nothing to validate
+      if (method.files.length === 0) {
+        continue; // No bundle to validate
       }
 
       valSpinner.start(`Validating ${method.name}...`);
       try {
-        const report = await runner.validate(contents);
+        const report = await runner.validate({ files: resolvedMethodFiles(method) });
         if (report.is_valid === false) {
           // A produced "invalid" verdict (the 200 InvalidReport arm) — surface the
           // per-error diagnostics, not just the summary, so failures are debuggable.

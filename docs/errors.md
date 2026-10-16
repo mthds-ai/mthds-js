@@ -15,12 +15,14 @@ flowchart TD
     AUE["ApiUnreachableError"]
     PET["PipelineExecuteTimeoutError"]
     RSR["RunStillRunningError"]
+    BUE["BlobUploadError"]
     Err --> PRE
     Err --> CAE
     PRE --> ARE
     PRE --> AUE
     PRE --> PET
     PRE --> RSR
+    PRE --> BUE
 ```
 
 Arrows point from a class to its subclasses (the `extends` tree). `PipelineRequestError` is the base every API-runner error derives from — so `catch (e) { if (e instanceof PipelineRequestError) … }` catches all of them at once. The one exception is **`ClientAuthenticationError`**, which extends `Error` directly and is therefore *not* a `PipelineRequestError`. A catch-all that means to cover authentication too must check `instanceof Error` (or test `ClientAuthenticationError` separately).
@@ -37,6 +39,7 @@ Arrows point from a class to its subclasses (the `extends` tree). `PipelineReque
 | `ClientAuthenticationError` | ✅ | ✅ | ❌ |
 | `PipelineExecuteTimeoutError` | ✅ | ✅ | ❌ |
 | `RunStillRunningError` | ✅ | ✅ | ❌ |
+| `BlobUploadError` | ✅ | ✅ | ❌ |
 
 `mthds/errors` carries the **whole taxonomy** and nothing else — pick it whenever the importing module might end up in a client bundle. `mthds/protocol` carries only the protocol base (its graph can't reach the runner-layer errors); use it when you only need `PipelineRequestError` alongside the rest of the pure protocol surface.
 
@@ -66,6 +69,7 @@ A non-2xx HTTP response **came back** from the runner. Raised by `MthdsApiClient
 | `retryable` | `boolean \| undefined` | The body's `retryable`: whether retrying the same request can plausibly succeed. |
 | `userAction` | `UserAction \| undefined` | The body's `user_action`: what the caller should do next, as `{ kind, detail }`. `detail` is the advice in words; `kind` is the runner's category of advice (the reference runner emits `wait_and_retry`, `check_billing`, `check_credentials`, `change_input`, `change_model`, `contact_support` and `unknown`). |
 | `requestId` | `string \| undefined` | The request's correlation id: the body's `request_id`, or the `X-Request-ID` response header when the body carries none. It is the id to hand to support, because it finds the server's log lines for this request. |
+| `missingBlobs` | `string[] \| undefined` | The body's `missing_blobs`: the SHA-256 of each blob a by-hash request named that the runner's blob store no longer holds, on a `422`. `MthdsApiClient` uploads them and sends the request once more by itself, so a caller sees it only when the second request is refused too (see [api-runner.md](./api-runner.md#sending-a-methods-tree)). |
 
 Notes:
 - **Branch on `errorDomain` and `type`, not on the status or the message.** `errorDomain` tells the caller's own mistake (`input`) from a fault it cannot fix, and `type` names the error class with a URI that stays the same on every occurrence. `errorType` is the runner's own class name, finer and open-ended.
@@ -102,6 +106,18 @@ The message tells the caller to start the run and poll its result by id instead,
 | `runId` | `string` | The authoritative run id to resume by. |
 | `retryAfterSeconds` | `number \| null` | From the `Retry-After` header, when the server sent one. |
 | `location` | `string \| null` | From the `Location` header — the status resource, when provided. |
+
+### `BlobUploadError`
+
+Uploading a blob of a method's tree failed: `POST /v1/blobs/missing` named the blob as missing and gave a target to upload it to, and the target answered neither a success nor a `412` (which means the store already holds the bytes), or could not be reached. No request carrying the tree was sent. Raised by `MthdsApiClient` (`src/runners/api/client.ts`) when it sends a tree by hash, and by its `uploadBlob`.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `sha256` | `string` | The blob's SHA-256, in lowercase hexadecimal. |
+| `status` | `number \| undefined` | The status the target answered, or `undefined` when it could not be reached. |
+| `host` | `string` | The host of the upload target. |
+
+An upload target is a signed URL, which grants whoever holds it the right to write, so neither the message, a member nor a `cause` carries it: only its host is kept, with no credentials, path, query or fragment.
 
 ### `ClientAuthenticationError`
 

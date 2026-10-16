@@ -114,6 +114,7 @@ describe("mthds CLI prints a validation item's suggested fix", () => {
   it("validate prints the fix under the item that has one", async () => {
     useRunner({
       type: "api",
+      methodTreeLimits: vi.fn().mockResolvedValue({}),
       validate: vi.fn().mockResolvedValue({
         ...INVALID,
         pending_signatures: [],

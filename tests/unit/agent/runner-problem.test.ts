@@ -134,9 +134,9 @@ describe("mthds-agent envelope for a runner's refusal", () => {
         requestId: "req-500",
       }),
     );
-    await expect(runProtocolValidate(runner, ["x"], false, undefined, "json")).rejects.toThrow(
-      "__exit__",
-    );
+    await expect(
+      runProtocolValidate(runner, { files: { "x.mthds": "x" } }, false, "json"),
+    ).rejects.toThrow("__exit__");
     expect(firstEnvelope()).toMatchObject({
       error: true,
       error_type: "RunnerError",
@@ -150,9 +150,9 @@ describe("mthds-agent envelope for a runner's refusal", () => {
     const runner = throwingRunner(
       apiError(422, { errorDomain: "input", retryable: false, requestId: "req-422" }),
     );
-    await expect(runProtocolValidate(runner, ["x"], false, undefined, "json")).rejects.toThrow(
-      "__exit__",
-    );
+    await expect(
+      runProtocolValidate(runner, { files: { "x.mthds": "x" } }, false, "json"),
+    ).rejects.toThrow("__exit__");
     const envelope = firstEnvelope();
     expect(envelope).toMatchObject({
       error_type: "ValidationError",
@@ -190,9 +190,9 @@ describe("mthds-agent envelope for a runner's refusal", () => {
 
   it("keeps the command's own domain and hint when the runner classified nothing", async () => {
     const runner = throwingRunner(apiError(500, {}));
-    await expect(runProtocolValidate(runner, ["x"], false, undefined, "json")).rejects.toThrow(
-      "__exit__",
-    );
+    await expect(
+      runProtocolValidate(runner, { files: { "x.mthds": "x" } }, false, "json"),
+    ).rejects.toThrow("__exit__");
     const envelope = firstEnvelope();
     expect(envelope).toMatchObject({
       error_type: "RunnerError",

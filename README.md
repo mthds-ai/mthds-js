@@ -253,24 +253,27 @@ The client implements the MTHDS Protocol plus the Pipelex API's pipe I/O extensi
 |--------|-------|-------------|
 | `execute(options)` | `POST /v1/execute` | Execute a method and wait for the result — returns a `RunResultExecute` (throws `RunStillRunningError` on the protocol's optional 202 degrade) |
 | `start(options)` | `POST /v1/start` | Start a method asynchronously — returns a `RunResultStart` with the authoritative `pipeline_run_id` |
-| `validate(mthdsContents, allowSignatures?, mthdsSources?)` | `POST /v1/validate` | Parse, validate, and dry-run a bundle — returns the protocol's `ValidationResult` discriminated on `is_valid`; an invalid bundle is a produced verdict (`is_valid: false` with `validation_errors`), not a throw. Only a no-verdict non-2xx (malformed request, auth, server fault) throws `ApiResponseError`. `mthdsSources` (optional, parallel to `mthdsContents`) names each submitted file so cross-file diagnostics resolve the owning file |
+| `validate(source, allowSignatures?, render?)` | `POST /v1/validate` | Parse, validate, and dry-run a method's tree, given as `{ files }` or `{ tree }` — returns the protocol's `ValidationResult` discriminated on `is_valid`; an invalid method is a produced verdict (`is_valid: false` with `validation_errors`, each naming its file by tree path), not a throw. Only a no-verdict non-2xx (malformed request, auth, server fault) throws `ApiResponseError` |
 | `models(category?)` | `GET /v1/models` | The model deck the runner routes to |
 | `pipeIo(request)` | `POST /v1/pipe-io` | A method's pipe I/O contracts, input form and output form in one call, with no dry run (a Pipelex API extension) — returns a `PipeIOResponse` discriminated on `is_valid`. The closure is `files`, a `method_ref` address or a hosted `method_id`; a refused pipe selection is a `422` whose `errorType` is one of `PIPE_SELECTION_ERROR_TYPES`. See [docs/pipe-io.md](docs/pipe-io.md) |
 | `version()` | `GET /v1/version` | Protocol + implementation versions (the feature-detection handshake) |
+| `findMissingBlobs(request)` | `POST /v1/blobs/missing` | Which blobs of a tree the runner's blob store lacks, each with its upload target — the step before sending a tree by hash, which `execute`, `start` and `validate` take themselves when given a `tree` |
+| `uploadBlob(blob, bytes)` | the target the runner gave | Upload one missing blob with exactly the headers the runner named; throws `BlobUploadError`, which never carries the target's URL |
 
 ### Run options
 
 | Option | Type | Description |
 |--------|------|-------------|
 | `pipe_code` | `string` | Pipe code to execute |
-| `mthds_contents` | `string[]` | Raw bundle contents (alternative to `pipe_code`) |
+| `files` | `MethodFiles` | The method's tree, as a map from tree path to file entry: a text, `{ base64 }` or `{ sha256, size }` |
+| `tree` | `MethodTreeSource` | The method's tree to send, such as the `MethodTree` that `listMethodTree` returns; the client sends it inline or by hash, as the runner allows. Exclusive with `files` |
 | `inputs` | `Record<string, string \| string[] \| object>` | Method input variables |
 | `output_name` | `string` | Name of the output to return |
 | `output_multiplicity` | `boolean \| number` | Expected output multiplicity |
 | `dynamic_output_concept_ref` | `string` | Dynamic output concept reference |
 | `extra` | `Record<string, unknown>` | Server-specific extension args, forwarded verbatim into the request body (e.g. a stored-method id) |
 
-Either `pipe_code` or `mthds_contents` must be provided (or a server-specific extension arg via `extra`). Anything beyond the protocol's basic args is server-specific and rides the generic `extra` option, merged into the request body — the server you call defines and handles its own extension args (a client-supplied run id, where a server supports one, is such an extension; the request side never names it).
+Either `pipe_code` or the method's tree (`files` or `tree`) must be provided (or a server-specific extension arg via `extra`). A tree of 256 KiB or less, measured as the JSON of its inline map, travels inline; a larger one travels by hash when the runner keeps a blob store, uploading only the blobs it lacks (see [docs/api-runner.md](docs/api-runner.md#sending-a-methods-tree)). Anything beyond the protocol's basic args is server-specific and rides the generic `extra` option, merged into the request body — the server you call defines and handles its own extension args (a client-supplied run id, where a server supports one, is such an extension; the request side never names it).
 
 ## Usage statistics
 

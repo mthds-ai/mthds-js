@@ -20,6 +20,7 @@ src/method-tree/
   references.ts        the standard's ordered file reference steps, pure
   function-names.ts    locating a PipeFunc's function_name in the tree, pure
   file-entries.ts      reading a map of file entries, as a receiver does
+  file-entry-encoding.ts  giving bytes as an inline file entry (text or Base64), as a sender does, pure
   json-document.ts     a strict JSON reader that keeps duplicate keys and number lexemes
   exceptions.ts        MethodTreeError, TreeLimitExceededError and their codes
 ```
@@ -60,6 +61,10 @@ An excluded directory is never entered, so no `.gitignore` file inside it is rea
 ## Reading a map of file entries
 
 `readFileEntryMap(document, blobStore)` reads the `files` map a runner receives, from its JSON text, with the strict reader in `json-document.ts`, because the rules need what `JSON.parse` hides: a key given twice inside an entry object, and a `size` written `13.0` or `1.3e1` rather than as an integer. It refuses a key that is not already in NFC or not a tree path, a name the membership rule would exclude, Base64 that is not canonical (padded, standard alphabet, zero pad bits, checked by a loop so a payload of many megabytes is read like a small one), a `size` too large to be exact, a hash entry whose blob the store does not hold or whose bytes do not hash to its key, and colliding paths. The blob store is consulted only when the map is otherwise sound. A document that is not a JSON object is `malformed_document`. It returns the files with their bytes, and the tree digest.
+
+## Sending a tree
+
+A sender reads a tree through `MethodTreeSource` (`src/protocol/file_entries.ts`): its files with their tree paths, sizes and SHA-256, its digest, and `readFile(treePath)`. The interface is pure, so the protocol layer can name it, and `MethodTree` implements it, so the tree the lister returns is what `MthdsApiClient` takes as a run's or a validation's `tree`; a caller holding its files elsewhere implements the interface itself. The client chooses whether the tree travels inline or by hash, as [api-runner.md](./api-runner.md#sending-a-methods-tree) describes, and builds the inline map with `file-entry-encoding.ts`: `inlineFileEntry(bytes)` gives bytes that are UTF-8 as their text, a byte order mark kept, and any other bytes as canonical padded Base64 (`encodeBase64`), and `defineFileEntry` adds an entry as an own property, so a file named `__proto__` travels like any other. `utf8TextOf` is the strict decoding both rely on. The module uses no Node built-in, so it runs wherever the client does.
 
 ## The lock
 

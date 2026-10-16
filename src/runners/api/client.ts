@@ -11,7 +11,7 @@ import type {
 import type { DictRunResultExecute } from "./models.js";
 import { ApiResponseError, ApiTransportError, RunStillRunningError } from "./exceptions.js";
 import type { ApiAnswerFacts } from "./exceptions.js";
-import { argumentInvalid, ProblemError } from "../../problems/errors.js";
+import { argumentInvalid, problemError } from "../../problems/errors.js";
 import { buildProblem } from "../../problems/build.js";
 import {
   isProblemItem,
@@ -152,19 +152,15 @@ export class MthdsApiClient implements Runner {
     // Trailing slashes are stripped first (leniency the SDK has always had);
     // a remaining path/query/fragment/credentials is rejected.
     if (!isValidBaseUrl(normalizedBaseUrl)) {
-      throw new ProblemError(
-        buildProblem(
-          "client.not_configured",
-          { setting: "base_url" },
-          {
-            extra: {
-              message:
-                `Invalid API base URL "${normalizedBaseUrl}": must be host-only ` +
-                `(http/https, no path, query, fragment, or credentials). Endpoints ` +
-                `compose as {base}/v1/{endpoint}.`,
-            },
-          },
-        ),
+      throw problemError(
+        "client.not_configured",
+        { setting: "base_url" },
+        {
+          message:
+            `Invalid API base URL "${normalizedBaseUrl}": must be host-only ` +
+            `(http/https, no path, query, fragment, or credentials). Endpoints ` +
+            `compose as {base}/v1/{endpoint}.`,
+        },
       );
     }
     this.baseUrl = normalizedBaseUrl;
@@ -223,13 +219,10 @@ export class MthdsApiClient implements Runner {
       try {
         payload = JSON.stringify(options.body);
       } catch (cause) {
-        throw new ProblemError(
-          buildProblem(
-            "client.argument_invalid",
-            { argument: "body", reason: "not_json" },
-            { extra: { message: `The request body of ${route.name} cannot be written as JSON.` } },
-          ),
-          { cause },
+        throw problemError(
+          "client.argument_invalid",
+          { argument: "body", reason: "not_json" },
+          { message: `The request body of ${route.name} cannot be written as JSON.`, cause },
         );
       }
     }

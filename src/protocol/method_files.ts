@@ -15,8 +15,8 @@
  * / "clear the field" sentinel — never as the literal `"[]"`.
  */
 
-import { ProblemError } from "../problems/errors.js";
-import { buildProblem } from "../problems/build.js";
+import { problemError } from "../problems/errors.js";
+import type { ProblemError } from "../problems/errors.js";
 
 /** One named source file of a method bundle: a bundle-relative path and its text. */
 export interface MethodFile {
@@ -91,10 +91,7 @@ export function parseMethodFiles(source: string | null | undefined): MethodFile[
 
 /** The refusal of a method file source, `client.argument_invalid` naming the source and why. */
 function methodFilesInvalid(reason: string, message: string, cause?: unknown): ProblemError {
-  return new ProblemError(
-    buildProblem("client.argument_invalid", { argument: "files", reason }, { extra: { message } }),
-    cause === undefined ? undefined : { cause },
-  );
+  return problemError("client.argument_invalid", { argument: "files", reason }, { message, cause });
 }
 
 function isMethodFileEntry(value: unknown): value is MethodFile {

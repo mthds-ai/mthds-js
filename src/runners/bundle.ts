@@ -23,7 +23,6 @@
  */
 
 import { argumentInvalid, problemError, ProblemError } from "../problems/errors.js";
-import { buildProblem } from "../problems/build.js";
 import {
   type Dirent,
   lstatSync,
@@ -299,13 +298,7 @@ export function resolveRunBundle(target: string): ResolvedRunBundle {
  */
 export class BundleTargetError extends ProblemError {
   constructor(message: string) {
-    super(
-      buildProblem(
-        "client.argument_invalid",
-        { argument: "target", reason: "not_a_bundle" },
-        { extra: { message } },
-      ),
-    );
+    super(argumentInvalid("target", "not_a_bundle", message).problem);
     this.name = "BundleTargetError";
   }
 }

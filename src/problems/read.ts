@@ -317,7 +317,8 @@ function rfc850Year(twoDigits: number, currentYear: number): number {
  * part of the form but not checked against the date. The RFC 850 form's two-digit year reads as the
  * year ending in those digits from 49 years before `now` to 50 years after it. A second of `60`, a
  * leap second, counts as the next minute. `undefined` when `text` is in none of the three forms or
- * names no real moment, such as the 31st of February or the hour 24.
+ * names no real moment, such as the 31st of February or the hour 24, and for a moment past the
+ * year 9999, as a leap second at its last minute carries it.
  */
 export function parseHttpDate(text: string, now: number = Date.now()): number | undefined {
   let day: string;
@@ -360,7 +361,9 @@ export function parseHttpDate(text: string, now: number = Date.now()): number | 
   const moment = new Date(0);
   moment.setUTCFullYear(year, monthIndex, dayOfMonth);
   moment.setUTCHours(hour, minute, 0, 0);
-  return moment.getTime() + second * 1000;
+  const instant = moment.getTime() + second * 1000;
+  // A leap second at the last minute of the year 9999 carries past it, out of the dates read.
+  return new Date(instant).getUTCFullYear() > LAST_YEAR ? undefined : instant;
 }
 
 /**

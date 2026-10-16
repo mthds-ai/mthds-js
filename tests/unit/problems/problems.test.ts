@@ -323,11 +323,13 @@ describe("parseHttpDate", () => {
     );
   });
 
-  it("reads a leap second at the edge of the range without throwing", () => {
+  it("reads a leap second carrying past the year 9999 as no date, without throwing", () => {
     const header = { "retry-after": "Fri, 31 Dec 9999 23:59:60 GMT" };
     expect(() => retryAfterSeconds(header, now)).not.toThrow();
-    const seconds = retryAfterSeconds(header, now);
-    expect(seconds === undefined || Number.isSafeInteger(seconds)).toBe(true);
+    expect(retryAfterSeconds(header, now)).toBeUndefined();
+    expect(parseHttpDate("Fri, 31 Dec 9999 23:59:59 GMT", now)).toBe(
+      Date.parse("9999-12-31T23:59:59Z"),
+    );
   });
 });
 

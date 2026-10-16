@@ -270,7 +270,7 @@ export class PipelexRunner implements Runner {
       if (failure.code === 1) {
         throw problemError(
           "runtime.misconfigured",
-          {},
+          { component: "pipelex" },
           { message: `pipelex doctor found issues:\n${execFailureDetail(cause)}`, cause },
         );
       }

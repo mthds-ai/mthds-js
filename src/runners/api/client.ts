@@ -215,13 +215,35 @@ export class MthdsApiClient implements Runner {
    * The ONE place request headers are built, so no request path can miss the
    * `User-Agent` (spec: client-identification, "Client obligations").
    */
+  /**
+   * The request's headers, checked before any request leaves. An API key no HTTP header can carry,
+   * such as one holding a character past Latin-1 or a line break, is refused as
+   * `client.not_configured` naming `api_key`: fetch would refuse it before any I/O with a bare
+   * `TypeError`, which would read as a request that may have left. The key is never quoted.
+   */
   private buildHeaders(hasBody: boolean): Record<string, string> {
     const headers: Record<string, string> = { Accept: "application/json" };
     if (this.userAgent !== undefined) {
       headers["User-Agent"] = this.userAgent;
     }
     if (this.apiKey) {
-      headers["Authorization"] = `Bearer ${this.apiKey}`;
+      const authorization = `Bearer ${this.apiKey}`;
+      try {
+        // The check fetch makes of a header's value, made here where its refusal can be read.
+        new Headers([["Authorization", authorization]]);
+      } catch (cause) {
+        throw problemError(
+          "client.not_configured",
+          { setting: "api_key" },
+          {
+            message:
+              "The API key holds a character an HTTP header cannot carry, such as one past " +
+              "Latin-1 or a line break; set the key again as it was issued.",
+            cause,
+          },
+        );
+      }
+      headers["Authorization"] = authorization;
     }
     if (hasBody) {
       headers["Content-Type"] = "application/json";
@@ -249,6 +271,8 @@ export class MthdsApiClient implements Runner {
         );
       }
     }
+    // Built before the request, so that a header fetch refuses is never read as a transport failure.
+    const headers = this.buildHeaders(hasBody);
     const controller = new AbortController();
     let timedOut = false;
     const timer = setTimeout(() => {
@@ -259,7 +283,7 @@ export class MthdsApiClient implements Runner {
     try {
       const response = await fetch(route.url, {
         method: route.method,
-        headers: this.buildHeaders(hasBody),
+        headers,
         body: payload,
         // A request that creates a run is never sent twice, so a redirect is an answer to read
         // rather than a second request to make: following it would send the request again, and a

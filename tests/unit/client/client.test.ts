@@ -205,6 +205,27 @@ describe("MthdsApiClient.execute argument validation", () => {
 
 describe("MthdsApiClient transport failures", () => {
   it.each([
+    ["execute", (client: MthdsApiClient) => client.execute({ pipe_code: "p" })],
+    ["models", (client: MthdsApiClient) => client.models()],
+  ] as const)(
+    "refuses an API key no HTTP header can carry on %s before any request, as client.not_configured",
+    async (_route, call) => {
+      // A made-up key holding the euro sign, which no HTTP header carries; never a real key.
+      const client = new MthdsApiClient({ baseUrl: BASE_URL, apiKey: "test-key-\u20ac" });
+      const fetchSpy = vi.spyOn(globalThis, "fetch");
+      const err = await rejection(call(client));
+      expect(fetchSpy).not.toHaveBeenCalled();
+      expect(err).toBeInstanceOf(ProblemError);
+      expect(err).not.toBeInstanceOf(ApiTransportError);
+      expect((err as ProblemError).problem).toMatchObject({
+        code: "client.not_configured",
+        params: { setting: "api_key" },
+      });
+      expect((err as ProblemError).message).not.toContain("test-key");
+    },
+  );
+
+  it.each([
     ["execute", "client.outcome_unknown"],
     ["models", "client.unreachable"],
   ] as const)(

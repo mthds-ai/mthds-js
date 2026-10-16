@@ -400,7 +400,7 @@ describe("MthdsApiClient answers that are no problem document", () => {
         detail: { error_type: "CredentialsError", message: "Missing OPENAI_API_KEY" },
       }),
     );
-    const err = await rejection(client.execute({ pipe_code: "p" }));
+    const err = await rejection(client.models());
     expect((err as ApiResponseError).status).toBe(500);
     expect((err as ApiResponseError).problem.code).toBe("client.response_unreadable");
     expect((err as ApiResponseError).problem.params).toEqual({ status: 500 });
@@ -411,7 +411,7 @@ describe("MthdsApiClient answers that are no problem document", () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
       textResponse(502, "Bad Gateway", "Bad Gateway"),
     );
-    const err = await rejection(client.execute({ pipe_code: "p" }));
+    const err = await rejection(client.version());
     expect(err).toBeInstanceOf(ApiResponseError);
     const e = err as ApiResponseError;
     expect(e.status).toBe(502);
@@ -420,6 +420,28 @@ describe("MthdsApiClient answers that are no problem document", () => {
     expect(e.problem.code).toBe("client.response_unreadable");
     expect(e.problem.params).toEqual({ status: 502 });
   });
+
+  it.each([500, 502, 503, 504])(
+    "reads a %i that is no problem document on execute and start as client.outcome_unknown",
+    async (status) => {
+      // A gateway's time limit or a proxy's page may stand in front of a run that started.
+      for (const call of [
+        (client: MthdsApiClient) => client.execute({ pipe_code: "p" }),
+        (client: MthdsApiClient) => client.start({ pipe_code: "p" }),
+      ]) {
+        vi.spyOn(globalThis, "fetch").mockResolvedValue(
+          jsonResponse(status, { message: "Endpoint request timed out" }),
+        );
+        const err = await rejection(call(makeClient()));
+        expect(err).toBeInstanceOf(ApiResponseError);
+        const e = err as ApiResponseError;
+        expect(e.status).toBe(status);
+        expect(e.problem).toEqual(buildProblem("client.outcome_unknown", {}));
+        expect(e.retry).toBe("outcome_unknown");
+        expect(e.responseBody).toContain("Endpoint request timed out");
+      }
+    },
+  );
 
   it("reads an empty 503 on a read as runtime.unavailable, with its status and Retry-After", async () => {
     const client = makeClient();
@@ -437,15 +459,15 @@ describe("MthdsApiClient answers that are no problem document", () => {
   });
 
   it("never reads an empty 503 on execute as a code that invites a repeat", async () => {
-    // The answer may come after the run started, so it reads as unreadable,
-    // whose verdict is not `yes`, rather than as runtime.unavailable.
+    // The answer may come after the run started, so it leaves the outcome unknown, whose verdict
+    // is not `yes`, rather than reading as runtime.unavailable.
     const client = makeClient();
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
       textResponse(503, "", "Service Unavailable", { "Retry-After": "5" }),
     );
     const err = await rejection(client.execute({ pipe_code: "p" }));
     const e = err as ApiResponseError;
-    expect(e.problem).toEqual(buildProblem("client.response_unreadable", { status: 503 }));
+    expect(e.problem).toEqual(buildProblem("client.outcome_unknown", {}));
     expect(e.retry).not.toBe("yes");
   });
 

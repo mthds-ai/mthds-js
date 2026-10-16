@@ -240,12 +240,41 @@ describe("reading an answer that is not the route's result", () => {
       "runtime.unavailable",
     );
     expect(readErrorAnswer({ status: 503, headers: {}, body: "" }, { createsRun: true }).code).toBe(
-      "client.response_unreadable",
+      "client.outcome_unknown",
+    );
+    expect(readErrorAnswer({ status: 405, headers: {}, body: "" }, { createsRun: true }).code).toBe(
+      "request.method_not_allowed",
     );
     expect(readErrorAnswer({ status: 418, headers: {}, body: "" })).toMatchObject({
       code: "client.response_unreadable",
       params: { status: 418 },
     });
+  });
+
+  it.each([500, 502, 503, 504, 599])(
+    "reads a %i that is no problem document as client.outcome_unknown on a route creating a run",
+    (status) => {
+      const answer = { status, headers: {}, body: '{"message":"Endpoint request timed out"}' };
+      expect(readErrorAnswer(answer, { createsRun: true })).toEqual(
+        buildProblem("client.outcome_unknown", {}),
+      );
+      // A route that creates nothing keeps the reading by status.
+      expect(readErrorAnswer(answer).code).toBe(
+        status === 503 ? "runtime.unavailable" : "client.response_unreadable",
+      );
+    },
+  );
+
+  it("keeps a server error's problem document as received on a route creating a run", () => {
+    const problem = buildProblem("runtime.unexpected", {}, { status: 500 });
+    const answer = { status: 500, headers: {}, body: JSON.stringify(problem) };
+    expect(readErrorAnswer(answer, { createsRun: true })).toEqual(problem);
+  });
+
+  it("reads a 4xx that is no problem document on a route creating a run by its status", () => {
+    expect(
+      readErrorAnswer({ status: 404, headers: {}, body: "Not Found" }, { createsRun: true }),
+    ).toEqual(buildProblem("client.response_unreadable", { status: 404 }));
   });
 });
 

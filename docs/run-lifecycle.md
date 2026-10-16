@@ -41,7 +41,7 @@ console.log(result.pipe_output);
 
 **Two things can cut the wait short:**
 
-- **Hosted timeout.** Behind the Pipelex Hosted gateway, synchronous requests are capped at ~30s. A longer run ends with the gateway's own answer, which is no problem document and reads as `client.response_unreadable` naming its status, or with the connection cut, which reads as `client.outcome_unknown`; either way the run may have started, so it is not repeated by itself. Switch to `start` for long methods. (A self-hosted runner imposes no such cap of its own — but your reverse proxy usually does; see [api-runner.md](./api-runner.md).)
+- **Hosted timeout.** Behind the Pipelex Hosted gateway, synchronous requests are capped at ~30s. A longer run ends with the gateway's own answer, a server error that is no problem document, or with the connection cut, and both read as `client.outcome_unknown`: the run may have started, so it is not repeated by itself. Switch to `start` for long methods. (A self-hosted runner imposes no such cap of its own — but your reverse proxy usually does; see [api-runner.md](./api-runner.md).)
 - **Async degrade (202).** The protocol lets a runner *accept* an `execute` request and finish it in the background, answering `202` with the run id instead of the result. `mthds-js` surfaces that as `RunStillRunningError`, whose problem is `client.follow_failed`, carrying the `pipeline_run_id`, `Retry-After`, and `Location` so you can collect the result by id.
 
 ## `start` — submit now, collect later

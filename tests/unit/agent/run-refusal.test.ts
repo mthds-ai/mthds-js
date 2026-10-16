@@ -133,13 +133,19 @@ describe("mthds-agent run start envelope for a refused invalid method", () => {
     expect(envelope()).not.toHaveProperty("status");
   });
 
-  it("reads a refusal whose body is not a problem by its status", async () => {
+  it("reads a server error whose body is not a problem as an outcome left unknown", async () => {
+    // A proxy's 502 may stand in front of a run that started.
     await expect(
       runStart(new Response("<html>Bad gateway</html>", { status: 502 })),
     ).rejects.toThrow("__exit__");
+    expect(envelope()).toMatchObject({ code: "client.outcome_unknown", params: {} });
+  });
+
+  it("reads a refusal whose body is not a problem by its status", async () => {
+    await expect(runStart(new Response("Not Found", { status: 404 }))).rejects.toThrow("__exit__");
     expect(envelope()).toMatchObject({
       code: "client.response_unreadable",
-      params: { status: 502 },
+      params: { status: 404 },
     });
   });
 });

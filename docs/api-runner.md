@@ -76,7 +76,7 @@ See the [`pipelex-api` documentation](https://docs.pipelex.com/latest/api-server
 
 **Synchronous runs.** `mthds run pipe` and `mthds run bundle` call the blocking `POST /v1/execute` (see [run-lifecycle.md](./run-lifecycle.md)).
 
-- *Hosted:* the gateway caps synchronous requests at ~30s; a longer run ends with the gateway's answer, read as `client.response_unreadable`, or a cut connection, read as `client.outcome_unknown` (see [errors.md](./errors.md#how-the-client-reads-an-answer)).
+- *Hosted:* the gateway caps synchronous requests at ~30s; a longer run ends with the gateway's answer, a server error that is no problem document, or a cut connection, both read as `client.outcome_unknown` (see [errors.md](./errors.md#how-the-client-reads-an-answer)).
 - *Self-hosted:* the runner holds the connection as long as it needs, but your own reverse proxy (nginx, ALB, Cloud Run, …) typically imposes an idle timeout (~60s). Raise it for long runs.
 
 For anything long-running, prefer `start` over `execute`. The async `start` primitive is part of the **SDK** (`client.start`), not a CLI subcommand — `mthds run …` is always synchronous.

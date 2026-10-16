@@ -5,9 +5,13 @@
  * - a body that is a problem document reads as received, every member it carries kept, those this
  *   reader does not know included, its `status` taken from the answer when the body leaves it out,
  *   and its `retry_after` from the `Retry-After` header when it has none and its `retry` is `yes`;
- * - a body that is not one, such as a proxy's HTML page or an empty body, reads as the one core
- *   code raised as a problem with the answer's status, when exactly one is and a caller can state
- *   it, which takes no parameter only the runtime knows: today a `405` reads as
+ * - a server error (`5xx`) whose body is not one, on a route that creates a run, reads as
+ *   `client.outcome_unknown`: something other than the runtime may have answered, such as a
+ *   gateway's `504` after its own time limit or a proxy's `502`, and the run may have started
+ *   behind it;
+ * - any other body that is not one, such as a proxy's HTML page or an empty body, reads as the one
+ *   core code raised as a problem with the answer's status, when exactly one is and a caller can
+ *   state it, which takes no parameter only the runtime knows: today a `405` reads as
  *   `request.method_not_allowed` and a `503` as `runtime.unavailable`. On a route that creates a
  *   run, an answer that is no problem document never invites a repeat, so a code whose `retry` is
  *   `yes` is not read that way there;
@@ -348,6 +352,9 @@ export function readErrorAnswer(answer: Answer, options: ReadAnswerOptions = {})
     return problem;
   }
   if (answer.status >= 200 && answer.status < 300) return unreadableAnswer(answer.status);
+  if (options.createsRun === true && answer.status >= 500 && answer.status <= 599) {
+    return buildProblem("client.outcome_unknown", {});
+  }
   const entry = soleCodeOfStatus(answer.status);
   if (entry === undefined || (options.createsRun === true && entry.retry === "yes")) {
     return unreadableAnswer(answer.status);

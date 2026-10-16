@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import type { Problem } from "../../../src/problems/types.js";
 
 // ── Mocks ────────────────────────────────────────────────────────────
 
@@ -14,30 +15,22 @@ vi.mock("../../../src/installer/runtime/installer.js", () => ({
   uvToolInstallSync: vi.fn(),
 }));
 
-// Mock agentError to throw so execution stops (like the real process.exit)
+// Mock agentError to throw so execution stops (like the real process.exit); the problems and the
+// warnings stay the real ones.
 class AgentErrorThrow extends Error {
   constructor(
-    public errorType: string,
+    public problem: Problem,
     public extras?: Record<string, unknown>,
   ) {
-    super(errorType);
+    super(problem.code);
   }
 }
 
-vi.mock("../../../src/agent/output.js", () => ({
-  agentError: vi.fn((message: string, errorType: string, extras?: Record<string, unknown>) => {
-    throw new AgentErrorThrow(errorType, { message, ...extras });
+vi.mock("../../../src/agent/output.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../../src/agent/output.js")>()),
+  agentError: vi.fn((problem: Problem, extras?: Record<string, unknown>) => {
+    throw new AgentErrorThrow(problem, extras);
   }),
-  AGENT_ERROR_DOMAINS: {
-    ARGUMENT: "argument",
-    CONFIG: "config",
-    RUNNER: "runner",
-    PIPELINE: "pipeline",
-    VALIDATION: "validation",
-    INSTALL: "install",
-    IO: "io",
-    BINARY: "binary",
-  },
 }));
 
 const mockExit = vi.spyOn(process, "exit").mockImplementation((() => {}) as never);
@@ -45,12 +38,13 @@ const mockExit = vi.spyOn(process, "exit").mockImplementation((() => {}) as neve
 import { spawnSync } from "node:child_process";
 import { checkBinaryVersion } from "../../../src/installer/runtime/version-check.js";
 import { uvToolInstallSync } from "../../../src/installer/runtime/installer.js";
-import { agentError } from "../../../src/agent/output.js";
+import { agentError, chooseErrorFormat } from "../../../src/agent/output.js";
 import { passthrough } from "../../../src/agent/passthrough.js";
 import { BINARY_RECOVERY } from "../../../src/agent/binaries.js";
 import { outcomeNotes, resetOutcomeNotes } from "../../../src/usage-stats/outcome.js";
 
 const PX_CONSTRAINT = BINARY_RECOVERY["pipelex"].version_constraint;
+const PX_AGENT_RECOVERY = BINARY_RECOVERY["pipelex-agent"];
 
 const mockedSpawnSync = vi.mocked(spawnSync);
 const mockedCheckBinaryVersion = vi.mocked(checkBinaryVersion);
@@ -133,7 +127,7 @@ describe("passthrough", () => {
     expect(outcomeNotes().cancelled).toBe(false);
   });
 
-  it("emits BinaryNotFoundError on ENOENT when no recovery info", () => {
+  it("reports a binary that is not found, with no recovery info, as client.tool_missing", () => {
     const enoentError = new Error("spawn ENOENT") as NodeJS.ErrnoException;
     enoentError.code = "ENOENT";
 
@@ -147,11 +141,13 @@ describe("passthrough", () => {
     // Use a binary with no BINARY_RECOVERY entry so version check is skipped
     expect(() => passthrough("nonexistent-bin", ["run"])).toThrow(AgentErrorThrow);
     expect(mockedAgentError).toHaveBeenCalledWith(
-      expect.stringContaining("not found"),
-      "BinaryNotFoundError",
       expect.objectContaining({
-        error_domain: "binary",
+        code: "client.tool_missing",
+        domain: "input",
+        params: { tool: "nonexistent-bin" },
+        message: expect.stringContaining("not found"),
       }),
+      { recovery: undefined },
     );
   });
 
@@ -246,7 +242,55 @@ describe("passthrough", () => {
     stderrSpy.mockRestore();
   });
 
-  it("emits InstallError when auto-install fails", () => {
+  it("writes the unparseable-version warning as JSON, with the constraint, under --error-format json", () => {
+    const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    chooseErrorFormat("json");
+    try {
+      mockedCheckBinaryVersion.mockReturnValue({
+        status: "unparseable",
+        installed_version: null,
+        version_constraint: PX_CONSTRAINT,
+      });
+      mockedSpawnSync.mockReturnValue(OK_SPAWN);
+
+      passthrough("pipelex-agent", ["run"], { autoInstall: true });
+
+      expect(JSON.parse(String(stderrSpy.mock.calls[0]![0]))).toEqual({
+        warning: true,
+        message: "Could not parse version for pipelex-agent. Proceeding anyway.",
+        version_constraint: PX_CONSTRAINT,
+      });
+    } finally {
+      chooseErrorFormat(undefined);
+      stderrSpy.mockRestore();
+    }
+  });
+
+  it("reports a failed auto-upgrade as client.tool_outdated, with its recovery", () => {
+    mockedCheckBinaryVersion.mockReturnValue({
+      status: "outdated",
+      installed_version: "0.20.0",
+      version_constraint: PX_CONSTRAINT,
+    });
+    mockedUvToolInstallSync.mockImplementation(() => {
+      throw new Error("Network error");
+    });
+
+    expect(() => passthrough("pipelex-agent", ["run"], { autoInstall: true })).toThrow(
+      AgentErrorThrow,
+    );
+
+    expect(mockedAgentError).toHaveBeenCalledWith(
+      expect.objectContaining({
+        code: "client.tool_outdated",
+        params: { tool: "pipelex-agent", version: "0.20.0" },
+        message: expect.stringContaining("Network error"),
+      }),
+      { recovery: PX_AGENT_RECOVERY },
+    );
+  });
+
+  it("reports a failed auto-install as client.tool_missing, with its recovery", () => {
     mockedCheckBinaryVersion.mockReturnValue({
       status: "missing",
       installed_version: null,
@@ -261,13 +305,16 @@ describe("passthrough", () => {
     );
 
     expect(mockedAgentError).toHaveBeenCalledWith(
-      expect.stringContaining("Network error"),
-      "InstallError",
-      expect.objectContaining({ error_domain: "install" }),
+      expect.objectContaining({
+        code: "client.tool_missing",
+        params: { tool: "pipelex-agent" },
+        message: expect.stringContaining("Network error"),
+      }),
+      { recovery: PX_AGENT_RECOVERY },
     );
   });
 
-  it("emits InstallError when binary not reachable after auto-install", () => {
+  it("reports a binary not reachable after auto-install as client.tool_missing", () => {
     mockedCheckBinaryVersion.mockReturnValue({
       status: "missing",
       installed_version: null,
@@ -280,15 +327,18 @@ describe("passthrough", () => {
     );
 
     expect(mockedAgentError).toHaveBeenCalledWith(
-      expect.stringContaining("not reachable"),
-      "InstallError",
-      expect.objectContaining({ error_domain: "install" }),
+      expect.objectContaining({
+        code: "client.tool_missing",
+        params: { tool: "pipelex-agent" },
+        message: expect.stringContaining("not reachable"),
+      }),
+      { recovery: PX_AGENT_RECOVERY },
     );
   });
 
   // ── 9c: Version check runs unconditionally when recovery exists ──────
 
-  it("emits BinaryNotFoundError when autoInstall=false and binary is missing", () => {
+  it("reports a missing binary as client.tool_missing when autoInstall=false", () => {
     mockedCheckBinaryVersion.mockReturnValue({
       status: "missing",
       installed_version: null,
@@ -300,17 +350,17 @@ describe("passthrough", () => {
     );
 
     expect(mockedAgentError).toHaveBeenCalledWith(
-      expect.stringContaining("not installed"),
-      "BinaryNotFoundError",
       expect.objectContaining({
-        error_domain: "binary",
-        hint: expect.stringContaining("Install"),
+        code: "client.tool_missing",
+        params: { tool: "pipelex-agent" },
+        message: expect.stringMatching(/not installed.*Install: uv tool install/),
       }),
+      { recovery: PX_AGENT_RECOVERY },
     );
     expect(mockedUvToolInstallSync).not.toHaveBeenCalled();
   });
 
-  it("emits InstallError when autoInstall=false and binary is outdated", () => {
+  it("reports an outdated binary as client.tool_outdated with its version when autoInstall=false", () => {
     mockedCheckBinaryVersion.mockReturnValue({
       status: "outdated",
       installed_version: "0.20.0",
@@ -322,12 +372,12 @@ describe("passthrough", () => {
     );
 
     expect(mockedAgentError).toHaveBeenCalledWith(
-      expect.stringContaining("outdated"),
-      "InstallError",
       expect.objectContaining({
-        error_domain: "install",
-        hint: expect.stringContaining("Upgrade"),
+        code: "client.tool_outdated",
+        params: { tool: "pipelex-agent", version: "0.20.0" },
+        message: expect.stringMatching(/outdated.*Upgrade: uv tool install/),
       }),
+      { recovery: PX_AGENT_RECOVERY },
     );
     expect(mockedUvToolInstallSync).not.toHaveBeenCalled();
   });

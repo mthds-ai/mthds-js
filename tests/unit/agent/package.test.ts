@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import type { Problem } from "../../../src/problems/types.js";
 
 // ── Mocks ────────────────────────────────────────────────────────────
 
@@ -10,9 +11,7 @@ vi.mock("node:fs", () => ({
 
 // Capture what agentSuccess / agentError receive
 let capturedResult: Record<string, unknown> | undefined;
-let capturedError:
-  | { message: string; errorType: string; extras?: Record<string, unknown> }
-  | undefined;
+let capturedError: { problem: Problem; extras?: Record<string, unknown> } | undefined;
 
 vi.mock("../../../src/agent/output.js", async () => {
   const actual = await vi.importActual<typeof import("../../../src/agent/output.js")>(
@@ -23,8 +22,8 @@ vi.mock("../../../src/agent/output.js", async () => {
     agentSuccess: vi.fn((result: Record<string, unknown>) => {
       capturedResult = result;
     }),
-    agentError: vi.fn((message: string, errorType: string, extras?: Record<string, unknown>) => {
-      capturedError = { message, errorType, extras };
+    agentError: vi.fn((problem: Problem, extras?: Record<string, unknown>) => {
+      capturedError = { problem, extras };
       throw new Error("agentError called");
     }),
   };
@@ -264,8 +263,12 @@ describe("agentPackageInit", () => {
       "agentError called",
     );
 
-    expect(capturedError!.message).toContain("already exists");
-    expect(capturedError!.extras?.hint).toContain("--force");
+    expect(capturedError!.problem).toMatchObject({
+      code: "client.target_exists",
+      params: { path: expect.stringContaining("METHODS.toml") },
+    });
+    expect(capturedError!.problem.message).toContain("already exists");
+    expect(capturedError!.problem.message).toContain("--force");
   });
 
   // ── TOML write verification ───────────────────────────────────────
@@ -300,10 +303,13 @@ describe("agentPackageInit", () => {
       "agentError called",
     );
 
-    expect(capturedError!.errorType).toBe("PackageError");
-    expect(capturedError!.message).toContain("Invalid package address");
-    expect(capturedError!.extras?.hint).toContain("hostname/path format");
-    expect(capturedError!.extras?.error_domain).toBe("package");
+    expect(capturedError!.problem).toMatchObject({
+      code: "client.argument_invalid",
+      domain: "input",
+      params: { argument: "--address", reason: "invalid_address" },
+    });
+    expect(capturedError!.problem.message).toContain("Invalid package address");
+    expect(capturedError!.problem.message).toContain("hostname/path pattern");
   });
 
   it("errors on invalid version with actionable hint", async () => {
@@ -311,8 +317,12 @@ describe("agentPackageInit", () => {
       "agentError called",
     );
 
-    expect(capturedError!.message).toContain("Invalid version");
-    expect(capturedError!.extras?.hint).toContain("semver");
+    expect(capturedError!.problem).toMatchObject({
+      code: "client.argument_invalid",
+      params: { argument: "--version", reason: "invalid_semver" },
+    });
+    expect(capturedError!.problem.message).toContain("Invalid version");
+    expect(capturedError!.problem.message).toContain("semver");
   });
 
   it("errors on empty description with actionable hint", async () => {
@@ -320,8 +330,12 @@ describe("agentPackageInit", () => {
       "agentError called",
     );
 
-    expect(capturedError!.message).toContain("Description is required");
-    expect(capturedError!.extras?.hint).toContain("--description");
+    expect(capturedError!.problem).toMatchObject({
+      code: "client.argument_invalid",
+      params: { argument: "--description", reason: "empty" },
+    });
+    expect(capturedError!.problem.message).toContain("Description is required");
+    expect(capturedError!.problem.message).toContain("--description");
   });
 
   it("errors on invalid name with actionable hint", async () => {
@@ -329,8 +343,12 @@ describe("agentPackageInit", () => {
       "agentError called",
     );
 
-    expect(capturedError!.message).toContain("Invalid method name");
-    expect(capturedError!.extras?.hint).toContain("--name");
+    expect(capturedError!.problem).toMatchObject({
+      code: "client.argument_invalid",
+      params: { argument: "--name", reason: "invalid_name" },
+    });
+    expect(capturedError!.problem.message).toContain("Invalid method name");
+    expect(capturedError!.problem.message).toContain("--name");
   });
 
   it("errors on empty displayName with actionable hint", async () => {
@@ -338,8 +356,12 @@ describe("agentPackageInit", () => {
       "agentError called",
     );
 
-    expect(capturedError!.message).toContain("Display name must not be empty");
-    expect(capturedError!.extras?.hint).toContain("--display-name");
+    expect(capturedError!.problem).toMatchObject({
+      code: "client.argument_invalid",
+      params: { argument: "--display-name", reason: "empty" },
+    });
+    expect(capturedError!.problem.message).toContain("Display name must not be empty");
+    expect(capturedError!.problem.message).toContain("--display-name");
   });
 
   it("errors on displayName exceeding 128 chars with hint", async () => {
@@ -347,8 +369,12 @@ describe("agentPackageInit", () => {
       "agentError called",
     );
 
-    expect(capturedError!.message).toContain("must not exceed 128 characters");
-    expect(capturedError!.extras?.hint).toContain("128 characters");
+    expect(capturedError!.problem).toMatchObject({
+      code: "client.argument_invalid",
+      params: { argument: "--display-name", reason: "too_long" },
+    });
+    expect(capturedError!.problem.message).toContain("must not exceed 128 characters");
+    expect(capturedError!.problem.message).toContain("128 characters");
   });
 
   it("accepts displayName at exactly 128 chars", async () => {
@@ -365,23 +391,30 @@ describe("agentPackageInit", () => {
       "agentError called",
     );
 
-    expect(capturedError!.message).toContain("Invalid main_pipe");
-    expect(capturedError!.extras?.hint).toContain("snake_case");
+    expect(capturedError!.problem).toMatchObject({
+      code: "client.argument_invalid",
+      params: { argument: "--main-pipe", reason: "invalid_pipe_code" },
+    });
+    expect(capturedError!.problem.message).toContain("Invalid main_pipe");
+    expect(capturedError!.problem.message).toContain("snake_case");
   });
 
   // ── IO error ──────────────────────────────────────────────────────
 
-  it("reports IO error on write failure with io domain", async () => {
+  it("reports a write failure as client.write_failed, with the system's reason", async () => {
     mockedExistsSync.mockReturnValue(false);
     mockedWriteFileSync.mockImplementationOnce(() => {
-      throw new Error("EACCES: permission denied");
+      throw Object.assign(new Error("EACCES: permission denied"), { code: "EACCES" });
     });
 
     await expect(agentPackageInit(baseOpts)).rejects.toThrow("agentError called");
 
-    expect(capturedError!.message).toContain("Failed to write");
-    expect(capturedError!.message).toContain("EACCES");
-    expect(capturedError!.extras?.error_domain).toBe("io");
+    expect(capturedError!.problem).toMatchObject({
+      code: "client.write_failed",
+      params: { path: expect.stringContaining("METHODS.toml"), reason: "eacces" },
+    });
+    expect(capturedError!.problem.message).toContain("Failed to write");
+    expect(capturedError!.problem.message).toContain("EACCES");
   });
 });
 
@@ -488,9 +521,12 @@ describe("agentPackageList", () => {
 
     await expect(agentPackageList({})).rejects.toThrow("agentError called");
 
-    expect(capturedError!.message).toContain("No METHODS.toml found");
-    expect(capturedError!.extras?.hint).toContain("mthds-agent package init");
-    expect(capturedError!.extras?.error_domain).toBe("package");
+    expect(capturedError!.problem).toMatchObject({
+      code: "client.file_unreadable",
+      params: { path: expect.stringContaining("METHODS.toml"), reason: "enoent" },
+    });
+    expect(capturedError!.problem.message).toContain("No METHODS.toml found");
+    expect(capturedError!.problem.message).toContain("mthds-agent package init");
   });
 
   it("errors on TOML syntax error with hint", async () => {
@@ -499,9 +535,13 @@ describe("agentPackageList", () => {
 
     await expect(agentPackageList({})).rejects.toThrow("agentError called");
 
-    expect(capturedError!.message).toContain("TOML syntax error");
-    expect(capturedError!.extras?.hint).toContain("Fix the TOML syntax");
-    expect(capturedError!.extras?.error_domain).toBe("package");
+    expect(capturedError!.problem).toMatchObject({
+      code: "method.package_invalid",
+      domain: "method",
+      params: { reason: "manifest_syntax" },
+    });
+    expect(capturedError!.problem.message).toContain("TOML syntax error");
+    expect(capturedError!.problem.message).toContain("Fix the TOML syntax");
   });
 
   it("errors on semantic validation failure with hint", async () => {
@@ -510,9 +550,13 @@ describe("agentPackageList", () => {
 
     await expect(agentPackageList({})).rejects.toThrow("agentError called");
 
-    expect(capturedError!.message).toContain("Validation error");
-    expect(capturedError!.extras?.hint).toContain("Fix the validation errors");
-    expect(capturedError!.extras?.error_domain).toBe("package");
+    expect(capturedError!.problem).toMatchObject({
+      code: "method.package_invalid",
+      domain: "method",
+      params: { reason: "manifest_invalid" },
+    });
+    expect(capturedError!.problem.message).toContain("Validation error");
+    expect(capturedError!.problem.message).toContain("Fix the validation errors");
   });
 });
 
@@ -588,8 +632,9 @@ describe("agentPackageValidate", () => {
 
     await expect(agentPackageValidate({})).rejects.toThrow("agentError called");
 
-    expect(capturedError!.message).toContain("No METHODS.toml found");
-    expect(capturedError!.extras?.hint).toContain("mthds-agent package init");
+    expect(capturedError!.problem.code).toBe("client.file_unreadable");
+    expect(capturedError!.problem.message).toContain("No METHODS.toml found");
+    expect(capturedError!.problem.message).toContain("mthds-agent package init");
   });
 
   it("errors on TOML syntax error with hint", async () => {
@@ -598,8 +643,9 @@ describe("agentPackageValidate", () => {
 
     await expect(agentPackageValidate({})).rejects.toThrow("agentError called");
 
-    expect(capturedError!.message).toContain("TOML syntax error");
-    expect(capturedError!.extras?.hint).toContain("Fix the TOML syntax");
+    expect(capturedError!.problem.code).toBe("method.package_invalid");
+    expect(capturedError!.problem.message).toContain("TOML syntax error");
+    expect(capturedError!.problem.message).toContain("Fix the TOML syntax");
   });
 
   it("errors on semantic validation failure with hint", async () => {
@@ -608,8 +654,9 @@ describe("agentPackageValidate", () => {
 
     await expect(agentPackageValidate({})).rejects.toThrow("agentError called");
 
-    expect(capturedError!.message).toContain("Validation error");
-    expect(capturedError!.extras?.hint).toContain("Fix the validation errors");
+    expect(capturedError!.problem.code).toBe("method.package_invalid");
+    expect(capturedError!.problem.message).toContain("Validation error");
+    expect(capturedError!.problem.message).toContain("Fix the validation errors");
   });
 });
 

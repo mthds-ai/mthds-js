@@ -16,11 +16,58 @@ import {
   runCodexHook,
   truncateForAdditionalContext,
 } from "../../../src/agent/commands/codex-hook.js";
+import { buildProblem } from "../../../src/problems/build.js";
+import type { Problem } from "../../../src/problems/types.js";
 
-// The agent CLI's `--error-format json` failure envelope, as a string on stderr.
+// The envelope a pipelex-agent that predates problem documents writes with
+// `--error-format json`, as a string on stderr.
 function errorEnvelope(fields: Record<string, unknown>): string {
   return JSON.stringify({ error: true, ...fields });
 }
+
+// A pipelex-agent that writes problem documents writes the problem's JSON form instead.
+function problemEnvelope(problem: Problem): string {
+  return JSON.stringify(problem);
+}
+
+// An invalid bundle as a problem: `method.invalid` holding one item per fault.
+const UNKNOWN_MODEL_ITEM = {
+  code: "model.unknown",
+  detail: "Model handle 'gpt-5.1' was not found in the model deck. Did you mean: gpt-5?",
+  params: { model: "gpt-5.1", model_type: "llm", suggestions: ["gpt-5"] },
+  location: { pipe: "summarize", field: "model", file: "bundles/x.mthds" },
+  suggested_fix: {
+    fix_code: "rename-model",
+    description:
+      "Replace model 'gpt-5.1' of pipe 'summarize' with 'gpt-5', its one close match in the model deck",
+    safety: "unsafe",
+    ops: [
+      {
+        kind: "remap_value",
+        table_path: ["pipe", "summarize"],
+        key: "model",
+        mapping: { "gpt-5.1": "gpt-5" },
+      },
+    ],
+  },
+};
+
+const MISSING_PIPE_ITEM = {
+  code: "method.pipe_unresolved",
+  detail: "The pipe 'main' calls 'demo.summarise', which no bundle declares.",
+  params: { pipe: "main", missing: "demo.summarise", candidates: [] },
+  location: { pipe: "main" },
+};
+
+const INVALID_METHOD_PROBLEM = buildProblem(
+  "method.invalid",
+  {},
+  {
+    reader: "actor",
+    errors: [UNKNOWN_MODEL_ITEM, MISSING_PIPE_ITEM],
+    extra: { message: "Validation error(s) in the bundle", is_valid: false },
+  },
+);
 
 // Pure helpers ────────────────────────────────────────────────────────
 
@@ -420,6 +467,16 @@ describe("parseAgentErrorEnvelope", () => {
   it("returns undefined on a JSON scalar (not an object)", () => {
     expect(parseAgentErrorEnvelope("42")).toBeUndefined();
   });
+
+  it("returns undefined on a JSON array", () => {
+    expect(parseAgentErrorEnvelope("[1, 2]")).toBeUndefined();
+  });
+
+  it("parses a problem document whole", () => {
+    const env = parseAgentErrorEnvelope(problemEnvelope(INVALID_METHOD_PROBLEM));
+    expect(env?.code).toBe("method.invalid");
+    expect(env?.errors).toEqual([UNKNOWN_MODEL_ITEM, MISSING_PIPE_ITEM]);
+  });
 });
 
 describe("formatValidationReason", () => {
@@ -526,6 +583,59 @@ describe("formatValidationReason", () => {
     );
     expect(reason).not.toContain("Suggested fix");
     expect(reason).toContain("[pipe_validation] c");
+  });
+});
+
+describe("formatValidationReason — problem documents", () => {
+  it("formats the message and each item as `- <code>: <detail> (<location>)`, with its fix", () => {
+    const reason = formatValidationReason("bundles/x.mthds", INVALID_METHOD_PROBLEM, "fallback");
+    expect(reason).toBe(
+      [
+        "Validation failed for bundles/x.mthds:",
+        "",
+        "Validation error(s) in the bundle",
+        "",
+        "- model.unknown: Model handle 'gpt-5.1' was not found in the model deck. Did you mean: gpt-5? (pipe 'summarize', field 'model', file 'bundles/x.mthds')",
+        "  Suggested fix (unsafe, rename-model): Replace model 'gpt-5.1' of pipe 'summarize' with 'gpt-5', its one close match in the model deck",
+        "- method.pipe_unresolved: The pipe 'main' calls 'demo.summarise', which no bundle declares. (pipe 'main')",
+      ].join("\n"),
+    );
+  });
+
+  it("falls back to the problem's detail when it carries no message", () => {
+    const problem = buildProblem("method.syntax", { finding: "unexpected '='" });
+    const reason = formatValidationReason("x.mthds", problem, "fallback");
+    expect(reason).toBe(
+      "Validation failed for x.mthds:\n\nThe method does not parse (unexpected '=').",
+    );
+  });
+
+  it("leaves out the items that are not problem items, and a non-array errors member", () => {
+    const reason = formatValidationReason(
+      "x.mthds",
+      {
+        ...INVALID_METHOD_PROBLEM,
+        errors: [null, 42, { code: "method.syntax" }, MISSING_PIPE_ITEM],
+      },
+      "fallback",
+    );
+    expect(reason).toContain("- method.pipe_unresolved:");
+    expect(reason).not.toContain("- method.syntax");
+    expect(
+      formatValidationReason("x.mthds", { ...INVALID_METHOD_PROBLEM, errors: "nope" }, "fallback"),
+    ).toBe("Validation failed for x.mthds:\n\nValidation error(s) in the bundle");
+  });
+
+  it("does not read a problem's errors through the legacy validation_errors member", () => {
+    const reason = formatValidationReason(
+      "x.mthds",
+      {
+        ...buildProblem("method.invalid", {}),
+        validation_errors: [{ category: "pipe_validation", message: "legacy item" }],
+      },
+      "fallback",
+    );
+    expect(reason).not.toContain("legacy item");
   });
 });
 
@@ -710,6 +820,129 @@ describe("classifyStage3Result", () => {
   });
 });
 
+describe("classifyStage3Result — problem documents", () => {
+  it("blocks on method.invalid, listing each item with its suggested fix", () => {
+    const out = classifyStage3Result("bundles/x.mthds", {
+      exitCode: 1,
+      stderr: problemEnvelope(INVALID_METHOD_PROBLEM),
+    });
+    expect(out.kind).toBe("block");
+    if (out.kind !== "block") return;
+    expect(out.reason).toContain("Validation failed for bundles/x.mthds");
+    expect(out.reason).toContain("Validation error(s) in the bundle");
+    expect(out.reason).toContain(
+      "- model.unknown: Model handle 'gpt-5.1' was not found in the model deck. Did you mean: gpt-5? (pipe 'summarize', field 'model', file 'bundles/x.mthds')",
+    );
+    expect(out.reason).toContain(
+      "  Suggested fix (unsafe, rename-model): Replace model 'gpt-5.1' of pipe 'summarize' with 'gpt-5', its one close match in the model deck",
+    );
+    expect(out.reason).toContain("- method.pipe_unresolved:");
+  });
+
+  it("blocks on a problem of the input domain, the caller's own fault", () => {
+    const problem = buildProblem(
+      "request.pipe_not_found",
+      { pipe: "demo.nope", suggestions: [] },
+      { extra: { message: "Pipe 'demo.nope' not found." } },
+    );
+    const out = classifyStage3Result("a.mthds", { exitCode: 1, stderr: problemEnvelope(problem) });
+    expect(out.kind).toBe("block");
+    if (out.kind !== "block") return;
+    expect(out.reason).toContain("Pipe 'demo.nope' not found.");
+  });
+
+  it.each([
+    {
+      code: "runtime.unavailable",
+      problem: buildProblem("runtime.unavailable", {}),
+      domain: "runtime",
+    },
+    {
+      code: "runtime.misconfigured",
+      problem: buildProblem("runtime.misconfigured", { component: "inference" }),
+      domain: "operator",
+    },
+    {
+      code: "account.quota_exhausted",
+      problem: buildProblem("account.quota_exhausted", { quota: "credits" }),
+      domain: "account",
+    },
+  ])("warns on $code, whose domain is the environment's", ({ problem, domain }) => {
+    const out = classifyStage3Result("a.mthds", { exitCode: 1, stderr: problemEnvelope(problem) });
+    expect(out.kind).toBe("warn");
+    if (out.kind !== "warn") return;
+    expect(out.domain).toBe(domain);
+    expect(out.context).toContain(`${domain} domain`);
+    expect(out.context).toContain("do not edit the file");
+    // With no message member, the context quotes the problem's detail.
+    expect(out.context).toContain(problem.detail);
+  });
+
+  it("quotes the problem's message in the warning when it carries one", () => {
+    const problem = buildProblem(
+      "runtime.unavailable",
+      {},
+      { extra: { message: "The inference gateway is down." } },
+    );
+    const out = classifyStage3Result("a.mthds", { exitCode: 1, stderr: problemEnvelope(problem) });
+    expect(out.kind).toBe("warn");
+    if (out.kind !== "warn") return;
+    expect(out.context).toContain("The inference gateway is down.");
+  });
+
+  it("reads an unknown code of an unknown family with no domain as runtime, and warns", () => {
+    const stderr = JSON.stringify({
+      type: "https://example.com/errors/quorum.lost",
+      title: "Quorum lost",
+      detail: "The cluster lost its quorum.",
+      code: "quorum.lost",
+      retry: "later",
+      next_step: { kind: "retry", detail: "Try again later." },
+    });
+    const out = classifyStage3Result("a.mthds", { exitCode: 1, stderr });
+    expect(out.kind).toBe("warn");
+    if (out.kind !== "warn") return;
+    expect(out.domain).toBe("runtime");
+    expect(out.context).toContain("The cluster lost its quorum.");
+  });
+
+  it("reads an unknown code with no domain as the codes of its family it knows", () => {
+    const unknown = (code: string) =>
+      JSON.stringify({
+        type: `https://mthds.ai/errors/${code}`,
+        title: "Something new",
+        detail: "Something new went wrong.",
+        code,
+        retry: "no",
+        next_step: { kind: "report", detail: "Report it." },
+      });
+    // The method family's known codes are faults of the file, or of the caller: the hook blocks.
+    expect(
+      classifyStage3Result("a.mthds", { exitCode: 1, stderr: unknown("method.brand_new") }).kind,
+    ).toBe("block");
+    // Every known code of the account family is the account's: the hook warns.
+    const account = classifyStage3Result("a.mthds", {
+      exitCode: 1,
+      stderr: unknown("account.brand_new"),
+    });
+    expect(account.kind).toBe("warn");
+    if (account.kind !== "warn") return;
+    expect(account.domain).toBe("account");
+  });
+
+  it("warns on a configuration problem, whose fix is the machine's set-up", () => {
+    const problem = buildProblem("client.not_configured", { setting: "MTHDS_API_KEY" });
+    const out = classifyStage3Result("a.mthds", { exitCode: 1, stderr: problemEnvelope(problem) });
+    expect(out.kind).toBe("warn");
+  });
+
+  it("prefers the problem's own domain member to its code's", () => {
+    const problem = { ...buildProblem("runtime.unexpected", {}), domain: "method" };
+    const out = classifyStage3Result("a.mthds", { exitCode: 1, stderr: problemEnvelope(problem) });
+    expect(out.kind).toBe("block");
+  });
+});
+
 // runCodexHook — Stage 3 wiring ──────────────────────────────────────
 
 describe("runCodexHook — Stage 3", () => {
@@ -770,6 +1003,41 @@ describe("runCodexHook — Stage 3", () => {
     expect(parsed.reason).toContain("a.mthds");
     expect(parsed.reason).toContain("Missing required field");
     expect(parsed.reason).toContain("extract_info");
+  });
+
+  it("blocks when validate returns a method.invalid problem document", async () => {
+    const { deps, emitted } = makeDeps({
+      stdin: PAYLOAD("*** Update File: a.mthds"),
+      files: new Set(["a.mthds"]),
+      pipelexResults: new Map([
+        ["a.mthds", { exitCode: 1, stderr: problemEnvelope(INVALID_METHOD_PROBLEM) }],
+      ]),
+    });
+    await runCodexHook(deps);
+    expect(emitted).toHaveLength(1);
+    const parsed = JSON.parse(emitted[0]!.trim());
+    expect(parsed.decision).toBe("block");
+    expect(parsed.reason).toContain("a.mthds");
+    expect(parsed.reason).toContain("- model.unknown:");
+    expect(parsed.reason).toContain("Suggested fix (unsafe, rename-model)");
+  });
+
+  it("emits additionalContext (no block) on a runtime.unavailable problem document", async () => {
+    const { deps, emitted } = makeDeps({
+      stdin: PAYLOAD("*** Update File: a.mthds"),
+      files: new Set(["a.mthds"]),
+      pipelexResults: new Map([
+        [
+          "a.mthds",
+          { exitCode: 1, stderr: problemEnvelope(buildProblem("runtime.unavailable", {})) },
+        ],
+      ]),
+    });
+    await runCodexHook(deps);
+    expect(emitted).toHaveLength(1);
+    const parsed = JSON.parse(emitted[0]!.trim());
+    expect(parsed.decision).toBeUndefined();
+    expect(parsed.hookSpecificOutput.additionalContext).toContain("runtime domain");
   });
 
   it("blocks (safety default) when the JSON envelope has no error_domain", async () => {

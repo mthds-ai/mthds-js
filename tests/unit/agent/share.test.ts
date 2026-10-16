@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import type { Problem } from "../../../src/problems/types.js";
 
 // ── Mocks ────────────────────────────────────────────────────────────
 
@@ -24,28 +25,20 @@ vi.mock("../../../src/cli/commands/share.js", () => ({
 
 class AgentErrorThrow extends Error {
   constructor(
-    public errorType: string,
+    public problem: Problem,
     public extras?: Record<string, unknown>,
   ) {
-    super(errorType);
+    super(problem.code);
   }
 }
 
-vi.mock("../../../src/agent/output.js", () => ({
+// The problems are the real ones, built from the registry; only their writing is captured.
+vi.mock("../../../src/agent/output.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../../src/agent/output.js")>()),
   agentSuccess: vi.fn(),
-  agentError: vi.fn((message: string, errorType: string, extras?: Record<string, unknown>) => {
-    throw new AgentErrorThrow(errorType, { message, ...extras });
+  agentError: vi.fn((problem: Problem, extras?: Record<string, unknown>) => {
+    throw new AgentErrorThrow(problem, extras);
   }),
-  AGENT_ERROR_DOMAINS: {
-    ARGUMENT: "argument",
-    CONFIG: "config",
-    RUNNER: "runner",
-    PIPELINE: "pipeline",
-    VALIDATION: "validation",
-    INSTALL: "install",
-    IO: "io",
-    BINARY: "binary",
-  },
 }));
 
 import { parseAddress } from "../../../src/installer/resolver/address.js";
@@ -100,9 +93,11 @@ describe("agentShare", () => {
     await expect(agentShare("org/repo", { local: "/some/path" })).rejects.toThrow(AgentErrorThrow);
 
     expect(mockedAgentError).toHaveBeenCalledWith(
-      expect.stringContaining("Cannot use both"),
-      "ArgumentError",
-      expect.any(Object),
+      expect.objectContaining({
+        code: "client.argument_invalid",
+        params: { argument: "--local", reason: "conflicts_with_address" },
+        message: expect.stringContaining("Cannot use both"),
+      }),
     );
   });
 
@@ -110,9 +105,11 @@ describe("agentShare", () => {
     await expect(agentShare(undefined, {})).rejects.toThrow(AgentErrorThrow);
 
     expect(mockedAgentError).toHaveBeenCalledWith(
-      expect.stringContaining("Provide an address"),
-      "ArgumentError",
-      expect.any(Object),
+      expect.objectContaining({
+        code: "client.argument_invalid",
+        params: { argument: "address", reason: "missing" },
+        message: expect.stringContaining("Provide an address"),
+      }),
     );
   });
 
@@ -200,9 +197,12 @@ describe("agentShare", () => {
     ).rejects.toThrow(AgentErrorThrow);
 
     expect(mockedAgentError).toHaveBeenCalledWith(
-      expect.stringContaining('Method "nonexistent" not found'),
-      "ShareError",
-      expect.any(Object),
+      expect.objectContaining({
+        code: "method.not_found",
+        params: { method_ref: "nonexistent" },
+        message: expect.stringContaining('Method "nonexistent" not found'),
+      }),
+      expect.objectContaining({ skipped_methods: [] }),
     );
   });
 
@@ -250,9 +250,11 @@ describe("agentShare", () => {
     ).rejects.toThrow(AgentErrorThrow);
 
     expect(mockedAgentError).toHaveBeenCalledWith(
-      expect.stringContaining('Invalid platform "twitter"'),
-      "ArgumentError",
-      expect.any(Object),
+      expect.objectContaining({
+        code: "client.argument_invalid",
+        params: { argument: "--platform", reason: "unknown_value" },
+        message: expect.stringContaining('Invalid platform "twitter"'),
+      }),
     );
     // Raised before the repository is read: an envelope that precedes the read
     // is the one kind that carries no skip list, and a misspelled flag is

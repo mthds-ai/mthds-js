@@ -15,8 +15,8 @@ function runAgent(...args: string[]): { stdout: string; stderr: string; status: 
 }
 
 // On the API runner, `validate bundle`/`validate pipe` accept `--format` / `--error-format`.
-// These reject an out-of-vocabulary value at option-parse time (a clean ArgumentError envelope)
-// instead of silently coercing the typo to the default `markdown`. Rejection happens before the
+// These reject an out-of-vocabulary value at option-parse time (a `client.argument_invalid`
+// problem) instead of silently coercing the typo to the default `markdown`. Rejection happens before the
 // action runs, so no API config or real bundle is needed.
 describe("mthds-agent validate --format/--error-format value validation (e2e)", () => {
   it("rejects an invalid --format value instead of silently coercing to markdown", () => {
@@ -28,15 +28,17 @@ describe("mthds-agent validate --format/--error-format value validation (e2e)", 
       "nonexistent.mthds",
       "--format",
       "jsno",
+      "--error-format",
+      "json",
     );
     expect(status).toBe(1);
     const payload = JSON.parse(stderr) as {
-      error?: boolean;
-      error_type?: string;
+      code?: string;
+      params?: { argument?: string; reason?: string };
       message?: string;
     };
-    expect(payload.error).toBe(true);
-    expect(payload.error_type).toBe("ArgumentError");
+    expect(payload.code).toBe("client.argument_invalid");
+    expect(payload.params?.argument).toContain("--format");
     expect(payload.message).toContain("jsno");
   });
 
@@ -51,8 +53,9 @@ describe("mthds-agent validate --format/--error-format value validation (e2e)", 
       "yaml",
     );
     expect(status).toBe(1);
-    const payload = JSON.parse(stderr) as { error_type?: string; message?: string };
-    expect(payload.error_type).toBe("ArgumentError");
-    expect(payload.message).toContain("yaml");
+    // An --error-format it cannot read leaves the error stream in its default form, Markdown.
+    expect(stderr).toMatch(/^## An argument was refused before sending\n/);
+    expect(stderr).toContain("yaml");
+    expect(stderr).toContain("- Code: `client.argument_invalid`");
   });
 });

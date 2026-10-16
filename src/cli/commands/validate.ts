@@ -2,7 +2,7 @@ import { existsSync } from "node:fs";
 import * as p from "@clack/prompts";
 import { printLogo } from "./index.js";
 import { isPipelexRunner, isApiRunner, extractPassthroughArgs } from "./utils.js";
-import { formatCliError, withSuggestedFix } from "./error-output.js";
+import { formatCliError, formatItemLines, verdictSummary } from "./error-output.js";
 import { createRunner } from "../../runners/registry.js";
 import { resolveBundleClosure } from "../../runners/bundle.js";
 import type { MthdsFileItem } from "../../runners/types.js";
@@ -128,12 +128,15 @@ export async function validatePipe(target: string, options: ValidateOptions): Pr
       // A produced "invalid" verdict (the 200 InvalidReport arm) — report the
       // diagnostics and exit non-zero, rather than mistaking a 200 for success.
       s.stop("Validation failed.");
-      p.log.error(report.message);
-      for (const item of report.validation_errors) {
-        // The server attributes `source` from `mthds_sources`; fall back to the
+      p.log.error(verdictSummary(report.message));
+      for (const item of report.errors) {
+        // The server names each item's file from `mthds_sources`; fall back to the
         // path the user passed so a diagnostic always names its file.
-        const source = (item as { source?: string }).source ?? bundlePath;
-        p.log.error(withSuggestedFix(`${source}: [${item.category}] ${item.message}`, item));
+        const located =
+          item.location?.file === undefined
+            ? { ...item, location: { ...item.location, file: bundlePath } }
+            : item;
+        p.log.error(formatItemLines(located).join("\n"));
       }
       p.outro("");
       process.exit(1);

@@ -16,8 +16,22 @@ function runAgent(...args: string[]): { stdout: string; stderr: string; status: 
   return { stdout: result.stdout, stderr: result.stderr, status: result.status };
 }
 
+/** Run mthds-agent with its error stream in JSON, the problem document a program reads. */
+function runAgentJson(...args: string[]): {
+  stdout: string;
+  stderr: string;
+  status: number | null;
+} {
+  return runAgent(...args, "--error-format", "json");
+}
+
 function parseJson(text: string): Record<string, unknown> {
   return JSON.parse(text) as Record<string, unknown>;
+}
+
+/** The parameters of a problem document. */
+function paramsOf(problem: Record<string, unknown>): Record<string, unknown> {
+  return problem.params as Record<string, unknown>;
 }
 
 describe("mthds-agent package (e2e)", () => {
@@ -165,7 +179,7 @@ describe("mthds-agent package (e2e)", () => {
       );
 
       // Second init without --force
-      const { stderr, status } = runAgent(
+      const { stderr, status } = runAgentJson(
         "package",
         "init",
         "-C",
@@ -180,9 +194,10 @@ describe("mthds-agent package (e2e)", () => {
 
       expect(status).toBe(1);
       const errJson = parseJson(stderr);
-      expect(errJson.error).toBe(true);
+      expect(errJson.code).toBe("client.target_exists");
+      expect(paramsOf(errJson).path).toBe(join(tmpDir, "METHODS.toml"));
       expect(errJson.message).toContain("already exists");
-      expect(errJson.hint).toContain("--force");
+      expect(errJson.message).toContain("--force");
     });
   });
 
@@ -191,8 +206,8 @@ describe("mthds-agent package (e2e)", () => {
   // =================================================================
 
   describe("init validation errors", () => {
-    it("rejects invalid address with hint", () => {
-      const { stderr, status } = runAgent(
+    it("rejects invalid address as a refused argument", () => {
+      const { stderr, status } = runAgentJson(
         "package",
         "init",
         "-C",
@@ -207,15 +222,16 @@ describe("mthds-agent package (e2e)", () => {
 
       expect(status).toBe(1);
       const errJson = parseJson(stderr);
-      expect(errJson.error).toBe(true);
-      expect(errJson.error_type).toBe("PackageError");
+      expect(errJson.code).toBe("client.argument_invalid");
+      expect(paramsOf(errJson)).toEqual({ argument: "--address", reason: "invalid_address" });
+      expect(errJson.domain).toBe("input");
+      expect(errJson.retry).toBe("no");
       expect(errJson.message).toContain("Invalid package address");
-      expect(errJson.hint).toBeDefined();
-      expect(errJson.error_domain).toBe("package");
+      expect(errJson.next_step).toMatchObject({ kind: "change_input" });
     });
 
-    it("rejects invalid version with hint", () => {
-      const { stderr, status } = runAgent(
+    it("rejects invalid version, naming semver", () => {
+      const { stderr, status } = runAgentJson(
         "package",
         "init",
         "-C",
@@ -230,12 +246,14 @@ describe("mthds-agent package (e2e)", () => {
 
       expect(status).toBe(1);
       const errJson = parseJson(stderr);
+      expect(errJson.code).toBe("client.argument_invalid");
+      expect(paramsOf(errJson)).toEqual({ argument: "--version", reason: "invalid_semver" });
       expect(errJson.message).toContain("Invalid version");
-      expect(errJson.hint).toContain("semver");
+      expect(errJson.message).toContain("semver");
     });
 
-    it("rejects invalid name with hint", () => {
-      const { stderr, status } = runAgent(
+    it("rejects invalid name, naming --name", () => {
+      const { stderr, status } = runAgentJson(
         "package",
         "init",
         "-C",
@@ -252,12 +270,14 @@ describe("mthds-agent package (e2e)", () => {
 
       expect(status).toBe(1);
       const errJson = parseJson(stderr);
+      expect(errJson.code).toBe("client.argument_invalid");
+      expect(paramsOf(errJson)).toEqual({ argument: "--name", reason: "invalid_name" });
       expect(errJson.message).toContain("Invalid method name");
-      expect(errJson.hint).toContain("--name");
+      expect(errJson.message).toContain("--name");
     });
 
-    it("rejects invalid main-pipe with hint", () => {
-      const { stderr, status } = runAgent(
+    it("rejects invalid main-pipe, naming snake_case", () => {
+      const { stderr, status } = runAgentJson(
         "package",
         "init",
         "-C",
@@ -274,8 +294,10 @@ describe("mthds-agent package (e2e)", () => {
 
       expect(status).toBe(1);
       const errJson = parseJson(stderr);
+      expect(errJson.code).toBe("client.argument_invalid");
+      expect(paramsOf(errJson)).toEqual({ argument: "--main-pipe", reason: "invalid_pipe_code" });
       expect(errJson.message).toContain("Invalid main_pipe");
-      expect(errJson.hint).toContain("snake_case");
+      expect(errJson.message).toContain("snake_case");
     });
   });
 
@@ -337,29 +359,36 @@ describe("mthds-agent package (e2e)", () => {
   // =================================================================
 
   describe("list errors", () => {
-    it("errors when METHODS.toml is missing with hint", () => {
-      const { stderr, status } = runAgent("package", "list", "-C", tmpDir);
+    it("errors when METHODS.toml is missing, naming package init", () => {
+      const { stderr, status } = runAgentJson("package", "list", "-C", tmpDir);
 
       expect(status).toBe(1);
       const errJson = parseJson(stderr);
-      expect(errJson.error).toBe(true);
+      expect(errJson.code).toBe("client.file_unreadable");
+      expect(paramsOf(errJson)).toEqual({
+        path: join(tmpDir, "METHODS.toml"),
+        reason: "enoent",
+      });
+      expect(errJson.domain).toBe("input");
       expect(errJson.message).toContain("No METHODS.toml found");
-      expect(errJson.hint).toContain("mthds-agent package init");
-      expect(errJson.error_domain).toBe("package");
+      expect(errJson.message).toContain("mthds-agent package init");
     });
 
-    it("errors on corrupt TOML syntax with hint", () => {
+    it("errors on corrupt TOML syntax as an invalid package", () => {
       writeFileSync(join(tmpDir, "METHODS.toml"), "[package\nbroken = true", "utf-8");
 
-      const { stderr, status } = runAgent("package", "list", "-C", tmpDir);
+      const { stderr, status } = runAgentJson("package", "list", "-C", tmpDir);
 
       expect(status).toBe(1);
       const errJson = parseJson(stderr);
+      expect(errJson.code).toBe("method.package_invalid");
+      expect(paramsOf(errJson)).toEqual({ reason: "manifest_syntax" });
+      expect(errJson.domain).toBe("method");
       expect(errJson.message).toContain("TOML syntax error");
-      expect(errJson.hint).toContain("Fix the TOML syntax");
+      expect(errJson.message).toContain("Fix the TOML syntax");
     });
 
-    it("errors on semantically invalid TOML with hint", () => {
+    it("errors on semantically invalid TOML as an invalid package", () => {
       writeFileSync(
         join(tmpDir, "METHODS.toml"),
         `[package]
@@ -370,12 +399,14 @@ description = "Test"
         "utf-8",
       );
 
-      const { stderr, status } = runAgent("package", "list", "-C", tmpDir);
+      const { stderr, status } = runAgentJson("package", "list", "-C", tmpDir);
 
       expect(status).toBe(1);
       const errJson = parseJson(stderr);
+      expect(errJson.code).toBe("method.package_invalid");
+      expect(paramsOf(errJson)).toEqual({ reason: "manifest_invalid" });
       expect(errJson.message).toContain("Validation error");
-      expect(errJson.hint).toContain("Fix the validation errors");
+      expect(errJson.message).toContain("Fix the validation errors");
     });
   });
 
@@ -385,26 +416,27 @@ description = "Test"
 
   describe("validate errors", () => {
     it("errors when METHODS.toml is missing", () => {
-      const { stderr, status } = runAgent("package", "validate", "-C", tmpDir);
+      const { stderr, status } = runAgentJson("package", "validate", "-C", tmpDir);
 
       expect(status).toBe(1);
       const errJson = parseJson(stderr);
-      expect(errJson.error).toBe(true);
+      expect(errJson.code).toBe("client.file_unreadable");
       expect(errJson.message).toContain("No METHODS.toml found");
     });
 
-    it("errors on corrupt TOML with hint", () => {
+    it("errors on corrupt TOML as an invalid package", () => {
       writeFileSync(join(tmpDir, "METHODS.toml"), "[package\nbroken = true", "utf-8");
 
-      const { stderr, status } = runAgent("package", "validate", "-C", tmpDir);
+      const { stderr, status } = runAgentJson("package", "validate", "-C", tmpDir);
 
       expect(status).toBe(1);
       const errJson = parseJson(stderr);
+      expect(errJson.code).toBe("method.package_invalid");
       expect(errJson.message).toContain("TOML syntax error");
-      expect(errJson.hint).toContain("Fix the TOML syntax");
+      expect(errJson.message).toContain("Fix the TOML syntax");
     });
 
-    it("errors on semantically invalid TOML with hint", () => {
+    it("errors on semantically invalid TOML as an invalid package", () => {
       writeFileSync(
         join(tmpDir, "METHODS.toml"),
         `[package]
@@ -415,12 +447,14 @@ description = "Test"
         "utf-8",
       );
 
-      const { stderr, status } = runAgent("package", "validate", "-C", tmpDir);
+      const { stderr, status } = runAgentJson("package", "validate", "-C", tmpDir);
 
       expect(status).toBe(1);
       const errJson = parseJson(stderr);
+      expect(errJson.code).toBe("method.package_invalid");
+      expect(paramsOf(errJson)).toEqual({ reason: "manifest_invalid" });
       expect(errJson.message).toContain("Validation error");
-      expect(errJson.hint).toContain("Fix the validation errors");
+      expect(errJson.message).toContain("Fix the validation errors");
     });
   });
 
@@ -458,13 +492,13 @@ description = "Iterate test"
       );
 
       // Step 3: validate catches the error with actionable details
-      const valBadResult = runAgent("package", "validate", "-C", tmpDir);
+      const valBadResult = runAgentJson("package", "validate", "-C", tmpDir);
       expect(valBadResult.status).toBe(1);
 
       const errJson = parseJson(valBadResult.stderr);
-      expect(errJson.error).toBe(true);
+      expect(errJson.code).toBe("method.package_invalid");
       expect(errJson.message).toContain("Invalid package address");
-      expect(errJson.hint).toBeDefined();
+      expect(errJson.next_step).toBeDefined();
 
       // Step 4: fix the file
       writeFileSync(
@@ -515,8 +549,30 @@ mthds_version = ">=1.0.0"
       }
     });
 
-    it("error output is valid JSON on stderr", () => {
+    it("error output defaults to the problem rendered as Markdown on stderr", () => {
       const { stderr, status } = runAgent(
+        "package",
+        "init",
+        "-C",
+        tmpDir,
+        "--address",
+        "bad",
+        "--version",
+        "1.0.0",
+        "--description",
+        "Test",
+      );
+
+      expect(status).toBe(1);
+      expect(() => JSON.parse(stderr)).toThrow();
+      expect(stderr).toMatch(/^## An argument was refused before sending\n/);
+      expect(stderr).toContain("Invalid package address");
+      expect(stderr).toContain("**Next step** (`change_input`)");
+      expect(stderr).toContain("- Code: `client.argument_invalid`");
+    });
+
+    it("error output is the problem document as JSON on stderr with --error-format json", () => {
+      const { stderr, status } = runAgentJson(
         "package",
         "init",
         "-C",
@@ -533,9 +589,16 @@ mthds_version = ">=1.0.0"
       expect(() => JSON.parse(stderr)).not.toThrow();
 
       const errJson = parseJson(stderr);
-      // All error payloads must have these fields
-      expect(errJson.error).toBe(true);
-      expect(typeof errJson.error_type).toBe("string");
+      // Every problem carries the core members, and a CLI writes it without `status`.
+      for (const member of ["type", "title", "detail", "code", "domain", "retry"]) {
+        expect(typeof errJson[member]).toBe("string");
+      }
+      expect(errJson.type).toBe(`https://mthds.ai/errors/${String(errJson.code)}`);
+      expect(errJson.next_step).toMatchObject({
+        kind: expect.any(String),
+        detail: expect.any(String),
+      });
+      expect("status" in errJson).toBe(false);
       expect(typeof errJson.message).toBe("string");
     });
   });

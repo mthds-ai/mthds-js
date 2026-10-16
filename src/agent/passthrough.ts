@@ -4,7 +4,7 @@
  */
 
 import { spawnSync } from "node:child_process";
-import { agentError, AGENT_ERROR_DOMAINS } from "./output.js";
+import { agentError, agentProblem, agentWarning } from "./output.js";
 import { BINARY_RECOVERY, buildInstallCommand } from "./binaries.js";
 import { checkBinaryVersion } from "../installer/runtime/version-check.js";
 import { uvToolInstallSync } from "../installer/runtime/installer.js";
@@ -48,36 +48,42 @@ export function passthrough(
             uvToolInstallSync(recovery.uv_package, recovery.version_constraint);
           } catch (err) {
             const msg = err instanceof Error ? err.message : String(err);
-            agentError(`Failed to auto-install ${bin}: ${msg}`, "InstallError", {
-              error_domain: AGENT_ERROR_DOMAINS.INSTALL,
-              hint: `Install manually: ${buildInstallCommand(recovery)}`,
-              recovery,
-            });
+            agentError(
+              agentProblem(
+                "client.tool_missing",
+                { tool: bin },
+                `Failed to auto-install ${bin}: ${msg}. Install manually: ${buildInstallCommand(recovery)}`,
+              ),
+              { recovery },
+            );
           }
           // Verify install succeeded and version constraint is satisfied
           {
             const postCheck = checkBinaryVersion(recovery);
             if (postCheck.status === "missing") {
-              agentError(`${bin} was installed but is not reachable in PATH.`, "InstallError", {
-                error_domain: AGENT_ERROR_DOMAINS.INSTALL,
-                hint: "You may need to restart your shell or add the install directory to your PATH.",
-                recovery,
-              });
+              agentError(
+                agentProblem(
+                  "client.tool_missing",
+                  { tool: bin },
+                  `${bin} was installed but is not reachable in PATH. You may need to restart your shell or add the install directory to your PATH.`,
+                ),
+                { recovery },
+              );
             } else if (postCheck.status !== "ok") {
-              process.stderr.write(
-                JSON.stringify({
-                  warning: true,
-                  message: `Install of ${bin} may not have taken effect (status: ${postCheck.status}, installed: ${postCheck.installed_version}, needs: ${recovery.version_constraint}).`,
-                }) + "\n",
+              agentWarning(
+                `Install of ${bin} may not have taken effect (status: ${postCheck.status}, installed: ${postCheck.installed_version}, needs: ${recovery.version_constraint}).`,
               );
             }
           }
         } else {
-          agentError(`${bin} is not installed. Install it to continue.`, "BinaryNotFoundError", {
-            error_domain: AGENT_ERROR_DOMAINS.BINARY,
-            hint: `Install: ${buildInstallCommand(recovery)}`,
-            recovery,
-          });
+          agentError(
+            agentProblem(
+              "client.tool_missing",
+              { tool: bin },
+              `${bin} is not installed. Install it to continue. Install: ${buildInstallCommand(recovery)}`,
+            ),
+            { recovery },
+          );
         }
         break;
 
@@ -88,49 +94,40 @@ export function passthrough(
           } catch (err) {
             const msg = err instanceof Error ? err.message : String(err);
             agentError(
-              `Failed to upgrade ${bin} (installed ${check.installed_version}, needs ${recovery.version_constraint}): ${msg}`,
-              "InstallError",
-              {
-                error_domain: AGENT_ERROR_DOMAINS.INSTALL,
-                hint: `Upgrade manually: ${buildInstallCommand(recovery)}`,
-                recovery,
-              },
+              agentProblem(
+                "client.tool_outdated",
+                { tool: bin, version: check.installed_version ?? "unknown" },
+                `Failed to upgrade ${bin} (installed ${check.installed_version}, needs ${recovery.version_constraint}): ${msg}. Upgrade manually: ${buildInstallCommand(recovery)}`,
+              ),
+              { recovery },
             );
           }
           // Verify upgrade actually satisfied the constraint
           {
             const recheck = checkBinaryVersion(recovery);
             if (recheck.status !== "ok") {
-              process.stderr.write(
-                JSON.stringify({
-                  warning: true,
-                  message: `Upgrade of ${bin} may not have taken effect (status: ${recheck.status}, installed: ${recheck.installed_version}, needs: ${recovery.version_constraint}).`,
-                }) + "\n",
+              agentWarning(
+                `Upgrade of ${bin} may not have taken effect (status: ${recheck.status}, installed: ${recheck.installed_version}, needs: ${recovery.version_constraint}).`,
               );
             }
           }
         } else {
           agentError(
-            `${bin} is outdated (installed ${check.installed_version}, needs ${recovery.version_constraint}). Upgrade to continue.`,
-            "InstallError",
-            {
-              error_domain: AGENT_ERROR_DOMAINS.INSTALL,
-              hint: `Upgrade: ${buildInstallCommand(recovery)}`,
-              recovery,
-            },
+            agentProblem(
+              "client.tool_outdated",
+              { tool: bin, version: check.installed_version ?? "unknown" },
+              `${bin} is outdated (installed ${check.installed_version}, needs ${recovery.version_constraint}). Upgrade to continue. Upgrade: ${buildInstallCommand(recovery)}`,
+            ),
+            { recovery },
           );
         }
         break;
 
       case "unparseable":
         // Warn to stderr but don't block execution
-        process.stderr.write(
-          JSON.stringify({
-            warning: true,
-            message: `Could not parse version for ${bin}. Proceeding anyway.`,
-            version_constraint: check.version_constraint,
-          }) + "\n",
-        );
+        agentWarning(`Could not parse version for ${bin}. Proceeding anyway.`, {
+          version_constraint: check.version_constraint,
+        });
         break;
     }
   }
@@ -146,18 +143,21 @@ export function passthrough(
         ? `Install ${recovery.package}: ${buildInstallCommand(recovery)}`
         : "Make sure the required CLI binary is installed and in your PATH.";
       agentError(
-        `${bin} not found. Make sure it is installed and in your PATH.`,
-        "BinaryNotFoundError",
-        {
-          error_domain: AGENT_ERROR_DOMAINS.BINARY,
-          hint,
-          recovery,
-        },
+        agentProblem(
+          "client.tool_missing",
+          { tool: bin },
+          `${bin} not found. Make sure it is installed and in your PATH. ${hint}`,
+        ),
+        { recovery },
       );
     }
-    agentError(`Failed to spawn ${bin}: ${result.error.message}`, "BinarySpawnError", {
-      error_domain: AGENT_ERROR_DOMAINS.BINARY,
-    });
+    agentError(
+      agentProblem(
+        "client.tool_missing",
+        { tool: bin },
+        `Failed to spawn ${bin}: ${result.error.message}`,
+      ),
+    );
   }
 
   // The person interrupted the tool: it was killed by the interrupt, or it handled Ctrl-C itself

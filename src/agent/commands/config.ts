@@ -2,7 +2,7 @@
  * Agent config commands — manage configuration with JSON output.
  */
 
-import { agentSuccess, agentError, AGENT_ERROR_DOMAINS } from "../output.js";
+import { agentSuccess, agentError, agentProblem } from "../output.js";
 import {
   VALID_KEYS,
   resolveKey,
@@ -20,30 +20,42 @@ export async function agentConfigSet(cliKey: string, value: string): Promise<voi
   const configKey = resolveKey(cliKey);
   if (!configKey) {
     agentError(
-      `Unknown config key: ${cliKey}. Valid keys: ${VALID_KEYS.join(", ")}`,
-      "ConfigError",
-      { error_domain: AGENT_ERROR_DOMAINS.CONFIG },
+      agentProblem(
+        "client.argument_invalid",
+        { argument: "key", reason: "unknown_key" },
+        `Unknown config key: ${cliKey}. Valid keys: ${VALID_KEYS.join(", ")}`,
+      ),
     );
   }
 
   if (configKey === "runner" && !RUNNER_NAMES.includes(value as RunnerType)) {
     agentError(
-      `Invalid runner: ${value}. Valid runners: ${RUNNER_NAMES.join(", ")}`,
-      "ConfigError",
-      { error_domain: AGENT_ERROR_DOMAINS.CONFIG },
+      agentProblem(
+        "client.argument_invalid",
+        { argument: "value", reason: "unknown_runner" },
+        `Invalid runner: ${value}. Valid runners: ${RUNNER_NAMES.join(", ")}`,
+      ),
     );
   }
 
   if (configKey === "baseUrl" && !isValidBaseUrl(value)) {
-    agentError(`Invalid URL: ${value}`, "ConfigError", {
-      error_domain: AGENT_ERROR_DOMAINS.CONFIG,
-    });
+    agentError(
+      agentProblem(
+        "client.argument_invalid",
+        { argument: "value", reason: "invalid_base_url" },
+        `Invalid URL: ${value}`,
+      ),
+    );
   }
 
   if (configKey === "telemetry" && !isValidTelemetryValue(value)) {
-    agentError(`Invalid value for telemetry: ${value}. ${TELEMETRY_VALUE_HINT}`, "ConfigError", {
-      error_domain: AGENT_ERROR_DOMAINS.CONFIG,
-    });
+    agentError(
+      agentProblem(
+        "client.argument_invalid",
+        { argument: "value", reason: "unknown_value" },
+        `Invalid value for telemetry: ${value}. ${TELEMETRY_VALUE_HINT}`,
+      ),
+    );
   }
 
   setConfigValue(configKey, value);
@@ -54,9 +66,11 @@ export async function agentConfigGet(cliKey: string): Promise<void> {
   const configKey = resolveKey(cliKey);
   if (!configKey) {
     agentError(
-      `Unknown config key: ${cliKey}. Valid keys: ${VALID_KEYS.join(", ")}`,
-      "ConfigError",
-      { error_domain: AGENT_ERROR_DOMAINS.CONFIG },
+      agentProblem(
+        "client.argument_invalid",
+        { argument: "key", reason: "unknown_key" },
+        `Unknown config key: ${cliKey}. Valid keys: ${VALID_KEYS.join(", ")}`,
+      ),
     );
   }
 

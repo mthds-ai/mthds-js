@@ -28,6 +28,9 @@ import { readFileSync, existsSync, writeFileSync } from "node:fs";
 import { spawn } from "node:child_process";
 import { PipelexRunner } from "../../../src/runners/pipelex/runner.js";
 import { MODEL_CATEGORIES } from "../../../src/protocol/models.js";
+import { CORE_REGISTRY } from "../../../src/problems/registry.generated.js";
+import { isProblemItem } from "../../../src/problems/read.js";
+import { ProblemError } from "../../../src/problems/errors.js";
 
 const mockedReadFileSync = vi.mocked(readFileSync);
 const mockedExistsSync = vi.mocked(existsSync);
@@ -103,6 +106,13 @@ describe("PipelexRunner", () => {
       await expect(runner.checkModel({ reference: "gpt-4o" } as any)).rejects.toThrow(
         `(one of: ${MODEL_CATEGORIES.join(", ")})`,
       );
+    });
+
+    it("codes the refusal client.argument_invalid naming the argument", async () => {
+      const err = await runner.checkModel({ reference: "gpt-4o" } as any).catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(ProblemError);
+      expect((err as ProblemError).problem.code).toBe("client.argument_invalid");
+      expect((err as ProblemError).problem.params).toEqual({ argument: "type", reason: "missing" });
     });
   });
 
@@ -266,7 +276,12 @@ describe("PipelexRunner", () => {
     });
 
     it("refuses an empty bundle list before calling the CLI", async () => {
-      await expect(runner.validate([])).rejects.toThrow(/At least one MTHDS file/);
+      const err = await runner.validate([]).catch((e: unknown) => e);
+      expect((err as Error).message).toMatch(/At least one MTHDS file/);
+      expect((err as ProblemError).problem.params).toEqual({
+        argument: "mthds_contents",
+        reason: "empty",
+      });
       expect(execFileAsync).not.toHaveBeenCalled();
     });
 
@@ -310,7 +325,11 @@ describe("PipelexRunner", () => {
     it("refuses a pipelex too old to report the protocol it speaks", async () => {
       execFileAsync.mockResolvedValue({ stdout: "0.32.0\n", stderr: "" });
 
-      await expect(runner.version()).rejects.toThrow(/0\.32\.0 does not report the MTHDS Protocol/);
+      const err = await runner.version().catch((e: unknown) => e);
+      expect((err as Error).message).toMatch(/0\.32\.0 does not report the MTHDS Protocol/);
+      expect(err).toBeInstanceOf(ProblemError);
+      expect((err as ProblemError).problem.code).toBe("client.tool_outdated");
+      expect((err as ProblemError).problem.params).toEqual({ tool: "pipelex", version: "0.32.0" });
     });
   });
 
@@ -414,7 +433,10 @@ describe("PipelexRunner", () => {
     });
 
     it("rejects bundle_b64 — the local runner has no zip decoder", async () => {
-      await expect(runner.execute({ bundle_b64: "UEsDBBQ=" })).rejects.toThrow(/bundle_b64|zip/i);
+      const err = await runner.execute({ bundle_b64: "UEsDBBQ=" }).catch((e: unknown) => e);
+      expect((err as Error).message).toMatch(/bundle_b64|zip/i);
+      expect((err as ProblemError).problem.code).toBe("runtime.unsupported");
+      expect((err as ProblemError).problem.params).toEqual({ capability: "bundle_b64" });
       expect(mockedSpawn).not.toHaveBeenCalled();
     });
 
@@ -492,7 +514,11 @@ describe("PipelexRunner", () => {
       expect(result.is_valid).toBe(false);
       if (result.is_valid !== false) return;
       expect(result.message).toContain("undefined concept");
-      expect(result.validation_errors).toEqual([]);
+      // The CLI prints prose, not items, so the one item is the method not validating.
+      expect(result.errors).toEqual([
+        { code: "method.invalid", detail: CORE_REGISTRY["method.invalid"].detail },
+      ]);
+      expect(result.errors.every(isProblemItem)).toBe(true);
       expect(result.is_runnable).toBe(false);
     });
 

@@ -15,7 +15,8 @@
  * / "clear the field" sentinel — never as the literal `"[]"`.
  */
 
-import { PipelineRequestError } from "./exceptions.js";
+import { ProblemError } from "../problems/errors.js";
+import { buildProblem } from "../problems/build.js";
 
 /** One named source file of a method bundle: a bundle-relative path and its text. */
 export interface MethodFile {
@@ -50,7 +51,7 @@ export function serializeMethodFiles(files: readonly MethodFile[]): string {
  *
  * Anything else — a non-array JSON value, an array entry that is not a
  * `{ name: string, content: string }` object, or unparseable text — is a
- * contract violation for this typed surface and throws {@link PipelineRequestError}.
+ * contract violation for this typed surface and throws a `ProblemError` of `client.argument_invalid`.
  * (Raw, unnamed `.mthds` text is a legacy `mthds`-only shape handled elsewhere;
  * the catalog file-array is always the named-array form.)
  */
@@ -61,14 +62,16 @@ export function parseMethodFiles(source: string | null | undefined): MethodFile[
   try {
     parsed = JSON.parse(source);
   } catch (cause) {
-    throw new PipelineRequestError(
+    throw methodFilesInvalid(
+      "not_json",
       "Method file source is not valid JSON; expected a [{ name, content }] array.",
-      { cause },
+      cause,
     );
   }
 
   if (!Array.isArray(parsed)) {
-    throw new PipelineRequestError(
+    throw methodFilesInvalid(
+      "not_an_array",
       "Method file source must be a JSON array of { name, content } entries.",
     );
   }
@@ -76,13 +79,22 @@ export function parseMethodFiles(source: string | null | undefined): MethodFile[
   const files: MethodFile[] = [];
   for (const entry of parsed) {
     if (!isMethodFileEntry(entry)) {
-      throw new PipelineRequestError(
+      throw methodFilesInvalid(
+        "entry_invalid",
         "Each method file entry must be an object with string `name` and string `content`.",
       );
     }
     if (!isBlank(entry.content)) files.push({ name: entry.name, content: entry.content });
   }
   return files;
+}
+
+/** The refusal of a method file source, `client.argument_invalid` naming the source and why. */
+function methodFilesInvalid(reason: string, message: string, cause?: unknown): ProblemError {
+  return new ProblemError(
+    buildProblem("client.argument_invalid", { argument: "files", reason }, { extra: { message } }),
+    cause === undefined ? undefined : { cause },
+  );
 }
 
 function isMethodFileEntry(value: unknown): value is MethodFile {

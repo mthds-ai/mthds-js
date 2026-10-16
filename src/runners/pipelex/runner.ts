@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { Runners } from "../types.js";
 import { materializeBundleFiles } from "../bundle.js";
 import { assertExclusiveRunSources } from "../../protocol/options.js";
-import { PipelineRequestError } from "../../protocol/exceptions.js";
+import { argumentInvalid, problemError } from "../../problems/errors.js";
 import type { Runner, RunnerType, CheckModelRequest, CheckModelResponse } from "../types.js";
 import type { RunOptions, StartOptions } from "../../protocol/options.js";
 import type {
@@ -17,6 +17,7 @@ import type {
   VersionInfo,
 } from "../../protocol/models.js";
 import { MODEL_CATEGORIES } from "../../protocol/models.js";
+import { CORE_REGISTRY } from "../../problems/registry.generated.js";
 import type { DictPipeOutput, DictRunResultExecute } from "../api/models.js";
 
 const execFileAsync = promisify(execFile);
@@ -34,7 +35,7 @@ function makeTmpDir(): string {
  */
 function writeMthdsContents(tmp: string, contents: string[]): string {
   if (contents.length === 0) {
-    throw new Error("At least one MTHDS file is required.");
+    throw argumentInvalid("mthds_contents", "empty", "At least one MTHDS file is required.");
   }
   contents.forEach((content, index) => {
     const name = index === 0 ? "bundle.mthds" : `extra_${index}.mthds`;
@@ -101,8 +102,12 @@ export function parsePipelexVersionReport(stdout: string): {
   const pipelexVersion = labelled("pipelex") ?? lines[0]?.split(/\s+/).pop() ?? "";
   const protocolVersion = labelled("mthds-protocol");
   if (protocolVersion === undefined) {
-    throw new Error(
-      `pipelex ${pipelexVersion} does not report the MTHDS Protocol version it speaks; upgrade pipelex to 0.57.0 or later.`,
+    throw problemError(
+      "client.tool_outdated",
+      { tool: "pipelex", version: pipelexVersion || "unknown" },
+      {
+        message: `pipelex ${pipelexVersion} does not report the MTHDS Protocol version it speaks; upgrade pipelex to 0.57.0 or later.`,
+      },
     );
   }
   return { pipelexVersion, protocolVersion };
@@ -139,7 +144,15 @@ export class PipelexRunner implements Runner {
         stdio: [inheritStdin ? "inherit" : "ignore", "inherit", "inherit"],
         env: this.env,
       });
-      child.on("error", (err) => reject(new Error(`pipelex not found: ${err.message}`)));
+      child.on("error", (err) =>
+        reject(
+          problemError(
+            "client.tool_missing",
+            { tool: "pipelex" },
+            { message: `pipelex not found: ${err.message}`, cause: err },
+          ),
+        ),
+      );
       child.on("close", (code) => {
         if (code === 0) {
           resolve();
@@ -173,8 +186,12 @@ export class PipelexRunner implements Runner {
       );
       await Promise.race([this.exec(["doctor", "-g"]), timeout]);
       return { status: "ok" };
-    } catch {
-      throw new Error("pipelex CLI is not installed or not in PATH");
+    } catch (cause) {
+      throw problemError(
+        "client.tool_missing",
+        { tool: "pipelex" },
+        { message: "pipelex CLI is not installed or not in PATH", cause },
+      );
     }
   }
 
@@ -201,7 +218,11 @@ export class PipelexRunner implements Runner {
   // default), so we guard here for SDK consumers that bypass the agent CLI's parser.
   async checkModel(request: CheckModelRequest): Promise<CheckModelResponse> {
     if (!request.type) {
-      throw new Error(`checkModel requires \`type\` (one of: ${MODEL_CATEGORIES.join(", ")})`);
+      throw argumentInvalid(
+        "type",
+        "missing",
+        `checkModel requires \`type\` (one of: ${MODEL_CATEGORIES.join(", ")})`,
+      );
     }
     const args = ["check-model", request.reference, "--type", request.type, "--format", "json"];
     const { stdout } = await execFileAsync("pipelex-agent", args, {
@@ -241,8 +262,13 @@ export class PipelexRunner implements Runner {
     // the `bundle_b64` transport form is API-runner-only. Reject it explicitly
     // rather than dispatching `run` with no target (which fails cryptically).
     if (options.bundle_b64 != null) {
-      throw new PipelineRequestError(
-        "The local pipelex runner does not support the bundle_b64 (zip) transport; pass the bundle as `files`, or use the API runner.",
+      throw problemError(
+        "runtime.unsupported",
+        { capability: "bundle_b64" },
+        {
+          message:
+            "The local pipelex runner does not support the bundle_b64 (zip) transport; pass the bundle as `files`, or use the API runner.",
+        },
       );
     }
     const tmp = makeTmpDir();
@@ -368,11 +394,12 @@ export class PipelexRunner implements Runner {
         // condition (setup / bad args / internal). A negative verdict is a result,
         // not a transport failure → return the minimal invalid arm (mirroring the
         // minimal valid arm below — the CLI emits human text, not structured
-        // diagnostics, so validation_errors is empty). Re-raise everything else.
+        // diagnostics, so its one item is the method not validating, and the text
+        // rides `message`). Re-raise everything else.
         if (execError.code === 1) {
           return {
             is_valid: false,
-            validation_errors: [],
+            errors: [{ code: "method.invalid", detail: CORE_REGISTRY["method.invalid"].detail }],
             pending_signatures: [],
             is_runnable: false,
             message: `Bundle validation failed:\n${detail}`,
@@ -396,7 +423,11 @@ export class PipelexRunner implements Runner {
   // `start` primitive belongs to the Pipelex Hosted API (use --runner api).
 
   async start(_options: StartOptions): Promise<never> {
-    throw new Error(ASYNC_START_UNSUPPORTED);
+    throw problemError(
+      "runtime.unsupported",
+      { capability: "start" },
+      { message: ASYNC_START_UNSUPPORTED },
+    );
   }
 }
 

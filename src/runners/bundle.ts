@@ -22,6 +22,8 @@
  * directories, so a method split across files validates on the API runner.
  */
 
+import { argumentInvalid, problemError, ProblemError } from "../problems/errors.js";
+import { buildProblem } from "../problems/build.js";
 import {
   type Dirent,
   lstatSync,
@@ -196,7 +198,7 @@ function declaresMainPipe(content: string): boolean {
 export function pickMainBundleFile(files: Record<string, string>): string {
   const mthdsFiles = Object.keys(files).filter((rel) => rel.endsWith(".mthds"));
   if (mthdsFiles.length === 0) {
-    throw new Error("Method bundle contains no .mthds file.");
+    throw argumentInvalid("files", "no_mthds_file", "Method bundle contains no .mthds file.");
   }
   const rootLevel = mthdsFiles.filter((rel) => !rel.includes("/"));
   const candidates = rootLevel.length > 0 ? rootLevel : mthdsFiles;
@@ -215,8 +217,12 @@ export function pickMainBundleFile(files: Record<string, string>): string {
 function resolveSafeBundlePath(root: string, rel: string): string {
   const abs = resolve(root, rel);
   if (abs !== root && !abs.startsWith(root + sep)) {
-    throw new Error(
-      `Unsafe bundle file path ${JSON.stringify(rel)}: it escapes the bundle directory.`,
+    throw problemError(
+      "security.input_path_refused",
+      { rule: "outside_root" },
+      {
+        message: `Unsafe bundle file path ${JSON.stringify(rel)}: it escapes the bundle directory.`,
+      },
     );
   }
   return abs;
@@ -267,7 +273,11 @@ export function resolveRunBundle(target: string): ResolvedRunBundle {
   if (stat.isDirectory()) {
     const files = collectBundleFiles(resolved);
     if (!Object.keys(files).some((rel) => rel.endsWith(".mthds"))) {
-      throw new Error(`No .mthds file found in bundle directory: ${resolved}`);
+      throw argumentInvalid(
+        "target",
+        "no_mthds_file",
+        `No .mthds file found in bundle directory: ${resolved}`,
+      );
     }
     // No file was named, so the entrypoint is inferred (main_pipe, then order).
     return { files, main: pickMainBundleFile(files) };
@@ -283,10 +293,19 @@ export function resolveRunBundle(target: string): ResolvedRunBundle {
   return { mthds_contents: [readFileSync(resolved, "utf-8")] };
 }
 
-/** A target the bundle-closure resolver refuses: neither a `.mthds` file nor a directory holding one. */
-export class BundleTargetError extends Error {
+/**
+ * A target the bundle-closure resolver refuses: neither a `.mthds` file nor a directory holding
+ * one, `client.argument_invalid` naming the target, its message the resolver's own sentence.
+ */
+export class BundleTargetError extends ProblemError {
   constructor(message: string) {
-    super(message);
+    super(
+      buildProblem(
+        "client.argument_invalid",
+        { argument: "target", reason: "not_a_bundle" },
+        { extra: { message } },
+      ),
+    );
     this.name = "BundleTargetError";
   }
 }

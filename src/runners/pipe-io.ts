@@ -4,12 +4,17 @@
  */
 
 import type { PipeInputFormDescriptor } from "../protocol/input_form.js";
+import { ProblemError } from "../problems/errors.js";
+import { buildProblem } from "../problems/build.js";
 import type { PipeIOValidReport } from "./types.js";
 
-/** A valid `/v1/pipe-io` answer that contradicts itself: it selected a pipe it does not describe. */
-export class PipeIOAnswerError extends Error {
+/**
+ * A valid `/v1/pipe-io` answer that contradicts itself: it selected a pipe it does not describe.
+ * The client cannot read it, so it is `client.response_unreadable` with the answer's `200`.
+ */
+export class PipeIOAnswerError extends ProblemError {
   constructor(message: string) {
-    super(message);
+    super(buildProblem("client.response_unreadable", { status: 200 }, { extra: { message } }));
     this.name = "PipeIOAnswerError";
   }
 }

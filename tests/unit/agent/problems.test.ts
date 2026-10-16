@@ -274,6 +274,18 @@ describe("registrationsProblem", () => {
     expect(problem).toMatchObject({ code: "runtime.unavailable", retry: "yes", params: {} });
   });
 
+  it("reads different errors that are all worth retrying as runtime.unavailable", () => {
+    const problem = registrationsProblem(
+      [failed("a", "unreachable", true), failed("b", "rate_limited", true)],
+      facts,
+    );
+    expect(problem).toMatchObject({
+      code: "runtime.unavailable",
+      retry: "yes",
+      message: "Nothing was published.",
+    });
+  });
+
   it("reads an error not worth retrying as runtime.unexpected", () => {
     expect(registrationsProblem([failed("a", "unexpected_response", false)], facts).code).toBe(
       "runtime.unexpected",

@@ -183,7 +183,9 @@ function registrationProblem(
  * The problem of a publish mthds.sh listed none of the methods of: the problem every answer reads
  * as when they agree, such as `runtime.unavailable` when every one is an error worth retrying, and
  * `method.not_found` naming the repository when every one is missing but they name different
- * methods, else `runtime.unexpected`. `message` lists the answers, method by method.
+ * methods, `runtime.unavailable` when they disagree but every one is worth retrying, such as a hub
+ * unreachable for one method and rate limited for another, else `runtime.unexpected`. `message`
+ * lists the answers, method by method.
  */
 export function registrationsProblem(
   registrations: MethodRegistration[],
@@ -199,6 +201,9 @@ export function registrationsProblem(
     if (first.code === "method.not_found") {
       return agentProblem("method.not_found", { method_ref: facts.orgRepo }, facts.message);
     }
+  }
+  if (first !== undefined && problems.every((problem) => problem.retry === "yes")) {
+    return agentProblem("runtime.unavailable", {}, facts.message);
   }
   return agentProblem("runtime.unexpected", {}, facts.message);
 }

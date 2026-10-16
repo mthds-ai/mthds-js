@@ -124,6 +124,8 @@ Every body is decoded by the same rules, a route's result as much as a problem (
 | `runtime.unsupported` `{ capability }` | The runner cannot do what was asked, such as `check_model` on the API runner. |
 | `runtime.unexpected` | A failure no other code describes. |
 
+`PipelexRunner` raises a `ProblemError` too. A program it runs that is not on the PATH is `client.tool_missing`; a failure `pipelex-agent` printed as a problem on stderr is that problem, relayed; a `pipelex run` the person interrupted is `client.aborted`; a health check `pipelex doctor` did not answer in time is `client.timeout`, and one where it found issues `runtime.misconfigured`; a working memory written by a pipelex too old for the standard is `client.tool_outdated` naming its version; any other failure is `runtime.unexpected`, its message holding what the program printed, since the bare `pipelex` prints human text, never a problem.
+
 A problem the client builds carries the step of its own caller for an `input` or `runtime` problem (the caller acts, or waits and retries), and someone else's for a `method`, `account` or `operator` one, unless the builder names the reader.
 
 ## How to classify an error in client code

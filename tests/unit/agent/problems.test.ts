@@ -5,8 +5,10 @@ import {
   noUsableMethodProblem,
   registrationsProblem,
   resolveFailureProblem,
+  toolInstallProblem,
   unusableMethodProblem,
 } from "../../../src/agent/problems.js";
+import { ToolInstallError } from "../../../src/installer/runtime/exceptions.js";
 import { MethodResolveError } from "../../../src/installer/resolver/exceptions.js";
 import type { MethodRegistration } from "../../../src/installer/registry/client.js";
 import type { ResolvedMethod, ResolvedRepo } from "../../../src/package/manifest/types.js";
@@ -51,6 +53,37 @@ describe("errorPath", () => {
     expect(errorPath({ path: "" }, "fallback")).toBe("fallback");
     expect(errorPath({ path: 7 }, "fallback")).toBe("fallback");
     expect(errorPath(null, "fallback")).toBe("fallback");
+  });
+});
+
+describe("toolInstallProblem", () => {
+  it("reads an install that ran and failed as runtime.unavailable, worth a retry", () => {
+    const err = new ToolInstallError("uv tool install failed", "install_failed", "pipelex");
+    expect(toolInstallProblem(err, "pipelex", "Failed")).toMatchObject({
+      code: "runtime.unavailable",
+      retry: "yes",
+      message: "Failed",
+    });
+  });
+
+  it("reads a missing uv as client.tool_missing naming uv", () => {
+    const err = new ToolInstallError("uv is required", "uv_missing", "uv");
+    expect(toolInstallProblem(err, "pipelex", "Failed")).toMatchObject({
+      code: "client.tool_missing",
+      params: { tool: "uv" },
+    });
+  });
+
+  it("reads a tool still off the PATH, or a failure it did not read, as client.tool_missing", () => {
+    const err = new ToolInstallError("not found in PATH", "not_on_path", "pipelex");
+    expect(toolInstallProblem(err, "pipelex", "Failed")).toMatchObject({
+      code: "client.tool_missing",
+      params: { tool: "pipelex" },
+    });
+    expect(toolInstallProblem(new Error("boom"), "plxt", "Failed")).toMatchObject({
+      code: "client.tool_missing",
+      params: { tool: "plxt" },
+    });
   });
 });
 

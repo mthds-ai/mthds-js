@@ -30,6 +30,7 @@ import { agentConfigGet, agentConfigList, agentConfigSet } from "./agent/command
 import { agentInstall } from "./agent/commands/install.js";
 import { agentPublish } from "./agent/commands/publish.js";
 import { agentShare } from "./agent/commands/share.js";
+import { toolInstallProblem } from "./agent/problems.js";
 import { checkBinaryVersion } from "./installer/runtime/version-check.js";
 import { uvToolInstallSync } from "./installer/runtime/installer.js";
 import { BINARY_RECOVERY, buildInstallCommand } from "./agent/binaries.js";
@@ -368,9 +369,9 @@ runnerSetup
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       agentError(
-        agentProblem(
-          "client.tool_missing",
-          { tool: "pipelex" },
+        toolInstallProblem(
+          err,
+          "pipelex",
           `Failed to ${action} pipelex: ${msg}. ${action === "upgrade" ? "Upgrade" : "Install"} manually: ${buildInstallCommand(recovery)}`,
         ),
         { recovery },

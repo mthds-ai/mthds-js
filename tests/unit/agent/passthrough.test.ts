@@ -38,6 +38,7 @@ const mockExit = vi.spyOn(process, "exit").mockImplementation((() => {}) as neve
 import { spawnSync } from "node:child_process";
 import { checkBinaryVersion } from "../../../src/installer/runtime/version-check.js";
 import { uvToolInstallSync } from "../../../src/installer/runtime/installer.js";
+import { ToolInstallError } from "../../../src/installer/runtime/exceptions.js";
 import { agentError, chooseErrorFormat } from "../../../src/agent/output.js";
 import { passthrough } from "../../../src/agent/passthrough.js";
 import { BINARY_RECOVERY } from "../../../src/agent/binaries.js";
@@ -313,6 +314,53 @@ describe("passthrough", () => {
       { recovery: PX_AGENT_RECOVERY },
     );
   });
+
+  it("reports an auto-install uv ran and failed as runtime.unavailable, worth a retry", () => {
+    mockedCheckBinaryVersion.mockReturnValue({
+      status: "missing",
+      installed_version: null,
+      version_constraint: PX_CONSTRAINT,
+    });
+    mockedUvToolInstallSync.mockImplementation(() => {
+      throw new ToolInstallError("uv tool install failed: offline", "install_failed", "pipelex");
+    });
+
+    expect(() => passthrough("pipelex-agent", ["run"], { autoInstall: true })).toThrow(
+      AgentErrorThrow,
+    );
+
+    expect(mockedAgentError).toHaveBeenCalledWith(
+      expect.objectContaining({
+        code: "runtime.unavailable",
+        retry: "yes",
+        message: expect.stringContaining("offline"),
+      }),
+      { recovery: PX_AGENT_RECOVERY },
+    );
+  });
+
+  it.each(["missing", "outdated"] as const)(
+    "reports an auto-install of a %s binary without uv as client.tool_missing naming uv",
+    (status) => {
+      mockedCheckBinaryVersion.mockReturnValue({
+        status,
+        installed_version: status === "missing" ? null : "0.20.0",
+        version_constraint: PX_CONSTRAINT,
+      });
+      mockedUvToolInstallSync.mockImplementation(() => {
+        throw new ToolInstallError("uv is required but not found in PATH.", "uv_missing", "uv");
+      });
+
+      expect(() => passthrough("pipelex-agent", ["run"], { autoInstall: true })).toThrow(
+        AgentErrorThrow,
+      );
+
+      expect(mockedAgentError).toHaveBeenCalledWith(
+        expect.objectContaining({ code: "client.tool_missing", params: { tool: "uv" } }),
+        { recovery: PX_AGENT_RECOVERY },
+      );
+    },
+  );
 
   it("reports a binary not reachable after auto-install as client.tool_missing", () => {
     mockedCheckBinaryVersion.mockReturnValue({

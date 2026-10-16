@@ -5,6 +5,8 @@
 
 import { spawnSync } from "node:child_process";
 import { agentError, agentProblem, agentWarning } from "./output.js";
+import { toolInstallProblem } from "./problems.js";
+import { ToolInstallError } from "../installer/runtime/exceptions.js";
 import { BINARY_RECOVERY, buildInstallCommand } from "./binaries.js";
 import { checkBinaryVersion } from "../installer/runtime/version-check.js";
 import { uvToolInstallSync } from "../installer/runtime/installer.js";
@@ -49,9 +51,9 @@ export function passthrough(
           } catch (err) {
             const msg = err instanceof Error ? err.message : String(err);
             agentError(
-              agentProblem(
-                "client.tool_missing",
-                { tool: bin },
+              toolInstallProblem(
+                err,
+                bin,
                 `Failed to auto-install ${bin}: ${msg}. Install manually: ${buildInstallCommand(recovery)}`,
               ),
               { recovery },
@@ -93,12 +95,16 @@ export function passthrough(
             uvToolInstallSync(recovery.uv_package, recovery.version_constraint);
           } catch (err) {
             const msg = err instanceof Error ? err.message : String(err);
+            const message = `Failed to upgrade ${bin} (installed ${check.installed_version}, needs ${recovery.version_constraint}): ${msg}. Upgrade manually: ${buildInstallCommand(recovery)}`;
+            // The tool still runs, only older: it is outdated unless uv itself is missing.
             agentError(
-              agentProblem(
-                "client.tool_outdated",
-                { tool: bin, version: check.installed_version ?? "unknown" },
-                `Failed to upgrade ${bin} (installed ${check.installed_version}, needs ${recovery.version_constraint}): ${msg}. Upgrade manually: ${buildInstallCommand(recovery)}`,
-              ),
+              err instanceof ToolInstallError && err.reason === "uv_missing"
+                ? toolInstallProblem(err, bin, message)
+                : agentProblem(
+                    "client.tool_outdated",
+                    { tool: bin, version: check.installed_version ?? "unknown" },
+                    message,
+                  ),
               { recovery },
             );
           }

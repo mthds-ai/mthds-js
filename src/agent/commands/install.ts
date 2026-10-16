@@ -9,6 +9,7 @@ import {
   fileErrorReason,
   noUsableMethodProblem,
   resolveFailureProblem,
+  toolInstallProblem,
   unusableMethodProblem,
 } from "../problems.js";
 import { parseAddress } from "../../installer/resolver/address.js";
@@ -158,9 +159,9 @@ export async function agentInstall(
         await ensureRuntime();
       } catch (err) {
         agentError(
-          agentProblem(
-            "client.tool_missing",
-            { tool: "pipelex" },
+          toolInstallProblem(
+            err,
+            "pipelex",
             `Failed to install pipelex runtime: ${(err as Error).message}`,
           ),
           { skipped_methods: skippedMethodReports(resolved) },

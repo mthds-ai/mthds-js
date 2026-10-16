@@ -13,6 +13,7 @@ import {
 } from "../installer/resolver/skipped.js";
 import type { SkippedMethodReport } from "../installer/resolver/skipped.js";
 import { MethodResolveError } from "../installer/resolver/exceptions.js";
+import { ToolInstallError } from "../installer/runtime/exceptions.js";
 import type { MethodRegistration, RegistrationAnswer } from "../installer/registry/client.js";
 import type { ResolvedRepo } from "../package/manifest/types.js";
 import type { StepReader } from "../problems/build.js";
@@ -32,6 +33,20 @@ export function fileErrorReason(err: unknown, fallback = "unreadable"): string {
 export function errorPath(err: unknown, fallback: string): string {
   const path = (err as { path?: unknown } | null)?.path;
   return typeof path === "string" && path !== "" ? path : fallback;
+}
+
+/**
+ * The problem of a tool `tool` that could not be installed: `runtime.unavailable`, worth a retry,
+ * when the install ran and failed, which a later attempt may get past, and `client.tool_missing`
+ * when the tool is absent and cannot be installed now, naming `uv` when uv itself is missing, or
+ * when the install succeeded and the tool is still not on the PATH.
+ */
+export function toolInstallProblem(err: unknown, tool: string, message: string): Problem {
+  if (err instanceof ToolInstallError && err.reason === "install_failed") {
+    return agentProblem("runtime.unavailable", {}, message);
+  }
+  const missing = err instanceof ToolInstallError ? err.tool : tool;
+  return agentProblem("client.tool_missing", { tool: missing }, message);
 }
 
 /**

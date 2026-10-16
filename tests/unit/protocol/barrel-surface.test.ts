@@ -267,6 +267,7 @@ describe("protocol barrel", () => {
       "problemStepKind",
       "projectConceptComments",
       "projectInputsTemplate",
+      "readAnswer",
       "readErrorAnswer",
       "readProblemBody",
       "registryEntry",

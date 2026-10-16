@@ -158,4 +158,54 @@ describe("resolveFromGitHub failures", () => {
       { dirName: "demo", errors: ["No METHODS.toml found at methods/demo/METHODS.toml."] },
     ]);
   });
+
+  it.each([
+    [
+      "its download is not found",
+      () => json(200, { type: "file", download_url: "http://127.0.0.1:9/raw/main.mthds" }),
+    ],
+    [
+      "GitHub names no file at its path",
+      () => json(200, { type: "submodule", download_url: null }),
+    ],
+  ])(
+    "fails the resolve as fetch_failed when a listed .mthds file is gone: %s",
+    async (_what, answer) => {
+      const manifest = [
+        "[package]",
+        'name = "demo"',
+        'address = "github.com/acme/tools"',
+        'version = "1.0.0"',
+        'description = "Demo."',
+        "",
+        "[exports.default]",
+        'pipes = ["main"]',
+      ].join("\n");
+      route([
+        ["repos/acme/tools", () => json(200, { private: false })],
+        [
+          "contents/methods",
+          () => json(200, [{ type: "dir", name: "demo", path: "methods/demo" }]),
+        ],
+        [
+          "contents/methods/demo/METHODS.toml",
+          () =>
+            json(200, {
+              type: "file",
+              content: Buffer.from(manifest).toString("base64"),
+              encoding: "base64",
+            }),
+        ],
+        [
+          "contents/methods/demo",
+          () => json(200, [{ type: "file", name: "main.mthds", path: "methods/demo/main.mthds" }]),
+        ],
+        ["contents/methods/demo/main.mthds", answer],
+        ["raw/main.mthds", () => new Response("Not Found", { status: 404 })],
+      ]);
+      const err = await failure();
+      expect(err.reason).toBe("fetch_failed");
+      expect(err.message).toContain("main.mthds");
+    },
+  );
 });

@@ -9,6 +9,7 @@ import type {
 } from "../../package/manifest/types.js";
 import { validateManifest } from "../../package/manifest/validate.js";
 import { isResolveFailure, MethodResolveError, rewordResolveFailure } from "./exceptions.js";
+import type { ResolveFailureReason } from "./exceptions.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -169,11 +170,18 @@ interface GitHubContentDir {
 
 type GitHubContent = GitHubContentFile | GitHubContentDir;
 
+/**
+ * The text of the file at `path`. A download that fails, whatever its status, is `fetch_failed`:
+ * the contents route named the file, so it exists. `noFile` is what a contents answer naming no
+ * file reads as, such as a directory or a submodule standing at the path: `not_found` for a probe
+ * whose absence skips a method, `fetch_failed` for a file the listing named.
+ */
 async function fetchFileContent(
   auth: AuthMethod,
   org: string,
   repo: string,
   path: string,
+  noFile: ResolveFailureReason = "fetch_failed",
 ): Promise<string> {
   const data = (await githubFetch(
     auth,
@@ -195,14 +203,14 @@ async function fetchFileContent(
     if (!res.ok) {
       throw new MethodResolveError(
         `Failed to download ${path}: HTTP ${res.status}`,
-        res.status === 404 ? "not_found" : "fetch_failed",
+        "fetch_failed",
       );
     }
     return readGitHubBody(res, path);
   }
 
   // GitHub answered, and what stands at the path is no file, such as a directory or a submodule.
-  throw new MethodResolveError(`No file at ${path}: GitHub lists no content for it.`, "not_found");
+  throw new MethodResolveError(`No file at ${path}: GitHub lists no content for it.`, noFile);
 }
 
 async function listMthdFiles(
@@ -276,7 +284,7 @@ async function resolveOneMethod(
   // finding about the method, and fails the whole resolve.
   let rawToml: string;
   try {
-    rawToml = await fetchFileContent(auth, org, repo, tomlPath);
+    rawToml = await fetchFileContent(auth, org, repo, tomlPath, "not_found");
   } catch (err) {
     if (!isResolveFailure(err, "not_found")) throw err;
     return { skipped: { dirName, errors: [`No METHODS.toml found at ${tomlPath}.`] } };

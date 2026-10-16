@@ -28,7 +28,6 @@ import { readFileSync, existsSync, writeFileSync } from "node:fs";
 import { spawn } from "node:child_process";
 import { PipelexRunner } from "../../../src/runners/pipelex/runner.js";
 import { MODEL_CATEGORIES } from "../../../src/protocol/models.js";
-import { CORE_REGISTRY } from "../../../src/problems/registry.generated.js";
 import { isProblemItem } from "../../../src/problems/read.js";
 import { ProblemError } from "../../../src/problems/errors.js";
 
@@ -554,10 +553,11 @@ describe("PipelexRunner", () => {
 
       expect(result.is_valid).toBe(false);
       if (result.is_valid !== false) return;
-      expect(result.message).toContain("undefined concept");
-      // The CLI prints prose, not items, so the one item is the method not validating.
+      expect(result.message).toBe("Bundle validation failed.");
+      // The CLI prints prose, not items, so the one item is the method not validating, stated by
+      // what the CLI printed rather than by the registry's detail the verdict's problem states.
       expect(result.errors).toEqual([
-        { code: "method.invalid", detail: CORE_REGISTRY["method.invalid"].detail },
+        { code: "method.invalid", detail: "Bundle validation failed: undefined concept" },
       ]);
       expect(result.errors.every(isProblemItem)).toBe(true);
       expect(result.is_runnable).toBe(false);

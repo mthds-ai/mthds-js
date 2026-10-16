@@ -18,7 +18,6 @@ import type {
   VersionInfo,
 } from "../../protocol/models.js";
 import { MODEL_CATEGORIES } from "../../protocol/models.js";
-import { CORE_REGISTRY } from "../../problems/registry.generated.js";
 import type { DictPipeOutput, DictRunResultExecute } from "../api/models.js";
 
 const execFileAsync = promisify(execFile);
@@ -491,16 +490,18 @@ export class PipelexRunner implements Runner {
         // condition (setup / bad args / internal). A negative verdict is a result,
         // not a transport failure → return the minimal invalid arm (mirroring the
         // minimal valid arm below — the CLI emits human text, not structured
-        // diagnostics, so its one item is the method not validating, and the text
-        // rides `message`). Everything else is a failure carrying its problem: pipelex missing
-        // is `client.tool_missing`, any other no-verdict `runtime.unexpected`.
+        // diagnostics, so the one item the protocol asks of an invalid verdict is the
+        // method not validating, stated by what the CLI printed rather than by the
+        // registry's detail, which the verdict's own problem already states). Everything
+        // else is a failure carrying its problem: pipelex missing is `client.tool_missing`,
+        // any other no-verdict `runtime.unexpected`.
         if (execError.code === 1) {
           return {
             is_valid: false,
-            errors: [{ code: "method.invalid", detail: CORE_REGISTRY["method.invalid"].detail }],
+            errors: [{ code: "method.invalid", detail }],
             pending_signatures: [],
             is_runnable: false,
-            message: `Bundle validation failed:\n${detail}`,
+            message: "Bundle validation failed.",
           };
         }
         throw execFailureError(err, "pipelex", "Bundle validation failed");

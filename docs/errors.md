@@ -96,7 +96,7 @@ No answer came back. It adds `apiUrl` and `networkCode`, the transport's own cod
 | Any other non-`2xx` body that is no problem document, such as a proxy's HTML page or a bare `404` | `client.response_unreadable` with `{ status }`. |
 | A redirect (`3xx`) on a route that creates a run | `client.response_unreadable` with its status: the client never follows it, since following it would send the request a second time. A redirect on any other route is followed. |
 | A `2xx` whose body is not the route's result | `client.response_unreadable` with that status. |
-| A `202` on `execute` | `client.follow_failed` with the run's id (`RunStillRunningError`), or `client.outcome_unknown` when the answer names no run. |
+| A `202` on `execute` | `client.follow_failed` with the run's id (`RunStillRunningError`), in its parameters and as the problem's `pipeline_run_id`, since the run exists, or `client.outcome_unknown` when the answer names no run, its `pipeline_run_id` missing or not a non-empty string. |
 
 A failure to get an answer:
 

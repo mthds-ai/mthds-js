@@ -661,8 +661,15 @@ describe("MthdsApiClient.execute 202 degrade (eng-review 3B)", () => {
     expect(err).toBeInstanceOf(RunStillRunningError);
     expect(err).toBeInstanceOf(ApiResponseError);
     const e = err as RunStillRunningError;
-    expect(e.problem).toEqual(buildProblem("client.follow_failed", { pipeline_run_id: "run-202" }));
-    expect(e.problem).not.toHaveProperty("pipeline_run_id");
+    expect(e.problem).toEqual(
+      buildProblem(
+        "client.follow_failed",
+        { pipeline_run_id: "run-202" },
+        { pipeline_run_id: "run-202" },
+      ),
+    );
+    // The run exists, so the problem names it as its own member too.
+    expect(e.problem.pipeline_run_id).toBe("run-202");
     expect(e.runId).toBe("run-202");
     expect(e.retryAfterSeconds).toBe(5);
     expect(e.location).toBe("/v1/runs/run-202/status");
@@ -670,6 +677,22 @@ describe("MthdsApiClient.execute 202 degrade (eng-review 3B)", () => {
     expect(e.message).toContain("Read the run 'run-202' by its id rather than start it again.");
     expect(e.retry).toBe("outcome_unknown");
   });
+
+  it.each([
+    ["a number", 42],
+    ["an empty string", ""],
+    ["an object", { id: "run-202" }],
+    ["null", null],
+  ])(
+    "reads a 202 whose run id is %s as client.outcome_unknown naming no run",
+    async (_topic, id) => {
+      const client = makeClient();
+      vi.spyOn(globalThis, "fetch").mockResolvedValue(jsonResponse(202, { pipeline_run_id: id }));
+      const err = await rejection(client.execute({ pipe_code: "p" }));
+      expect(err).not.toBeInstanceOf(RunStillRunningError);
+      expect((err as ApiResponseError).problem).toEqual(buildProblem("client.outcome_unknown", {}));
+    },
+  );
 
   it("reads a 202 that names no run as client.outcome_unknown", async () => {
     const client = makeClient();

@@ -329,8 +329,9 @@ export class MthdsApiClient implements Runner {
     if (runId === "") {
       return new ApiResponseError(buildProblem("client.outcome_unknown", {}), facts);
     }
+    // The run exists, so the problem names it as its `pipeline_run_id` member as well.
     return new RunStillRunningError(
-      buildProblem("client.follow_failed", { pipeline_run_id: runId }),
+      buildProblem("client.follow_failed", { pipeline_run_id: runId }, { pipeline_run_id: runId }),
       {
         ...facts,
         runId,

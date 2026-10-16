@@ -8,29 +8,29 @@ The registry is vendored from the standard and generated into a typed module (se
 
 The problem module (`src/problems/`) imports nothing but itself and the protocol's base error, and no Node built-in, which `.dependency-cruiser.cjs` enforces, so every entry point can export it:
 
-| Export | `mthds` | `mthds/errors` | `mthds/protocol` |
-|---|---|---|---|
-| `PipelineRequestError`, `ProblemError` and the problem module (types, registry, readers, builders, renderers) | yes | yes | yes |
-| `ApiResponseError`, `RunStillRunningError`, `ApiTransportError` | yes | yes | no (runner layer) |
+| Export                                                                                                        | `mthds` | `mthds/errors` | `mthds/protocol`  |
+| ------------------------------------------------------------------------------------------------------------- | ------- | -------------- | ----------------- |
+| `PipelineRequestError`, `ProblemError` and the problem module (types, registry, readers, builders, renderers) | yes     | yes            | yes               |
+| `ApiResponseError`, `RunStillRunningError`, `ApiTransportError`                                               | yes     | yes            | no (runner layer) |
 
 `mthds/errors` carries the whole taxonomy and nothing that reaches `node:fs`, so a module bundled for a browser imports from it. For why the entry point exists, see [architecture.md → "Why `mthds/errors` exists"](./architecture.md#why-mthdserrors-exists).
 
-> An **invalid method is not an error.** `POST /v1/validate` and `POST /v1/pipe-io` answer an invalid method with a produced verdict, a `200` whose `is_valid` is `false` and whose `errors` list its faults as items. Exceptions are reserved for *no-verdict* conditions. See [architecture.md → "`/validate` is a 200-diagnostic surface"](./architecture.md#validate-is-a-200-diagnostic-surface).
+> An **invalid method is not an error.** `POST /v1/validate` and `POST /v1/pipe-io` answer an invalid method with a produced verdict, a `200` whose `is_valid` is `false` and whose `errors` list its faults as items. Exceptions are reserved for _no-verdict_ conditions. See [architecture.md → "`/validate` is a 200-diagnostic surface"](./architecture.md#validate-is-a-200-diagnostic-surface).
 
 ## The problem document
 
-| Member | Meaning |
-|---|---|
-| `type`, `title` | The code's URI (`https://mthds.ai/errors/<code>` for a core code, the prefix's base URL for an extension code) and its short label. |
-| `status` | The HTTP status of the answer the problem came on. A problem the client builds for a client code has none, and neither does the JSON a CLI writes. |
-| `detail` | This occurrence in one sentence, the registry's template filled with `params`. |
-| `code` | The code a program branches on, such as `input.missing` or `client.unreachable`. |
-| `domain` | Who must act: `input` (the caller), `method` (the method's author), `account` (the account's owner), `operator` (whoever runs the runtime) or `runtime` (nobody beforehand). |
-| `retry` | Whether repeating can succeed: `no`, `yes` (after `retry_after` seconds when given) or `outcome_unknown`, the operation may already have taken effect, so a client never repeats it by itself. |
-| `next_step` | `{ kind, detail }`: what to do, as one kind of a closed list (`retry`, `wait`, `read_run`, `change_input`, `change_method`, `fix_configuration`, `upgrade`, `report` and the others of the protocol's table) and a sentence. |
-| `params` | The code's parameters, present whenever the code declares any; an operator-only parameter is never sent, so `params` can be `{}`. |
-| `location`, `errors`, `pipeline_run_id` | Where the fault happened, the items of a problem with several faults, and the run when one exists. |
-| any other member | The implementation's own, kept at the top level as received, such as a runtime's `request_id` or a CLI's `message`. |
+| Member                                  | Meaning                                                                                                                                                                                                                      |
+| --------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `type`, `title`                         | The code's URI (`https://mthds.ai/errors/<code>` for a core code, the prefix's base URL for an extension code) and its short label.                                                                                          |
+| `status`                                | The HTTP status of the answer the problem came on. A problem the client builds for a client code has none, and neither does the JSON a CLI writes.                                                                           |
+| `detail`                                | This occurrence in one sentence, the registry's template filled with `params`.                                                                                                                                               |
+| `code`                                  | The code a program branches on, such as `input.missing` or `client.unreachable`.                                                                                                                                             |
+| `domain`                                | Who must act: `input` (the caller), `method` (the method's author), `account` (the account's owner), `operator` (whoever runs the runtime) or `runtime` (nobody beforehand).                                                 |
+| `retry`                                 | Whether repeating can succeed: `no`, `yes` (after `retry_after` seconds when given) or `outcome_unknown`, the operation may already have taken effect, so a client never repeats it by itself.                               |
+| `next_step`                             | `{ kind, detail }`: what to do, as one kind of a closed list (`retry`, `wait`, `read_run`, `change_input`, `change_method`, `fix_configuration`, `upgrade`, `report` and the others of the protocol's table) and a sentence. |
+| `params`                                | The code's parameters, present whenever the code declares any; an operator-only parameter is never sent, so `params` can be `{}`.                                                                                            |
+| `location`, `errors`, `pipeline_run_id` | Where the fault happened, the items of a problem with several faults, and the run when one exists.                                                                                                                           |
+| any other member                        | The implementation's own, kept at the top level as received, such as a runtime's `request_id` or a CLI's `message`.                                                                                                          |
 
 The types are `Problem`, `ProblemItem`, `ProblemLocation`, `NextStep`, `SuggestedFix` and the `FixOp` variants, exported from every entry point. `ProblemParamsByCode` types each core code's parameters, and `ERROR_CODES` holds every core code as a constant (`ERROR_CODES.CLIENT_UNREACHABLE` is `"client.unreachable"`).
 
@@ -38,14 +38,14 @@ The types are `Problem`, `ProblemItem`, `ProblemLocation`, `NextStep`, `Suggeste
 
 A reader widens `domain`, `retry`, `next_step.kind` and a fix's `safety` to any string, so a newer runtime's value never makes a problem unreadable. The readers in `src/problems/reading.ts` turn each into a value of the closed list:
 
-| Reader | A value it does not know reads as |
-|---|---|
-| `problemDomain(problem)` | the domain every known code of the code's family shares, else `runtime` |
-| `problemRetry(problem)` | `no`: an unknown verdict never invites a repeat |
-| `problemStepKind(problem)` | the step kind every known code of the family shares, else `report` |
-| `itemDomain(item)` | an item has no domain: its code's, else the family's, else `runtime` |
-| `fixSafety(fix)` | `unsafe` |
-| `isApplicableFix(fix)` | `false` when any operation is of a kind the protocol does not list (`UnknownFixOp`) |
+| Reader                     | A value it does not know reads as                                                   |
+| -------------------------- | ----------------------------------------------------------------------------------- |
+| `problemDomain(problem)`   | the domain every known code of the code's family shares, else `runtime`             |
+| `problemRetry(problem)`    | `no`: an unknown verdict never invites a repeat                                     |
+| `problemStepKind(problem)` | the step kind every known code of the family shares, else `report`                  |
+| `itemDomain(item)`         | an item has no domain: its code's, else the family's, else `runtime`                |
+| `fixSafety(fix)`           | `unsafe`                                                                            |
+| `isApplicableFix(fix)`     | `false` when any operation is of a kind the protocol does not list (`UnknownFixOp`) |
 
 A code the registry does not declare is read as received: its own `detail` and `next_step` are the ones to show.
 
@@ -88,24 +88,24 @@ No answer came back. It adds `apiUrl` and `networkCode`, the transport's own cod
 
 `MthdsApiClient` reads every answer of every route (`execute`, `start`, `validate`, `models`, `version`, `pipeIo`, `health`) by the same rules, which the shared reading cases pin (`tests/fixtures/problem-reading-cases.json`, a byte-for-byte copy of the Python client's file, run by `tests/unit/problems/reading-cases.test.ts`):
 
-| The answer | Reads as |
-|---|---|
-| A body that is a problem document: JSON, nested no deeper than `MAX_BODY_NESTING`, valid against the protocol's schema (a mistyped core member, such as a `status` of `"422"`, makes it no problem) | The problem as received, its extra members kept. A missing `status` is filled from the answer when the answer's is an HTTP status, from 100 to 599, and a missing `retry_after` from `Retry-After` beside a `retry` of `yes`. |
-| A server error (`5xx`) whose body is no problem document, on a route that creates a run (`execute`, `start`) | `client.outcome_unknown`: something in front of the runtime may have answered, such as a gateway's `504` after its own time limit or a proxy's `502`, and the run may have started behind it. |
-| Any other non-`2xx` body that is no problem document, on a status exactly one core code is raised with and that code needs no fact only the runtime knows | That code with the answer's status, such as `request.method_not_allowed` for a bare `405` and `runtime.unavailable` (with `retry_after` from the header) for an empty `503`. On a route that creates a run (`execute`, `start`), a code whose `retry` is `yes` is not inferred, since an answer that is no problem never invites a repeat of a run. |
-| Any other non-`2xx` body that is no problem document, such as a proxy's HTML page or a bare `404` | `client.response_unreadable` with `{ status }`. |
-| A redirect (`3xx`) on a route that creates a run | `client.response_unreadable` with its status: the client never follows it, since following it would send the request a second time. A redirect on any other route is followed. |
-| A `2xx` whose body is not the route's result | `client.response_unreadable` with that status, except on a route that creates a run (`execute`, `start`), where the runtime accepted the request and the run may exist: `client.outcome_unknown`, naming the run in its parameters and as the problem's `pipeline_run_id` whenever the body names one as a non-empty string. A `start` whose `pipeline_run_id` is empty is no result either, since it names no run to read. |
-| A `202` on `execute` | `client.follow_failed` with the run's id (`RunStillRunningError`), in its parameters and as the problem's `pipeline_run_id`, since the run exists, or `client.outcome_unknown` when the answer names no run, its `pipeline_run_id` missing or not a non-empty string. |
+| The answer                                                                                                                                                                                          | Reads as                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| A body that is a problem document: JSON, nested no deeper than `MAX_BODY_NESTING`, valid against the protocol's schema (a mistyped core member, such as a `status` of `"422"`, makes it no problem) | The problem as received, its extra members kept. A missing `status` is filled from the answer when the answer's is an HTTP status, from 100 to 599, and a missing `retry_after` from `Retry-After` beside a `retry` of `yes`.                                                                                                                                                                                               |
+| A server error (`5xx`) whose body is no problem document, on a route that creates a run (`execute`, `start`)                                                                                        | `client.outcome_unknown`: something in front of the runtime may have answered, such as a gateway's `504` after its own time limit or a proxy's `502`, and the run may have started behind it.                                                                                                                                                                                                                               |
+| Any other non-`2xx` body that is no problem document, on a status exactly one core code is raised with and that code needs no fact only the runtime knows                                           | That code with the answer's status, such as `request.method_not_allowed` for a bare `405` and `runtime.unavailable` (with `retry_after` from the header) for an empty `503`. On a route that creates a run (`execute`, `start`), a code whose `retry` is `yes` is not inferred, since an answer that is no problem never invites a repeat of a run.                                                                         |
+| Any other non-`2xx` body that is no problem document, such as a proxy's HTML page or a bare `404`                                                                                                   | `client.response_unreadable` with `{ status }`.                                                                                                                                                                                                                                                                                                                                                                             |
+| A redirect (`3xx`) on a route that creates a run                                                                                                                                                    | `client.response_unreadable` with its status: the client never follows it, since following it would send the request a second time. A redirect on any other route is followed.                                                                                                                                                                                                                                              |
+| A `2xx` whose body is not the route's result                                                                                                                                                        | `client.response_unreadable` with that status, except on a route that creates a run (`execute`, `start`), where the runtime accepted the request and the run may exist: `client.outcome_unknown`, naming the run in its parameters and as the problem's `pipeline_run_id` whenever the body names one as a non-empty string. A `start` whose `pipeline_run_id` is empty is no result either, since it names no run to read. |
+| A `202` on `execute`                                                                                                                                                                                | `client.follow_failed` with the run's id (`RunStillRunningError`), in its parameters and as the problem's `pipeline_run_id`, since the run exists, or `client.outcome_unknown` when the answer names no run, its `pipeline_run_id` missing or not a non-empty string.                                                                                                                                                       |
 
 A failure to get an answer:
 
-| The failure | Reads as |
-|---|---|
-| The connection could not be set up (a name lookup, a refused connection, the connect time limit, a refused certificate) | `client.unreachable` with `{ base_url }`. |
-| The client's time limit on a call that creates nothing | `client.timeout` with `{ seconds }`. |
-| The connection lost, or the time limit, after a request that creates a run left | `client.outcome_unknown`: the run may have started, so read the run history before starting it again. |
-| The connection lost on a call that creates nothing | `client.unreachable`. |
+| The failure                                                                                                             | Reads as                                                                                              |
+| ----------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| The connection could not be set up (a name lookup, a refused connection, the connect time limit, a refused certificate) | `client.unreachable` with `{ base_url }`.                                                             |
+| The client's time limit on a call that creates nothing                                                                  | `client.timeout` with `{ seconds }`.                                                                  |
+| The connection lost, or the time limit, after a request that creates a run left                                         | `client.outcome_unknown`: the run may have started, so read the run history before starting it again. |
+| The connection lost on a call that creates nothing                                                                      | `client.unreachable`.                                                                                 |
 
 `src/runners/api/transport.ts` decides whether a failure proves the request never left; only such a failure counts as one that created nothing.
 
@@ -113,16 +113,16 @@ Every body is decoded by the same rules, a route's result as much as a problem (
 
 ## The codes the client raises itself
 
-| Code | When |
-|---|---|
-| `client.not_configured` `{ setting }` | The base URL is not host-only, the API key holds a character no HTTP header can carry (`api_key`, refused before any request, the key never quoted), or no runner is configured for a command. |
-| `client.argument_invalid` `{ argument, reason }` | An argument refused before any request left: run sources that exclude each other, method files that are not an array of file entries, a body that does not serialize as JSON, a CLI option's value. |
-| `client.file_unreadable`, `client.write_failed`, `client.target_exists` | A local file the CLIs cannot read, cannot write, or would overwrite. |
-| `client.tool_missing`, `client.tool_outdated` | A program a CLI runs (`pipelex`, `pipelex-agent`, `plxt`, `uv`, `codex`) is missing or older than the CLI needs. An install `mthds-agent` attempts (`install`, `runner setup pipelex`, `--auto-install`) without `uv` is `client.tool_missing` naming `uv`, and one `uv` ran and failed is `runtime.unavailable`, worth a retry (`toolInstallProblem`). |
-| `method.not_found`, `method.fetch_failed` `{ method_ref }` | `mthds-agent install`, `publish` and `share` found no method at the address or directory given (`method.not_found`), or could not read it from GitHub, which was unreachable, rate limited, refusing with a `403` or failing with a `5xx` (`method.fetch_failed`, worth a retry). A token GitHub refuses is `client.not_configured` naming `GITHUB_TOKEN`, and a local directory the system refuses to read is `client.file_unreadable`. |
-| `security.input_path_refused` `{ rule }` | A file a bundle names lands outside the bundle's root. |
-| `runtime.unsupported` `{ capability }` | The runner cannot do what was asked, such as `check_model` on the API runner. |
-| `runtime.unexpected` | A failure no other code describes. |
+| Code                                                                    | When                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| ----------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `client.not_configured` `{ setting }`                                   | The base URL is not host-only, the API key holds a character no HTTP header can carry (`api_key`, refused before any request, the key never quoted), or no runner is configured for a command.                                                                                                                                                                                                                                           |
+| `client.argument_invalid` `{ argument, reason }`                        | An argument refused before any request left: run sources that exclude each other, method files that are not an array of file entries, a body that does not serialize as JSON, a CLI option's value.                                                                                                                                                                                                                                      |
+| `client.file_unreadable`, `client.write_failed`, `client.target_exists` | A local file the CLIs cannot read, cannot write, or would overwrite.                                                                                                                                                                                                                                                                                                                                                                     |
+| `client.tool_missing`, `client.tool_outdated`                           | A program a CLI runs (`pipelex`, `pipelex-agent`, `plxt`, `uv`, `codex`) is missing or older than the CLI needs. An install `mthds-agent` attempts (`install`, `runner setup pipelex`, `--auto-install`) without `uv` is `client.tool_missing` naming `uv`, and one `uv` ran and failed is `runtime.unavailable`, worth a retry (`toolInstallProblem`).                                                                                  |
+| `method.not_found`, `method.fetch_failed` `{ method_ref }`              | `mthds-agent install`, `publish` and `share` found no method at the address or directory given (`method.not_found`), or could not read it from GitHub, which was unreachable, rate limited, refusing with a `403` or failing with a `5xx` (`method.fetch_failed`, worth a retry). A token GitHub refuses is `client.not_configured` naming `GITHUB_TOKEN`, and a local directory the system refuses to read is `client.file_unreadable`. |
+| `security.input_path_refused` `{ rule }`                                | A file a bundle names lands outside the bundle's root.                                                                                                                                                                                                                                                                                                                                                                                   |
+| `runtime.unsupported` `{ capability }`                                  | The runner cannot do what was asked, such as `check_model` on the API runner.                                                                                                                                                                                                                                                                                                                                                            |
+| `runtime.unexpected`                                                    | A failure no other code describes.                                                                                                                                                                                                                                                                                                                                                                                                       |
 
 `PipelexRunner` raises a `ProblemError` too. A program it runs that is not on the PATH is `client.tool_missing`; a failure `pipelex-agent` printed as a problem on stderr is that problem, relayed; a `pipelex run` the person interrupted is `client.aborted`; a health check `pipelex doctor` did not answer in time is `client.timeout`, and one where it found issues `runtime.misconfigured`; a working memory written by a pipelex too old for the standard is `client.tool_outdated` naming its version; any other failure is `runtime.unexpected`, its message holding what the program printed, since the bare `pipelex` prints human text, never a problem.
 
@@ -168,7 +168,12 @@ A problem with several faults, a run route refusing an invalid method for one, l
     "description": "Replace model 'gpt-5.1' of pipe 'summarize' with 'gpt-5', its one close match in the model deck",
     "safety": "unsafe",
     "ops": [
-      { "kind": "remap_value", "table_path": ["pipe", "summarize"], "key": "model", "mapping": { "gpt-5.1": "gpt-5" } }
+      {
+        "kind": "remap_value",
+        "table_path": ["pipe", "summarize"],
+        "key": "model",
+        "mapping": { "gpt-5.1": "gpt-5" }
+      }
     ]
   }
 }
@@ -189,12 +194,12 @@ Request id: req_9f2c1ab3
   Suggested fix (unsafe, rename-model): Replace model 'gpt-5.1' of pipe 'summarize' with 'gpt-5', its one close match in the model deck
 ```
 
-**`mthds-agent`** writes every failure on stderr as one problem and exits `1` (`src/agent/output.ts`), as the CLI I/O contract asks (mthds `docs/spec/cli-io-contract.md`, "Error Propagation"). Every command accepts `--error-format markdown|json`, on the command or before it; without it the error stream takes `--format` when that names `json`, and is Markdown otherwise:
+**`mthds-agent`** writes every failure on stderr as one problem and exits `1` (`src/agent/output.ts`), as the CLI I/O contract asks (mthds `docs/spec/cli-io-contract.md`, "Error Propagation"). Every command accepts `--error-format markdown|json`, on the command or before it, and when it is given more than once the last one written wins, as for any option, whichever command runs and whenever it fails; without it the error stream takes `--format` when that names `json`, and is Markdown otherwise:
 
 - **Markdown**, the default, for the agent reading it: the title, the detail, the command's own sentence, the next step, the code with its domain and retry verdict, the request id and the run when the problem names them, every item with its suggested fix, then sections for the extras below.
 - **JSON** (`--error-format json`), for a program: the problem document without `status`, with the command's own sentence in `message` and these extras beside the core members: `recovery` (how to install a missing tool), `is_valid: false` (on an invalid verdict, beside its `errors`), `skipped_methods` (the methods the resolver refused, on every failure raised once a repository was read) and `registrations` (what mthds.sh answered for each method of a failed publish).
 
-On the pipelex runner, a command forwarded to `pipelex-agent` has its failure written by `pipelex-agent` itself (`src/agent/commands/pipelex-passthrough.ts`): `pipelex-agent` accepts `--error-format` after a command only, so `mthds-agent` moves the option there wherever it was given, and drops it for `inputs`, which takes none and whose failures `pipelex-agent` always writes as JSON. A runner's problem is relayed whole, its code and items included, and an invalid verdict of `validate` or `inputs` is the `method.invalid` problem holding the verdict's items. With the Markdown format, `validate` on the API runner prints the runner's own rendering of the invalid verdict when it sends one. A warning a command writes on stderr takes the error stream's form (`agentWarning`).
+On the pipelex runner, a command forwarded to `pipelex-agent` has its failure written by `pipelex-agent` itself (`src/agent/commands/pipelex-passthrough.ts`): `pipelex-agent` accepts `--error-format` after a command only, so `mthds-agent` moves the option there wherever it was given, by the same last-one-wins rule, and drops it for `inputs`, which takes none and whose failures `pipelex-agent` always writes as JSON. A runner's problem is relayed whole, its code and items included, and an invalid verdict of `validate` or `inputs` is the `method.invalid` problem holding the verdict's items. With the Markdown format, `validate` on the API runner prints the runner's own rendering of the invalid verdict when it sends one. A warning a command writes on stderr takes the error stream's form (`agentWarning`).
 
 The Codex hook (`mthds-agent codex hook`) runs `pipelex-agent validate bundle --format json --error-format json` and reads its stderr as a problem: a failure of the environment (domain `account`, `operator` or `runtime`, or one of the client codes of the machine's set-up, `client.not_configured`, `client.tool_missing` and `client.tool_outdated`) is passed to the agent as context, any other blocks the edit with each item and its suggested fix. A problem whose domain the hook does not know reads as the codes of its family the hook knows: it warns only when every one of them would, and a problem of a family it knows nothing of reads as `runtime`, as the protocol says. It also reads the envelope a `pipelex-agent` that predates problem documents writes (`error_domain`, `validation_errors`), until this CLI's pipelex floor writes problems.
 

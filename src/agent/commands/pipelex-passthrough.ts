@@ -20,6 +20,7 @@
  */
 
 import { passthrough } from "../passthrough.js";
+import { optionValue } from "../output.js";
 
 const STRIP_FLAGS_WITH_VALUE = new Set(["--runner", "--log-level"]);
 const STRIP_PREFIXES = ["--runner=", "--log-level="];
@@ -41,7 +42,8 @@ export interface PipelexAgentArgsOptions {
 export function extractArgsForPipelexAgent(options: PipelexAgentArgsOptions = {}): string[] {
   const raw = process.argv.slice(2); // skip node + script
   const result: string[] = [];
-  let errorFormat: string | undefined;
+  // The value mthds-agent's own error stream reads, by the one rule: the last occurrence.
+  const errorFormat = optionValue(raw, ERROR_FORMAT_FLAG);
   let idx = 0;
   while (idx < raw.length) {
     const arg = raw[idx]!;
@@ -54,10 +56,8 @@ export function extractArgsForPipelexAgent(options: PipelexAgentArgsOptions = {}
     } else if (STRIP_BOOLEAN_FLAGS.has(arg)) {
       idx += 1;
     } else if (arg === ERROR_FORMAT_FLAG) {
-      errorFormat = raw[idx + 1];
       idx += 2;
     } else if (arg.startsWith(`${ERROR_FORMAT_FLAG}=`)) {
-      errorFormat = arg.slice(ERROR_FORMAT_FLAG.length + 1);
       idx += 1;
     } else {
       result.push(arg);

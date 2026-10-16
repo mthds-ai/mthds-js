@@ -16,6 +16,7 @@ import {
   agentMarkdownSuccess,
   agentMarkdownError,
   chooseErrorFormat,
+  errorFormat,
   problemOfError,
   unexpectedProblem,
 } from "../output.js";
@@ -109,7 +110,6 @@ export function registerApiRunnerCommands(program: Command, makeRunner: () => Ru
           format?: string;
           errorFormat?: string;
         },
-        command: Command,
       ) => {
         const runner = safeCreateRunner(makeRunner);
         const closure = resolveClosureOrError(
@@ -124,7 +124,7 @@ export function registerApiRunnerCommands(program: Command, makeRunner: () => Ru
           options.allowSignatures ?? false,
           validateSources(closure.files),
           options.format,
-          errorFormatOption(command),
+          errorFormat(),
         );
         warnGraphNotDrawn(options);
       },
@@ -160,7 +160,6 @@ export function registerApiRunnerCommands(program: Command, makeRunner: () => Ru
           format?: string;
           errorFormat?: string;
         },
-        command: Command,
       ) => {
         const runner = safeCreateRunner(makeRunner);
         if (!target.endsWith(".mthds")) {
@@ -184,7 +183,7 @@ export function registerApiRunnerCommands(program: Command, makeRunner: () => Ru
           options.allowSignatures ?? false,
           validateSources(closure.files),
           options.format,
-          errorFormatOption(command),
+          errorFormat(),
         );
       },
     );
@@ -956,20 +955,6 @@ function parseModelCategory(raw: string | undefined): ModelCategory | undefined 
       `--type must be one of: ${MODEL_CATEGORIES.join(", ")}.`,
     ),
   );
-}
-
-/**
- * The `--error-format` a validate command line gives, wherever it stands: on the command itself,
- * on the `validate` group or on the program before the command. The nearest one wins, and none
- * leaves the error stream to inherit `--format`.
- */
-function errorFormatOption(command: Command): string | undefined {
-  // Not `optsWithGlobals()`, in which an ancestor's value overwrites the command's own.
-  for (let level: Command | null = command; level !== null; level = level.parent) {
-    const { errorFormat } = level.opts<{ errorFormat?: string }>();
-    if (errorFormat !== undefined) return errorFormat;
-  }
-  return undefined;
 }
 
 /** Normalize a `--format` / `--error-format` value: markdown unless explicitly `json`. */

@@ -40,22 +40,32 @@ export function agentMarkdownSuccess(markdown: string): void {
 /** The two forms of the error stream: the problem rendered as Markdown, or its JSON form. */
 export type ErrorFormat = "markdown" | "json";
 
-/** The value an option takes on a command line, as `--name value` or `--name=value`. */
-function optionValue(argv: readonly string[], name: string): string | undefined {
+/**
+ * The value an option takes on a command line, as `--name value` or `--name=value`: its last
+ * occurrence, as Commander reads a repeated option, wherever it stands, before the command or on
+ * it. Nothing after `--` is an option.
+ */
+export function optionValue(argv: readonly string[], name: string): string | undefined {
+  let value: string | undefined;
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
-    if (arg === name) return argv[index + 1];
-    if (arg?.startsWith(`${name}=`)) return arg.slice(name.length + 1);
+    if (arg === "--") break;
+    if (arg === name) {
+      value = argv[index + 1];
+      index += 1;
+    } else if (arg?.startsWith(`${name}=`)) {
+      value = arg.slice(name.length + 1);
+    }
   }
-  return undefined;
+  return value;
 }
 
 /**
- * The form of the error stream a command line asks for: `--error-format`, else `--format` when
- * it names `json` or `markdown`, the error stream inheriting the success stream's form as the
+ * The form of the error stream a command line asks for: its last `--error-format`, else its last
+ * `--format` when it names `json`, the error stream inheriting the success stream's form as the
  * workspace's output rule says, else Markdown. Read from the command line itself rather than
  * from the parsed options, so that a failure before or during parsing is written in the form
- * asked for too.
+ * asked for too, and so that every command reads the same value wherever the option stands.
  */
 export function resolveErrorFormat(argv: readonly string[] = process.argv): ErrorFormat {
   const explicit = optionValue(argv, "--error-format");
@@ -139,7 +149,7 @@ function cliProblem(problem: Problem, extras: AgentErrorExtras | undefined): Pro
 }
 
 /** The form of the error stream for the rest of this process. */
-function errorFormat(): ErrorFormat {
+export function errorFormat(): ErrorFormat {
   return chosenErrorFormat ?? resolveErrorFormat();
 }
 

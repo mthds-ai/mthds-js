@@ -134,3 +134,46 @@ describe("mthds-agent validate's no-verdict failure in the error format asked fo
     expect((JSON.parse(stderr) as { code?: string }).code).toBe("client.unreachable");
   });
 });
+
+// One rule for a repeated `--error-format`, the one Commander applies to any option: the last one
+// written wins, whichever command runs and whether it fails before or after its options are read.
+describe("mthds-agent's repeated --error-format, the last one winning (e2e)", () => {
+  const scratchHome = mkdtempSync(join(tmpdir(), "mthds-error-format-home-"));
+  const env = {
+    HOME: scratchHome,
+    MTHDS_BASE_URL: "http://127.0.0.1:9",
+    MTHDS_API_KEY: "test-key",
+  };
+
+  it("writes JSON when validate's bundle cannot be read before the request", () => {
+    const { stderr, status } = runAgentWith(
+      env,
+      "--runner",
+      "api",
+      "--error-format",
+      "markdown",
+      "validate",
+      "bundle",
+      "--error-format",
+      "json",
+      "/does-not-exist.mthds",
+    );
+    expect(status).toBe(1);
+    expect((JSON.parse(stderr) as { code?: string }).code).toBe("client.file_unreadable");
+  });
+
+  it("writes JSON when config get refuses its key", () => {
+    const { stderr, status } = runAgentWith(
+      env,
+      "--error-format",
+      "markdown",
+      "config",
+      "get",
+      "invalid",
+      "--error-format",
+      "json",
+    );
+    expect(status).toBe(1);
+    expect((JSON.parse(stderr) as { code?: string }).code).toBe("client.argument_invalid");
+  });
+});

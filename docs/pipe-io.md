@@ -48,7 +48,7 @@ A throw means no verdict could be produced. Over HTTP it is an `ApiResponseError
 
 An unreachable server is an `ApiTransportError` of `client.unreachable`.
 
-**A refused pipe selection is told apart by its code, never by the message.** It is `request.pipe_not_found` (a `pipe_ref` that names no pipe, or a manifest `main_pipe` the closure lacks; its `suggestions` parameter lists the likeliest pipes), `request.pipe_ambiguous` (a bare code matching pipes in several domains, or several `main_pipe` declarations; its `candidates` parameter lists them) or `request.pipe_unspecified` (no `pipe_ref` and no `main_pipe`; its `candidates` parameter lists the pipes to choose from). The three codes are exported as `PIPE_SELECTION_CODES`.
+**A refused pipe selection is told apart by its code, never by the message.** It is `request.pipe_not_found` (a `pipe_ref` that names no pipe, or a manifest `main_pipe` the closure lacks; its `suggestions` parameter lists the likeliest pipes), `request.pipe_ambiguous` (a bare code matching pipes in several domains, or several `main_pipe` declarations; its `candidates` parameter lists them) or `request.pipe_unspecified` (no `pipe_ref` and no `main_pipe`; its `candidates` parameter lists the pipes to choose from). These codes are exported as `PIPE_SELECTION_CODES`.
 
 ## `mthds-agent inputs` reads it
 

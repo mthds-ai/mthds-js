@@ -213,7 +213,8 @@ export class MthdsApiClient implements Runner {
   /**
    * Send one request and return what came back, its body read whole, within the route's time
    * limit. A call that gets no answer throws an `ApiTransportError` (see `transportProblem`).
-   * Reading the answer is the caller's.
+   * Reading the answer is the caller's. On a route that creates a run, a redirect is not followed
+   * but returned as the answer, which reads as `client.response_unreadable` naming its status.
    */
   private async send(route: Route, options: { body?: unknown } = {}): Promise<RawResponse> {
     const hasBody = options.body !== undefined;
@@ -244,6 +245,11 @@ export class MthdsApiClient implements Runner {
         method: route.method,
         headers: this.buildHeaders(hasBody),
         body: payload,
+        // A request that creates a run is never sent twice, so a redirect is an answer to read
+        // rather than a second request to make: following it would send the request again, and a
+        // failure to reach the redirect's target would read as a runtime never reached although
+        // the request had reached one.
+        redirect: route.createsRun ? "manual" : "follow",
         signal: controller.signal,
       });
       const body = await response.text();

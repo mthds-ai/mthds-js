@@ -1,3 +1,6 @@
+import { createServer } from "node:http";
+import type { Server } from "node:http";
+import type { AddressInfo } from "node:net";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MthdsApiClient } from "../../../src/runners/api/client.js";
 import {
@@ -286,6 +289,61 @@ describe("MthdsApiClient transport failures", () => {
       .mockRejectedValue(networkError("ECONNRESET", "read"));
     await rejection(client.execute({ pipe_code: "p" }));
     expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("MthdsApiClient redirects", () => {
+  let server: Server | undefined;
+  const requests: string[] = [];
+
+  /** A loopback runtime that redirects `/v1/execute`, `/v1/start` and `/v1/models`. */
+  async function redirectingRuntime(target: (origin: string) => string): Promise<string> {
+    requests.length = 0;
+    server = createServer((request, response) => {
+      requests.push(`${request.method} ${request.url}`);
+      const origin = `http://127.0.0.1:${(server!.address() as AddressInfo).port}`;
+      if (request.url === "/v1/models-moved") {
+        response.writeHead(200, { "Content-Type": "application/json" });
+        response.end(JSON.stringify({ models: [] }));
+        return;
+      }
+      response.writeHead(307, { Location: target(origin), "Content-Type": "text/plain" });
+      response.end("Temporary Redirect");
+    });
+    await new Promise<void>((resolve) => server!.listen(0, "127.0.0.1", resolve));
+    return `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  }
+
+  afterEach(async () => {
+    await new Promise<void>((resolve) => (server ? server.close(() => resolve()) : resolve()));
+    server = undefined;
+  });
+
+  it.each([
+    ["execute", (client: MthdsApiClient) => client.execute({ pipe_code: "p" })],
+    ["start", (client: MthdsApiClient) => client.start({ pipe_code: "p" })],
+  ])(
+    "reads a redirect on %s as the answer, never sending the request again",
+    async (_route, call) => {
+      // The target refuses every connection: followed, the redirect would read as a runtime the
+      // client never reached, although the request reached the one that redirected it.
+      const origin = await redirectingRuntime(() => "http://127.0.0.1:9/v1/elsewhere");
+      const client = new MthdsApiClient({ baseUrl: origin, apiKey: "test-token" });
+      const err = await rejection(call(client));
+      expect(err).toBeInstanceOf(ApiResponseError);
+      const e = err as ApiResponseError;
+      expect(e.status).toBe(307);
+      expect(e.problem).toEqual(buildProblem("client.response_unreadable", { status: 307 }));
+      expect(e.responseBody).toBe("Temporary Redirect");
+      expect(requests).toHaveLength(1);
+    },
+  );
+
+  it("follows a redirect on a route that creates nothing", async () => {
+    const origin = await redirectingRuntime((self) => `${self}/v1/models-moved`);
+    const client = new MthdsApiClient({ baseUrl: origin, apiKey: "test-token" });
+    await expect(client.models()).resolves.toEqual({ models: [] });
+    expect(requests).toEqual(["GET /v1/models", "GET /v1/models-moved"]);
   });
 });
 

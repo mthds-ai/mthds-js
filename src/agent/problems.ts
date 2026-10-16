@@ -133,18 +133,27 @@ export function noUsableMethodProblem(
   return agentProblem("method.not_found", { method_ref: ref }, message);
 }
 
-/** The problem one answer of mthds.sh's registry route reads as, when it lists nothing. */
+/**
+ * The problem one answer of mthds.sh's registry route reads as, when it lists nothing: a missing
+ * repository names the repository, and a missing method the method, by its address in the
+ * repository (`<owner>/<repo>/<method>`).
+ */
 function registrationProblem(
-  answer: RegistrationAnswer,
+  registration: MethodRegistration,
   facts: { hubUrl: string; orgRepo: string; message: string },
 ): Problem {
   const { hubUrl, orgRepo, message } = facts;
+  const answer: RegistrationAnswer = registration.answer;
   if (answer.outcome === "refused") {
     switch (answer.reason) {
       case "repository_not_found":
         return agentProblem("method.not_found", { method_ref: orgRepo }, message);
       case "method_not_found":
-        return agentProblem("method.not_found", { method_ref: orgRepo }, message);
+        return agentProblem(
+          "method.not_found",
+          { method_ref: `${orgRepo}/${registration.name}` },
+          message,
+        );
       case "repository_not_public":
         return agentProblem(
           "client.argument_invalid",
@@ -171,20 +180,25 @@ function registrationProblem(
 }
 
 /**
- * The problem of a publish mthds.sh listed none of the methods of: the code every answer reads as
- * when they agree, such as `runtime.unavailable` when every one is an error worth retrying, else
- * `runtime.unexpected`. `message` lists the answers, method by method.
+ * The problem of a publish mthds.sh listed none of the methods of: the problem every answer reads
+ * as when they agree, such as `runtime.unavailable` when every one is an error worth retrying, and
+ * `method.not_found` naming the repository when every one is missing but they name different
+ * methods, else `runtime.unexpected`. `message` lists the answers, method by method.
  */
 export function registrationsProblem(
   registrations: MethodRegistration[],
   facts: { hubUrl: string; orgRepo: string; message: string },
 ): Problem {
-  const problems = registrations.map((registration) =>
-    registrationProblem(registration.answer, facts),
-  );
+  const problems = registrations.map((registration) => registrationProblem(registration, facts));
   const first = problems[0];
   if (first !== undefined && problems.every((problem) => problem.code === first.code)) {
-    return first;
+    const sameParams = problems.every(
+      (problem) => JSON.stringify(problem.params) === JSON.stringify(first.params),
+    );
+    if (sameParams) return first;
+    if (first.code === "method.not_found") {
+      return agentProblem("method.not_found", { method_ref: facts.orgRepo }, facts.message);
+    }
   }
   return agentProblem("runtime.unexpected", {}, facts.message);
 }

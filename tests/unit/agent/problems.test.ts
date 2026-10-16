@@ -225,7 +225,7 @@ describe("registrationsProblem", () => {
   it("reads every answer alike when they agree", () => {
     expect(
       registrationsProblem(
-        [refused("a", "method_not_found"), refused("b", "repository_not_found")],
+        [refused("a", "repository_not_found"), refused("b", "repository_not_found")],
         facts,
       ),
     ).toMatchObject({
@@ -233,6 +233,22 @@ describe("registrationsProblem", () => {
       params: { method_ref: "org/repo" },
       message: "Nothing was published.",
     });
+  });
+
+  it("names the method the hub did not find, by its address in the repository", () => {
+    expect(registrationsProblem([refused("summarize", "method_not_found")], facts)).toMatchObject({
+      code: "method.not_found",
+      params: { method_ref: "org/repo/summarize" },
+    });
+  });
+
+  it("names the repository when every answer is missing but they name different things", () => {
+    expect(
+      registrationsProblem(
+        [refused("a", "method_not_found"), refused("b", "repository_not_found")],
+        facts,
+      ),
+    ).toMatchObject({ code: "method.not_found", params: { method_ref: "org/repo" } });
   });
 
   it.each([

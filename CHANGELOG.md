@@ -5,7 +5,7 @@
 ### Added
 
 - **The core error registry, vendored and typed**: the package vendors the MTHDS core error registry `7.1.0` and generates its types from it, so every entry point (`mthds`, `mthds/protocol` and the client-safe `mthds/errors`) exports the problem document's types (`Problem`, `ProblemItem`, `SuggestedFix`, `FixOp`), `ERROR_CODES`, `CORE_REGISTRY`, `ProblemParamsByCode`, the readers that turn an unknown `domain`, `retry`, step kind or fix safety into a value of the protocol's closed lists, `buildProblem`, the Markdown and plain-line renderings, and `ProblemError`. `make vendor-error-registry REF=<commit>` or `RELEASE=<version>` moves it to another registry.
-- **`--error-format` on every `mthds-agent` command**: every command, and the program before it, accepts `--error-format markdown|json`, as the CLI I/O contract asks of a CLI that runs a method.
+- **`--error-format` on every `mthds-agent` command**: every command, and the program before it, accepts `--error-format markdown|json`, as the CLI I/O contract asks of a CLI that runs a method. On the pipelex runner the option is moved after the command forwarded to `pipelex-agent`, the one place `pipelex-agent` accepts it, and dropped for `inputs`, whose failures `pipelex-agent` writes as JSON.
 
 ### Changed
 

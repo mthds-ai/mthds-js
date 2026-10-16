@@ -99,6 +99,30 @@ const METHOD_REF_FETCH_TIMEOUT_MS = 180_000; // 3 min — covers the server's cl
 const VALIDATE_MARKDOWN_RENDER_FORMAT = "markdown";
 
 /**
+ * The run an answer's body names: its `pipeline_run_id` when that is an identifier, the
+ * registry's type for a run id, a string, and not an empty one; else `undefined`.
+ */
+function runIdOf(body: unknown): string | undefined {
+  if (!isObject(body)) return undefined;
+  const runId = body.pipeline_run_id;
+  return typeof runId === "string" && runId !== "" ? runId : undefined;
+}
+
+/**
+ * The problem of a request that created a run or may have, with no result the client can read:
+ * `client.outcome_unknown`, naming the run, as its parameter and as the problem's member, when
+ * the answer names one.
+ */
+function outcomeUnknown(runId: string | undefined): Problem {
+  if (runId === undefined) return buildProblem("client.outcome_unknown", {});
+  return buildProblem(
+    "client.outcome_unknown",
+    { pipeline_run_id: runId },
+    { pipeline_run_id: runId },
+  );
+}
+
+/**
  * Client for any MTHDS runner — and THE API runner (parity D8). One class,
  * two consumers: `pipelex-app` instantiates it directly as a protocol client,
  * the CLI gets it via `createRunner()` as a full `Runner`. It carries the
@@ -299,7 +323,10 @@ export class MthdsApiClient implements Runner {
 
   /**
    * The route's result, when the answer is a `2xx` whose body is JSON of the route's shape;
-   * otherwise the answer read as its problem, thrown as an `ApiResponseError`.
+   * otherwise the answer read as its problem, thrown as an `ApiResponseError`. A `2xx` that is not
+   * the route's result reads as `client.response_unreadable`, except on a route that creates a run,
+   * where the runtime accepted the request and the run may exist: there it reads as
+   * `client.outcome_unknown`, naming the run whenever the body names one.
    */
   private readResult<T>(route: Route, res: RawResponse, isResult: (value: unknown) => boolean): T {
     if (res.status < 200 || res.status >= 300) {
@@ -308,7 +335,10 @@ export class MthdsApiClient implements Runner {
     }
     const reading = parseJsonBody(res.body);
     if (!reading.ok || !isResult(reading.value)) {
-      throw new ApiResponseError(unreadableAnswer(res.status), this.answerFacts(route, res, false));
+      const problem = route.createsRun
+        ? outcomeUnknown(reading.ok ? runIdOf(reading.value) : undefined)
+        : unreadableAnswer(res.status);
+      throw new ApiResponseError(problem, this.answerFacts(route, res, false));
     }
     return reading.value as T;
   }
@@ -321,13 +351,10 @@ export class MthdsApiClient implements Runner {
    */
   private acceptedAsynchronously(route: Route, res: RawResponse): ApiResponseError {
     const reading = parseJsonBody(res.body);
-    const runId =
-      reading.ok && isObject(reading.value) && typeof reading.value.pipeline_run_id === "string"
-        ? reading.value.pipeline_run_id
-        : "";
+    const runId = reading.ok ? runIdOf(reading.value) : undefined;
     const facts = this.answerFacts(route, res);
-    if (runId === "") {
-      return new ApiResponseError(buildProblem("client.outcome_unknown", {}), facts);
+    if (runId === undefined) {
+      return new ApiResponseError(outcomeUnknown(undefined), facts);
     }
     // The run exists, so the problem names it as its `pipeline_run_id` member as well.
     return new RunStillRunningError(

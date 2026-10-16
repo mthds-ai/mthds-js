@@ -351,11 +351,21 @@ describe("MthdsApiClient answers that are no problem document", () => {
   it("reads a success body holding a number no double holds as client.response_unreadable", async () => {
     const client = makeClient();
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      textResponse(200, '{"models":[{"score":1e999}]}'),
+    );
+    const err = await rejection(client.models());
+    expect(err).toBeInstanceOf(ApiResponseError);
+    expect((err as ApiResponseError).problem.code).toBe("client.response_unreadable");
+  });
+
+  it("reads such a body on execute as client.outcome_unknown, since the run may exist", async () => {
+    const client = makeClient();
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
       textResponse(200, '{"pipeline_run_id":"r","pipe_output":{"score":1e999}}'),
     );
     const err = await rejection(client.execute({ pipe_code: "p" }));
     expect(err).toBeInstanceOf(ApiResponseError);
-    expect((err as ApiResponseError).problem.code).toBe("client.response_unreadable");
+    expect((err as ApiResponseError).problem).toEqual(buildProblem("client.outcome_unknown", {}));
   });
 
   it("reads an overlong Retry-After as no delay, without throwing", async () => {
@@ -482,14 +492,50 @@ describe("MthdsApiClient answers that are no problem document", () => {
 
   it("reads a 2xx whose body is not the route's result as client.response_unreadable", async () => {
     const client = makeClient();
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      jsonResponse(200, { pipeline_run_id: "ok", created_at: "t0" }),
-    );
-    const err = await rejection(client.execute({ pipe_code: "p" }));
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(jsonResponse(200, ["fine"]));
+    const err = await rejection(client.health());
     expect(err).toBeInstanceOf(ApiResponseError);
     expect((err as ApiResponseError).problem).toEqual(
       buildProblem("client.response_unreadable", { status: 200 }),
     );
+  });
+
+  it("reads a 2xx on execute that is not its result as client.outcome_unknown naming the run", async () => {
+    const client = makeClient();
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      jsonResponse(200, { pipeline_run_id: "run_created", pipe_output: "incompatible" }),
+    );
+    const err = await rejection(client.execute({ pipe_code: "p" }));
+    expect(err).toBeInstanceOf(ApiResponseError);
+    expect((err as ApiResponseError).problem).toEqual(
+      buildProblem(
+        "client.outcome_unknown",
+        { pipeline_run_id: "run_created" },
+        { pipeline_run_id: "run_created" },
+      ),
+    );
+    expect((err as ApiResponseError).retry).toBe("outcome_unknown");
+  });
+
+  it.each([
+    ["no JSON", "OK"],
+    ["no run id", JSON.stringify({ pipe_output: {} })],
+    ["a run id that is no string", JSON.stringify({ pipeline_run_id: 7, pipe_output: {} })],
+  ])(
+    "reads a 2xx on execute holding %s as client.outcome_unknown naming no run",
+    async (_t, body) => {
+      const client = makeClient();
+      vi.spyOn(globalThis, "fetch").mockResolvedValue(textResponse(200, body));
+      const err = await rejection(client.execute({ pipe_code: "p" }));
+      expect((err as ApiResponseError).problem).toEqual(buildProblem("client.outcome_unknown", {}));
+    },
+  );
+
+  it("reads a 2xx on start that is not its result as client.outcome_unknown", async () => {
+    const client = makeClient();
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(jsonResponse(202, { state: "queued" }));
+    const err = await rejection(client.start({ pipe_code: "p" }));
+    expect((err as ApiResponseError).problem).toEqual(buildProblem("client.outcome_unknown", {}));
   });
 
   it("reads a 2xx whose body is not JSON as client.response_unreadable", async () => {

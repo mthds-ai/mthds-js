@@ -422,11 +422,21 @@ export interface ReadAnswerOptions {
   createsRun?: boolean;
 }
 
+/** An answer read as its problem, and whether that problem is the answer's own body. */
+export interface AnswerReading {
+  problem: Problem;
+  /**
+   * Whether the body is the problem document `problem` was read from, as received. When it is
+   * not, the problem is one the client read the answer as, and the body is the runtime's text.
+   */
+  fromBody: boolean;
+}
+
 /**
  * Read an answer that is not the route's result, a status outside `2xx`, as its problem, by the
- * rules this module's header gives.
+ * rules this module's header gives, saying once whether the problem is the body's own.
  */
-export function readErrorAnswer(answer: Answer, options: ReadAnswerOptions = {}): Problem {
+export function readAnswer(answer: Answer, options: ReadAnswerOptions = {}): AnswerReading {
   const received = readProblemBody(answer.body);
   if (received !== undefined) {
     let problem = received;
@@ -438,8 +448,13 @@ export function readErrorAnswer(answer: Answer, options: ReadAnswerOptions = {})
       const seconds = retryAfterSeconds(answer.headers);
       if (seconds !== undefined) problem.retry_after = seconds;
     }
-    return problem;
+    return { problem, fromBody: true };
   }
+  return { problem: readAnswerByStatus(answer, options), fromBody: false };
+}
+
+/** The problem of an answer whose body is no problem document, read by its status. */
+function readAnswerByStatus(answer: Answer, options: ReadAnswerOptions): Problem {
   if (answer.status >= 200 && answer.status < 300) return unreadableAnswer(answer.status);
   if (options.createsRun === true && answer.status >= 500 && answer.status <= 599) {
     return buildProblem("client.outcome_unknown", {});
@@ -453,4 +468,12 @@ export function readErrorAnswer(answer: Answer, options: ReadAnswerOptions = {})
     {},
     { status: answer.status, retryAfter: retryAfterSeconds(answer.headers) },
   );
+}
+
+/**
+ * Read an answer that is not the route's result, a status outside `2xx`, as its problem, by the
+ * rules this module's header gives (`readAnswer`, without saying where the problem came from).
+ */
+export function readErrorAnswer(answer: Answer, options: ReadAnswerOptions = {}): Problem {
+  return readAnswer(answer, options).problem;
 }

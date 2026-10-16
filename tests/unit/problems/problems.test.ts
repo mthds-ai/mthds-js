@@ -13,6 +13,7 @@ import {
   isProblemItem,
   parseJsonBody,
   parseHttpDate,
+  readAnswer,
   readErrorAnswer,
   retryAfterSeconds,
 } from "../../../src/problems/read.js";
@@ -290,6 +291,28 @@ describe("parseHttpDate", () => {
     expect(() => retryAfterSeconds(header, now)).not.toThrow();
     const seconds = retryAfterSeconds(header, now);
     expect(seconds === undefined || Number.isSafeInteger(seconds)).toBe(true);
+  });
+});
+
+describe("readAnswer", () => {
+  it("says the problem is the body's own when the body is a problem document", () => {
+    const reading = readAnswer({ status: 503, headers: {}, body: JSON.stringify(MINIMAL_PROBLEM) });
+    expect(reading.fromBody).toBe(true);
+    expect(reading.problem.code).toBe(MINIMAL_PROBLEM.code);
+  });
+
+  it("says the problem is the client's reading when the body is none", () => {
+    const reading = readAnswer({ status: 502, headers: {}, body: "<html>Bad gateway</html>" });
+    expect(reading).toEqual({
+      problem: expect.objectContaining({ code: "client.response_unreadable" }),
+      fromBody: false,
+    });
+  });
+
+  it("decides where the problem came from once, whatever the Retry-After date reads as", () => {
+    const body = JSON.stringify({ ...MINIMAL_PROBLEM, retry: "yes" });
+    const headers = { "retry-after": "Sun, 06 Nov 1994 08:49:37 GMT" };
+    expect(readAnswer({ status: 503, headers, body }).fromBody).toBe(true);
   });
 });
 

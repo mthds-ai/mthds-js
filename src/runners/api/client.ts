@@ -16,8 +16,7 @@ import { buildProblem } from "../../problems/build.js";
 import {
   isProblemItem,
   parseJsonBody,
-  readErrorAnswer,
-  readProblemBody,
+  readAnswer,
   retryAfterSeconds,
   unreadableAnswer,
 } from "../../problems/read.js";
@@ -304,10 +303,8 @@ export class MthdsApiClient implements Runner {
    */
   private readResult<T>(route: Route, res: RawResponse, isResult: (value: unknown) => boolean): T {
     if (res.status < 200 || res.status >= 300) {
-      throw new ApiResponseError(
-        readErrorAnswer(res, { createsRun: route.createsRun }),
-        this.answerFacts(route, res, readProblemBody(res.body) !== undefined),
-      );
+      const { problem, fromBody } = readAnswer(res, { createsRun: route.createsRun });
+      throw new ApiResponseError(problem, this.answerFacts(route, res, fromBody));
     }
     const reading = parseJsonBody(res.body);
     if (!reading.ok || !isResult(reading.value)) {

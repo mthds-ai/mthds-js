@@ -83,12 +83,19 @@ export {
   isProblem,
   isProblemItem,
   parseJsonBody,
+  readAnswer,
   readErrorAnswer,
   readProblemBody,
   retryAfterSeconds,
   unreadableAnswer,
 } from "./read.js";
-export type { Answer, AnswerHeaders, JsonReading, ReadAnswerOptions } from "./read.js";
+export type {
+  Answer,
+  AnswerHeaders,
+  AnswerReading,
+  JsonReading,
+  ReadAnswerOptions,
+} from "./read.js";
 export {
   formatItem,
   formatLocation,

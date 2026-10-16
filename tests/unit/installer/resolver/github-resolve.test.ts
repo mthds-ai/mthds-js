@@ -11,6 +11,7 @@ vi.mock("node:child_process", () => ({
   }),
 }));
 
+import { execFile, execFileSync } from "node:child_process";
 import { resolveFromGitHub } from "../../../../src/installer/resolver/github.js";
 import { MethodResolveError } from "../../../../src/installer/resolver/exceptions.js";
 
@@ -49,6 +50,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.mocked(execFile).mockReset();
   vi.unstubAllGlobals();
   vi.unstubAllEnvs();
 });
@@ -88,6 +90,19 @@ describe("resolveFromGitHub failures", () => {
     const err = await failure();
     expect(err.reason).toBe("not_configured");
     expect(err.setting).toBe("GITHUB_TOKEN");
+  });
+
+  it("reads credentials the gh CLI holds and GitHub refuses as not_configured naming GITHUB_TOKEN", async () => {
+    // `gh auth status` succeeds, so the resolve asks GitHub through `gh api`, which fails.
+    vi.mocked(execFileSync).mockImplementationOnce(() => "");
+    vi.mocked(execFile).mockImplementation(((...args: unknown[]) => {
+      const callback = args[args.length - 1] as (err: Error) => void;
+      callback(Object.assign(new Error("exit 1"), { stderr: "gh: Bad credentials (HTTP 401)\n" }));
+    }) as unknown as typeof execFile);
+    const err = await failure();
+    expect(err.reason).toBe("not_configured");
+    expect(err.setting).toBe("GITHUB_TOKEN");
+    expect(fetchStub).not.toHaveBeenCalled();
   });
 
   it("reads a missing methods/ folder as not_found, and a failure listing it as fetch_failed", async () => {

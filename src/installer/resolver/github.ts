@@ -45,7 +45,8 @@ function parseGitHubJson(text: string, apiPath: string): unknown {
 
 /**
  * Ask GitHub's API for `apiPath`. Throws a `MethodResolveError`: `not_found` on a `404`,
- * `not_configured` when GitHub refuses the token (`401`), and `fetch_failed` for every failure a
+ * `not_configured` when GitHub refuses the credentials (`401`), of `GITHUB_TOKEN` or of the `gh`
+ * CLI, and `fetch_failed` for every failure a
  * later attempt may get past, GitHub unreachable, a rate limit or a `403`, a `5xx`, or an answer
  * that is not JSON.
  */
@@ -59,6 +60,13 @@ async function githubFetch(auth: AuthMethod, apiPath: string): Promise<unknown> 
       }));
     } catch (err) {
       const stderr = (err as { stderr?: string })?.stderr ?? "";
+      if (stderr.includes("HTTP 401") || stderr.includes("Bad credentials")) {
+        throw new MethodResolveError(
+          `GitHub refused the gh CLI's credentials (401) for ${apiPath}. Run gh auth login, or set GITHUB_TOKEN.`,
+          "not_configured",
+          { setting: "GITHUB_TOKEN", cause: err },
+        );
+      }
       if (stderr.includes("404") || stderr.includes("Not Found")) {
         throw new MethodResolveError(`Not found: ${apiPath}.`, "not_found", { cause: err });
       }

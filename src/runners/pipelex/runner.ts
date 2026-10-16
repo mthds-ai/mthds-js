@@ -52,6 +52,23 @@ async function methodDirectory(
   return directory;
 }
 
+/**
+ * Where the bundle named by its tree path lies in the method's directory. In a tree read from this
+ * machine it is the file's own spelling on disk, which a name written decomposed keeps while its
+ * tree path is normalized to NFC; in a directory written from a map, its tree path.
+ */
+function bundlePathIn(
+  source: { tree?: RunOptions["tree"] },
+  directory: string,
+  bundleMain: string,
+): string {
+  if (source.tree instanceof MethodTree && source.tree.root !== null) {
+    const onDisk = source.tree.onDiskPath(bundleMain);
+    if (onDisk !== undefined) return onDisk;
+  }
+  return join(directory, ...bundleMain.split("/"));
+}
+
 /** Whether the request's tree holds this tree path. */
 function treeHolds(
   source: { files?: MethodFiles | null; tree?: RunOptions["tree"] },
@@ -276,7 +293,7 @@ export class PipelexRunner implements Runner {
         // manifest's `main_pipe`, else the one `main_pipe` the bundles declare,
         // refusing a tree where that is ambiguous.
         if (bundleMain != null) {
-          args.push("bundle", join(directory, ...bundleMain.split("/")), "-L", directory);
+          args.push("bundle", bundlePathIn(options, directory, bundleMain), "-L", directory);
         } else {
           args.push("bundle", directory);
         }

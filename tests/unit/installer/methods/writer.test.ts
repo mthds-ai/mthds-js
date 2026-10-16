@@ -1,5 +1,20 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+
+// `renameSync` keeps its real behaviour, wrapped so a test can make one rename fail.
+vi.mock("node:fs", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:fs")>();
+  return { ...actual, renameSync: vi.fn(actual.renameSync) };
+});
+
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { writeMethodFiles } from "../../../../src/installer/methods/writer.js";
@@ -152,5 +167,33 @@ describe("writeMethodFiles installs the whole tree", () => {
 
     expect(existsSync(join(target, "demo", "funcs", "old.py"))).toBe(false);
     expect(readdirSync(join(target, "demo")).sort()).toEqual(["METHODS.toml", "main.mthds"]);
+  });
+
+  it("keeps the earlier install whole when moving the new one into place fails", async () => {
+    const actual = await vi.importActual<typeof import("node:fs")>("node:fs");
+    const target = join(testDir, "methods");
+    const installed = join(target, "demo");
+    mkdirSync(join(installed, "funcs"), { recursive: true });
+    writeFileSync(join(installed, "funcs", "old.py"), "earlier");
+    vi.mocked(renameSync).mockImplementation((from, to) => {
+      if (String(to) === installed && String(from).includes(".installing-")) {
+        if (!String(from).endsWith("-previous")) {
+          throw Object.assign(new Error("EXDEV: cross-device link not permitted"), {
+            code: "EXDEV",
+          });
+        }
+      }
+      actual.renameSync(from, to);
+    });
+    try {
+      expect(() => writeMethodFiles(makeRepo(["demo"]), target)).toThrow(/EXDEV/);
+    } finally {
+      vi.mocked(renameSync).mockImplementation(actual.renameSync);
+    }
+
+    expect(readFileSync(join(installed, "funcs", "old.py"), "utf-8")).toBe("earlier");
+    expect(existsSync(join(installed, "main.mthds"))).toBe(false);
+    // Neither the new tree nor the backup is left beside the installed methods.
+    expect(readdirSync(target)).toEqual(["demo"]);
   });
 });

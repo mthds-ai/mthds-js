@@ -147,6 +147,14 @@ describe("API-runner validate sends the method's tree, inputs the whole bundle",
       expect(requests[0]!.body.files).toEqual({ "bundle.mthds": ROOT, "child.mthds": CHILD });
     });
 
+    it("starts inline --content beside a global -L, which does not apply to it", async () => {
+      await agent("-L", shared, "run", "start", "--content", ROOT);
+
+      expect(requests).toHaveLength(1);
+      expect(requests[0]!.url).toMatch(/\/v1\/start$/);
+      expect(requests[0]!.body.files).toEqual({ "bundle.mthds": ROOT });
+    });
+
     it("refuses an -L directory outside the tree, starting nothing", async () => {
       await expect(
         agent("run", "start", join(method, "child.mthds"), "-L", method, "-L", shared),
@@ -215,13 +223,11 @@ describe("API-runner validate sends the method's tree, inputs the whole bundle",
       expect(vi.mocked(globalThis.fetch)).toHaveBeenCalledTimes(1);
     });
 
-    it("refuses a library directory beside inline --content", async () => {
-      await expect(agent("validate", "bundle", "--content", ROOT, "-L", shared)).rejects.toThrow(
-        "__exit__",
-      );
+    it("sends inline --content alone beside a library directory, which does not apply to it", async () => {
+      await agent("validate", "bundle", "--content", ROOT, "-L", shared);
 
-      expect(requests).toHaveLength(0);
-      expect(firstStderrJson()).toMatchObject({ error_type: "ArgumentError" });
+      expect(requests).toHaveLength(1);
+      expect(requests[0]!.body.files).toEqual({ "bundle.mthds": ROOT });
     });
 
     it.each([

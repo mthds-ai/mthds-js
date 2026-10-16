@@ -146,15 +146,17 @@ describe("resolveMethodTarget", () => {
     );
   });
 
-  it("sends inline content as a one-file tree of its own, and refuses a library directory with it", async () => {
+  it("sends inline content as a one-file tree of its own, library directories not applying to it", async () => {
     const resolved = await resolveMethodTarget({ content: "domain = 'x'\nmain_pipe = 'go'\n" }, []);
     expect(resolved.method).toEqual({
       files: { [INLINE_CONTENT_TREE_PATH]: "domain = 'x'\nmain_pipe = 'go'\n" },
     });
     expect(resolved.entry).toBe(INLINE_CONTENT_TREE_PATH);
     expect(resolved.entryMainPipe).toBe("go");
-    await expect(resolveMethodTarget({ content: "domain = 'x'" }, [scratch])).rejects.toThrow(
-      MethodTargetError,
-    );
+    write("lib/other.mthds", "domain = 'lib'\n");
+    const withLibrary = await resolveMethodTarget({ content: "domain = 'x'" }, [
+      join(scratch, "lib"),
+    ]);
+    expect(withLibrary.method).toEqual({ files: { [INLINE_CONTENT_TREE_PATH]: "domain = 'x'" } });
   });
 });

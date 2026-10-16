@@ -105,8 +105,15 @@ const SHA256_HEX = /^[0-9a-f]{64}$/;
  */
 export const HANDSHAKE_TTL_MS = 5 * 60_000;
 
-/** The problem `code` a runner gives a tree past one of its limits, on a run or a validation. */
+/**
+ * How a runner refuses a tree past one of its limits, on a run or a validation. The standard
+ * asks for "a problem naming the limit" and pins no member to recognize it by, so the client
+ * reads the two runners that send one: the hosted platform's problem `code` (with its `limit:
+ * {name, value, reached}`), and pipelex-api's `error_type`, which the platform also relays when
+ * the runner behind it refuses the tree.
+ */
 const METHOD_TREE_TOO_LARGE_CODE = "method_tree_too_large";
+const METHOD_TREE_TOO_LARGE_ERROR_TYPE = "MethodTreeTooLarge";
 
 /** The `files` map a request carries, and the tree behind it when it travels by hash. */
 interface PreparedFiles {
@@ -692,10 +699,10 @@ export class MthdsApiClient implements Runner {
   /**
    * Post a request carrying a method: prepare its `files` (a `tree` sent inline or by
    * hash, a `files` map as given), post it, and answer a `422` naming `missing_blobs`
-   * (see `postWithBlobRetry`). When a tree the client prepared is refused as
-   * `method_tree_too_large`, the limits the handshake announced may be stale, so the
-   * client asks the handshake again, prepares the tree as the fresh limits say and
-   * sends it once more.
+   * (see `postWithBlobRetry`). When a run or a validation refuses a tree the client
+   * prepared as past one of the runner's limits (`isMethodTreeTooLarge`), the limits the
+   * handshake announced may be stale, so the client asks the handshake again, prepares
+   * the tree as the fresh limits say and sends it once more.
    */
   private async postMethodRequest(
     endpoint: string,
@@ -964,7 +971,11 @@ function isMethodTreeTooLarge(res: RawResponse): boolean {
   if (res.status !== 422) return false;
   try {
     const parsed: unknown = JSON.parse(res.body);
-    return isRecord(parsed) && parsed.code === METHOD_TREE_TOO_LARGE_CODE;
+    return (
+      isRecord(parsed) &&
+      (parsed.code === METHOD_TREE_TOO_LARGE_CODE ||
+        parsed.error_type === METHOD_TREE_TOO_LARGE_ERROR_TYPE)
+    );
   } catch {
     return false;
   }

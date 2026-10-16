@@ -53,6 +53,8 @@ export interface ResolvedMethodTarget {
  * `limits` are the runner's announced tree limits, so a folder handed over by mistake is refused
  * while it is listed, before anything is hashed.
  *
+ * Library directories do not apply to inline content, which is a one-file tree of its own.
+ *
  * Throws `MethodTargetError` for a combination that is not one tree, `MethodTreeError` (and its
  * `TreeLimitExceededError`) for a tree the lister refuses, and lets a missing library directory's
  * file-system error propagate.
@@ -63,11 +65,8 @@ export async function resolveMethodTarget(
   limits: MethodTreeLimits = {},
 ): Promise<ResolvedMethodTarget> {
   if ("content" in target) {
-    if (libraryDirs.length > 0) {
-      throw new MethodTargetError(
-        "--content sends one bundle as a method tree of its own, so it takes no library directory (-L). Write the bundle into the method's directory and name that file or directory, or pass --runner pipelex.",
-      );
-    }
+    // Inline content is a one-file tree of its own: library directories do not apply to it,
+    // so a global `-L`, which mthds-agent hands every command, neither joins nor refuses it.
     const files: MethodFiles = {};
     defineFileEntry(files, INLINE_CONTENT_TREE_PATH, target.content);
     return {

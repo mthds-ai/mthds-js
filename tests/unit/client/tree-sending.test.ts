@@ -110,6 +110,38 @@ function routeFetch(handler: (call: Call) => Response | Promise<Response>): { ca
 const NO_BLOB_STORE = { protocol_version: "1.0.0", runner_version: "0.88.0" };
 const WITH_BLOB_STORE = { protocol_version: "1.0.0", blob_store: true };
 
+/**
+ * A tree past a limit, as the hosted platform refuses it (`pipelex-server` platform,
+ * `MethodTreeTooLargeError`): its closed `code` and `type`, and the `limit` it reached.
+ */
+const PLATFORM_TREE_TOO_LARGE = {
+  type: "https://pipelex.com/errors/method_tree_too_large",
+  title: "Method tree too large",
+  status: 422,
+  code: "method_tree_too_large",
+  detail: "The request's inline entries weigh 30 bytes, past this deployment's limit of 4 bytes.",
+  instance: "urn:pipelex:request:req-1",
+  request_id: "req-1",
+  errors: [],
+  error_domain: "input",
+  retryable: false,
+  limit: { name: "max_inline_bytes", value: 4, reached: 30 },
+};
+
+/**
+ * A tree past a limit, as pipelex-api refuses it (`ensure_within_tree_limits`), and as the
+ * platform relays it from the runner behind it: its `error_type` and the matching `type` URI.
+ */
+const RUNNER_TREE_TOO_LARGE = {
+  type: "https://docs.pipelex.com/latest/errors/method-tree-too-large/",
+  title: "Method tree too large",
+  status: 422,
+  detail: "The method's tree holds 30 bytes, past this runner's limit of 4 KiB for a method tree.",
+  error_type: "MethodTreeTooLarge",
+  error_domain: "input",
+  retryable: false,
+};
+
 function bigText(label: string): string {
   return `# ${label}\n` + "x".repeat(INLINE_TREE_MAX_BYTES);
 }
@@ -749,47 +781,105 @@ describe("the kept handshake", () => {
     expect(calls.filter((call) => call.url.endsWith("/v1/blobs/missing"))).toHaveLength(2);
   });
 
-  it("is dropped when a run refuses the tree as method_tree_too_large, and the tree sent once more as fresh limits say", async () => {
-    const tree = memoryTree({ "bundle.mthds": "domain = 'x'" });
-    let versions = 0;
-    let executes = 0;
-    const { calls } = routeFetch((call) => {
-      if (call.url.endsWith("/v1/version")) {
-        versions += 1;
-        return jsonResponse(
-          200,
-          versions === 1
-            ? WITH_BLOB_STORE
-            : { ...WITH_BLOB_STORE, limits: { method_tree: { max_inline_bytes: 4 } } },
-        );
-      }
-      if (call.url.endsWith("/v1/blobs/missing")) return jsonResponse(200, { missing: [] });
-      executes += 1;
-      return executes === 1
-        ? jsonResponse(422, {
-            title: "Method tree too large",
-            code: "method_tree_too_large",
-            limit: { name: "max_inline_bytes", value: 4, reached: 30 },
-          })
-        : jsonResponse(200, { pipeline_run_id: "r", pipe_output: {} });
-    });
-    await expect(makeClient().execute({ tree })).resolves.toMatchObject({ pipeline_run_id: "r" });
-    const sends = calls.filter((call) => call.url.endsWith("/v1/execute"));
-    expect(sends).toHaveLength(2);
-    expect((sends[0]!.body as { files: unknown }).files).toEqual({
-      "bundle.mthds": "domain = 'x'",
-    });
-    expect((sends[1]!.body as { files: unknown }).files).toEqual({
-      "bundle.mthds": { sha256: tree.files[0]!.sha256, size: 12 },
-    });
-    expect(calls.filter((call) => call.url.endsWith("/v1/version"))).toHaveLength(2);
+  it.each([
+    ["the hosted platform's", PLATFORM_TREE_TOO_LARGE],
+    ["pipelex-api's", RUNNER_TREE_TOO_LARGE],
+  ])(
+    "is dropped when a run refuses the tree with %s refusal, and the tree sent once more as fresh limits say",
+    async (_runner, refusal) => {
+      const tree = memoryTree({ "bundle.mthds": "domain = 'x'" });
+      let versions = 0;
+      let executes = 0;
+      const { calls } = routeFetch((call) => {
+        if (call.url.endsWith("/v1/version")) {
+          versions += 1;
+          return jsonResponse(
+            200,
+            versions === 1
+              ? WITH_BLOB_STORE
+              : { ...WITH_BLOB_STORE, limits: { method_tree: { max_inline_bytes: 4 } } },
+          );
+        }
+        if (call.url.endsWith("/v1/blobs/missing")) return jsonResponse(200, { missing: [] });
+        executes += 1;
+        return executes === 1
+          ? jsonResponse(422, refusal)
+          : jsonResponse(200, { pipeline_run_id: "r", pipe_output: {} });
+      });
+      await expect(makeClient().execute({ tree })).resolves.toMatchObject({
+        pipeline_run_id: "r",
+      });
+      const sends = calls.filter((call) => call.url.endsWith("/v1/execute"));
+      expect(sends).toHaveLength(2);
+      expect((sends[0]!.body as { files: unknown }).files).toEqual({
+        "bundle.mthds": "domain = 'x'",
+      });
+      expect((sends[1]!.body as { files: unknown }).files).toEqual({
+        "bundle.mthds": { sha256: tree.files[0]!.sha256, size: 12 },
+      });
+      expect(calls.filter((call) => call.url.endsWith("/v1/version"))).toHaveLength(2);
+    },
+  );
+
+  it.each([
+    ["the hosted platform's", PLATFORM_TREE_TOO_LARGE],
+    ["pipelex-api's", RUNNER_TREE_TOO_LARGE],
+  ])(
+    "gives validate the same retry when it refuses the tree with %s refusal",
+    async (_runner, refusal) => {
+      const tree = memoryTree({ "bundle.mthds": "domain = 'x'" });
+      let versions = 0;
+      let validations = 0;
+      const { calls } = routeFetch((call) => {
+        if (call.url.endsWith("/v1/version")) {
+          versions += 1;
+          return jsonResponse(
+            200,
+            versions === 1
+              ? WITH_BLOB_STORE
+              : { ...WITH_BLOB_STORE, limits: { method_tree: { max_inline_bytes: 4 } } },
+          );
+        }
+        if (call.url.endsWith("/v1/blobs/missing")) return jsonResponse(200, { missing: [] });
+        validations += 1;
+        return validations === 1
+          ? jsonResponse(422, refusal)
+          : jsonResponse(200, { is_valid: true });
+      });
+      await expect(makeClient().validate({ tree })).resolves.toMatchObject({ is_valid: true });
+      const sends = calls.filter((call) => call.url.endsWith("/v1/validate"));
+      expect(sends).toHaveLength(2);
+      expect((sends[1]!.body as { files: unknown }).files).toEqual({
+        "bundle.mthds": { sha256: tree.files[0]!.sha256, size: 12 },
+      });
+      expect(calls.filter((call) => call.url.endsWith("/v1/version"))).toHaveLength(2);
+    },
+  );
+
+  it("does not take another 422 for a refusal of the tree as too large", async () => {
+    const { calls } = routeFetch((call) =>
+      call.url.endsWith("/v1/version")
+        ? jsonResponse(200, NO_BLOB_STORE)
+        : jsonResponse(422, {
+            type: "https://pipelex.com/errors/invalid_method_files",
+            title: "Invalid method files",
+            status: 422,
+            code: "invalid_method_files",
+            error_type: "InvalidMethodFiles",
+          }),
+    );
+    await expect(
+      makeClient().execute({ tree: memoryTree({ "bundle.mthds": "domain = 'x'" }) }),
+    ).rejects.toBeInstanceOf(ApiResponseError);
+    expect(calls.filter((call) => call.url.endsWith("/v1/execute"))).toHaveLength(1);
+    expect(calls.filter((call) => call.url.endsWith("/v1/version"))).toHaveLength(1);
   });
 
-  it("sends a tree refused as method_tree_too_large once more only, and never resends a caller's files map", async () => {
-    const tooLarge = (): Response =>
-      jsonResponse(422, { code: "method_tree_too_large", limit: { name: "max_files" } });
+  it("sends a tree refused as too large once more only, and never resends a caller's files map", async () => {
     const { calls } = routeFetch((call) =>
-      call.url.endsWith("/v1/version") ? jsonResponse(200, NO_BLOB_STORE) : tooLarge(),
+      call.url.endsWith("/v1/version")
+        ? jsonResponse(200, NO_BLOB_STORE)
+        : jsonResponse(422, PLATFORM_TREE_TOO_LARGE),
     );
     const client = makeClient();
     await expect(

@@ -43,14 +43,23 @@ const BUNDLE = 'domain = "smoke"\nmain_pipe = "echo"\n';
 /** The directory a run's method is written into, alone, under the mocked scratch directory. */
 const METHOD_DIR = "/tmp/mthds-test/method";
 
-/** A tree the lister read from this machine, rooted at `root`, without touching the disk. */
-function onDiskTree(root: string, paths: readonly string[]): MethodTree {
+/**
+ * A tree the lister read from this machine, rooted at `root`, without touching the disk. `spelled`
+ * gives a file's name on disk where it differs from its tree path.
+ */
+function onDiskTree(
+  root: string,
+  paths: readonly string[],
+  spelled: Record<string, string> = {},
+): MethodTree {
   return new MethodTree({
     root,
     entry: null,
     files: paths.map((path) => ({ path, size: 1, sha256: "0".repeat(64) })),
     digest: `sha256:${"0".repeat(64)}`,
-    absolutes: new Map(paths.map((path) => [path, Buffer.from(`${root}/${path}`)])),
+    absolutes: new Map(
+      paths.map((path) => [path, Buffer.from(`${root}/${spelled[path] ?? path}`)]),
+    ),
     exclusions: new Map(),
   });
 }
@@ -532,6 +541,24 @@ describe("PipelexRunner", () => {
         "run",
         "bundle",
         "/work/acme/steps/other.mthds",
+        "-L",
+        "/work/acme",
+      ]);
+    });
+
+    it("runs a named bundle of an on-disk tree by its spelling on disk, not its NFC tree path", async () => {
+      mockSpawnExit(0);
+      const composed = "caf\u00e9.mthds";
+      const decomposed = "cafe\u0301.mthds";
+      await runner.execute({
+        tree: onDiskTree("/work/acme", ["main.mthds", composed], { [composed]: decomposed }),
+        bundleMain: composed,
+      });
+      const spawnArgs = mockedSpawn.mock.calls[0]![1] as string[];
+      expect(spawnArgs.slice(0, 5)).toEqual([
+        "run",
+        "bundle",
+        `/work/acme/${decomposed}`,
         "-L",
         "/work/acme",
       ]);

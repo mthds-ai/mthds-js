@@ -1,6 +1,6 @@
 import { join, resolve, dirname, sep } from "node:path";
 import { homedir } from "node:os";
-import { mkdirSync, mkdtempSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { lstatSync, mkdirSync, mkdtempSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import type { ResolvedRepo } from "../../package/manifest/types.js";
 import { treePathViolation } from "../../method-tree/tree-path.js";
 import { installedMethodFiles } from "./method-files.js";
@@ -40,7 +40,8 @@ export function generateShim(name: string, installDir: string): void {
  * with its exact bytes, under its tree path, and a CLI shim for each. A method's directory is
  * replaced as a whole, so a file an earlier install left there that the method no longer holds
  * does not linger in its tree: the tree is written into a scratch directory beside it, whose
- * name starts with a dot so no tree or library scan ever takes it in, then moved into place.
+ * name starts with a dot so no tree or library scan ever takes it in, then moved into place
+ * (`replaceDirectory`), the earlier install being kept until the new one is in place.
  * Refuses any name or path that escapes targetDir or the method's directory (path traversal
  * protection), before anything of that method is written.
  *
@@ -72,12 +73,39 @@ export function writeMethodFiles(repo: ResolvedRepo, targetDirInput: string): vo
         mkdirSync(dirname(filePath), { recursive: true });
         writeFileSync(filePath, file.bytes);
       }
-      rmSync(installDir, { recursive: true, force: true });
-      renameSync(staging, installDir);
+      replaceDirectory(installDir, staging, `${staging}-previous`);
     } finally {
       rmSync(staging, { recursive: true, force: true });
     }
 
     generateShim(method.name, installDir);
   }
+}
+
+/** Whether anything, a link included, lies at `path`. */
+function entryExists(path: string): boolean {
+  try {
+    lstatSync(path);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Put the directory `staging` in place of `target`, so that at every moment one of the two
+ * installs is there: an existing `target` is first renamed to `backup`, `staging` is renamed into
+ * place, and only then is the backup deleted. When that rename fails, the backup is renamed back
+ * before the failure is raised, so a failed install leaves the earlier one as it was.
+ */
+export function replaceDirectory(target: string, staging: string, backup: string): void {
+  const hadTarget = entryExists(target);
+  if (hadTarget) renameSync(target, backup);
+  try {
+    renameSync(staging, target);
+  } catch (err) {
+    if (hadTarget) renameSync(backup, target);
+    throw err;
+  }
+  if (hadTarget) rmSync(backup, { recursive: true, force: true });
 }

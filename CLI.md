@@ -569,7 +569,7 @@ The install flow is interactive:
 2. Displays a summary of found methods, with each one's count of files and of bundles
 3. Checks that the configured runner is healthy, then validates each method's whole tree with it (`pipelex validate bundle` on the pipelex runner, `POST /v1/validate` on the API runner). If validation fails, the install is aborted. If the health check fails, the install goes on without validating and prints `No runner configured — skipping pipe validation`. On the pipelex runner, the health check currently always fails, because it runs `pipelex doctor -g` and `pipelex doctor` has no `-g` option, so methods are installed unvalidated.
 4. Prompts for install location (local `.mthds/methods/` or global `~/.mthds/methods/`)
-5. Writes each method's whole tree, every file with its exact bytes, into `<location>/<name>/`, replacing an earlier install of that method, so a file it no longer holds does not linger
+5. Writes each method's whole tree, every file with its exact bytes, into `<location>/<name>/`, replacing an earlier install of that method, so a file it no longer holds does not linger, and leaving the earlier install whole when the new one cannot be moved into place
 6. Optionally installs the pipelex runner (only if not already installed)
 
 **Examples:**
@@ -991,13 +991,13 @@ With the **API runner**, the command posts the method's tree to `POST /v1/valida
 
 - a directory target sends the tree it belongs to, rooted at the nearest `METHODS.toml` at or above it, else at the directory itself;
 - a `.mthds` file target under a `METHODS.toml` sends that manifest's tree; with no manifest above it, the file travels alone, unless an `-L` directory holds it, which then becomes the root of the tree sent, as in `validate bundle <file> -L <its dir>/`;
-- `--content` sends a one-file tree of its own, under the tree path `bundle.mthds`, and takes no `-L`;
+- `--content` sends a one-file tree of its own, under the tree path `bundle.mthds`, to which `-L` does not apply;
 - the files the standard leaves out stay behind: hidden files and folders, `__pycache__`, `node_modules`, virtual environments, nested repositories and packages, and whatever a `.gitignore` of the tree or the manifest's `exclude` ignores;
 - each diagnostic's `source` names its file by tree path.
 
 A tree of 256 KiB or less travels inside the request; a larger one travels by hash when the runner keeps a blob store, uploading only the files the runner lacks (see [docs/api-runner.md](docs/api-runner.md#sending-a-methods-tree)).
 
-The graph options are not applied, because the graph is drawn locally by the pipelex runner. The bundle is still validated, and after a valid verdict a warning on stderr (`{"warning": true, "message": …}`) names the options that were not applied; the JSON verdict (`--format json`) carries the method's graph as `graph_spec`. `--pipe` is ignored, since the runner validates every pipe it receives. A target that is neither a `.mthds` file nor a directory, a tree holding no `.mthds` file, a tree the standard refuses, an `-L` directory that would add a second tree and `-L` beside `--content` are each an `ArgumentError`, and an unreadable file, target directory or `-L` directory is an `IOError`.
+The graph options are not applied, because the graph is drawn locally by the pipelex runner. The bundle is still validated, and after a valid verdict a warning on stderr (`{"warning": true, "message": …}`) names the options that were not applied; the JSON verdict (`--format json`) carries the method's graph as `graph_spec`. `--pipe` is ignored, since the runner validates every pipe it receives. A target that is neither a `.mthds` file nor a directory, a tree holding no `.mthds` file, a tree the standard refuses, and an `-L` directory that would add a second tree are each an `ArgumentError`, and an unreadable file, target directory or `-L` directory is an `IOError`.
 
 `validate pipe <file>` sends the same tree on the API runner, and takes `-L` in the same two positions.
 

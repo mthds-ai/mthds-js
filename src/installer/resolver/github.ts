@@ -1,9 +1,18 @@
 import { execFile, execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import {
+  lstatSync,
+  mkdirSync,
+  mkdtempSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, relative, sep } from "node:path";
 import { promisify } from "node:util";
 import type {
+  MethodsFile,
   ParsedAddress,
   ResolvedRepo,
   ResolvedMethod,
@@ -17,8 +26,11 @@ import {
   isDefaultExcludedDirectory,
   isDotSegment,
 } from "../../method-tree/membership.js";
-import { directoriesOf, pathCollisions, treePathViolation } from "../../method-tree/tree-path.js";
-import { readMethodTreeOrSkip } from "./method-tree-files.js";
+import { directoriesOf } from "../../method-tree/tree-path.js";
+import { caseFold } from "../../method-tree/case-folding.js";
+import { listMethodTree } from "../../method-tree/lister.js";
+import { MethodTreeError } from "../../method-tree/exceptions.js";
+import type { MethodTree } from "../../method-tree/tree.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -135,45 +147,14 @@ interface GitTree {
 
 type GitHubContent = GitHubContentFile | GitHubContentDir;
 
-async function fetchFileContent(
-  auth: AuthMethod,
-  org: string,
-  repo: string,
-  path: string,
-): Promise<string> {
-  const data = (await githubFetch(
-    auth,
-    `repos/${org}/${repo}/contents/${path}`,
-  )) as GitHubContentFile;
-
-  if (data.content && data.encoding === "base64") {
-    return Buffer.from(data.content, "base64").toString("utf-8");
-  }
-
-  if (data.download_url) {
-    const headers: Record<string, string> = {
-      "User-Agent": "mthds-cli",
-    };
-    if (auth.type === "token") {
-      headers["Authorization"] = `Bearer ${auth.token}`;
-    }
-    const res = await fetch(data.download_url, { headers });
-    if (!res.ok) {
-      throw new Error(`Failed to download ${path}: HTTP ${res.status}`);
-    }
-    return res.text();
-  }
-
-  throw new Error(`Cannot retrieve content for ${path}.`);
-}
-
 /**
  * The blobs of a method's git tree that can be members of its tree, the rest left unread: a path
  * under a directory starting with a dot, a `__pycache__` or `node_modules` directory, or a
- * directory below the root that a `pyvenv.cfg` marks as a virtual environment or a `METHODS.toml`
- * as a package of its own, and a dotted file other than a `.gitignore`. What is left is written to
- * disk for the lister, which applies the whole rule, `.gitignore` files and the manifest's
- * `exclude` included. A submodule is a repository of its own and never part of a tree.
+ * directory below the root that a `pyvenv.cfg` file or link marks as a virtual environment or a
+ * `METHODS.toml` file as a package of its own, and a dotted file other than a `.gitignore`. These
+ * the rule excludes whatever else the tree holds. What is left goes to the lister, which applies
+ * the whole rule, `.gitignore` files and the manifest's `exclude` included. A submodule is a
+ * repository of its own and never part of a tree.
  */
 function memberCandidates(entries: readonly GitTreeEntry[]): GitTreeEntry[] {
   const blobs = entries.filter((entry) => entry.type === "blob");
@@ -182,8 +163,10 @@ function memberCandidates(entries: readonly GitTreeEntry[]): GitTreeEntry[] {
     const segments = blob.path.split("/");
     const name = segments[segments.length - 1]!;
     const directory = segments.slice(0, -1).join("/");
-    if (name === VENV_MARKER_NAME && directory !== "") markedDirectories.add(directory);
-    if (name === MANIFEST_NAME && directory !== "") markedDirectories.add(directory);
+    if (directory === "") continue;
+    if (name === VENV_MARKER_NAME) markedDirectories.add(directory);
+    // Only a manifest file marks a package; a link of that name is a link the tree may refuse.
+    if (name === MANIFEST_NAME && blob.mode !== GIT_SYMLINK_MODE) markedDirectories.add(directory);
   }
   return blobs.filter((blob) => {
     const segments = blob.path.split("/");
@@ -216,87 +199,199 @@ async function fetchBlob(
   return Buffer.from(data.content, "base64");
 }
 
-/** Every distinct blob's bytes, a few requests at a time. */
+/** Every distinct blob's bytes not already in `bytes`, a few requests at a time, added to it. */
 async function fetchBlobs(
   auth: AuthMethod,
   org: string,
   repo: string,
   shas: readonly string[],
-): Promise<Map<string, Buffer>> {
-  const unique = [...new Set(shas)];
-  const bytes = new Map<string, Buffer>();
+  bytes: Map<string, Buffer>,
+): Promise<void> {
+  const unique = [...new Set(shas)].filter((sha) => !bytes.has(sha));
   for (let i = 0; i < unique.length; i += GITHUB_CONCURRENCY) {
     const batch = unique.slice(i, i + GITHUB_CONCURRENCY);
     const fetched = await Promise.all(batch.map((sha) => fetchBlob(auth, org, repo, sha)));
     batch.forEach((sha, index) => bytes.set(sha, fetched[index]!));
   }
-  return bytes;
+}
+
+/** Whether anything, a link included, lies at `path`. */
+function entryExists(path: string): boolean {
+  try {
+    lstatSync(path);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Errors meaning the file system holds another entry where one is written: it folds the names. */
+const FOLDED_NAME_ERRORS: ReadonlySet<string> = new Set(["EEXIST", "ENOTDIR", "EISDIR"]);
+
+/** A tree path, each segment normalized to NFC, as the lister names a file. */
+function nfcPath(path: string): string {
+  return path
+    .split("/")
+    .map((segment) => segment.normalize("NFC"))
+    .join("/");
+}
+
+/** What the skeleton of a git tree written to disk holds. */
+interface Skeleton {
+  /** The entry each written file stands for, by its raw path and by its path in NFC. */
+  readonly written: Map<string, GitTreeEntry>;
+  /** Entries the file system could not hold apart from one written before them. */
+  readonly folded: GitTreeEntry[];
+  /** Links written as empty files, on a file system where no link can be made. */
+  readonly linkPlaceholders: Set<GitTreeEntry>;
 }
 
 /**
- * Read a method's tree from its git tree on GitHub, as the lister defines it: the candidate files
- * are written into a scratch directory as a checkout would hold them, a symbolic link as a link,
- * the lister lists that directory as the method's root, and the scratch directory is removed.
- * Gives the reason the method is skipped when its tree cannot be read faithfully or is refused.
+ * Write the candidates into `scratch` as a checkout holds them, for the lister to judge: the root
+ * manifest and each `.gitignore` with their bytes, every other file empty, since its bytes do not
+ * change what the rule admits, and a link as a link. Gives the reason when an entry cannot be
+ * written on this machine.
+ */
+function writeSkeleton(
+  scratch: string,
+  candidates: readonly GitTreeEntry[],
+  ruleBytes: ReadonlyMap<string, Buffer>,
+): Skeleton | { error: string } {
+  const written = new Map<string, GitTreeEntry>();
+  const folded: GitTreeEntry[] = [];
+  const linkPlaceholders = new Set<GitTreeEntry>();
+  for (const entry of candidates) {
+    const segments = entry.path.split("/");
+    const target = join(scratch, ...segments);
+    if (
+      (sep !== "/" && segments.some((segment) => segment.includes(sep))) ||
+      !target.startsWith(scratch + sep)
+    ) {
+      return { error: `'${entry.path}' cannot be written on this machine to read the tree.` };
+    }
+    if (entryExists(target)) {
+      folded.push(entry);
+      continue;
+    }
+    try {
+      mkdirSync(dirname(target), { recursive: true });
+      if (entry.mode === GIT_SYMLINK_MODE) {
+        // The link's target is never read: the lister refuses a link it admits, wherever it points.
+        try {
+          symlinkSync("mthds-github-link", target);
+        } catch {
+          writeFileSync(target, "");
+          linkPlaceholders.add(entry);
+        }
+      } else {
+        writeFileSync(target, ruleBytes.get(entry.path) ?? "");
+      }
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code;
+      if (code !== undefined && FOLDED_NAME_ERRORS.has(code)) {
+        folded.push(entry);
+        continue;
+      }
+      return {
+        error: `'${entry.path}' cannot be written on this machine to read the tree (${code ?? "error"}).`,
+      };
+    }
+    written.set(entry.path, entry);
+    written.set(nfcPath(entry.path), entry);
+  }
+  return { written, folded, linkPlaceholders };
+}
+
+/**
+ * Read a method's tree from its git tree on GitHub, accepting exactly the trees the lister accepts
+ * from a checkout: the candidates are written into a scratch directory as a skeleton, what the
+ * rule reads (the manifest, each `.gitignore`) with its bytes and every other file empty, and the
+ * lister lists it, so the whole membership rule decides first, names are normalized to NFC, and
+ * invalid names, collisions and links are judged among the files it admits only. Then the blobs
+ * of those files alone are fetched. Gives the reason the method is skipped when its tree is
+ * refused or cannot be read on this machine.
  */
 async function readGitHubMethodTree(
   auth: AuthMethod,
   org: string,
   repo: string,
-  treeSha: string,
-  dirPath: string,
-): Promise<Awaited<ReturnType<typeof readMethodTreeOrSkip>>> {
-  const gitTree = (await githubFetch(
-    auth,
-    `repos/${org}/${repo}/git/trees/${treeSha}?recursive=1`,
-  )) as GitTree;
-  if (gitTree.truncated) {
-    return {
-      error: `GitHub truncated the listing of ${dirPath}, which holds too many entries to read in one answer.`,
-    };
-  }
+  gitTree: GitTree,
+  manifest: { sha: string; bytes: Buffer },
+): Promise<{ files: MethodsFile[] } | { error: string }> {
   const candidates = memberCandidates(gitTree.tree);
-  for (const candidate of candidates) {
-    const violation = treePathViolation(candidate.path);
-    if (violation !== null) {
-      return {
-        error: `The method's tree is refused: '${candidate.path}' is not a tree path: ${violation}.`,
-      };
-    }
-  }
-  const collisions = pathCollisions(candidates.map((candidate) => candidate.path));
-  if (collisions.length > 0) {
-    return {
-      error: `The method's tree is refused: paths collide once case-folded: ${collisions.join(", ")}.`,
-    };
-  }
-  const files = candidates.filter((candidate) => candidate.mode !== GIT_SYMLINK_MODE);
-  const bytes = await fetchBlobs(
+  const isGitignore = (entry: GitTreeEntry): boolean =>
+    entry.mode !== GIT_SYMLINK_MODE && entry.path.split("/").pop() === GITIGNORE_NAME;
+  const bytes = new Map<string, Buffer>([[manifest.sha, manifest.bytes]]);
+  const ruleFiles = candidates.filter(
+    (entry) =>
+      isGitignore(entry) || (entry.path === MANIFEST_NAME && entry.mode !== GIT_SYMLINK_MODE),
+  );
+  await fetchBlobs(
     auth,
     org,
     repo,
-    files.map((file) => file.sha),
+    ruleFiles.map((entry) => entry.sha),
+    bytes,
   );
+  const ruleBytes = new Map(ruleFiles.map((entry) => [entry.path, bytes.get(entry.sha)!]));
 
-  const scratch = mkdtempSync(join(tmpdir(), "mthds-github-method-"));
+  const scratch = realpathSync(mkdtempSync(join(tmpdir(), "mthds-github-method-")));
   try {
-    for (const candidate of candidates) {
-      const target = join(scratch, ...candidate.path.split("/"));
-      mkdirSync(dirname(target), { recursive: true });
-      if (candidate.mode === GIT_SYMLINK_MODE) {
-        // The link's target is never read: a link is refused by the lister wherever it points.
-        try {
-          symlinkSync("mthds-github-link", target);
-        } catch {
-          return {
-            error: `The method's tree is refused: '${candidate.path}' is a symbolic link, which a method's tree cannot hold.`,
-          };
-        }
-      } else {
-        writeFileSync(target, bytes.get(candidate.sha)!);
+    const skeleton = writeSkeleton(scratch, candidates, ruleBytes);
+    if ("error" in skeleton) return skeleton;
+    let listed: MethodTree;
+    try {
+      listed = await listMethodTree(scratch, { discover: false });
+    } catch (err) {
+      if (err instanceof MethodTreeError) {
+        return { error: `The method's tree is refused: ${err.message}` };
+      }
+      throw err;
+    }
+
+    const members: { path: string; entry: GitTreeEntry }[] = [];
+    for (const file of listed.files) {
+      const onDisk = relative(listed.root!, listed.onDiskPath(file.path)!).split(sep).join("/");
+      const entry = skeleton.written.get(onDisk) ?? skeleton.written.get(nfcPath(onDisk));
+      if (entry === undefined) {
+        return { error: `'${file.path}' cannot be traced to a file of the git tree.` };
+      }
+      if (skeleton.linkPlaceholders.has(entry)) {
+        return {
+          error: `The method's tree is refused: '${file.path}' is a symbolic link, which a method's tree cannot hold.`,
+        };
+      }
+      members.push({ path: file.path, entry });
+    }
+    // Names this file system folded onto another collide in the tree when they reach a member.
+    const memberFolds = new Set<string>();
+    for (const member of members) {
+      for (const path of [...directoriesOf(member.path), member.path]) {
+        memberFolds.add(caseFold(path));
       }
     }
-    return await readMethodTreeOrSkip(scratch);
+    const collision = skeleton.folded.find((entry) =>
+      [...directoriesOf(entry.path), entry.path].some((path) => memberFolds.has(caseFold(path))),
+    );
+    if (collision !== undefined) {
+      return {
+        error: `The method's tree is refused: '${collision.path}' collides with another path of the tree once case-folded and normalized.`,
+      };
+    }
+
+    await fetchBlobs(
+      auth,
+      org,
+      repo,
+      members.map((member) => member.entry.sha),
+      bytes,
+    );
+    return {
+      files: members.map((member) => ({
+        path: member.path,
+        bytes: new Uint8Array(bytes.get(member.entry.sha)!),
+      })),
+    };
   } finally {
     rmSync(scratch, { recursive: true, force: true });
   }
@@ -311,15 +406,33 @@ async function resolveOneMethod(
   treeSha: string,
 ): Promise<{ method?: ResolvedMethod; skipped?: SkippedMethod }> {
   const dirPath = `${methodsPath}/${dirName}`;
-  const tomlPath = `${dirPath}/METHODS.toml`;
+  const tomlPath = `${dirPath}/${MANIFEST_NAME}`;
 
-  // Fetch METHODS.toml
-  let rawToml: string;
-  try {
-    rawToml = await fetchFileContent(auth, org, repo, tomlPath);
-  } catch {
+  // The method's git tree, which the manifest and every file are read from, so all come from
+  // one commit whatever the default branch does meanwhile.
+  const gitTree = (await githubFetch(
+    auth,
+    `repos/${org}/${repo}/git/trees/${treeSha}?recursive=1`,
+  )) as GitTree;
+  if (gitTree.truncated) {
+    return {
+      skipped: {
+        dirName,
+        errors: [
+          `GitHub truncated the listing of ${dirPath}, which holds too many entries to read in one answer.`,
+        ],
+      },
+    };
+  }
+  const manifestEntry = gitTree.tree.find(
+    (entry) =>
+      entry.path === MANIFEST_NAME && entry.type === "blob" && entry.mode !== GIT_SYMLINK_MODE,
+  );
+  if (manifestEntry === undefined) {
     return { skipped: { dirName, errors: [`No METHODS.toml found at ${tomlPath}.`] } };
   }
+  const manifestBytes = await fetchBlob(auth, org, repo, manifestEntry.sha);
+  const rawToml = manifestBytes.toString("utf-8");
 
   // Validate manifest
   const result = validateManifest(rawToml);
@@ -345,7 +458,10 @@ async function resolveOneMethod(
   }
 
   // The method's whole tree, its Python, templates and other files beside its bundles.
-  const tree = await readGitHubMethodTree(auth, org, repo, treeSha, dirPath);
+  const tree = await readGitHubMethodTree(auth, org, repo, gitTree, {
+    sha: manifestEntry.sha,
+    bytes: manifestBytes,
+  });
   if ("error" in tree) {
     return { skipped: { dirName, errors: [tree.error] } };
   }

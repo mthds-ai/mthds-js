@@ -155,6 +155,15 @@ export class MethodTree implements MethodTreeSource {
   }
 
   /**
+   * The absolute path of a file of the tree as the file system spells it, which can differ from its
+   * tree path, normalized to NFC (a name written decomposed, for one), or `undefined` for a tree path
+   * the tree does not hold.
+   */
+  onDiskPath(treePath: string): string | undefined {
+    return this.absolutes.get(treePath)?.toString();
+  }
+
+  /**
    * A file's bytes, read again as the listing read them, never through a link, and checked against
    * the hash the listing recorded.
    */

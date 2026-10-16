@@ -439,6 +439,23 @@ describe("ProblemError", () => {
       reason: "empty",
     });
   });
+
+  it("ends every message with the problem's next step, a refusal's and a configuration's included", () => {
+    const refusal = argumentInvalid("files", "empty", "No files were given.");
+    expect(refusal.message.endsWith(refusal.problem.next_step.detail)).toBe(true);
+    expect(refusal.message.startsWith("No files were given.")).toBe(true);
+    const unconfigured = problemError("client.not_configured", { setting: "api_key" });
+    expect(unconfigured.message.endsWith(unconfigured.problem.next_step.detail)).toBe(true);
+  });
+
+  it("appends the next step to a sentence that holds it anywhere but at its end", () => {
+    const problem = buildProblem("runtime.unexpected", {});
+    const step = problem.next_step.detail;
+    const err = new ProblemError({ ...problem, message: `${step} Then something else.` });
+    expect(err.message).toBe(`${step} Then something else. ${step}`);
+    const ending = new ProblemError({ ...problem, message: `It failed. ${step}` });
+    expect(ending.message).toBe(`It failed. ${step}`);
+  });
 });
 
 describe("rendering a problem", () => {

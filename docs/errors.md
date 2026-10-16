@@ -115,7 +115,7 @@ Every body is decoded by the same rules, a route's result as much as a problem (
 
 | Code | When |
 |---|---|
-| `client.not_configured` `{ setting }` | The base URL is not host-only, the API key holds a character no HTTP header can carry (`api_key`, refused before any request, the key never quoted), or no runner is configured for a command. |
+| `client.not_configured` `{ setting }` | The base URL is not host-only, the API key holds a character the `Authorization` header cannot carry as written, anything but visible ASCII, such as a line break or a space at its end, a NUL or a letter past ASCII (`api_key`, refused when the client is constructed, the key never quoted), or no runner is configured for a command. |
 | `client.argument_invalid` `{ argument, reason }` | An argument refused before any request left: run sources that exclude each other, method files that are not an array of file entries, a body that does not serialize as JSON, a CLI option's value. |
 | `client.file_unreadable`, `client.write_failed`, `client.target_exists` | A local file the CLIs cannot read, cannot write, or would overwrite. |
 | `client.tool_missing`, `client.tool_outdated` | A program a CLI runs (`pipelex`, `pipelex-agent`, `plxt`, `uv`, `codex`) is missing or older than the CLI needs. An install `mthds-agent` attempts (`install`, `runner setup pipelex`, `--auto-install`) without `uv` is `client.tool_missing` naming `uv`, and one `uv` ran and failed is `runtime.unavailable`, worth a retry (`toolInstallProblem`). |

@@ -204,26 +204,33 @@ describe("MthdsApiClient.execute argument validation", () => {
 });
 
 describe("MthdsApiClient transport failures", () => {
+  // Made-up keys, never real ones: each holds a character the `Authorization` header cannot carry
+  // as written, which fetch would refuse or silently trim at every request.
   it.each([
-    ["execute", (client: MthdsApiClient) => client.execute({ pipe_code: "p" })],
-    ["models", (client: MthdsApiClient) => client.models()],
-  ] as const)(
-    "refuses an API key no HTTP header can carry on %s before any request, as client.not_configured",
-    async (_route, call) => {
-      // A made-up key holding the euro sign, which no HTTP header carries; never a real key.
-      const client = new MthdsApiClient({ baseUrl: BASE_URL, apiKey: "test-key-\u20ac" });
-      const fetchSpy = vi.spyOn(globalThis, "fetch");
-      const err = await rejection(call(client));
-      expect(fetchSpy).not.toHaveBeenCalled();
-      expect(err).toBeInstanceOf(ProblemError);
-      expect(err).not.toBeInstanceOf(ApiTransportError);
-      expect((err as ProblemError).problem).toMatchObject({
-        code: "client.not_configured",
-        params: { setting: "api_key" },
-      });
-      expect((err as ProblemError).message).not.toContain("test-key");
-    },
-  );
+    ["ending in a line break", "test-key-abc\n"],
+    ["ending in a space", "test-key-abc "],
+    ["ending in CRLF", "test-key-abc\r\n"],
+    ["holding a NUL", "test-key-\u0000abc"],
+    ["holding a Latin-1 letter", "test-key-\u00e9abc"],
+    ["holding the euro sign", "test-key-\u20acabc"],
+  ])("refuses an API key %s at construction, as client.not_configured", (_what, apiKey) => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+    let caught: unknown;
+    try {
+      new MthdsApiClient({ baseUrl: BASE_URL, apiKey });
+    } catch (err) {
+      caught = err;
+    }
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(caught).toBeInstanceOf(ProblemError);
+    expect((caught as ProblemError).problem).toMatchObject({
+      code: "client.not_configured",
+      params: { setting: "api_key" },
+    });
+    expect((caught as ProblemError).message).not.toContain("test-key");
+    expect(JSON.stringify((caught as ProblemError).problem)).not.toContain("test-key");
+    expect((caught as ProblemError).cause).toBeUndefined();
+  });
 
   it.each([
     ["execute", "client.outcome_unknown"],

@@ -89,6 +89,13 @@ export const DEFAULT_API_BASE_URL = "https://api.pipelex.com";
 // self-hosted pipelex-api runner (localhost:8081) — the protocol surface is identical.
 const API_PREFIX = "v1";
 
+/**
+ * An API key the `Authorization` header carries as written: visible ASCII characters only, so no
+ * whitespace at either end, which fetch would trim, no line break or NUL, which fetch refuses, and
+ * nothing past ASCII. The Python twin holds a key to the same rule.
+ */
+const SENDABLE_API_KEY = /^[!-~]+$/;
+
 const DEFAULT_REQUEST_TIMEOUT_MS = 1_200_000; // 20 min — matches the runner's blocking execute ceiling.
 const POLL_REQUEST_TIMEOUT_MS = 30_000; // single GETs (models/version/start); the hosted gateway caps responses at ~30s.
 // A `method_ref` can make the server CLONE a repository before it answers, and on a
@@ -163,6 +170,20 @@ export class MthdsApiClient implements Runner {
     // of what the base URL resolves to.
     this.userAgent = buildUserAgent(options.appInfo);
     this.apiKey = options.apiKey ?? process.env.MTHDS_API_KEY;
+    // A key the `Authorization` header cannot carry as written would be refused, or silently
+    // trimmed, at every request, which no repeat changes. The key is never quoted, nor is any
+    // error that could quote it kept as a cause.
+    if (this.apiKey && !SENDABLE_API_KEY.test(this.apiKey)) {
+      throw problemError(
+        "client.not_configured",
+        { setting: "api_key" },
+        {
+          message:
+            "The API key holds a character an HTTP header cannot carry, such as a line break or " +
+            "a space at its end. Set it to the key alone.",
+        },
+      );
+    }
     const normalizedBaseUrl = (
       options.baseUrl ??
       process.env.MTHDS_BASE_URL ??
@@ -215,35 +236,14 @@ export class MthdsApiClient implements Runner {
    * The ONE place request headers are built, so no request path can miss the
    * `User-Agent` (spec: client-identification, "Client obligations").
    */
-  /**
-   * The request's headers, checked before any request leaves. An API key no HTTP header can carry,
-   * such as one holding a character past Latin-1 or a line break, is refused as
-   * `client.not_configured` naming `api_key`: fetch would refuse it before any I/O with a bare
-   * `TypeError`, which would read as a request that may have left. The key is never quoted.
-   */
+  /** The request's headers, the API key among them, which the constructor checked. */
   private buildHeaders(hasBody: boolean): Record<string, string> {
     const headers: Record<string, string> = { Accept: "application/json" };
     if (this.userAgent !== undefined) {
       headers["User-Agent"] = this.userAgent;
     }
     if (this.apiKey) {
-      const authorization = `Bearer ${this.apiKey}`;
-      try {
-        // The check fetch makes of a header's value, made here where its refusal can be read.
-        new Headers([["Authorization", authorization]]);
-      } catch (cause) {
-        throw problemError(
-          "client.not_configured",
-          { setting: "api_key" },
-          {
-            message:
-              "The API key holds a character an HTTP header cannot carry, such as one past " +
-              "Latin-1 or a line break; set the key again as it was issued.",
-            cause,
-          },
-        );
-      }
-      headers["Authorization"] = authorization;
+      headers["Authorization"] = `Bearer ${this.apiKey}`;
     }
     if (hasBody) {
       headers["Content-Type"] = "application/json";

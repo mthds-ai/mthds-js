@@ -175,6 +175,12 @@ describe("building a problem from the registry", () => {
     expect(renderTemplate("A {{literal}} and {name}.", { name: "x" })).toBe("A {literal} and x.");
   });
 
+  it("refuses a lone brace, opening or closing, and an unclosed placeholder", () => {
+    expect(() => renderTemplate("A lone } here.", {})).toThrow(/lone brace/);
+    expect(() => renderTemplate("A lone { here.", {})).toThrow(/lone brace/);
+    expect(() => renderTemplate("An {unclosed", { unclosed: "x" })).toThrow(/lone brace/);
+  });
+
   it("refuses a template naming a parameter the occurrence does not give", () => {
     expect(() => renderTemplate("A {missing} one.", {})).toThrow(/'missing', which is not given/);
     expect(() => renderTemplate("A {gone} one.", { gone: undefined })).toThrow(/not given/);
@@ -195,6 +201,21 @@ describe("building a problem from the registry", () => {
 describe("the JSON reader", () => {
   it("refuses the NaN constant, which JSON does not define", () => {
     expect(parseJsonBody('{"load":NaN}').ok).toBe(false);
+  });
+
+  it("scans an unterminated string of escaped quotes in linear time", () => {
+    const body = `"${'\\"'.repeat(40_000)}${"[".repeat(MAX_BODY_NESTING * 2)}`;
+    const started = Date.now();
+    expect(parseJsonBody(body).ok).toBe(false);
+    expect(Date.now() - started).toBeLessThan(1_000);
+  });
+
+  it("reads an escaped quote as part of its string, so brackets after it stay inside", () => {
+    const text = JSON.stringify({ text: `\\"${"[".repeat(MAX_BODY_NESTING * 2)}` });
+    expect(parseJsonBody(text).ok).toBe(true);
+    // An escaped backslash ends no string, so the quote after it closes the string.
+    const escapedBackslash = String.raw`{"a":"\\","b":[1]}`;
+    expect(parseJsonBody(escapedBackslash)).toEqual({ ok: true, value: { a: "\\", b: [1] } });
   });
 
   it("refuses a body nested deeper than its limit, and counts no bracket inside a string", () => {

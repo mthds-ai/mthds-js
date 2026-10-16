@@ -432,15 +432,22 @@ export interface AnswerReading {
   fromBody: boolean;
 }
 
+/** Whether `status` is an HTTP status, the range a problem's `status` member holds. */
+function isHttpStatus(status: number): boolean {
+  return Number.isInteger(status) && status >= 100 && status <= 599;
+}
+
 /**
  * Read an answer that is not the route's result, a status outside `2xx`, as its problem, by the
- * rules this module's header gives, saying once whether the problem is the body's own.
+ * rules this module's header gives, saying once whether the problem is the body's own. A missing
+ * `status` member is filled from the answer only when the answer's is an HTTP status, from 100
+ * to 599.
  */
 export function readAnswer(answer: Answer, options: ReadAnswerOptions = {}): AnswerReading {
   const received = readProblemBody(answer.body);
   if (received !== undefined) {
     let problem = received;
-    if (problem.status === undefined) {
+    if (problem.status === undefined && isHttpStatus(answer.status)) {
       const { type, title, ...rest } = problem;
       problem = { type, title, status: answer.status, ...rest };
     }

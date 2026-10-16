@@ -314,6 +314,26 @@ describe("readAnswer", () => {
     const headers = { "retry-after": "Sun, 06 Nov 1994 08:49:37 GMT" };
     expect(readAnswer({ status: 503, headers, body }).fromBody).toBe(true);
   });
+
+  it.each([999, 42])(
+    "leaves the status out of a problem body that omits it when the answer's %s is no HTTP status",
+    (status) => {
+      const { status: _omitted, ...withoutStatus } = MINIMAL_PROBLEM as Record<string, unknown>;
+      const read = () => readAnswer({ status, headers: {}, body: JSON.stringify(withoutStatus) });
+      expect(read).not.toThrow();
+      expect(read().problem.status).toBeUndefined();
+      expect(read().fromBody).toBe(true);
+    },
+  );
+
+  it("reads a body that is no problem, on a status that is no HTTP status, as unreadable", () => {
+    const read = () => readAnswer({ status: 999, headers: {}, body: "" });
+    expect(read).not.toThrow();
+    expect(read().problem).toMatchObject({
+      code: "client.response_unreadable",
+      params: { status: 999 },
+    });
+  });
 });
 
 describe("reading an answer that is not the route's result", () => {

@@ -201,7 +201,8 @@ async function fetchFileContent(
     return readGitHubBody(res, path);
   }
 
-  throw new MethodResolveError(`Cannot retrieve content for ${path}.`, "fetch_failed");
+  // GitHub answered, and what stands at the path is no file, such as a directory or a submodule.
+  throw new MethodResolveError(`No file at ${path}: GitHub lists no content for it.`, "not_found");
 }
 
 async function listMthdFiles(

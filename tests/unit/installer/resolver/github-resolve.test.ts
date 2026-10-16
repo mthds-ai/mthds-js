@@ -139,4 +139,23 @@ describe("resolveFromGitHub failures", () => {
       { dirName: "demo", errors: ["No METHODS.toml found at methods/demo/METHODS.toml."] },
     ]);
   });
+
+  it.each([
+    [
+      "a directory",
+      () => json(200, [{ type: "file", name: "x", path: "methods/demo/METHODS.toml/x" }]),
+    ],
+    ["a submodule", () => json(200, { type: "submodule", download_url: null })],
+  ])("skips a method whose METHODS.toml is %s rather than a file", async (_what, answer) => {
+    route([
+      ["repos/acme/tools", () => json(200, { private: false })],
+      ["contents/methods", () => json(200, [{ type: "dir", name: "demo", path: "methods/demo" }])],
+      ["contents/methods/demo/METHODS.toml", answer],
+    ]);
+    const resolved = await resolveFromGitHub(PARSED);
+    expect(resolved.methods).toEqual([]);
+    expect(resolved.skipped).toEqual([
+      { dirName: "demo", errors: ["No METHODS.toml found at methods/demo/METHODS.toml."] },
+    ]);
+  });
 });

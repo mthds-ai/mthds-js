@@ -16,7 +16,13 @@
 import { Command, CommanderError, Option } from "commander";
 import { createRequire } from "node:module";
 import { resolve } from "node:path";
-import { agentError, agentProblem, agentSuccess, unexpectedProblem } from "./agent/output.js";
+import {
+  agentError,
+  agentProblem,
+  agentSuccess,
+  problemOfError,
+  unexpectedProblem,
+} from "./agent/output.js";
 import { registerApiRunnerCommands } from "./agent/commands/api-commands.js";
 import { registerPipelexRunnerCommands } from "./agent/commands/pipelex-commands.js";
 import { registerPlxtCommands } from "./agent/commands/plxt.js";
@@ -580,5 +586,5 @@ program.parseAsync(process.argv).catch((err: unknown) => {
     );
   }
 
-  agentError(unexpectedProblem(err instanceof Error ? err.message : String(err)));
+  agentError(problemOfError(err, unexpectedProblem));
 });

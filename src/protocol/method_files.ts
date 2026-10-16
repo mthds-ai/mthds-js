@@ -9,8 +9,9 @@
  * re-porting the platform's `_method_source_to_contents` and drifting.
  *
  * This is the AT-REST catalog representation and is distinct from the run-surface
- * `files` map (`Record<relativePath, text>` on {@link RunRequest}): the catalog
- * stores an ordered, named ARRAY; a run carries an unordered path→text MAP. The
+ * `files` map (`MethodFiles` on {@link RunRequest}, the method's whole tree): the
+ * catalog stores an ordered, named ARRAY of texts; a run carries an unordered map
+ * from tree path to file entry (a text, Base64 or a blob's hash). The
  * empty list is serialized as the empty string `""` — the platform's "no source"
  * / "clear the field" sentinel — never as the literal `"[]"`.
  */

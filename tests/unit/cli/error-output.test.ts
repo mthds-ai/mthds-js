@@ -61,27 +61,6 @@ const CONCEPT_ITEM: ProblemItem = {
   location: { file: "demo.mthds", line: 4 },
 };
 
-describe("formatCliError — the answer beside the problem", () => {
-  it("names the route and the status, and quotes the start of a body that is no problem", () => {
-    const err = new ApiResponseError(buildProblem("runtime.unavailable", {}, { status: 502 }), {
-      ...FACTS,
-      status: 502,
-      statusText: "Bad Gateway",
-      responseBody: "<html>upstream connect error</html>",
-      bodyIsProblem: false,
-    });
-    const lines = formatCliError(err).split("\n");
-    expect(lines).toContain("Answer: POST /v1/execute (502)");
-    expect(lines).toContain("The server answered: <html>upstream connect error</html>");
-  });
-
-  it("quotes nothing of a body that is the problem itself", () => {
-    const text = formatCliError(apiError(PROBLEM));
-    expect(text).toContain("Answer: POST /v1/execute (422)");
-    expect(text).not.toContain("The server answered");
-  });
-});
-
 describe("formatCliError", () => {
   it("prints the title and detail, the next step, the code with its verdict and the request id", () => {
     const text = formatCliError(apiError({ ...PROBLEM, request_id: "req-123" }));
@@ -90,7 +69,6 @@ describe("formatCliError", () => {
       "Next step: Pick a model the runner lists.",
       "Code: model.unknown (domain input, retry no)",
       "Request id: req-123",
-      "Answer: POST /v1/execute (422)",
     ]);
   });
 
@@ -155,7 +133,6 @@ describe("formatCliError", () => {
       "- model.unknown: Model handle 'gpt-9' was not found in the model deck. (pipe 'summarize', field 'model', file 'demo.mthds')",
       "  Suggested fix (unsafe, rename-model): Replace model 'gpt-9' of pipe 'summarize' with 'gpt-5'",
       "- method.concept_unresolved: Concept 'Invoice' refines 'Documnet', which no bundle declares. (file 'demo.mthds', line 4)",
-      "Answer: POST /v1/execute (422)",
     ]);
   });
 

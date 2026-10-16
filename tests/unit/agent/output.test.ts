@@ -12,7 +12,6 @@ import {
 import { BINARY_RECOVERY, buildInstallCommand } from "../../../src/agent/binaries.js";
 import { buildProblem } from "../../../src/problems/build.js";
 import { ProblemError } from "../../../src/problems/errors.js";
-import { ApiResponseError } from "../../../src/runners/api/exceptions.js";
 import { CORE_REGISTRY } from "../../../src/problems/registry.generated.js";
 import type { Problem } from "../../../src/problems/types.js";
 import { outcomeNotes, resetOutcomeNotes } from "../../../src/usage-stats/outcome.js";
@@ -276,33 +275,6 @@ describe("problemOfError", () => {
       },
     );
     expect(problemOfError(new ProblemError(problem), unexpectedProblem)).toBe(problem);
-  });
-
-  it("adds the route, the status and the start of a body that is no problem to an answer's problem", () => {
-    const err = new ApiResponseError(buildProblem("runtime.unavailable", {}, { status: 502 }), {
-      apiUrl: "http://localhost:8081",
-      route: "POST /v1/execute",
-      status: 502,
-      statusText: "Bad Gateway",
-      responseBody: "<html>upstream connect error</html>",
-      bodyIsProblem: false,
-    });
-    const problem = problemOfError(err, unexpectedProblem);
-    expect(problem).toMatchObject({
-      code: "runtime.unavailable",
-      answer: {
-        route: "POST /v1/execute",
-        status: 502,
-        excerpt: "<html>upstream connect error</html>",
-      },
-    });
-
-    chooseErrorFormat("markdown");
-    expect(() => agentError(problem)).toThrow("__exit__");
-    const markdown = written();
-    expect(markdown).toContain("### Answer");
-    expect(markdown).toContain("- Route: `POST /v1/execute`, status 502");
-    expect(markdown).toContain("- The server answered: <html>upstream connect error</html>");
   });
 
   it("reads any other error by the fallback, with its message", () => {

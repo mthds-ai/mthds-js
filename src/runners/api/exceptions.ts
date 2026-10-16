@@ -42,17 +42,6 @@ export interface ApiAnswerFacts {
   bodyIsProblem?: boolean;
 }
 
-/**
- * What a CLI reports of the answer an `ApiResponseError` read, beside its problem, which names
- * none of it: the route that answered, the answer's HTTP status and, for a body that is no problem
- * document, the start of the body the error's message quotes.
- */
-export interface AnswerReport {
-  route: string;
-  status: number;
-  excerpt?: string;
-}
-
 /** How much of a body that is no problem document an error's message quotes, as the Python twin does. */
 export const BODY_EXCERPT_LENGTH = 500;
 
@@ -76,8 +65,6 @@ export class ApiResponseError extends ProblemError {
   public readonly statusText: string;
   public readonly responseBody: string;
   private readonly requestIdHeader: string | undefined;
-  /** The start of a body that is no problem document, as the message quotes it. */
-  private readonly excerpt: string | undefined;
 
   constructor(problem: Problem, facts: ApiAnswerFacts, options?: { cause?: unknown }) {
     super(problem, options);
@@ -85,9 +72,8 @@ export class ApiResponseError extends ProblemError {
     const head = `${facts.route} failed (${facts.status}): `;
     if (facts.bodyIsProblem === false && facts.responseBody.trim() !== "") {
       const step = problem.next_step.detail;
-      this.excerpt = bodyExcerpt(facts.responseBody);
       this.message =
-        `${head}${problemSentence(problem)}\nThe server answered: ${this.excerpt}` +
+        `${head}${problemSentence(problem)}\nThe server answered: ${bodyExcerpt(facts.responseBody)}` +
         (step.length > 0 ? `\nNext step: ${step}` : "");
     } else {
       this.message = `${head}${this.message}`;
@@ -103,13 +89,6 @@ export class ApiResponseError extends ProblemError {
   /** The request's id: the problem's `request_id`, else the answer's `X-Request-ID` header. */
   override get requestId(): string | undefined {
     return super.requestId ?? this.requestIdHeader;
-  }
-
-  /** What a CLI reports of the answer beside the problem: its route, its status and the body's start. */
-  get answer(): AnswerReport {
-    const report: AnswerReport = { route: this.route, status: this.status };
-    if (this.excerpt !== undefined) report.excerpt = this.excerpt;
-    return report;
   }
 }
 

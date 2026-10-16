@@ -26,9 +26,21 @@ export function codeFamily(code: string): string {
   return last === -1 ? code : code.slice(0, last);
 }
 
-/** The core registry's entries of every code of `family`. */
+/** The core registry's entries by family, built on the first lookup. */
+let entriesByFamily: Map<string, readonly RegistryEntry[]> | undefined;
+
+/** The core registry's entries of every code of `family`, from an index built once. */
 export function familyEntries(family: string): RegistryEntry[] {
-  return Object.values(CORE_REGISTRY).filter((entry) => codeFamily(entry.code) === family);
+  if (entriesByFamily === undefined) {
+    const index = new Map<string, RegistryEntry[]>();
+    for (const entry of Object.values(CORE_REGISTRY)) {
+      const name = codeFamily(entry.code);
+      index.set(name, [...(index.get(name) ?? []), entry]);
+    }
+    entriesByFamily = index;
+  }
+  // A copy, so that a caller changing the list it gets never changes the index.
+  return [...(entriesByFamily.get(family) ?? [])];
 }
 
 /**

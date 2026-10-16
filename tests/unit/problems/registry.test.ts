@@ -20,7 +20,12 @@ import {
   MTHDS_ERROR_REGISTRY_VERSION,
 } from "../../../src/problems/registry.generated.js";
 import { MTHDS_ERROR_REGISTRY_TARGET_VERSION } from "../../../src/problems/registry-target.js";
-import { PROBLEM_CODE_PATTERN, codeFamily, typeUriOf } from "../../../src/problems/registry.js";
+import {
+  PROBLEM_CODE_PATTERN,
+  codeFamily,
+  familyEntries,
+  typeUriOf,
+} from "../../../src/problems/registry.js";
 import { PROBLEM_DOMAINS, RETRY_VERDICTS, STEP_KINDS } from "../../../src/problems/vocabulary.js";
 import { templateParams } from "../../../src/problems/build.js";
 
@@ -150,4 +155,22 @@ describe("the vendored core error registry", () => {
       });
     },
   );
+});
+
+describe("familyEntries", () => {
+  it("gives every code of a family, in the registry's order, and nothing for an unknown one", () => {
+    const expected = Object.values(CORE_REGISTRY).filter(
+      (entry) => codeFamily(entry.code) === "client",
+    );
+    expect(familyEntries("client")).toEqual(expected);
+    expect(familyEntries("client").length).toBeGreaterThan(0);
+    expect(familyEntries("no_such_family")).toEqual([]);
+  });
+
+  it("keeps its index whole when a caller changes the list it got", () => {
+    const first = familyEntries("request");
+    const length = first.length;
+    first.pop();
+    expect(familyEntries("request")).toHaveLength(length);
+  });
 });

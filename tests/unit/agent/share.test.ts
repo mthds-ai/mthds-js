@@ -48,6 +48,7 @@ import { buildShareUrls } from "../../../src/cli/commands/share.js";
 import { agentSuccess, agentError } from "../../../src/agent/output.js";
 import { agentShare } from "../../../src/agent/commands/share.js";
 import type { ResolvedRepo } from "../../../src/package/manifest/types.js";
+import { MethodResolveError } from "../../../src/installer/resolver/exceptions.js";
 
 const mockedParseAddress = vi.mocked(parseAddress);
 const mockedResolveFromGitHub = vi.mocked(resolveFromGitHub);
@@ -180,6 +181,43 @@ describe("agentShare", () => {
     expect(mockedAgentSuccess).toHaveBeenCalledWith(
       expect.objectContaining({
         methods: ["other-method"],
+      }),
+    );
+  });
+
+  it.each([
+    ["not_found", "method.not_found", "no"],
+    ["fetch_failed", "method.fetch_failed", "yes"],
+  ] as const)("reads a GitHub resolve that failed as %s as %s", async (reason, code, retry) => {
+    mockedParseAddress.mockReturnValue({ org: "mthds-ai", repo: "tools", subpath: null });
+    mockedResolveFromGitHub.mockRejectedValue(new MethodResolveError("GitHub said no.", reason));
+
+    await expect(agentShare("mthds-ai/tools", {})).rejects.toThrow(AgentErrorThrow);
+
+    expect(mockedAgentError).toHaveBeenCalledWith(
+      expect.objectContaining({
+        code,
+        retry,
+        params: { method_ref: "mthds-ai/tools" },
+        message: "Failed to resolve methods: GitHub said no.",
+      }),
+    );
+  });
+
+  it("reads a local directory the system refused as client.file_unreadable", async () => {
+    mockedResolveFromLocal.mockImplementation(() => {
+      throw new MethodResolveError("Cannot read /srv/methods: denied", "unreadable", {
+        path: "/srv/methods",
+        fsCode: "EACCES",
+      });
+    });
+
+    await expect(agentShare(undefined, { local: "/srv" })).rejects.toThrow(AgentErrorThrow);
+
+    expect(mockedAgentError).toHaveBeenCalledWith(
+      expect.objectContaining({
+        code: "client.file_unreadable",
+        params: { path: "/srv/methods", reason: "eacces" },
       }),
     );
   });

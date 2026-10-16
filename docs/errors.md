@@ -119,6 +119,7 @@ Every body is decoded by the same rules, a route's result as much as a problem (
 | `client.argument_invalid` `{ argument, reason }` | An argument refused before any request left: run sources that exclude each other, method files that are not an array of file entries, a body that does not serialize as JSON, a CLI option's value. |
 | `client.file_unreadable`, `client.write_failed`, `client.target_exists` | A local file the CLIs cannot read, cannot write, or would overwrite. |
 | `client.tool_missing`, `client.tool_outdated` | A program a CLI runs (`pipelex`, `pipelex-agent`, `plxt`, `uv`, `codex`) is missing or older than the CLI needs. |
+| `method.not_found`, `method.fetch_failed` `{ method_ref }` | `mthds-agent install`, `publish` and `share` found no method at the address or directory given (`method.not_found`), or could not read it from GitHub, which was unreachable, rate limited, refusing with a `403` or failing with a `5xx` (`method.fetch_failed`, worth a retry). A token GitHub refuses is `client.not_configured` naming `GITHUB_TOKEN`, and a local directory the system refuses to read is `client.file_unreadable`. |
 | `security.input_path_refused` `{ rule }` | A file a bundle names lands outside the bundle's root. |
 | `runtime.unsupported` `{ capability }` | The runner cannot do what was asked, such as `check_model` on the API runner. |
 | `runtime.unexpected` | A failure no other code describes. |

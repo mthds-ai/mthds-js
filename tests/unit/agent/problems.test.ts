@@ -4,8 +4,10 @@ import {
   fileErrorReason,
   noUsableMethodProblem,
   registrationsProblem,
+  resolveFailureProblem,
   unusableMethodProblem,
 } from "../../../src/agent/problems.js";
+import { MethodResolveError } from "../../../src/installer/resolver/exceptions.js";
 import type { MethodRegistration } from "../../../src/installer/registry/client.js";
 import type { ResolvedMethod, ResolvedRepo } from "../../../src/package/manifest/types.js";
 
@@ -49,6 +51,54 @@ describe("errorPath", () => {
     expect(errorPath({ path: "" }, "fallback")).toBe("fallback");
     expect(errorPath({ path: 7 }, "fallback")).toBe("fallback");
     expect(errorPath(null, "fallback")).toBe("fallback");
+  });
+});
+
+describe("resolveFailureProblem", () => {
+  it("reads a source with nothing there as method.not_found naming the reference", () => {
+    const err = new MethodResolveError("Repository not found.", "not_found");
+    expect(resolveFailureProblem(err, "acme/tools", "Failed: gone")).toMatchObject({
+      code: "method.not_found",
+      params: { method_ref: "acme/tools" },
+      retry: "no",
+      message: "Failed: gone",
+    });
+  });
+
+  it("reads GitHub unreachable, rate limited or failing as method.fetch_failed, worth a retry", () => {
+    const err = new MethodResolveError("GitHub API error 503.", "fetch_failed");
+    expect(resolveFailureProblem(err, "acme/tools", "Failed")).toMatchObject({
+      code: "method.fetch_failed",
+      params: { method_ref: "acme/tools" },
+      domain: "runtime",
+      retry: "yes",
+    });
+  });
+
+  it("reads a refused token as client.not_configured naming its setting", () => {
+    const err = new MethodResolveError("401", "not_configured", { setting: "GITHUB_TOKEN" });
+    expect(resolveFailureProblem(err, "acme/tools", "Failed")).toMatchObject({
+      code: "client.not_configured",
+      params: { setting: "GITHUB_TOKEN" },
+    });
+  });
+
+  it("reads a local path the system refused as client.file_unreadable with its reason", () => {
+    const err = new MethodResolveError("Cannot read", "unreadable", {
+      path: "/srv/methods",
+      fsCode: "EACCES",
+    });
+    expect(resolveFailureProblem(err, "/srv", "Failed")).toMatchObject({
+      code: "client.file_unreadable",
+      params: { path: "/srv/methods", reason: "eacces" },
+    });
+  });
+
+  it("reads a failure the resolver did not read as runtime.unexpected", () => {
+    expect(resolveFailureProblem(new TypeError("boom"), "acme/tools", "Failed")).toMatchObject({
+      code: "runtime.unexpected",
+      message: "Failed",
+    });
   });
 });
 

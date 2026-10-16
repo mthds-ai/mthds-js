@@ -13,7 +13,12 @@
  */
 
 import { agentSuccess, agentError, agentProblem } from "../output.js";
-import { noUsableMethodProblem, registrationsProblem, unusableMethodProblem } from "../problems.js";
+import {
+  noUsableMethodProblem,
+  registrationsProblem,
+  resolveFailureProblem,
+  unusableMethodProblem,
+} from "../problems.js";
 import { parseAddress } from "../../installer/resolver/address.js";
 import { resolveFromGitHub } from "../../installer/resolver/github.js";
 import { resolveFromLocal } from "../../installer/resolver/local.js";
@@ -77,9 +82,9 @@ export async function agentPublish(
       resolved = resolveFromLocal(options.local);
     } catch (err) {
       agentError(
-        agentProblem(
-          "method.not_found",
-          { method_ref: options.local! },
+        resolveFailureProblem(
+          err,
+          options.local!,
           `Failed to resolve local methods: ${(err as Error).message}`,
         ),
       );
@@ -115,9 +120,9 @@ export async function agentPublish(
       resolved = await resolveFromGitHub(parsed);
     } catch (err) {
       agentError(
-        agentProblem(
-          "method.not_found",
-          { method_ref: address! },
+        resolveFailureProblem(
+          err,
+          address!,
           `Failed to resolve methods: ${(err as Error).message}`,
         ),
       );

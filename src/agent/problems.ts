@@ -1,7 +1,8 @@
 /**
  * The problems of failures the mthds-agent commands share: a local file the system refused, a
- * method the resolver could not use, and a publish mthds.sh listed nothing of. Each is coded from
- * the core registry (docs/errors.md), with the command's own sentence in `message`.
+ * method source the resolver could not read, a method it could not use, and a publish mthds.sh
+ * listed nothing of. Each is coded from the core registry (docs/errors.md), with the command's own
+ * sentence in `message`.
  */
 
 import { agentProblem } from "./output.js";
@@ -11,6 +12,7 @@ import {
   skippedMethodReports,
 } from "../installer/resolver/skipped.js";
 import type { SkippedMethodReport } from "../installer/resolver/skipped.js";
+import { MethodResolveError } from "../installer/resolver/exceptions.js";
 import type { MethodRegistration, RegistrationAnswer } from "../installer/registry/client.js";
 import type { ResolvedRepo } from "../package/manifest/types.js";
 import type { StepReader } from "../problems/build.js";
@@ -30,6 +32,40 @@ export function fileErrorReason(err: unknown, fallback = "unreadable"): string {
 export function errorPath(err: unknown, fallback: string): string {
   const path = (err as { path?: unknown } | null)?.path;
   return typeof path === "string" && path !== "" ? path : fallback;
+}
+
+/**
+ * The problem of a method source the resolver could not read, `ref` being the address or the
+ * directory the command was given: `method.not_found` when nothing is there, `method.fetch_failed`
+ * when GitHub could not be reached, refused for now or failed, which a later attempt may get past,
+ * `client.not_configured` when GitHub refused the token, and `client.file_unreadable` when the
+ * system refused a local path. A failure the resolver did not read is `runtime.unexpected`.
+ */
+export function resolveFailureProblem(err: unknown, ref: string, message: string): Problem {
+  if (!(err instanceof MethodResolveError)) {
+    return agentProblem("runtime.unexpected", {}, message);
+  }
+  switch (err.reason) {
+    case "not_found":
+      return agentProblem("method.not_found", { method_ref: ref }, message);
+    case "fetch_failed":
+      return agentProblem("method.fetch_failed", { method_ref: ref }, message);
+    case "not_configured":
+      return agentProblem(
+        "client.not_configured",
+        { setting: err.setting ?? "GITHUB_TOKEN" },
+        message,
+      );
+    case "unreadable":
+      return agentProblem(
+        "client.file_unreadable",
+        {
+          path: err.path ?? ref,
+          reason: fileErrorReason({ code: err.fsCode }),
+        },
+        message,
+      );
+  }
 }
 
 /**

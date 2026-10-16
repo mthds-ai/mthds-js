@@ -16,7 +16,7 @@
  * `client.argument_invalid` or `client.not_configured`. Mirrors `mthds/runners/api/exceptions.py`.
  */
 
-import { ProblemError } from "../../problems/errors.js";
+import { ProblemError, problemSentence } from "../../problems/errors.js";
 import type { Problem } from "../../problems/types.js";
 
 export { PipelineRequestError } from "../../protocol/exceptions.js";
@@ -42,8 +42,8 @@ export interface ApiAnswerFacts {
   bodyIsProblem?: boolean;
 }
 
-/** How much of a body that is no problem document an error's message quotes. */
-export const BODY_EXCERPT_LENGTH = 300;
+/** How much of a body that is no problem document an error's message quotes, as the Python twin does. */
+export const BODY_EXCERPT_LENGTH = 500;
 
 /** The start of a body, its whitespace collapsed, as an error's message quotes it. */
 function bodyExcerpt(body: string): string {
@@ -53,8 +53,9 @@ function bodyExcerpt(body: string): string {
 
 /**
  * An answer of the runtime that is not the route's result, read as its problem. Its message names
- * the route and the status, then the problem's sentence and next step, and, for a body that is no
- * problem document, the start of the body, which is the runtime's text and never a problem member.
+ * the route and the status, then the problem's sentence, and ends with its next step. For a body
+ * that is no problem document, the start of the body, which is the runtime's text and never a
+ * problem member, is quoted on its own line between them, and the next step takes the last line.
  */
 export class ApiResponseError extends ProblemError {
   public readonly apiUrl: string;
@@ -68,11 +69,15 @@ export class ApiResponseError extends ProblemError {
   constructor(problem: Problem, facts: ApiAnswerFacts, options?: { cause?: unknown }) {
     super(problem, options);
     this.name = "ApiResponseError";
-    const excerpt =
-      facts.bodyIsProblem === false && facts.responseBody.trim() !== ""
-        ? ` The answer's body begins: ${bodyExcerpt(facts.responseBody)}`
-        : "";
-    this.message = `${facts.route} failed (${facts.status}): ${this.message}${excerpt}`;
+    const head = `${facts.route} failed (${facts.status}): `;
+    if (facts.bodyIsProblem === false && facts.responseBody.trim() !== "") {
+      const step = problem.next_step.detail;
+      this.message =
+        `${head}${problemSentence(problem)}\nThe server answered: ${bodyExcerpt(facts.responseBody)}` +
+        (step.length > 0 ? `\nNext step: ${step}` : "");
+    } else {
+      this.message = `${head}${this.message}`;
+    }
     this.apiUrl = facts.apiUrl;
     this.route = facts.route;
     this.status = facts.status;

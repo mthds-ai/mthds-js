@@ -394,11 +394,12 @@ describe("MthdsApiClient answers that are no problem document", () => {
     expect(e.responseBody).toContain("Invalid authentication token");
     // A problem the client builds carries no status: the answer's is in its parameters.
     expect(e.problem).not.toHaveProperty("status");
-    // The message names the route and status, the problem's sentence and next step, then the
-    // start of the body, which no member of the problem holds.
+    // The message names the route and status and the problem's sentence, quotes the start of the
+    // body, which no member of the problem holds, on its own line, and ends with the next step.
     expect(e.message).toBe(
-      `POST /v1/execute failed (401): ${e.problem.detail} ${e.problem.next_step.detail} ` +
-        `The answer's body begins: {"detail":"Invalid authentication token"}`,
+      `POST /v1/execute failed (401): ${e.problem.detail}\n` +
+        `The server answered: {"detail":"Invalid authentication token"}\n` +
+        `Next step: ${e.problem.next_step.detail}`,
     );
     expect(JSON.stringify(e.problem)).not.toContain("Invalid authentication token");
   });

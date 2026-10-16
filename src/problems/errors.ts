@@ -15,17 +15,24 @@ import type { NextStep, Problem } from "./types.js";
 import type { ProblemDomain, RetryVerdict, StepKind } from "./vocabulary.js";
 
 /**
- * The message of an error carrying `problem`: the problem's `message` member when it carries one,
- * the caller's own sentence for a refusal it built, else its `detail`, then its next step, so that
- * a reader of the message alone learns what to do.
+ * The sentence an error carrying `problem` opens with: the problem's `message` member when it
+ * carries one, the caller's own sentence for a refusal it built, else its `detail`.
+ */
+export function problemSentence(problem: Problem): string {
+  return typeof problem.message === "string" && problem.message.length > 0
+    ? problem.message
+    : problem.detail;
+}
+
+/**
+ * The message of an error carrying `problem`: its sentence (`problemSentence`), then its next
+ * step, unless the sentence already ends with it, so that every such message ends with the next
+ * step and a reader of the message alone learns what to do.
  */
 export function problemErrorMessage(problem: Problem): string {
-  const sentence =
-    typeof problem.message === "string" && problem.message.length > 0
-      ? problem.message
-      : problem.detail;
+  const sentence = problemSentence(problem);
   const step = problem.next_step.detail;
-  return step.length > 0 && !sentence.includes(step) ? `${sentence} ${step}` : sentence;
+  return step.length > 0 && !sentence.endsWith(step) ? `${sentence} ${step}` : sentence;
 }
 
 /**

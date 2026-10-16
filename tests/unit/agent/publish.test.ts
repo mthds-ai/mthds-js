@@ -303,7 +303,7 @@ describe("agentPublish", () => {
   });
 
   it("registers nothing from a local directory, and says so", async () => {
-    mockedResolveFromLocal.mockReturnValue({ ...fakeResolved, source: "local", isPublic: false });
+    mockedResolveFromLocal.mockResolvedValue({ ...fakeResolved, source: "local", isPublic: false });
 
     await agentPublish(undefined, { local: "/some/path" });
 
@@ -415,7 +415,7 @@ const partiallyResolved: ResolvedRepo = {
 
 describe("agentPublish and the refused methods", () => {
   it("reports the refused methods beside the published ones", async () => {
-    mockedResolveFromLocal.mockReturnValue({ ...partiallyResolved, source: "local" });
+    mockedResolveFromLocal.mockResolvedValue({ ...partiallyResolved, source: "local" });
 
     await agentPublish(undefined, { local: "/some/path" });
 
@@ -429,7 +429,7 @@ describe("agentPublish and the refused methods", () => {
   });
 
   it("carries the field as an empty array when nothing was refused", async () => {
-    mockedResolveFromLocal.mockReturnValue({ ...fakeResolved, source: "local" });
+    mockedResolveFromLocal.mockResolvedValue({ ...fakeResolved, source: "local" });
 
     await agentPublish(undefined, { local: "/some/path" });
 
@@ -438,7 +438,7 @@ describe("agentPublish and the refused methods", () => {
   });
 
   it("reports the refusals even under --method, since a skip is the repo's property", async () => {
-    mockedResolveFromLocal.mockReturnValue({ ...partiallyResolved, source: "local" });
+    mockedResolveFromLocal.mockResolvedValue({ ...partiallyResolved, source: "local" });
 
     await agentPublish(undefined, { local: "/some/path", method: "contract-analysis" });
 
@@ -451,7 +451,7 @@ describe("agentPublish and the refused methods", () => {
   });
 
   it("gives the filter the refusal reason instead of calling the method missing", async () => {
-    mockedResolveFromLocal.mockReturnValue({ ...partiallyResolved, source: "local" });
+    mockedResolveFromLocal.mockResolvedValue({ ...partiallyResolved, source: "local" });
 
     await expect(
       agentPublish(undefined, { local: "/some/path", method: "legacy_tool" }),
@@ -467,7 +467,7 @@ describe("agentPublish and the refused methods", () => {
   });
 
   it("says why when nothing survived, rather than only that nothing did", async () => {
-    mockedResolveFromLocal.mockReturnValue({
+    mockedResolveFromLocal.mockResolvedValue({
       ...partiallyResolved,
       source: "local",
       methods: [],

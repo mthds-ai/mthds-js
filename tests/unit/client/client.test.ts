@@ -8,6 +8,7 @@ import {
   RunStillRunningError,
 } from "../../../src/runners/api/exceptions.js";
 import { MTHDS_JS_VERSION } from "../../../src/version.js";
+import { EMPTY_METHOD_TREE_MESSAGE } from "../../../src/protocol/options.js";
 
 const BASE_URL = "http://localhost:8081";
 
@@ -519,18 +520,29 @@ describe("MthdsApiClient method files on the run routes", () => {
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
-  it("does not ship an empty files map on the wire", async () => {
+  it("refuses an empty files map beside a pipe code, sending nothing", async () => {
     const client = makeClient();
     const fetchSpy = vi
       .spyOn(globalThis, "fetch")
       .mockResolvedValue(jsonResponse(200, { pipeline_run_id: "ok" }));
-    // pipe_code satisfies the precondition; the empty `files` must be dropped so
-    // the runner never sees a tree holding no file.
-    await client.execute({ pipe_code: "registered_pipe", files: {} });
-    const body = JSON.parse((fetchSpy.mock.calls[0]![1] as RequestInit).body as string);
-    expect(body.files).toBeUndefined();
-    expect(body.pipe_code).toBe("registered_pipe");
+    // A tree holds at least one file, so an empty map is refused rather than dropped.
+    await expect(client.execute({ pipe_code: "registered_pipe", files: {} })).rejects.toThrow(
+      EMPTY_METHOD_TREE_MESSAGE,
+    );
+    expect(fetchSpy).not.toHaveBeenCalled();
   });
+
+  it.each(["tree", "bundleMain"])(
+    "rejects the client-only option %s smuggled through `extra`",
+    async (key) => {
+      const client = makeClient();
+      const fetchSpy = vi.spyOn(globalThis, "fetch");
+      await expect(client.execute({ pipe_code: "p", extra: { [key]: "x" } })).rejects.toThrow(
+        `extra carries reserved args [${key}]`,
+      );
+      expect(fetchSpy).not.toHaveBeenCalled();
+    },
+  );
 });
 
 describe("MthdsApiClient.start", () => {

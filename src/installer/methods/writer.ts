@@ -1,7 +1,9 @@
 import { join, resolve, dirname, sep } from "node:path";
 import { homedir } from "node:os";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import type { ResolvedRepo } from "../../package/manifest/types.js";
+import { treePathViolation } from "../../method-tree/tree-path.js";
+import { installedMethodFiles } from "./method-files.js";
 
 /**
  * Generate an executable CLI shim for a method in ~/.mthds/bin/.
@@ -34,9 +36,13 @@ export function generateShim(name: string, installDir: string): void {
 }
 
 /**
- * Write all method files from a ResolvedRepo into targetDir/<method-name>/,
- * generating a CLI shim for each. Refuses any path that escapes targetDir or
- * the per-method install dir (path traversal protection).
+ * Install each method of a ResolvedRepo into targetDir/<method-name>/: every file of its tree,
+ * with its exact bytes, under its tree path, and a CLI shim for each. A method's directory is
+ * replaced as a whole, so a file an earlier install left there that the method no longer holds
+ * does not linger in its tree: the tree is written into a scratch directory beside it, whose
+ * name starts with a dot so no tree or library scan ever takes it in, then moved into place.
+ * Refuses any name or path that escapes targetDir or the method's directory (path traversal
+ * protection), before anything of that method is written.
  *
  * Agent-agnostic: the on-disk layout is identical regardless of which AI
  * coding agent triggered the install.
@@ -50,19 +56,26 @@ export function writeMethodFiles(repo: ResolvedRepo, targetDirInput: string): vo
     if (!installDir.startsWith(targetDir + sep)) {
       throw new Error(`Path traversal detected: name "${method.name}" escapes target directory.`);
     }
-    mkdirSync(installDir, { recursive: true });
-
-    writeFileSync(join(installDir, "METHODS.toml"), method.rawManifest, "utf-8");
-
-    for (const file of method.files) {
-      const filePath = resolve(join(installDir, file.relativePath));
-      if (!filePath.startsWith(installDir + sep)) {
-        throw new Error(
-          `Path traversal detected: "${file.relativePath}" escapes install directory.`,
-        );
+    const files = installedMethodFiles(method);
+    for (const file of files) {
+      const violation = treePathViolation(file.path);
+      const filePath = resolve(installDir, ...file.path.split("/"));
+      if (violation !== null || !filePath.startsWith(installDir + sep)) {
+        throw new Error(`Path traversal detected: "${file.path}" escapes install directory.`);
       }
-      mkdirSync(dirname(filePath), { recursive: true });
-      writeFileSync(filePath, file.content, "utf-8");
+    }
+
+    const staging = mkdtempSync(join(targetDir, ".installing-"));
+    try {
+      for (const file of files) {
+        const filePath = join(staging, ...file.path.split("/"));
+        mkdirSync(dirname(filePath), { recursive: true });
+        writeFileSync(filePath, file.bytes);
+      }
+      rmSync(installDir, { recursive: true, force: true });
+      renameSync(staging, installDir);
+    } finally {
+      rmSync(staging, { recursive: true, force: true });
     }
 
     generateShim(method.name, installDir);

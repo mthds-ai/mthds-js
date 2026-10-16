@@ -125,3 +125,30 @@ describe.each(COMMANDS)("mthds %s", (_name, command) => {
     expect(options.pipe_code).toBe("hello");
   });
 });
+
+describe("a named bundle declaring no main_pipe", () => {
+  const NO_MAIN = join(tmp, "no-main.mthds");
+  writeFileSync(NO_MAIN, 'domain = "demo"\n', "utf-8");
+
+  it.each(["pipelex", "api"] as const)(
+    "is refused on the %s runner without --pipe, naming --pipe, and starts nothing",
+    async (type) => {
+      useRunner(type);
+      await expect(runBundle(NO_MAIN, {})).rejects.toThrow(ExitCalled);
+
+      expect(execute).not.toHaveBeenCalled();
+      const [message] = errorMessages();
+      expect(message).toContain("Could not determine pipe code");
+      expect(message).toContain("--pipe");
+    },
+  );
+
+  it("runs the pipe --pipe names", async () => {
+    useRunner("api");
+    await runBundle(NO_MAIN, { pipe: "greet" });
+
+    const options = execute.mock.calls[0]![0] as { bundleMain: string; pipe_code: string };
+    expect(options.bundleMain).toBe("no-main.mthds");
+    expect(options.pipe_code).toBe("greet");
+  });
+});

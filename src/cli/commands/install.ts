@@ -15,7 +15,7 @@ import { describeUnusableMethod } from "../../installer/resolver/skipped.js";
 import { runInstallFlow } from "../../installer/methods/install-flow.js";
 import type { InstallFlowResult } from "../../installer/methods/install-flow.js";
 import { InstallLocation } from "../../installer/methods/types.js";
-import { resolvedMethodFiles } from "../../installer/methods/method-files.js";
+import { describeTreeFiles, resolvedMethodTree } from "../../installer/methods/method-files.js";
 import { createRunner } from "../../runners/registry.js";
 import type { ParsedAddress, ResolvedRepo } from "../../package/manifest/types.js";
 import type { Runner, RunnerType } from "../../runners/types.js";
@@ -50,7 +50,7 @@ export async function installMethod(options: {
   if (dir) {
     s.message(`Resolving methods from ${dir}...`);
     try {
-      resolved = resolveFromLocal(dir);
+      resolved = await resolveFromLocal(dir);
     } catch (err) {
       s.stop("Failed to resolve local methods.");
       p.log.error((err as Error).message);
@@ -120,12 +120,11 @@ export async function installMethod(options: {
   // Show valid methods
   for (const method of resolved.methods) {
     const pkg = method.manifest.package;
-    const fileCount = method.files.length;
     p.log.success(
       [
         `${chalk.bold(method.name)} — ${pkg.display_name ?? pkg.address} v${pkg.version}`,
         `  ${pkg.description}`,
-        `  ${fileCount} .mthds file${fileCount !== 1 ? "s" : ""}`,
+        `  ${describeTreeFiles(method)}`,
       ].join("\n"),
     );
   }
@@ -169,13 +168,15 @@ export async function installMethod(options: {
     const valSpinner = p.spinner();
     let allValid = true;
     for (const method of resolved.methods) {
-      if (method.files.length === 0) {
+      if (!method.files.some((file) => file.path.endsWith(".mthds"))) {
         continue; // No bundle to validate
       }
 
       valSpinner.start(`Validating ${method.name}...`);
       try {
-        const report = await runner.validate({ files: resolvedMethodFiles(method) });
+        // The whole tree the install writes, so a pipe's Python or a template's files are
+        // validated with the bundles that name them.
+        const report = await runner.validate({ tree: resolvedMethodTree(method) });
         if (report.is_valid === false) {
           // A produced "invalid" verdict (the 200 InvalidReport arm) — surface the
           // per-error diagnostics, not just the summary, so failures are debuggable.
@@ -246,10 +247,7 @@ export async function installMethod(options: {
   installSpinner.stop(`Installed to ${result.targetDir}`);
 
   for (const method of resolved.methods) {
-    const fileCount = method.files.length;
-    const filesMsg =
-      fileCount === 0 ? "(manifest only)" : `(${fileCount} .mthds file${fileCount > 1 ? "s" : ""})`;
-    p.log.success(`${method.name} ${filesMsg}`);
+    p.log.success(`${method.name} (${describeTreeFiles(method)})`);
   }
 
   // PATH advisory for CLI shims

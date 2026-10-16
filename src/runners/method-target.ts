@@ -8,10 +8,12 @@
  * and then nothing beside it travels. Inline `--content` is a one-file tree of its own.
  *
  * A library directory (`-L`) cannot add a second tree to a request, since a request carries one.
- * One inside the tree's root adds nothing, the tree already holding its files. One holding a
- * `.mthds` file named alone becomes that file's root, so `validate bundle <file> -L <its dir>/`
- * sends the directory's tree with the file as its entry, as the pipelex runner loads the directory
- * beside the file. Any other is refused with a message saying how to make one tree of them.
+ * One inside the tree's root adds nothing, the tree already holding its files. For a `.mthds` file
+ * named alone, the outermost library directory holding it becomes its root, so
+ * `validate bundle <file> -L <its dir>/` sends the directory's tree with the file as its entry, as
+ * the pipelex runner loads the directory beside the file, and every other library directory must
+ * lie inside that root, in whatever order they were given. Any other is refused with a message
+ * saying how to make one tree of them.
  */
 
 import { realpath, stat } from "node:fs/promises";
@@ -85,32 +87,45 @@ export async function resolveMethodTarget(
   }
   let tree = await listMethodTree(target.path, { limits });
   let entry = tree.entry;
-  for (const libraryDir of libraryDirs) {
-    const directory = await realpath(libraryDir);
-    if (tree.root !== null) {
-      if (isWithin(directory, tree.root)) continue;
+  const directories = await Promise.all(
+    libraryDirs.map(async (libraryDir) => ({ libraryDir, real: await realpath(libraryDir) })),
+  );
+  if (tree.root !== null) {
+    const outside = directories.find(({ real }) => !isWithin(real, tree.root!));
+    if (outside !== undefined) {
       throw new MethodTargetError(
-        `The API runner sends a method as one tree, here the tree rooted at ${tree.root}, and the library directory ${libraryDir} is outside it. Move those files under the root, add a METHODS.toml to a directory holding both, or pass --runner pipelex.`,
+        `The API runner sends a method as one tree, here the tree rooted at ${tree.root}, and the library directory ${outside.libraryDir} is outside it. Move those files under the root, add a METHODS.toml to a directory holding both, or pass --runner pipelex.`,
       );
     }
-    // A `.mthds` file named alone, with no manifest above it: a library directory holding it
-    // becomes its root, so the files beside it travel with it.
+  } else if (directories.length > 0) {
+    // A `.mthds` file named alone, with no manifest above it: the outermost library
+    // directory holding it becomes its root, so the files beside it travel with it,
+    // and every other library directory must lie inside that root. The order the
+    // directories were given in changes nothing.
     const fileDirectory = await realpath(dirname(resolve(target.path)));
-    if (!isWithin(fileDirectory, directory)) {
+    const holding = directories.filter(({ real }) => isWithin(fileDirectory, real));
+    const root = holding.find(({ real }) => holding.every((other) => isWithin(other.real, real)));
+    if (root === undefined) {
       throw new MethodTargetError(
-        `${target.path} is a .mthds file named alone, which travels without the files beside it, and the library directory ${libraryDir} does not hold it. Name a directory holding both, add a METHODS.toml to one, or pass --runner pipelex.`,
+        `${target.path} is a .mthds file named alone, which travels without the files beside it, and no library directory given holds it. Name a directory holding both, add a METHODS.toml to one, or pass --runner pipelex.`,
+      );
+    }
+    const outside = directories.find(({ real }) => !isWithin(real, root.real));
+    if (outside !== undefined) {
+      throw new MethodTargetError(
+        `${target.path} is a .mthds file named alone, which travels in the tree of the library directory ${root.libraryDir} holding it, and the library directory ${outside.libraryDir} is outside that tree. Name a directory holding both, add a METHODS.toml to one, or pass --runner pipelex.`,
       );
     }
     const loneName = tree.entry!;
-    tree = await listMethodTree(directory, { limits, discover: false });
-    const below = relative(directory, fileDirectory);
+    tree = await listMethodTree(root.real, { limits, discover: false });
+    const below = relative(root.real, fileDirectory);
     entry = (below === "" ? [] : below.split(sep))
       .map((segment) => segment.normalize("NFC"))
       .concat(loneName)
       .join("/");
     if (!tree.has(entry)) {
       throw new MethodTargetError(
-        `${target.path} is not a file of the method tree at ${directory}, whose membership rule keeps it out, so it cannot be sent as that tree's entry.`,
+        `${target.path} is not a file of the method tree at ${root.real}, whose membership rule keeps it out, so it cannot be sent as that tree's entry.`,
       );
     }
   }

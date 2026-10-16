@@ -54,7 +54,8 @@ src/runners/api/
                               /v1/validate narrowing (PipelexValidationResult) now lives in @pipelex/sdk
   exceptions.ts               ApiResponseError (+ validationErrors and the problem members: type, title, instance,
                               requestId, errorDomain, retryable, userAction, missingBlobs), ApiUnreachableError,
-                              ClientAuthenticationError, RunStillRunningError, PipelineExecuteTimeoutError, BlobUploadError
+                              ClientAuthenticationError, RunStillRunningError, PipelineExecuteTimeoutError, BlobUploadError,
+                              MalformedBlobsAnswerError
 src/runners/pipelex/
   runner.ts                   PipelexRunner (drives the pipelex CLI on this machine)
 src/runners/

@@ -1,14 +1,13 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdirSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { writeMethodFiles } from "../../../../src/installer/methods/writer.js";
-import type { ResolvedRepo } from "../../../../src/package/manifest/types.js";
+import type { MethodsFile, ResolvedRepo } from "../../../../src/package/manifest/types.js";
 
-function makeRepo(
-  names: string[],
-  files: { relativePath: string; content: string }[] = [],
-): ResolvedRepo {
+const encode = (text: string): Uint8Array => new TextEncoder().encode(text);
+
+function makeRepo(names: string[], files: MethodsFile[] = []): ResolvedRepo {
   return {
     methods: names.map((name) => ({
       name,
@@ -21,7 +20,7 @@ function makeRepo(
         },
       },
       rawManifest: `[package]\nname = "${name}"\naddress = "github.com/test/repo"\nversion = "1.0.0"\ndescription = "test"`,
-      files: files.length ? files : [{ relativePath: "main.mthds", content: "test content" }],
+      files: files.length ? files : [{ path: "main.mthds", bytes: encode("test content") }],
     })),
     skipped: [],
     source: "local",
@@ -56,10 +55,7 @@ describe("writeMethodFiles path traversal checks", () => {
   });
 
   it("rejects file paths that traverse outside installDir", () => {
-    const repo = makeRepo(
-      ["legit-method"],
-      [{ relativePath: "../../escape.mthds", content: "bad" }],
-    );
+    const repo = makeRepo(["legit-method"], [{ path: "../../escape.mthds", bytes: encode("bad") }]);
 
     expect(() => writeMethodFiles(repo, join(testDir, "methods"))).toThrow(
       /path traversal detected/i,
@@ -84,5 +80,77 @@ describe("writeMethodFiles path traversal checks", () => {
     const repo = makeRepo(["valid-method"]);
 
     expect(() => writeMethodFiles(repo, join(testDir, "methods"))).not.toThrow();
+  });
+
+  it("refuses a path that is not a tree path before writing anything of the method", () => {
+    const repo = makeRepo(["legit"], [{ path: "a\\b.py", bytes: encode("x") }]);
+
+    expect(() => writeMethodFiles(repo, join(testDir, "methods"))).toThrow(/path traversal/i);
+    expect(existsSync(join(testDir, "methods", "legit"))).toBe(false);
+  });
+});
+
+describe("writeMethodFiles installs the whole tree", () => {
+  let testDir: string;
+  let originalHome: string | undefined;
+
+  beforeEach(() => {
+    testDir = join(tmpdir(), `mthds-writer-tree-test-${Date.now()}`);
+    originalHome = process.env.HOME;
+    process.env.HOME = testDir;
+    mkdirSync(testDir, { recursive: true });
+  });
+
+  afterEach(() => {
+    if (originalHome === undefined) delete process.env.HOME;
+    else process.env.HOME = originalHome;
+    rmSync(testDir, { recursive: true, force: true });
+  });
+
+  it("writes every file of the tree with its exact bytes, the manifest among them", () => {
+    const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0xff, 0x00]);
+    const repo = makeRepo(
+      ["demo"],
+      [
+        { path: "METHODS.toml", bytes: encode("[package]\nname = 'demo'\n") },
+        { path: "bundle.mthds", bytes: encode("domain = 'demo'") },
+        { path: "funcs/f.py", bytes: encode("def f(): ...\n") },
+        { path: "images/logo.png", bytes: png },
+      ],
+    );
+    const target = join(testDir, "methods");
+
+    writeMethodFiles(repo, target);
+
+    const installed = join(target, "demo");
+    expect(readFileSync(join(installed, "METHODS.toml"), "utf-8")).toBe(
+      "[package]\nname = 'demo'\n",
+    );
+    expect(readFileSync(join(installed, "funcs", "f.py"), "utf-8")).toBe("def f(): ...\n");
+    expect([...readFileSync(join(installed, "images", "logo.png"))]).toEqual([...png]);
+    // No scratch directory is left beside the installed methods.
+    expect(readdirSync(target)).toEqual(["demo"]);
+  });
+
+  it("writes the manifest the resolver read when the tree leaves it out", () => {
+    const repo = makeRepo(["demo"], [{ path: "bundle.mthds", bytes: encode("domain = 'demo'") }]);
+    const target = join(testDir, "methods");
+
+    writeMethodFiles(repo, target);
+
+    expect(readFileSync(join(target, "demo", "METHODS.toml"), "utf-8")).toBe(
+      repo.methods[0]!.rawManifest,
+    );
+  });
+
+  it("replaces an earlier install, so a file the method no longer holds does not linger", () => {
+    const target = join(testDir, "methods");
+    mkdirSync(join(target, "demo", "funcs"), { recursive: true });
+    writeFileSync(join(target, "demo", "funcs", "old.py"), "stale");
+
+    writeMethodFiles(makeRepo(["demo"]), target);
+
+    expect(existsSync(join(target, "demo", "funcs", "old.py"))).toBe(false);
+    expect(readdirSync(join(target, "demo")).sort()).toEqual(["METHODS.toml", "main.mthds"]);
   });
 });

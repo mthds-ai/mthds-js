@@ -64,7 +64,7 @@ export async function agentPublish(
 
   if (options.local) {
     try {
-      resolved = resolveFromLocal(options.local);
+      resolved = await resolveFromLocal(options.local);
     } catch (err) {
       agentError(`Failed to resolve local methods: ${(err as Error).message}`, "PublishError", {
         error_domain: AGENT_ERROR_DOMAINS.INSTALL,

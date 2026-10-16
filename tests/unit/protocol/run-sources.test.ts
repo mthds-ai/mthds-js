@@ -1,5 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { assertOneMethodSource, hasMethodSource } from "../../../src/protocol/options.js";
+import {
+  EMPTY_METHOD_TREE_MESSAGE,
+  assertOneMethodSource,
+  hasMethodSource,
+} from "../../../src/protocol/options.js";
 import { PipelineRequestError } from "../../../src/protocol/exceptions.js";
 import type { MethodTreeSource } from "../../../src/protocol/file_entries.js";
 
@@ -28,6 +32,19 @@ describe("assertOneMethodSource", () => {
     expect(() => assertOneMethodSource({ files: {}, tree: tree(["m.mthds"]) })).toThrow(
       PipelineRequestError,
     );
+  });
+});
+
+describe("assertOneMethodSource on an empty tree", () => {
+  it("refuses an empty map or a tree with no file with one message, whatever else is given", () => {
+    for (const options of [
+      { files: {} },
+      { pipe_code: "p", files: {} },
+      { tree: tree([]) },
+      { pipe_code: "p", tree: tree([]) },
+    ]) {
+      expect(() => assertOneMethodSource(options)).toThrow(EMPTY_METHOD_TREE_MESSAGE);
+    }
   });
 });
 

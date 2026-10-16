@@ -23,6 +23,7 @@ import {
   ApiResponseError,
   ApiUnreachableError,
   BlobUploadError,
+  MalformedBlobsAnswerError,
   PipelineExecuteTimeoutError,
   PipelineRequestError,
   RunStillRunningError,
@@ -39,10 +40,11 @@ import {
   fileByBlob,
   forEachConcurrently,
   hashMethodFiles,
+  inlineFilesOf,
   inlineMapBytes,
-  inlineMethodFiles,
   listerLimitsOf,
   mightTravelInline,
+  treeTotalSize,
   uniqueBlobs,
 } from "./tree-sending.js";
 
@@ -95,6 +97,17 @@ const BLOB_UPLOAD_TIMEOUT_MS = 300_000; // 5 min
 const BLOB_UPLOAD_CONCURRENCY = 4;
 const SHA256_HEX = /^[0-9a-f]{64}$/;
 
+/**
+ * How long a runner's handshake is trusted before the client asks again. A runner's
+ * blob store and tree limits change only with a deploy, so a client asks once per
+ * this span rather than before every request; a refusal that says the answer is
+ * stale (`/blobs/missing` gone, a tree refused as too large) drops it sooner.
+ */
+export const HANDSHAKE_TTL_MS = 5 * 60_000;
+
+/** The problem `code` a runner gives a tree past one of its limits, on a run or a validation. */
+const METHOD_TREE_TOO_LARGE_CODE = "method_tree_too_large";
+
 /** The `files` map a request carries, and the tree behind it when it travels by hash. */
 interface PreparedFiles {
   files: MethodFiles | undefined;
@@ -104,6 +117,12 @@ interface PreparedFiles {
    */
   byHashTree: MethodTreeSource | undefined;
 }
+
+/**
+ * The bytes of a tree's files already read for one request, by tree path, so a file
+ * read to weigh the inline map is not read again to be uploaded or resent.
+ */
+type ReadBytes = Map<string, Uint8Array>;
 
 /**
  * Client for any MTHDS runner — and THE API runner (parity D8). One class,
@@ -137,8 +156,8 @@ export class MthdsApiClient implements Runner {
    * where the header must not be set.
    */
   private readonly userAgent: string | undefined;
-  /** The runner's handshake, asked once and kept while it answers. */
-  private handshakePromise: Promise<VersionInfo> | undefined;
+  /** The runner's handshake and when it was asked, kept for `HANDSHAKE_TTL_MS`. */
+  private handshakeCache: { promise: Promise<VersionInfo>; askedAt: number } | undefined;
 
   constructor(options: MthdsApiClientOptions = {}) {
     // Validate appInfo first: a bad identity is an argument error regardless
@@ -363,20 +382,23 @@ export class MthdsApiClient implements Runner {
    */
   async execute(options: RunOptions): Promise<DictRunResultExecute> {
     const extensions = buildExtensions(options.extra);
-    assertRunnable(options, extensions, "execute");
     assertOneMethodSource(options);
-    const prepared = await this.prepareRequestFiles(options);
-    const request = runRequestBody(options, prepared.files, extensions);
+    assertRunnable(options, extensions, "execute");
 
     // Measured from the request itself, not from the uploads before it, which the
     // gateway's clock does not see.
     let sentAt: number | undefined;
     try {
-      const res = await this.postWithBlobRetry("execute", request, prepared.byHashTree, {
-        onSend: () => {
-          sentAt = Date.now();
+      const res = await this.postMethodRequest(
+        "execute",
+        options,
+        (files) => runRequestBody(options, files, extensions),
+        {
+          onSend: () => {
+            sentAt = Date.now();
+          },
         },
-      });
+      );
       this.throwIfExecuteDegraded(res);
       if (res.status < 200 || res.status >= 300) {
         this.throwApiResponseError("POST", "execute", res);
@@ -407,14 +429,15 @@ export class MthdsApiClient implements Runner {
    */
   async start(options: StartOptions): Promise<RunResultStart> {
     const extensions = buildExtensions(options.extra);
-    assertRunnable(options, extensions, "start");
     assertOneMethodSource(options);
-    const prepared = await this.prepareRequestFiles(options);
-    const request = runRequestBody(options, prepared.files, extensions);
+    assertRunnable(options, extensions, "start");
 
-    const res = await this.postWithBlobRetry("start", request, prepared.byHashTree, {
-      timeoutMs: POLL_REQUEST_TIMEOUT_MS,
-    });
+    const res = await this.postMethodRequest(
+      "start",
+      options,
+      (files) => runRequestBody(options, files, extensions),
+      { timeoutMs: POLL_REQUEST_TIMEOUT_MS },
+    );
     if (res.status < 200 || res.status >= 300) {
       this.throwApiResponseError("POST", "start", res);
     }
@@ -450,21 +473,20 @@ export class MthdsApiClient implements Runner {
     allowSignatures = false,
     render?: string[],
   ): Promise<ValidationResult> {
-    const prepared: PreparedFiles =
-      "tree" in source
-        ? await this.prepareTree(source.tree)
-        : { files: source.files, byHashTree: undefined };
-    if (prepared.files === undefined || Object.keys(prepared.files).length === 0) {
-      throw new PipelineRequestError(
-        "validate() needs the method's tree, holding at least one file, as files or tree.",
-      );
+    assertOneMethodSource(source);
+    if (!hasMethodSource(source)) {
+      throw new PipelineRequestError("validate() needs the method's tree, as files or tree.");
     }
-    const body: Record<string, unknown> = {
-      files: prepared.files,
-      allow_signatures: allowSignatures,
-      render: withValidateMarkdownRender(render),
-    };
-    const res = await this.postWithBlobRetry("validate", body, prepared.byHashTree, {});
+    const res = await this.postMethodRequest(
+      "validate",
+      source,
+      (files) => ({
+        files,
+        allow_signatures: allowSignatures,
+        render: withValidateMarkdownRender(render),
+      }),
+      {},
+    );
     if (res.status < 200 || res.status >= 300) {
       this.throwApiResponseError("POST", "validate", res);
     }
@@ -520,7 +542,8 @@ export class MthdsApiClient implements Runner {
    * its own request calls it directly.
    */
   async prepareMethodFiles(tree: MethodTreeSource): Promise<MethodFiles> {
-    const prepared = await this.prepareTree(tree);
+    assertOneMethodSource({ tree });
+    const prepared = await this.prepareTree(tree, new Map());
     return prepared.files!;
   }
 
@@ -538,16 +561,33 @@ export class MthdsApiClient implements Runner {
     if (res.status < 200 || res.status >= 300) {
       this.throwApiResponseError("POST", "blobs/missing", res);
     }
-    const parsed: unknown = JSON.parse(res.body);
-    if (
-      parsed === null ||
-      typeof parsed !== "object" ||
-      !Array.isArray((parsed as { missing?: unknown }).missing)
-    ) {
-      throw new PipelineRequestError(
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(res.body);
+    } catch {
+      throw new MalformedBlobsAnswerError(
+        "POST /v1/blobs/missing answered a body that is not JSON.",
+      );
+    }
+    const missing = isRecord(parsed) ? parsed.missing : undefined;
+    if (!Array.isArray(missing)) {
+      throw new MalformedBlobsAnswerError(
         "POST /v1/blobs/missing answered without a `missing` list, which the protocol requires.",
       );
     }
+    missing.forEach((entry: unknown, index) => {
+      const fault = missingBlobFault(entry);
+      if (fault !== null) {
+        const sha256 = isRecord(entry) && typeof entry.sha256 === "string" ? entry.sha256 : "";
+        const wellFormed = SHA256_HEX.test(sha256) ? sha256 : undefined;
+        const named = wellFormed === undefined ? "" : ` (blob ${wellFormed})`;
+        throw new MalformedBlobsAnswerError(
+          `POST /v1/blobs/missing answered a malformed entry at missing[${index}]${named}: ${fault}.`,
+          index,
+          wellFormed,
+        );
+      }
+    });
     return parsed as MissingBlobsResult;
   }
 
@@ -560,7 +600,11 @@ export class MthdsApiClient implements Runner {
    * the bytes are already held and counts as uploaded. Throws `BlobUploadError`,
    * which never carries the target URL, a bearer capability.
    */
-  async uploadBlob(blob: MissingBlob, bytes: Uint8Array): Promise<void> {
+  async uploadBlob(
+    blob: MissingBlob,
+    bytes: Uint8Array,
+    options: { signal?: AbortSignal } = {},
+  ): Promise<void> {
     const { sha256, upload } = blob;
     let target: URL;
     try {
@@ -584,6 +628,11 @@ export class MthdsApiClient implements Runner {
       () => controller.abort(new DOMException("Upload timed out.", "TimeoutError")),
       BLOB_UPLOAD_TIMEOUT_MS,
     );
+    // A caller's signal, such as another upload of the same tree having failed, stops this one.
+    const callerSignal = options.signal;
+    const onCallerAbort = (): void => controller.abort(callerSignal?.reason);
+    if (callerSignal?.aborted === true) controller.abort(callerSignal.reason);
+    else callerSignal?.addEventListener("abort", onCallerAbort, { once: true });
     let response: Response;
     try {
       response = await fetch(upload.url, {
@@ -596,15 +645,19 @@ export class MthdsApiClient implements Runner {
     } catch (err) {
       // Only the network code is kept: the fetch error itself can quote the URL, its
       // signed query and any credentials written in it.
-      const code = extractNetworkErrorCode(err);
+      const code =
+        callerSignal?.aborted === true
+          ? "stopped"
+          : (extractNetworkErrorCode(err) ?? "network error");
       throw new BlobUploadError(
-        `Could not upload blob ${sha256} to ${target.host} (${code ?? "network error"}).`,
+        `Could not upload blob ${sha256} to ${target.host} (${code}).`,
         sha256,
         undefined,
         target.host,
       );
     } finally {
       clearTimeout(timer);
+      callerSignal?.removeEventListener("abort", onCallerAbort);
     }
     if (response.ok || response.status === 412) return;
     throw new BlobUploadError(
@@ -615,61 +668,141 @@ export class MthdsApiClient implements Runner {
     );
   }
 
-  /** The runner's handshake, asked once; a failed ask is not kept, so the next call asks again. */
+  /**
+   * The runner's handshake, asked once per `HANDSHAKE_TTL_MS`; a failed ask is not
+   * kept, so the next call asks again.
+   */
   private handshake(): Promise<VersionInfo> {
-    if (this.handshakePromise === undefined) {
-      this.handshakePromise = this.version().catch((err: unknown) => {
-        this.handshakePromise = undefined;
-        throw err;
-      });
-    }
-    return this.handshakePromise;
+    const now = Date.now();
+    const cached = this.handshakeCache;
+    if (cached !== undefined && now - cached.askedAt < HANDSHAKE_TTL_MS) return cached.promise;
+    const promise: Promise<VersionInfo> = this.version().catch((err: unknown) => {
+      if (this.handshakeCache?.promise === promise) this.handshakeCache = undefined;
+      throw err;
+    });
+    this.handshakeCache = { promise, askedAt: now };
+    return promise;
   }
 
-  /** The `files` a run request carries: `tree` prepared, `files` as given, or none. */
-  private async prepareRequestFiles(options: RunOptions): Promise<PreparedFiles> {
-    if (options.tree != null) return this.prepareTree(options.tree);
-    return { files: nonEmptyFiles(options.files), byHashTree: undefined };
+  /** Drop the kept handshake, which a refusal has shown to be stale. */
+  private forgetHandshake(): void {
+    this.handshakeCache = undefined;
   }
 
-  /** Choose how a tree travels, upload what it needs, and give the map to send. */
-  private async prepareTree(tree: MethodTreeSource): Promise<PreparedFiles> {
-    if (tree.files.length === 0) {
-      throw new PipelineRequestError("A method tree holds at least one file.");
-    }
+  /**
+   * Post a request carrying a method: prepare its `files` (a `tree` sent inline or by
+   * hash, a `files` map as given), post it, and answer a `422` naming `missing_blobs`
+   * (see `postWithBlobRetry`). When a tree the client prepared is refused as
+   * `method_tree_too_large`, the limits the handshake announced may be stale, so the
+   * client asks the handshake again, prepares the tree as the fresh limits say and
+   * sends it once more.
+   */
+  private async postMethodRequest(
+    endpoint: string,
+    method: RunOptions,
+    body: (files: MethodFiles | undefined) => unknown,
+    options: { timeoutMs?: number; onSend?: () => void },
+  ): Promise<RawResponse> {
+    const read: ReadBytes = new Map();
+    const send = async (): Promise<RawResponse> => {
+      const prepared = await this.prepareRequestFiles(method, read);
+      return this.postWithBlobRetry(endpoint, body(prepared.files), prepared, read, options);
+    };
+    const res = await send();
+    if (method.tree == null || !isMethodTreeTooLarge(res)) return res;
+    this.forgetHandshake();
+    return send();
+  }
+
+  /** The `files` a request carries: `tree` prepared, `files` as given, or none. */
+  private async prepareRequestFiles(options: RunOptions, read: ReadBytes): Promise<PreparedFiles> {
+    if (options.tree != null) return this.prepareTree(options.tree, read);
+    return { files: options.files ?? undefined, byHashTree: undefined };
+  }
+
+  /**
+   * Choose how a tree travels, upload what it needs, and give the map to send. A file
+   * is read at most once per request: what was read to weigh the inline map is what an
+   * upload sends. When `/blobs/missing` answers `404`, the handshake that declared a
+   * blob store is stale, so it is asked again and the tree prepared once more.
+   */
+  private async prepareTree(
+    tree: MethodTreeSource,
+    read: ReadBytes,
+    retried = false,
+  ): Promise<PreparedFiles> {
     const version = await this.handshake();
-    if (!declaresBlobStore(version)) {
-      return { files: await inlineMethodFiles(tree), byHashTree: undefined };
-    }
     const { maxInlineBytes } = announcedTreeLimits(version);
+    if (!declaresBlobStore(version)) {
+      return { files: await this.inlineWithin(tree, read, maxInlineBytes), byHashTree: undefined };
+    }
     const inlineLimit = Math.min(INLINE_TREE_MAX_BYTES, maxInlineBytes ?? Infinity);
     // Raw sizes rule out a large tree without reading it; a tree that may fit is read
     // and weighed as the request would carry it.
     if (mightTravelInline(tree, inlineLimit)) {
-      const inline = await inlineMethodFiles(tree);
+      const inline = inlineFilesOf(tree, await readAll(tree, read));
       if (inlineMapBytes(inline) <= inlineLimit) {
         return { files: inline, byHashTree: undefined };
       }
     }
-    const answer = await this.findMissingBlobs({ digest: tree.digest, blobs: uniqueBlobs(tree) });
-    await this.uploadMissing(tree, answer.missing);
+    let answer: MissingBlobsResult;
+    try {
+      answer = await this.findMissingBlobs({ digest: tree.digest, blobs: uniqueBlobs(tree) });
+    } catch (err) {
+      if (!retried && err instanceof ApiResponseError && err.status === 404) {
+        this.forgetHandshake();
+        return this.prepareTree(tree, read, true);
+      }
+      throw err;
+    }
+    await this.uploadMissing(tree, answer.missing, read);
     return { files: hashMethodFiles(tree), byHashTree: tree };
   }
 
-  /** Upload each missing blob from the tree's bytes, a few at a time. */
+  /**
+   * The whole tree inline, for a runner with no blob store, held to the inline limit it
+   * announces: its raw sizes are checked before anything is read, since the map weighs
+   * at least that much, then the encoded map, so a tree the runner would refuse is
+   * refused here, naming the limit, without being sent.
+   */
+  private async inlineWithin(
+    tree: MethodTreeSource,
+    read: ReadBytes,
+    maxInlineBytes: number | undefined,
+  ): Promise<MethodFiles> {
+    if (maxInlineBytes !== undefined && treeTotalSize(tree) > maxInlineBytes) {
+      throw inlineLimitError(treeTotalSize(tree), maxInlineBytes, "its files alone weigh");
+    }
+    const inline = inlineFilesOf(tree, await readAll(tree, read));
+    if (maxInlineBytes !== undefined) {
+      const weight = inlineMapBytes(inline);
+      if (weight > maxInlineBytes) {
+        throw inlineLimitError(weight, maxInlineBytes, "its inline map weighs");
+      }
+    }
+    return inline;
+  }
+
+  /**
+   * Upload each missing blob from the tree's bytes, a few at a time, stopping at the
+   * first failure. A blob the tree does not hold is refused before anything is sent.
+   */
   private async uploadMissing(
     tree: MethodTreeSource,
     missing: readonly MissingBlob[],
+    read: ReadBytes,
   ): Promise<void> {
     const byBlob = fileByBlob(tree);
-    await forEachConcurrently(missing, BLOB_UPLOAD_CONCURRENCY, async (blob) => {
-      const file = byBlob.get(blob.sha256);
-      if (file === undefined) {
-        throw new PipelineRequestError(
-          `The runner asked for blob ${blob.sha256}, which is not a file of the tree being sent.`,
-        );
-      }
-      await this.uploadBlob(blob, await tree.readFile(file.path));
+    const stranger = missing.find((blob) => !byBlob.has(blob.sha256));
+    if (stranger !== undefined) {
+      throw new PipelineRequestError(
+        `The runner asked for blob ${stranger.sha256}, which is not a file of the tree being sent.`,
+      );
+    }
+    await forEachConcurrently(missing, BLOB_UPLOAD_CONCURRENCY, async (blob, signal) => {
+      const file = byBlob.get(blob.sha256)!;
+      const bytes = read.get(file.path) ?? (await tree.readFile(file.path));
+      await this.uploadBlob(blob, bytes, { signal });
     });
   }
 
@@ -683,7 +816,8 @@ export class MthdsApiClient implements Runner {
   private async postWithBlobRetry(
     endpoint: string,
     body: unknown,
-    byHashTree: MethodTreeSource | undefined,
+    prepared: PreparedFiles,
+    read: ReadBytes,
     options: { timeoutMs?: number; onSend?: () => void },
   ): Promise<RawResponse> {
     const send = (): Promise<RawResponse> => {
@@ -691,6 +825,7 @@ export class MthdsApiClient implements Runner {
       return this.requestRaw("POST", this.url(endpoint), { body, timeoutMs: options.timeoutMs });
     };
     const res = await send();
+    const byHashTree = prepared.byHashTree;
     if (res.status !== 422 || byHashTree === undefined) return res;
     const missing = parseErrorBody(res.body).problem.missingBlobs;
     if (missing === undefined || missing.length === 0) return res;
@@ -700,7 +835,7 @@ export class MthdsApiClient implements Runner {
     const answer = await this.findMissingBlobs({
       blobs: files.map((file) => ({ sha256: file!.sha256, size: file!.size })),
     });
-    await this.uploadMissing(byHashTree, answer.missing);
+    await this.uploadMissing(byHashTree, answer.missing, read);
     return send();
   }
 
@@ -742,16 +877,19 @@ export class MthdsApiClient implements Runner {
 
 // ── Module helpers ────────────────────────────────────────────────────
 
-// The protocol's own request fields — `extra` is for extension args only, and
-// merges last into the body, so a protocol field smuggled through it would
-// overwrite the named option and bypass the method-source checks.
-const PROTOCOL_REQUEST_KEYS: ReadonlySet<string> = new Set([
+// The protocol's own request fields and the client-only options — `extra` is for
+// extension args only, and merges last into the body, so a protocol field smuggled
+// through it would overwrite the named option and bypass the method-source checks,
+// and a client-only option would travel to a runner that has no use for it.
+const RESERVED_REQUEST_KEYS: ReadonlySet<string> = new Set([
   "pipe_code",
   "files",
   "inputs",
   "output_name",
   "output_multiplicity",
   "dynamic_output_concept_ref",
+  "tree",
+  "bundleMain",
 ]);
 
 /**
@@ -763,10 +901,10 @@ function buildExtensions(
   extra: Record<string, unknown> | null | undefined,
 ): Record<string, unknown> {
   if (!extra) return {};
-  const overlap = Object.keys(extra).filter((key) => PROTOCOL_REQUEST_KEYS.has(key));
+  const overlap = Object.keys(extra).filter((key) => RESERVED_REQUEST_KEYS.has(key));
   if (overlap.length > 0) {
     throw new PipelineRequestError(
-      `extra carries protocol args [${overlap.sort().join(", ")}] — pass them as named options instead.`,
+      `extra carries reserved args [${overlap.sort().join(", ")}] — pass them as named options instead.`,
     );
   }
   return { ...extra };
@@ -806,13 +944,62 @@ function runRequestBody(
   };
 }
 
+/** Read every file of the tree not read yet for this request, and give the bytes by path. */
+async function readAll(tree: MethodTreeSource, read: ReadBytes): Promise<ReadBytes> {
+  for (const file of tree.files) {
+    if (!read.has(file.path)) read.set(file.path, await tree.readFile(file.path));
+  }
+  return read;
+}
+
+/** The refusal of a tree past the inline limit of a runner that keeps no blob store. */
+function inlineLimitError(weight: number, limit: number, measured: string): PipelineRequestError {
+  return new PipelineRequestError(
+    `The method's tree cannot be sent: this runner keeps no blob store, so a tree travels inline, and ${measured} ${weight} bytes, more than its inline limit max_inline_bytes of ${limit} bytes.`,
+  );
+}
+
+/** Whether a response is a refusal of the tree as past one of the runner's limits. */
+function isMethodTreeTooLarge(res: RawResponse): boolean {
+  if (res.status !== 422) return false;
+  try {
+    const parsed: unknown = JSON.parse(res.body);
+    return isRecord(parsed) && parsed.code === METHOD_TREE_TOO_LARGE_CODE;
+  } catch {
+    return false;
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
 /**
- * An empty map is NOT a method, so it must not be sent (the runner refuses a
- * tree with no file). Exclusivity is still checked on presence upstream, so an
- * empty map supplied beside a `tree` has already been refused.
+ * What is wrong with one entry of a `/blobs/missing` answer, or `null` when it is a
+ * missing blob as the protocol shapes it. The upload URL is never quoted, since it is
+ * a signed capability.
  */
-function nonEmptyFiles(files: MethodFiles | null | undefined): MethodFiles | undefined {
-  return files != null && Object.keys(files).length > 0 ? files : undefined;
+function missingBlobFault(entry: unknown): string | null {
+  if (!isRecord(entry)) return "it is not an object";
+  if (typeof entry.sha256 !== "string" || !SHA256_HEX.test(entry.sha256)) {
+    return "its sha256 is not 64 lowercase hexadecimal digits";
+  }
+  if (typeof entry.size !== "number" || !Number.isSafeInteger(entry.size) || entry.size < 0) {
+    return "its size is not a non-negative integer";
+  }
+  const upload = entry.upload;
+  if (!isRecord(upload)) return "it has no upload object";
+  if (typeof upload.method !== "string" || upload.method.length === 0) {
+    return "its upload.method is not a method name";
+  }
+  if (typeof upload.url !== "string" || !URL.canParse(upload.url)) {
+    return "its upload.url is not a URL";
+  }
+  const headers = upload.headers;
+  if (!isRecord(headers) || Object.values(headers).some((value) => typeof value !== "string")) {
+    return "its upload.headers is not an object of strings";
+  }
+  return null;
 }
 
 function nonEmptyString(value: string | null | undefined): string | undefined {

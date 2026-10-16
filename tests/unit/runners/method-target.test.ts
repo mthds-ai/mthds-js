@@ -90,6 +90,41 @@ describe("resolveMethodTarget", () => {
     );
   });
 
+  it.each([
+    ["outermost first", ["m", "m/sub"]],
+    ["outermost last", ["m/sub", "m"]],
+  ])(
+    "roots a lone file at the outermost library directory holding it, whatever the order (%s)",
+    async (_order, dirs) => {
+      const file = write("m/sub/child.mthds", "domain = 'm'\nmain_pipe = 'child_run'\n");
+      write("m/root.mthds", "domain = 'm'\n");
+      write("m/funcs/f.py", "def f(): ...\n");
+      const resolved = await resolveMethodTarget(
+        { path: file },
+        dirs.map((dir) => join(scratch, dir)),
+      );
+      expect(treePaths(resolved)).toEqual(["funcs/f.py", "root.mthds", "sub/child.mthds"]);
+      expect(resolved.entry).toBe("sub/child.mthds");
+    },
+  );
+
+  it.each([
+    ["before", ["lib", "m"]],
+    ["after", ["m", "lib"]],
+  ])(
+    "refuses a library directory outside the tree a lone file is rooted at, given %s it",
+    async (_order, dirs) => {
+      const file = write("m/bundle.mthds", "domain = 'm'\n");
+      write("lib/other.mthds", "domain = 'lib'\n");
+      await expect(
+        resolveMethodTarget(
+          { path: file },
+          dirs.map((dir) => join(scratch, dir)),
+        ),
+      ).rejects.toThrow(/outside that tree/);
+    },
+  );
+
   it("stops listing at the first limit passed", async () => {
     write("m/bundle.mthds", "domain = 'm'\n");
     write("m/a.txt", "a");

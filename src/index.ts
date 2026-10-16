@@ -19,7 +19,7 @@
 export * from "./protocol/index.js";
 
 // ── API runner / client (runners/api) ────────────────────────────────
-export { MthdsApiClient, DEFAULT_API_BASE_URL } from "./runners/api/client.js";
+export { MthdsApiClient, DEFAULT_API_BASE_URL, HANDSHAKE_TTL_MS } from "./runners/api/client.js";
 export type { MthdsApiClientOptions } from "./runners/api/client.js";
 // How a sender chooses between inline and by hash, and what it reads from a handshake.
 export {
@@ -50,6 +50,7 @@ export {
   ApiUnreachableError,
   BlobUploadError,
   ClientAuthenticationError,
+  MalformedBlobsAnswerError,
   PipelineExecuteTimeoutError,
   RunStillRunningError,
 } from "./runners/api/exceptions.js";

@@ -26,6 +26,7 @@ export {
   ApiUnreachableError,
   BlobUploadError,
   ClientAuthenticationError,
+  MalformedBlobsAnswerError,
   PipelineExecuteTimeoutError,
   RunStillRunningError,
 } from "./runners/api/exceptions.js";

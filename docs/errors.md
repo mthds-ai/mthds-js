@@ -16,6 +16,7 @@ flowchart TD
     PET["PipelineExecuteTimeoutError"]
     RSR["RunStillRunningError"]
     BUE["BlobUploadError"]
+    MBA["MalformedBlobsAnswerError"]
     Err --> PRE
     Err --> CAE
     PRE --> ARE
@@ -23,6 +24,7 @@ flowchart TD
     PRE --> PET
     PRE --> RSR
     PRE --> BUE
+    PRE --> MBA
 ```
 
 Arrows point from a class to its subclasses (the `extends` tree). `PipelineRequestError` is the base every API-runner error derives from — so `catch (e) { if (e instanceof PipelineRequestError) … }` catches all of them at once. The one exception is **`ClientAuthenticationError`**, which extends `Error` directly and is therefore *not* a `PipelineRequestError`. A catch-all that means to cover authentication too must check `instanceof Error` (or test `ClientAuthenticationError` separately).
@@ -40,6 +42,7 @@ Arrows point from a class to its subclasses (the `extends` tree). `PipelineReque
 | `PipelineExecuteTimeoutError` | ✅ | ✅ | ❌ |
 | `RunStillRunningError` | ✅ | ✅ | ❌ |
 | `BlobUploadError` | ✅ | ✅ | ❌ |
+| `MalformedBlobsAnswerError` | ✅ | ✅ | ❌ |
 
 `mthds/errors` carries the **whole taxonomy** and nothing else — pick it whenever the importing module might end up in a client bundle. `mthds/protocol` carries only the protocol base (its graph can't reach the runner-layer errors); use it when you only need `PipelineRequestError` alongside the rest of the pure protocol surface.
 
@@ -117,7 +120,18 @@ Uploading a blob of a method's tree failed: `POST /v1/blobs/missing` named the b
 | `status` | `number \| undefined` | The status the target answered, or `undefined` when it could not be reached. |
 | `host` | `string` | The host of the upload target. |
 
-An upload target is a signed URL, which grants whoever holds it the right to write, so neither the message, a member nor a `cause` carries it: only its host is kept, with no credentials, path, query or fragment.
+An upload target is a signed URL, which grants whoever holds it the right to write, so neither the message, a member nor a `cause` carries it: only its host is kept, with no credentials, path, query or fragment. The first failed upload of a tree stops the others: none starts after it, those in flight are aborted, and the first failure is the one raised.
+
+### `MalformedBlobsAnswerError`
+
+A runner's answer to `POST /v1/blobs/missing` is not shaped as the protocol says: its body is not JSON, it has no `missing` list, or an entry of that list is not a missing blob (a `sha256` of 64 lowercase hexadecimal digits, a non-negative integer `size`, and an `upload` object with a method, a URL and string headers). Nothing was uploaded and no request carrying the tree was sent. Raised by `MthdsApiClient` (`src/runners/api/client.ts`) when it sends a tree by hash, and by its `findMissingBlobs`.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `index` | `number \| undefined` | The position of the faulty entry in `missing`, or `undefined` when the answer as a whole is malformed. |
+| `sha256` | `string \| undefined` | The faulty entry's SHA-256 when it carries a well-formed one. |
+
+The message names the entry and what is wrong with it, never its upload URL.
 
 ### `ClientAuthenticationError`
 

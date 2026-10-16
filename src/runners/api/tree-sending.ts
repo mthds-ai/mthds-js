@@ -102,13 +102,32 @@ export function inlineMapBytes(files: MethodFiles): number {
   return new TextEncoder().encode(JSON.stringify(files)).length;
 }
 
-/** The whole tree as inline entries, each file read and checked by the tree. */
-export async function inlineMethodFiles(tree: MethodTreeSource): Promise<MethodFiles> {
+/** Every file's bytes, by tree path, each read and checked by the tree, one file at a time. */
+export async function readTreeBytes(tree: MethodTreeSource): Promise<Map<string, Uint8Array>> {
+  const bytes = new Map<string, Uint8Array>();
+  for (const file of tree.files) {
+    bytes.set(file.path, await tree.readFile(file.path));
+  }
+  return bytes;
+}
+
+/** The whole tree as inline entries, from bytes already read by `readTreeBytes`. */
+export function inlineFilesOf(
+  tree: MethodTreeSource,
+  bytesByPath: ReadonlyMap<string, Uint8Array>,
+): MethodFiles {
   const files: MethodFiles = {};
   for (const file of tree.files) {
-    defineFileEntry(files, file.path, inlineFileEntry(await tree.readFile(file.path)));
+    const bytes = bytesByPath.get(file.path);
+    if (bytes === undefined) throw new Error(`No bytes were read for '${file.path}'.`);
+    defineFileEntry(files, file.path, inlineFileEntry(bytes));
   }
   return files;
+}
+
+/** The whole tree as inline entries, each file read and checked by the tree. */
+export async function inlineMethodFiles(tree: MethodTreeSource): Promise<MethodFiles> {
+  return inlineFilesOf(tree, await readTreeBytes(tree));
 }
 
 /** The whole tree as hash entries, which the runner resolves in its blob store. */
@@ -141,21 +160,36 @@ export function fileByBlob(tree: MethodTreeSource): Map<string, MethodTreeSource
   return files;
 }
 
-/** Run `task` over `items`, at most `limit` at a time, settling only once all have succeeded. */
+/**
+ * Run `task` over `items`, at most `limit` at a time. The first task to fail stops the
+ * run: no queued item is handed out after it, `signal` is aborted so the tasks still in
+ * flight can stop early, and once they have settled the first failure is thrown.
+ */
 export async function forEachConcurrently<T>(
   items: readonly T[],
   limit: number,
-  task: (item: T) => Promise<void>,
+  task: (item: T, signal: AbortSignal) => Promise<void>,
 ): Promise<void> {
+  const controller = new AbortController();
   let next = 0;
+  let failure: { error: unknown } | undefined;
   const worker = async (): Promise<void> => {
-    while (next < items.length) {
+    while (failure === undefined && next < items.length) {
       const item = items[next]!;
       next += 1;
-      await task(item);
+      try {
+        await task(item, controller.signal);
+      } catch (error) {
+        if (failure === undefined) {
+          failure = { error };
+          controller.abort(error);
+        }
+        return;
+      }
     }
   };
   await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  if (failure !== undefined) throw failure.error;
 }
 
 function objectMember(holder: object, name: string): Record<string, unknown> | undefined {

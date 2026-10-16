@@ -155,6 +155,7 @@ export type ProtocolTypeSurface = [
 describe("protocol barrel", () => {
   it("re-exports every runtime value in the public surface", () => {
     expect(Object.keys(protocol).sort()).toEqual([
+      "EMPTY_METHOD_TREE_MESSAGE",
       "FIELD_KINDS",
       "INPUTS_TEMPLATE_FORMATS",
       "InputsTemplateError",

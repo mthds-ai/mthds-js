@@ -8,13 +8,18 @@ import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { MthdsApiClient } from "../../../src/runners/api/client.js";
+import { HANDSHAKE_TTL_MS, MthdsApiClient } from "../../../src/runners/api/client.js";
 import {
   ApiResponseError,
   BlobUploadError,
+  MalformedBlobsAnswerError,
   PipelineRequestError,
 } from "../../../src/runners/api/exceptions.js";
-import { INLINE_TREE_MAX_BYTES } from "../../../src/runners/api/tree-sending.js";
+import {
+  INLINE_TREE_MAX_BYTES,
+  forEachConcurrently,
+} from "../../../src/runners/api/tree-sending.js";
+import { EMPTY_METHOD_TREE_MESSAGE } from "../../../src/protocol/options.js";
 import { listMethodTree } from "../../../src/method-tree/lister.js";
 import { sha256Hex, treeDigest } from "../../../src/method-tree/digest.js";
 import type { MethodTreeSource } from "../../../src/protocol/file_entries.js";
@@ -611,5 +616,341 @@ describe("MthdsApiClient.methodTreeLimits", () => {
   it("is empty for a runner announcing no limits", async () => {
     routeFetch(() => jsonResponse(200, NO_BLOB_STORE));
     await expect(makeClient().methodTreeLimits()).resolves.toEqual({});
+  });
+});
+
+describe("uploads stop at the first failure", () => {
+  it("starts no further item and aborts the ones in flight once one fails", async () => {
+    const started: number[] = [];
+    const aborted: number[] = [];
+    const failure = new Error("first");
+    const items = Array.from({ length: 10 }, (_, index) => index);
+    const run = forEachConcurrently(items, 3, async (item, signal) => {
+      started.push(item);
+      if (item === 0) {
+        await Promise.resolve();
+        throw failure;
+      }
+      await new Promise<void>((_, reject) => {
+        signal.addEventListener("abort", () => {
+          aborted.push(item);
+          reject(new Error("aborted"));
+        });
+      });
+    });
+    await expect(run).rejects.toBe(failure);
+    expect(started).toEqual([0, 1, 2]);
+    expect(aborted.sort()).toEqual([1, 2]);
+  });
+
+  it("aborts a tree's in-flight uploads and raises the first failure, sending no request", async () => {
+    const tree = memoryTree(
+      Object.fromEntries(
+        Array.from({ length: 8 }, (_, index) => [`data/${index}.txt`, bigText(String(index))]),
+      ),
+    );
+    const calls: string[] = [];
+    const abortedUploads: string[] = [];
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      calls.push(`${init?.method ?? "GET"} ${url}`);
+      if (url.endsWith("/v1/version")) return jsonResponse(200, WITH_BLOB_STORE);
+      if (url.endsWith("/v1/blobs/missing")) {
+        return jsonResponse(200, {
+          missing: tree.files.map((file, index) => ({
+            sha256: file.sha256,
+            size: file.size,
+            upload: { method: "PUT", url: `${STORE_URL}/k${index}`, headers: {} },
+          })),
+        });
+      }
+      if (url === `${STORE_URL}/k0`) return new Response("AccessDenied", { status: 403 });
+      // Every other upload hangs until it is aborted.
+      return new Promise<Response>((_, reject) => {
+        init!.signal!.addEventListener("abort", () => {
+          abortedUploads.push(url);
+          reject(new DOMException("aborted", "AbortError"));
+        });
+      });
+    });
+    const error = await makeClient()
+      .execute({ tree })
+      .catch((err: unknown) => err);
+    expect(error).toBeInstanceOf(BlobUploadError);
+    expect((error as BlobUploadError).status).toBe(403);
+    const puts = calls.filter((call) => call.startsWith("PUT "));
+    expect(puts.length).toBeLessThan(tree.files.length);
+    expect(abortedUploads.sort()).toEqual(
+      puts
+        .map((call) => call.slice("PUT ".length))
+        .filter((url) => !url.endsWith("/k0"))
+        .sort(),
+    );
+    expect(calls.some((call) => call.endsWith("/v1/execute"))).toBe(false);
+  });
+});
+
+describe("the kept handshake", () => {
+  it("is asked again once HANDSHAKE_TTL_MS has passed", async () => {
+    let now = 1_000_000;
+    vi.spyOn(Date, "now").mockImplementation(() => now);
+    const tree = memoryTree({ "bundle.mthds": "domain = 'x'" });
+    const { calls } = routeFetch((call) =>
+      call.url.endsWith("/v1/version")
+        ? jsonResponse(200, NO_BLOB_STORE)
+        : jsonResponse(200, { pipeline_run_id: "r", pipe_output: {} }),
+    );
+    const client = makeClient();
+    await client.execute({ tree });
+    now += HANDSHAKE_TTL_MS - 1;
+    await client.execute({ tree });
+    expect(calls.filter((call) => call.url.endsWith("/v1/version"))).toHaveLength(1);
+    now += 1;
+    await client.execute({ tree });
+    expect(calls.filter((call) => call.url.endsWith("/v1/version"))).toHaveLength(2);
+  });
+
+  it("is dropped when /v1/blobs/missing answers 404, and the tree prepared again on a fresh one", async () => {
+    const tree = memoryTree({ "bundle.mthds": "domain = 'x'", "big.txt": bigText("big") });
+    let versions = 0;
+    const { calls } = routeFetch((call) => {
+      if (call.url.endsWith("/v1/version")) {
+        versions += 1;
+        return jsonResponse(200, versions === 1 ? WITH_BLOB_STORE : NO_BLOB_STORE);
+      }
+      if (call.url.endsWith("/v1/blobs/missing")) return jsonResponse(404, { detail: "Not Found" });
+      return jsonResponse(200, { pipeline_run_id: "r", pipe_output: {} });
+    });
+    await makeClient().execute({ tree });
+    expect(calls.map((call) => `${call.method} ${call.url}`)).toEqual([
+      `GET ${BASE_URL}/v1/version`,
+      `POST ${BASE_URL}/v1/blobs/missing`,
+      `GET ${BASE_URL}/v1/version`,
+      `POST ${BASE_URL}/v1/execute`,
+    ]);
+    expect((calls.at(-1)!.body as { files: Record<string, unknown> }).files["big.txt"]).toBe(
+      bigText("big"),
+    );
+  });
+
+  it("retries a 404 from /v1/blobs/missing once, then raises it", async () => {
+    const tree = memoryTree({ "bundle.mthds": "domain = 'x'", "big.txt": bigText("big") });
+    const { calls } = routeFetch((call) =>
+      call.url.endsWith("/v1/version")
+        ? jsonResponse(200, WITH_BLOB_STORE)
+        : jsonResponse(404, { detail: "Not Found" }),
+    );
+    const error = await makeClient()
+      .execute({ tree })
+      .catch((err: unknown) => err);
+    expect(error).toBeInstanceOf(ApiResponseError);
+    expect((error as ApiResponseError).status).toBe(404);
+    expect(calls.filter((call) => call.url.endsWith("/v1/version"))).toHaveLength(2);
+    expect(calls.filter((call) => call.url.endsWith("/v1/blobs/missing"))).toHaveLength(2);
+  });
+
+  it("is dropped when a run refuses the tree as method_tree_too_large, and the tree sent once more as fresh limits say", async () => {
+    const tree = memoryTree({ "bundle.mthds": "domain = 'x'" });
+    let versions = 0;
+    let executes = 0;
+    const { calls } = routeFetch((call) => {
+      if (call.url.endsWith("/v1/version")) {
+        versions += 1;
+        return jsonResponse(
+          200,
+          versions === 1
+            ? WITH_BLOB_STORE
+            : { ...WITH_BLOB_STORE, limits: { method_tree: { max_inline_bytes: 4 } } },
+        );
+      }
+      if (call.url.endsWith("/v1/blobs/missing")) return jsonResponse(200, { missing: [] });
+      executes += 1;
+      return executes === 1
+        ? jsonResponse(422, {
+            title: "Method tree too large",
+            code: "method_tree_too_large",
+            limit: { name: "max_inline_bytes", value: 4, reached: 30 },
+          })
+        : jsonResponse(200, { pipeline_run_id: "r", pipe_output: {} });
+    });
+    await expect(makeClient().execute({ tree })).resolves.toMatchObject({ pipeline_run_id: "r" });
+    const sends = calls.filter((call) => call.url.endsWith("/v1/execute"));
+    expect(sends).toHaveLength(2);
+    expect((sends[0]!.body as { files: unknown }).files).toEqual({
+      "bundle.mthds": "domain = 'x'",
+    });
+    expect((sends[1]!.body as { files: unknown }).files).toEqual({
+      "bundle.mthds": { sha256: tree.files[0]!.sha256, size: 12 },
+    });
+    expect(calls.filter((call) => call.url.endsWith("/v1/version"))).toHaveLength(2);
+  });
+
+  it("sends a tree refused as method_tree_too_large once more only, and never resends a caller's files map", async () => {
+    const tooLarge = (): Response =>
+      jsonResponse(422, { code: "method_tree_too_large", limit: { name: "max_files" } });
+    const { calls } = routeFetch((call) =>
+      call.url.endsWith("/v1/version") ? jsonResponse(200, NO_BLOB_STORE) : tooLarge(),
+    );
+    const client = makeClient();
+    await expect(
+      client.execute({ tree: memoryTree({ "bundle.mthds": "domain = 'x'" }) }),
+    ).rejects.toBeInstanceOf(ApiResponseError);
+    expect(calls.filter((call) => call.url.endsWith("/v1/execute"))).toHaveLength(2);
+
+    calls.length = 0;
+    await expect(
+      client.execute({ files: { "bundle.mthds": "domain = 'x'" } }),
+    ).rejects.toBeInstanceOf(ApiResponseError);
+    expect(calls.filter((call) => call.url.endsWith("/v1/execute"))).toHaveLength(1);
+  });
+});
+
+describe("a runner with no blob store and an inline limit", () => {
+  const limited = (maxInlineBytes: number): unknown => ({
+    ...NO_BLOB_STORE,
+    limits: { method_tree: { max_inline_bytes: maxInlineBytes } },
+  });
+
+  it("refuses a tree whose files alone pass the limit before reading it, naming the limit", async () => {
+    const tree = memoryTree({ "bundle.mthds": "domain = 'x'", "big.txt": "y".repeat(64) });
+    const { calls } = routeFetch((call) =>
+      call.url.endsWith("/v1/version") ? jsonResponse(200, limited(32)) : jsonResponse(200, {}),
+    );
+    const error = await makeClient()
+      .execute({ tree })
+      .catch((err: unknown) => err);
+    expect(error).toBeInstanceOf(PipelineRequestError);
+    expect((error as Error).message).toContain("max_inline_bytes of 32 bytes");
+    expect(tree.reads).toEqual([]);
+    expect(calls.some((call) => call.url.endsWith("/v1/execute"))).toBe(false);
+  });
+
+  it("refuses a tree whose files fit but whose inline map passes the limit, reading each file once", async () => {
+    const binary = new Uint8Array(30).fill(0xff);
+    const tree = memoryTree({ "model.bin": binary });
+    const { calls } = routeFetch((call) =>
+      call.url.endsWith("/v1/version") ? jsonResponse(200, limited(32)) : jsonResponse(200, {}),
+    );
+    const error = await makeClient()
+      .execute({ tree })
+      .catch((err: unknown) => err);
+    expect((error as Error).message).toMatch(
+      /inline map weighs \d+ bytes, more than its inline limit max_inline_bytes of 32 bytes/,
+    );
+    expect(tree.reads).toEqual(["model.bin"]);
+    expect(calls.some((call) => call.url.endsWith("/v1/execute"))).toBe(false);
+  });
+
+  it("sends a tree within the limit inline", async () => {
+    const tree = memoryTree({ "bundle.mthds": "domain = 'x'" });
+    const { calls } = routeFetch((call) =>
+      call.url.endsWith("/v1/version")
+        ? jsonResponse(200, limited(1024))
+        : jsonResponse(200, { pipeline_run_id: "r", pipe_output: {} }),
+    );
+    await makeClient().execute({ tree });
+    expect((calls.at(-1)!.body as { files: unknown }).files).toEqual({
+      "bundle.mthds": "domain = 'x'",
+    });
+  });
+});
+
+describe("a file is read once per request", () => {
+  it("uploads from the bytes read to weigh the inline map", async () => {
+    const binary = new Uint8Array(250 * 1024).fill(0xff);
+    const tree = memoryTree({ "bundle.mthds": "domain = 'x'", "model.bin": binary });
+    const model = tree.files.find((file) => file.path === "model.bin")!;
+    let uploaded: Uint8Array | undefined;
+    routeFetch((call) => {
+      if (call.url.endsWith("/v1/version")) return jsonResponse(200, WITH_BLOB_STORE);
+      if (call.url.endsWith("/v1/blobs/missing")) {
+        return jsonResponse(200, {
+          missing: [{ ...model, upload: { method: "PUT", url: `${STORE_URL}/k`, headers: {} } }],
+        });
+      }
+      if (call.method === "PUT") {
+        uploaded = call.body as Uint8Array;
+        return new Response(null, { status: 200 });
+      }
+      return jsonResponse(200, { pipeline_run_id: "r", pipe_output: {} });
+    });
+    await makeClient().execute({ tree });
+    expect(uploaded?.length).toBe(binary.length);
+    expect([...tree.reads].sort()).toEqual(["bundle.mthds", "model.bin"]);
+  });
+});
+
+describe("an empty tree", () => {
+  it.each([
+    ["execute", (client: MthdsApiClient) => client.execute({ pipe_code: "p", files: {} })],
+    ["start", (client: MthdsApiClient) => client.start({ pipe_code: "p", files: {} })],
+    ["validate", (client: MthdsApiClient) => client.validate({ files: {} })],
+    [
+      "execute with a tree",
+      (client: MthdsApiClient) => client.execute({ pipe_code: "p", tree: memoryTree({}) }),
+    ],
+    ["prepareMethodFiles", (client: MthdsApiClient) => client.prepareMethodFiles(memoryTree({}))],
+  ])("is refused by %s with one message, sending nothing", async (_name, call) => {
+    const { calls } = routeFetch(() => jsonResponse(200, NO_BLOB_STORE));
+    await expect(call(makeClient())).rejects.toThrow(EMPTY_METHOD_TREE_MESSAGE);
+    expect(calls).toHaveLength(0);
+  });
+});
+
+describe("a malformed /v1/blobs/missing answer", () => {
+  const goodUpload = { method: "PUT", url: `${STORE_URL}/k?X-Amz-Signature=secret`, headers: {} };
+
+  async function refusal(missing: unknown): Promise<MalformedBlobsAnswerError> {
+    const tree = memoryTree({ "bundle.mthds": "domain = 'x'", "big.txt": bigText("big") });
+    const { calls } = routeFetch((call) => {
+      if (call.url.endsWith("/v1/version")) return jsonResponse(200, WITH_BLOB_STORE);
+      if (call.url.endsWith("/v1/blobs/missing")) return jsonResponse(200, missing);
+      return jsonResponse(200, { pipeline_run_id: "r", pipe_output: {} });
+    });
+    const error = await makeClient()
+      .execute({ tree })
+      .catch((err: unknown) => err);
+    expect(error).toBeInstanceOf(MalformedBlobsAnswerError);
+    expect(calls.some((call) => call.method === "PUT" || call.url.endsWith("/v1/execute"))).toBe(
+      false,
+    );
+    return error as MalformedBlobsAnswerError;
+  }
+
+  it("names the index of an entry whose sha256 is malformed", async () => {
+    const error = await refusal({ missing: [{ sha256: "XYZ", size: 3, upload: goodUpload }] });
+    expect(error.index).toBe(0);
+    expect(error.sha256).toBeUndefined();
+    expect(error.message).toContain("missing[0]");
+    expect(error.message).toContain("sha256");
+  });
+
+  it.each([
+    ["a negative size", { size: -1 }, "size"],
+    ["no upload", { upload: undefined }, "upload object"],
+    ["an empty method", { upload: { ...goodUpload, method: "" } }, "upload.method"],
+    ["a URL that does not parse", { upload: { ...goodUpload, url: "not a url" } }, "upload.url"],
+    [
+      "a header that is not a string",
+      { upload: { ...goodUpload, headers: { a: 1 } } },
+      "upload.headers",
+    ],
+  ])("names the entry and the blob for %s, never quoting the URL", async (_topic, fault, named) => {
+    const hash = "b".repeat(64);
+    const good = { sha256: "a".repeat(64), size: 3, upload: goodUpload };
+    const error = await refusal({
+      missing: [good, { sha256: hash, size: 3, upload: goodUpload, ...fault }],
+    });
+    expect(error.index).toBe(1);
+    expect(error.sha256).toBe(hash);
+    expect(error.message).toContain(`missing[1] (blob ${hash})`);
+    expect(error.message).toContain(named);
+    expect(error.message).not.toContain("secret");
+  });
+
+  it("refuses an answer without a missing list", async () => {
+    const error = await refusal({ held: [] });
+    expect(error.index).toBeUndefined();
+    expect(error.message).toContain("`missing` list");
   });
 });

@@ -131,6 +131,32 @@ describe("API-runner validate sends the method's tree, inputs the whole bundle",
     return JSON.parse(String(stderrSpy.mock.calls[0]![0])) as Record<string, unknown>;
   }
 
+  describe("run start", () => {
+    it("roots a lone file's tree at the -L directory holding it, so the files beside it travel", async () => {
+      await agent("run", "start", join(method, "child.mthds"), "-L", method);
+
+      expect(requests).toHaveLength(1);
+      expect(requests[0]!.url).toMatch(/\/v1\/start$/);
+      expect(requests[0]!.body.files).toEqual({ "bundle.mthds": ROOT, "child.mthds": CHILD });
+      expect(requests[0]!.body.pipe_code).toBe("step");
+    });
+
+    it("reads -L written before the subcommand too", async () => {
+      await agent("-L", method, "run", "start", join(method, "child.mthds"));
+
+      expect(requests[0]!.body.files).toEqual({ "bundle.mthds": ROOT, "child.mthds": CHILD });
+    });
+
+    it("refuses an -L directory outside the tree, starting nothing", async () => {
+      await expect(
+        agent("run", "start", join(method, "child.mthds"), "-L", method, "-L", shared),
+      ).rejects.toThrow("__exit__");
+
+      expect(requests).toHaveLength(0);
+      expect(String(firstStderrJson().message)).toContain("outside that tree");
+    });
+  });
+
   describe("validate bundle", () => {
     it("sends a directory target as its tree, each file under its tree path", async () => {
       await agent("validate", "bundle", method, "--format", "json");
@@ -172,7 +198,7 @@ describe("API-runner validate sends the method's tree, inputs the whole bundle",
         error_type: "ArgumentError",
         error_domain: "argument",
       });
-      expect(String(firstStderrJson().message)).toContain("does not hold it");
+      expect(String(firstStderrJson().message)).toContain("outside that tree");
     });
 
     it("sends a named file alone when no library directory is given", async () => {

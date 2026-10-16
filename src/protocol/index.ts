@@ -28,7 +28,7 @@ export type {
 } from "./options.js";
 // Method-source predicates — invariants of the request shape itself, so every
 // client that builds a `RunRequest` enforces them from one definition.
-export { assertOneMethodSource, hasMethodSource } from "./options.js";
+export { EMPTY_METHOD_TREE_MESSAGE, assertOneMethodSource, hasMethodSource } from "./options.js";
 
 // ── Method-file (catalog) serialization ──────────────────────────────
 // The canonical `[{ name, content }]` form a stored method's source/`python`

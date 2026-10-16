@@ -106,19 +106,32 @@ export type StartOptions = StartRequest & ExtensionOptions;
  */
 export type ValidateSource = { files: MethodFiles } | { tree: MethodTreeSource };
 
+/** The one refusal of a method's tree that holds no file, whichever route it was given to. */
+export const EMPTY_METHOD_TREE_MESSAGE =
+  "The method's tree holds no file; a tree holds at least one, so give the method's files or leave the method out.";
+
 /**
- * Enforce that a request names its method at most once: `files` is the map sent
- * as given, `tree` the tree the client turns into that map, so both together
- * would be two methods. Keys off presence, not emptiness: a caller who supplies
- * `files: {}` beside a `tree` still named two. Throws `PipelineRequestError`;
- * the API client, the local runner and `@pipelex/sdk` all call it so they refuse
- * the same combination identically.
+ * Enforce that a request names its method at most once, and not as an empty tree:
+ * `files` is the map sent as given, `tree` the tree the client turns into that map,
+ * so both together would be two methods, keyed off presence (a caller who supplies
+ * `files: {}` beside a `tree` still named two); and a tree holding no file is no
+ * method, which the standard refuses (`empty_tree`), so `files: {}` or a tree with
+ * no file is refused whatever else the request carries, before anything is read or
+ * sent. Throws `PipelineRequestError`; the API client, the local runner and
+ * `@pipelex/sdk` all call it on every route that takes a method, so they refuse the
+ * same requests with the same message.
  */
 export function assertOneMethodSource(options: RunOptions): void {
   if (options.files != null && options.tree != null) {
     throw new PipelineRequestError(
       "files and tree are two forms of the method's tree and are mutually exclusive; provide one.",
     );
+  }
+  const empty =
+    (options.files != null && Object.keys(options.files).length === 0) ||
+    (options.tree != null && options.tree.files.length === 0);
+  if (empty) {
+    throw new PipelineRequestError(EMPTY_METHOD_TREE_MESSAGE);
   }
 }
 

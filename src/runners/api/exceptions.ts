@@ -277,3 +277,24 @@ export class BlobUploadError extends PipelineRequestError {
     this.host = host;
   }
 }
+
+/**
+ * Thrown when a runner's answer to `POST /blobs/missing` is not shaped as the protocol
+ * says: a body that is not JSON, no `missing` list, or an entry that is not a missing
+ * blob with a well-formed upload target. No upload was started and no request carrying
+ * the tree was sent. An entry's upload URL is a bearer capability, so the message never
+ * quotes it.
+ */
+export class MalformedBlobsAnswerError extends PipelineRequestError {
+  /** The position of the faulty entry in `missing`, or `undefined` when the answer as a whole is malformed. */
+  public readonly index: number | undefined;
+  /** The faulty entry's SHA-256 when it carries a well-formed one, else `undefined`. */
+  public readonly sha256: string | undefined;
+
+  constructor(message: string, index?: number, sha256?: string) {
+    super(message);
+    this.name = "MalformedBlobsAnswerError";
+    this.index = index;
+    this.sha256 = sha256;
+  }
+}

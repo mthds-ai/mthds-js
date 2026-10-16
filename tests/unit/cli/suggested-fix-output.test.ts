@@ -142,14 +142,14 @@ describe("mthds CLI prints a validation item's suggested fix", () => {
   });
 
   it("install's validation step prints the fix under the item that has one", async () => {
-    vi.mocked(resolveFromLocal).mockReturnValue({
+    vi.mocked(resolveFromLocal).mockResolvedValue({
       methods: [
         {
           name: "demo",
           manifest: {
             package: { address: "github.com/acme/demo", version: "1.0.0", description: "Demo" },
           },
-          files: [{ relativePath: "demo.mthds", content: 'domain = "demo"\n' }],
+          files: [{ path: "demo.mthds", bytes: new TextEncoder().encode('domain = "demo"\n') }],
         },
       ],
       skipped: [],

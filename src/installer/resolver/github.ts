@@ -1,15 +1,33 @@
 import { execFile, execFileSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
 import { promisify } from "node:util";
 import type {
   ParsedAddress,
   ResolvedRepo,
   ResolvedMethod,
   SkippedMethod,
-  MethodsFile,
 } from "../../package/manifest/types.js";
 import { validateManifest } from "../../package/manifest/validate.js";
+import {
+  GITIGNORE_NAME,
+  MANIFEST_NAME,
+  VENV_MARKER_NAME,
+  isDefaultExcludedDirectory,
+  isDotSegment,
+} from "../../method-tree/membership.js";
+import { directoriesOf, pathCollisions, treePathViolation } from "../../method-tree/tree-path.js";
+import { readMethodTreeOrSkip } from "./method-tree-files.js";
 
 const execFileAsync = promisify(execFile);
+
+/** The most `gh api` may print, which bounds the largest file a method can hold through it. */
+const GH_MAX_BUFFER_BYTES = 256 * 1024 * 1024;
+/** How many GitHub requests a resolve keeps in flight. */
+const GITHUB_CONCURRENCY = 5;
+/** Git's file modes for a symbolic link and a submodule. */
+const GIT_SYMLINK_MODE = "120000";
 
 type AuthMethod = { type: "token"; token: string } | { type: "gh" } | { type: "none" };
 
@@ -34,7 +52,8 @@ async function githubFetch(auth: AuthMethod, apiPath: string): Promise<unknown> 
     try {
       const { stdout } = await execFileAsync("gh", ["api", apiPath], {
         encoding: "utf-8",
-        maxBuffer: 10 * 1024 * 1024,
+        // A blob comes back in Base64 inside the JSON, a third larger than the file.
+        maxBuffer: GH_MAX_BUFFER_BYTES,
       });
       return JSON.parse(stdout);
     } catch (err) {
@@ -97,6 +116,21 @@ interface GitHubContentDir {
   type: "dir";
   name: string;
   path: string;
+  /** The SHA of the directory's git tree. */
+  sha: string;
+}
+
+/** One entry of a recursive git tree, as `GET /repos/{owner}/{repo}/git/trees/{sha}` gives it. */
+interface GitTreeEntry {
+  path: string;
+  mode: string;
+  type: "blob" | "tree" | "commit";
+  sha: string;
+}
+
+interface GitTree {
+  tree: GitTreeEntry[];
+  truncated: boolean;
 }
 
 type GitHubContent = GitHubContentFile | GitHubContentDir;
@@ -133,61 +167,139 @@ async function fetchFileContent(
   throw new Error(`Cannot retrieve content for ${path}.`);
 }
 
-async function listMthdFiles(
-  auth: AuthMethod,
-  org: string,
-  repo: string,
-  basePath: string,
-): Promise<string[]> {
-  const paths: string[] = [];
-  const stack = [basePath];
-
-  while (stack.length > 0) {
-    const dir = stack.pop()!;
-    const data = (await githubFetch(
-      auth,
-      `repos/${org}/${repo}/contents/${dir}`,
-    )) as GitHubContent[];
-
-    if (!Array.isArray(data)) continue;
-
-    for (const item of data) {
-      if (item.type === "dir") {
-        stack.push(item.path);
-      } else if (item.type === "file" && item.name.endsWith(".mthds")) {
-        paths.push(item.path);
-      }
-    }
+/**
+ * The blobs of a method's git tree that can be members of its tree, the rest left unread: a path
+ * under a directory starting with a dot, a `__pycache__` or `node_modules` directory, or a
+ * directory below the root that a `pyvenv.cfg` marks as a virtual environment or a `METHODS.toml`
+ * as a package of its own, and a dotted file other than a `.gitignore`. What is left is written to
+ * disk for the lister, which applies the whole rule, `.gitignore` files and the manifest's
+ * `exclude` included. A submodule is a repository of its own and never part of a tree.
+ */
+function memberCandidates(entries: readonly GitTreeEntry[]): GitTreeEntry[] {
+  const blobs = entries.filter((entry) => entry.type === "blob");
+  const markedDirectories = new Set<string>();
+  for (const blob of blobs) {
+    const segments = blob.path.split("/");
+    const name = segments[segments.length - 1]!;
+    const directory = segments.slice(0, -1).join("/");
+    if (name === VENV_MARKER_NAME && directory !== "") markedDirectories.add(directory);
+    if (name === MANIFEST_NAME && directory !== "") markedDirectories.add(directory);
   }
-
-  return paths;
+  return blobs.filter((blob) => {
+    const segments = blob.path.split("/");
+    const name = segments[segments.length - 1]!;
+    const directories = segments.slice(0, -1);
+    if (
+      directories.some((segment) => isDotSegment(segment) || isDefaultExcludedDirectory(segment))
+    ) {
+      return false;
+    }
+    if (isDotSegment(name) && name !== GITIGNORE_NAME) return false;
+    return !directoriesOf(blob.path).some((directory) => markedDirectories.has(directory));
+  });
 }
 
-async function downloadFilesParallel(
+/** A blob's bytes, `GET /repos/{owner}/{repo}/git/blobs/{sha}`. */
+async function fetchBlob(
   auth: AuthMethod,
   org: string,
   repo: string,
-  filePaths: string[],
-  basePath: string,
-  concurrency: number = 5,
-): Promise<MethodsFile[]> {
-  const results: MethodsFile[] = [];
-
-  for (let i = 0; i < filePaths.length; i += concurrency) {
-    const batch = filePaths.slice(i, i + concurrency);
-    const downloaded = await Promise.all(
-      batch.map(async (fp) => {
-        const content = await fetchFileContent(auth, org, repo, fp);
-        const relativePath = fp.startsWith(basePath + "/")
-          ? fp.slice(basePath.length + 1)
-          : fp.slice(basePath.length === 0 ? 0 : basePath.length + 1);
-        return { relativePath, content };
-      }),
-    );
-    results.push(...downloaded);
+  sha: string,
+): Promise<Buffer> {
+  const data = (await githubFetch(auth, `repos/${org}/${repo}/git/blobs/${sha}`)) as {
+    content?: unknown;
+    encoding?: unknown;
+  };
+  if (typeof data.content !== "string" || data.encoding !== "base64") {
+    throw new Error(`GitHub answered blob ${sha} of ${org}/${repo} without its Base64 content.`);
   }
+  return Buffer.from(data.content, "base64");
+}
 
-  return results;
+/** Every distinct blob's bytes, a few requests at a time. */
+async function fetchBlobs(
+  auth: AuthMethod,
+  org: string,
+  repo: string,
+  shas: readonly string[],
+): Promise<Map<string, Buffer>> {
+  const unique = [...new Set(shas)];
+  const bytes = new Map<string, Buffer>();
+  for (let i = 0; i < unique.length; i += GITHUB_CONCURRENCY) {
+    const batch = unique.slice(i, i + GITHUB_CONCURRENCY);
+    const fetched = await Promise.all(batch.map((sha) => fetchBlob(auth, org, repo, sha)));
+    batch.forEach((sha, index) => bytes.set(sha, fetched[index]!));
+  }
+  return bytes;
+}
+
+/**
+ * Read a method's tree from its git tree on GitHub, as the lister defines it: the candidate files
+ * are written into a scratch directory as a checkout would hold them, a symbolic link as a link,
+ * the lister lists that directory as the method's root, and the scratch directory is removed.
+ * Gives the reason the method is skipped when its tree cannot be read faithfully or is refused.
+ */
+async function readGitHubMethodTree(
+  auth: AuthMethod,
+  org: string,
+  repo: string,
+  treeSha: string,
+  dirPath: string,
+): Promise<Awaited<ReturnType<typeof readMethodTreeOrSkip>>> {
+  const gitTree = (await githubFetch(
+    auth,
+    `repos/${org}/${repo}/git/trees/${treeSha}?recursive=1`,
+  )) as GitTree;
+  if (gitTree.truncated) {
+    return {
+      error: `GitHub truncated the listing of ${dirPath}, which holds too many entries to read in one answer.`,
+    };
+  }
+  const candidates = memberCandidates(gitTree.tree);
+  for (const candidate of candidates) {
+    const violation = treePathViolation(candidate.path);
+    if (violation !== null) {
+      return {
+        error: `The method's tree is refused: '${candidate.path}' is not a tree path: ${violation}.`,
+      };
+    }
+  }
+  const collisions = pathCollisions(candidates.map((candidate) => candidate.path));
+  if (collisions.length > 0) {
+    return {
+      error: `The method's tree is refused: paths collide once case-folded: ${collisions.join(", ")}.`,
+    };
+  }
+  const files = candidates.filter((candidate) => candidate.mode !== GIT_SYMLINK_MODE);
+  const bytes = await fetchBlobs(
+    auth,
+    org,
+    repo,
+    files.map((file) => file.sha),
+  );
+
+  const scratch = mkdtempSync(join(tmpdir(), "mthds-github-method-"));
+  try {
+    for (const candidate of candidates) {
+      const target = join(scratch, ...candidate.path.split("/"));
+      mkdirSync(dirname(target), { recursive: true });
+      if (candidate.mode === GIT_SYMLINK_MODE) {
+        // The link's target is never read: a link is refused by the lister wherever it points.
+        try {
+          symlinkSync("mthds-github-link", target);
+        } catch {
+          return {
+            error: `The method's tree is refused: '${candidate.path}' is a symbolic link, which a method's tree cannot hold.`,
+          };
+        }
+      } else {
+        writeFileSync(target, bytes.get(candidate.sha)!);
+      }
+    }
+    return await readMethodTreeOrSkip(scratch);
+  } finally {
+    rmSync(scratch, { recursive: true, force: true });
+  }
 }
 
 async function resolveOneMethod(
@@ -196,6 +308,7 @@ async function resolveOneMethod(
   repo: string,
   methodsPath: string,
   dirName: string,
+  treeSha: string,
 ): Promise<{ method?: ResolvedMethod; skipped?: SkippedMethod }> {
   const dirPath = `${methodsPath}/${dirName}`;
   const tomlPath = `${dirPath}/METHODS.toml`;
@@ -231,16 +344,18 @@ async function resolveOneMethod(
     }
   }
 
-  // Find and download .mthds files
-  const mthdPaths = await listMthdFiles(auth, org, repo, dirPath);
-  const files = await downloadFilesParallel(auth, org, repo, mthdPaths, dirPath);
+  // The method's whole tree, its Python, templates and other files beside its bundles.
+  const tree = await readGitHubMethodTree(auth, org, repo, treeSha, dirPath);
+  if ("error" in tree) {
+    return { skipped: { dirName, errors: [tree.error] } };
+  }
 
   return {
     method: {
       name: result.manifest.package.name,
       manifest: result.manifest,
       rawManifest: rawToml,
-      files,
+      files: tree.files,
     },
   };
 }
@@ -307,7 +422,7 @@ export async function resolveFromGitHub(parsed: ParsedAddress): Promise<Resolved
     );
   }
 
-  const methodDirs = contents.filter((c) => c.type === "dir").map((c) => c.name);
+  const methodDirs = contents.filter((c): c is GitHubContentDir => c.type === "dir");
 
   if (methodDirs.length === 0) {
     throw new Error(
@@ -319,10 +434,10 @@ export async function resolveFromGitHub(parsed: ParsedAddress): Promise<Resolved
   const methods: ResolvedMethod[] = [];
   const skipped: SkippedMethod[] = [];
 
-  for (let i = 0; i < methodDirs.length; i += 5) {
-    const batch = methodDirs.slice(i, i + 5);
+  for (let i = 0; i < methodDirs.length; i += GITHUB_CONCURRENCY) {
+    const batch = methodDirs.slice(i, i + GITHUB_CONCURRENCY);
     const results = await Promise.all(
-      batch.map((dirName) => resolveOneMethod(auth, org, repo, methodsPath, dirName)),
+      batch.map((dir) => resolveOneMethod(auth, org, repo, methodsPath, dir.name, dir.sha)),
     );
     for (const r of results) {
       if (r.method) methods.push(r.method);

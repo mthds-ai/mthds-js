@@ -345,6 +345,7 @@ export function registerApiRunnerCommands(program: Command, makeRunner: () => Ru
       "Output multiplicity: 'false', 'true', or an exact count",
     )
     .option("--dynamic-output <concept_ref>", "Override for the dynamic output concept ref")
+    .option(LIBRARY_DIR_FLAGS, VALIDATE_LIBRARY_DIR_HELP, collectLibraryDir, [] as string[])
     .description("Start a run and return its id without waiting")
     .allowUnknownOption()
     .allowExcessArguments(true)
@@ -361,10 +362,16 @@ export function registerApiRunnerCommands(program: Command, makeRunner: () => Ru
           outputName?: string;
           outputMultiplicity?: string;
           dynamicOutput?: string;
+          libraryDir?: string[];
         },
       ): Promise<void> => {
         const runner = safeCreateRunner(makeRunner);
-        const startOptions = await resolveStartOptions(runner, target, options);
+        const startOptions = await resolveStartOptions(
+          runner,
+          target,
+          options,
+          libraryDirsWith(options.libraryDir),
+        );
         try {
           const ack = await runner.start(startOptions);
           agentSuccess({ ...ack });
@@ -837,6 +844,7 @@ async function resolveStartOptions(
     dynamicOutput?: string;
     extra?: string;
   },
+  libraryDirs: readonly string[],
 ): Promise<StartOptions> {
   const outputs = {
     output_name: options.outputName,
@@ -860,7 +868,7 @@ async function resolveStartOptions(
   }
   // The method's whole tree travels, so its Python, templates and other files reach
   // the runner with its bundles. `--content` is a one-file tree of its own.
-  const resolved = await resolveMethodOrError(runner, target, options.content, []);
+  const resolved = await resolveMethodOrError(runner, target, options.content, libraryDirs);
   // A named bundle runs its own `main_pipe`; a directory leaves the choice to the
   // runner, which starts at the manifest's `main_pipe` or the tree's one `main_pipe`.
   const pipeCode = options.pipe ?? resolved.entryMainPipe;

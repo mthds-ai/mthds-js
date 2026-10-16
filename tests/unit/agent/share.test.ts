@@ -140,7 +140,7 @@ describe("agentShare", () => {
   });
 
   it("returns share URLs from local directory", async () => {
-    mockedResolveFromLocal.mockReturnValue({
+    mockedResolveFromLocal.mockResolvedValue({
       ...fakeResolved,
       source: "local",
     });

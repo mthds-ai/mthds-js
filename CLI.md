@@ -66,7 +66,7 @@ A method is the tree of files under its root, so its Python, templates, images a
 - a `.mthds` file with no manifest above it travels alone, with nothing beside it: name its directory, or add a `METHODS.toml`, to send the files beside it;
 - the files the standard leaves out stay behind: hidden files and folders, `__pycache__`, `node_modules`, virtual environments, nested repositories and packages, and whatever a `.gitignore` of the tree or the manifest's `exclude` ignores.
 
-A request carries one tree, so `-L` cannot add a second one. A library directory inside the tree's root adds nothing; a library directory holding a `.mthds` file named alone becomes the root of its tree, so `mthds run bundle ./method/child.mthds -L ./method/` sends the whole directory and runs `child.mthds`; any other library directory is refused with a message saying how to make one tree of the files, or to pass `--runner pipelex`.
+A request carries one tree, so `-L` cannot add a second one. A library directory inside the tree's root adds nothing. For a `.mthds` file named alone, the outermost library directory holding it becomes the root of its tree, whatever order the `-L` flags come in, so `mthds run bundle ./method/child.mthds -L ./method/` sends the whole directory and runs `child.mthds`, and every other library directory must lie inside that root. Any other library directory is refused with a message saying how to make one tree of the files, or to pass `--runner pipelex`.
 
 A tree of 256 KiB or less travels inside the request. A larger one travels by hash when the runner keeps a blob store, as the hosted Pipelex API does: the runner names the files it does not already hold, the CLI uploads only those, and a run of an unchanged method uploads nothing. The hosted API's limits on a tree are checked while it is listed, so a folder handed over by mistake is refused before it is read. [docs/api-runner.md](docs/api-runner.md#sending-a-methods-tree) has the details.
 
@@ -160,6 +160,8 @@ mthds run pipe <target> [OPTIONS]
 ### `mthds run bundle`
 
 Run a `.mthds` bundle file or a method directory directly. Like `run pipe`, it refuses any flag not listed below, and the API runner refuses its pipelex runner flags before anything is sent.
+
+A `.mthds` file runs its own `main_pipe` unless `--pipe` names another. A file that declares no `main_pipe` is refused without `--pipe` ("Could not determine pipe code"), before anything starts, since the runner would otherwise start where the tree's manifest says rather than in the file that was named. A directory runs where the protocol says: its manifest's `main_pipe`, else the one `main_pipe` its bundles declare. On the pipelex runner, the root of the tree is handed to pipelex where it is, without being copied.
 
 ```bash
 mthds run bundle <target> [OPTIONS]
@@ -563,11 +565,11 @@ mthds install [address] [OPTIONS]
 You must provide either `address` or `--local`, but not both.
 
 The install flow is interactive:
-1. Resolves methods from the address or local directory
-2. Displays a summary of found methods
-3. Checks that the configured runner is healthy, then validates each method with it (`pipelex validate bundle` on the pipelex runner, `POST /v1/validate` on the API runner). If validation fails, the install is aborted. If the health check fails, the install goes on without validating and prints `No runner configured — skipping pipe validation`. On the pipelex runner, the health check currently always fails, because it runs `pipelex doctor -g` and `pipelex doctor` has no `-g` option, so methods are installed unvalidated.
+1. Resolves methods from the address or local directory: each method's whole tree, as the MTHDS standard's lister defines it from the method's directory, so its Python, templates, images and other files come with its `METHODS.toml` and bundles, and the files the standard leaves out (hidden files and folders, `__pycache__`, `node_modules`, virtual environments, nested repositories and packages, and whatever a `.gitignore` or the manifest's `exclude` ignores) stay behind. A method whose tree the standard refuses, such as one holding a symbolic link, is skipped with the reason.
+2. Displays a summary of found methods, with each one's count of files and of bundles
+3. Checks that the configured runner is healthy, then validates each method's whole tree with it (`pipelex validate bundle` on the pipelex runner, `POST /v1/validate` on the API runner). If validation fails, the install is aborted. If the health check fails, the install goes on without validating and prints `No runner configured — skipping pipe validation`. On the pipelex runner, the health check currently always fails, because it runs `pipelex doctor -g` and `pipelex doctor` has no `-g` option, so methods are installed unvalidated.
 4. Prompts for install location (local `.mthds/methods/` or global `~/.mthds/methods/`)
-5. Writes method files to the selected location
+5. Writes each method's whole tree, every file with its exact bytes, into `<location>/<name>/`, replacing an earlier install of that method, so a file it no longer holds does not linger
 6. Optionally installs the pipelex runner (only if not already installed)
 
 **Examples:**
@@ -920,7 +922,7 @@ mthds-agent share --local ./my-methods --platform x
 
 ### `mthds-agent run method|pipe|bundle`
 
-Execute a pipeline via the pipelex runner. All three subcommands are passthroughs that forward every argument to `pipelex-agent run`, except `--runner`, which `mthds-agent` keeps for itself, so the options are `pipelex-agent run`'s own, and `pipelex-agent run bundle <target> --help` lists them all. On the API runner, `run method` answers `UnsupportedError`, `run pipe` and `run bundle` do not exist, and `run start` submits a run, sending its target's method tree as `validate bundle` does below, and returns its id.
+Execute a pipeline via the pipelex runner. All three subcommands are passthroughs that forward every argument to `pipelex-agent run`, except `--runner`, which `mthds-agent` keeps for itself, so the options are `pipelex-agent run`'s own, and `pipelex-agent run bundle <target> --help` lists them all. On the API runner, `run method` answers `UnsupportedError`, `run pipe` and `run bundle` do not exist, and `run start` submits a run, sending its target's method tree as `validate bundle` does below, and returns its id. `run start` takes `-L` as `validate bundle` does, before or after the subcommand, so `mthds-agent run start ./my_method/child.mthds -L ./my_method/` sends the whole directory and runs `child.mthds`.
 
 ```bash
 mthds-agent run method <name> [OPTIONS]

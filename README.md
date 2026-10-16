@@ -49,7 +49,7 @@ The CLI will:
 3. If `--method <name>` is provided, install only that method (errors if name not found)
 4. Ask where to install — **local** (current project) or **global** (your machine)
 5. Optionally install a [runner](#runners)
-6. Copy all `.mthds` files to `.mthds/methods/<name>/`
+6. Copy each method's whole tree to `.mthds/methods/<name>/`: its `METHODS.toml`, its `.mthds` files and every other file the MTHDS standard counts as part of the method, such as its Python, templates and images, each with its exact bytes. Hidden files and folders, `__pycache__`, `node_modules`, virtual environments, nested repositories and packages, and whatever a `.gitignore` or the manifest's `exclude` ignores stay behind. The tree is validated whole before it is installed, and a reinstall replaces the method's directory.
 
 You can also install from a local directory:
 
@@ -89,7 +89,8 @@ org/repo-name (or user-name/repo-name)
 2. The repository must contain a `methods/` folder at its root
 3. Inside `methods/`, each subfolder is a **method package**
 4. Each method package folder must contain a `METHODS.toml` file that follows the [manifest specification](https://mthds.ai/latest/packages/manifest/)
-5. Each method package folder should contain one or more `.mthds` files (the actual method definitions)
+5. Each method package folder should contain one or more `.mthds` files (the actual method definitions), and may hold any other file its pipes use, such as Python, templates and images, which are installed with it
+6. A method package folder holding a symbolic link is skipped, since a method's tree cannot hold one
 
 ### METHODS.toml
 
@@ -260,6 +261,8 @@ The client implements the MTHDS Protocol plus the Pipelex API's pipe I/O extensi
 | `findMissingBlobs(request)` | `POST /v1/blobs/missing` | Which blobs of a tree the runner's blob store lacks, each with its upload target — the step before sending a tree by hash, which `execute`, `start` and `validate` take themselves when given a `tree` |
 | `uploadBlob(blob, bytes)` | the target the runner gave | Upload one missing blob with exactly the headers the runner named; throws `BlobUploadError`, which never carries the target's URL |
 
+`findMissingBlobs` raises `MalformedBlobsAnswerError`, naming the faulty entry, when the runner's answer is not shaped as the protocol says. The client keeps the runner's handshake for `HANDSHAKE_TTL_MS`, and asks it again sooner when a refusal shows it to be stale.
+
 ### Run options
 
 | Option | Type | Description |
@@ -273,7 +276,7 @@ The client implements the MTHDS Protocol plus the Pipelex API's pipe I/O extensi
 | `dynamic_output_concept_ref` | `string` | Dynamic output concept reference |
 | `extra` | `Record<string, unknown>` | Server-specific extension args, forwarded verbatim into the request body (e.g. a stored-method id) |
 
-Either `pipe_code` or the method's tree (`files` or `tree`) must be provided (or a server-specific extension arg via `extra`). A tree of 256 KiB or less, measured as the JSON of its inline map, travels inline; a larger one travels by hash when the runner keeps a blob store, uploading only the blobs it lacks (see [docs/api-runner.md](docs/api-runner.md#sending-a-methods-tree)). Anything beyond the protocol's basic args is server-specific and rides the generic `extra` option, merged into the request body — the server you call defines and handles its own extension args (a client-supplied run id, where a server supports one, is such an extension; the request side never names it).
+Either `pipe_code` or the method's tree (`files` or `tree`) must be provided (or a server-specific extension arg via `extra`). A tree holds at least one file, so an empty `files` map or tree is refused, and `extra` may carry neither a protocol field nor the client-side `tree` and `bundleMain`. A tree of 256 KiB or less, measured as the JSON of its inline map, travels inline; a larger one travels by hash when the runner keeps a blob store, uploading only the blobs it lacks (see [docs/api-runner.md](docs/api-runner.md#sending-a-methods-tree)). Anything beyond the protocol's basic args is server-specific and rides the generic `extra` option, merged into the request body — the server you call defines and handles its own extension args (a client-supplied run id, where a server supports one, is such an extension; the request side never names it).
 
 ## Usage statistics
 

@@ -4,9 +4,9 @@
  *
  * A method travels as its tree, the protocol's `files` map (`method-target.ts`
  * resolves what a command line names into one). The local pipelex runner reads
- * files from disk, so `materializeBundleFiles` writes such a map back into a
- * temporary library directory, its Python, templates and other files beside its
- * bundles, and `pickMainBundleFile` chooses the bundle `run bundle` points at.
+ * files from disk, so `materializeMethodFiles` writes such a map back into a
+ * directory of its own, its Python, templates and other files beside its
+ * bundles; pipelex then lists that directory and chooses the bundle to start at.
  *
  * `/v1/pipe-io` still takes `.mthds` files alone, not trees: `resolveBundleClosure`
  * gathers every `.mthds` file of an inputs target and its library directories, so
@@ -24,7 +24,6 @@ import {
   writeFileSync,
 } from "node:fs";
 import { dirname, join, relative, resolve, sep } from "node:path";
-import { parse as parseToml } from "smol-toml";
 import type { FileEntry, MethodFiles } from "../protocol/file_entries.js";
 import { PipelineRequestError } from "../protocol/exceptions.js";
 import { decodeCanonicalBase64 } from "../method-tree/file-entries.js";
@@ -113,47 +112,6 @@ function collectFilesWhere(
 }
 
 /**
- * Does a `.mthds` document declare a top-level `main_pipe` key? Parsed with the
- * same TOML parser the rest of the toolchain uses (a `.mthds` file IS TOML), so
- * a quoted key (`"main_pipe" = …`) or an unusual-but-valid layout is recognized
- * — a regex missed those and fell back to file order, which could point a runner
- * at the wrong method. A document that isn't valid TOML simply doesn't count as
- * declaring `main_pipe` (the entrypoint pick falls back to the first candidate).
- */
-function declaresMainPipe(content: string): boolean {
-  let parsed: unknown;
-  try {
-    parsed = parseToml(content);
-  } catch {
-    return false;
-  }
-  return typeof parsed === "object" && parsed !== null && "main_pipe" in parsed;
-}
-
-/** A text entry's string, or `null` for an entry in Base64 or by hash. */
-function textOf(entry: FileEntry | undefined): string | null {
-  return typeof entry === "string" ? entry : null;
-}
-
-/**
- * Pick the main `.mthds` file of a tree — the one a local runner points
- * `run bundle` at. Prefers a root-level `.mthds` that declares a `main_pipe`,
- * then any root-level `.mthds`, then the first `.mthds` in tree path order.
- */
-export function pickMainBundleFile(files: MethodFiles): string {
-  const mthdsFiles = Object.keys(files)
-    .filter((rel) => rel.endsWith(".mthds"))
-    .sort();
-  if (mthdsFiles.length === 0) {
-    throw new PipelineRequestError("The method's tree holds no .mthds file.");
-  }
-  const rootLevel = mthdsFiles.filter((rel) => !rel.includes("/"));
-  const candidates = rootLevel.length > 0 ? rootLevel : mthdsFiles;
-  const withMainPipe = candidates.find((rel) => declaresMainPipe(textOf(files[rel]) ?? ""));
-  return withMainPipe ?? candidates[0]!;
-}
-
-/**
  * Resolve a tree path to an absolute path GUARANTEED to stay under `root`, or
  * throw. A `files` map reaches this from the public `RunOptions.files` (a
  * programmatic caller can put anything there), so a key like `../../outside` or
@@ -197,34 +155,22 @@ function entryBytes(treePath: string, entry: FileEntry): string | Uint8Array {
 /**
  * Write a method's `files` map into `targetDir`, recreating its directories (so
  * `funcs/*.py` land under `funcs/`) and writing each file's exact bytes: a text
- * entry as UTF-8, a Base64 entry decoded. Returns the absolute path of the tree's
- * main `.mthds` file — what a local runner points `run bundle` at, with
- * `targetDir` as its library directory.
- *
- * `main` (when given) is the caller-selected entry's tree path; it is honored
- * verbatim rather than re-inferring the main from the map, so a tree holding
- * several methods runs the one the caller named. Every key is checked before any
- * write, so a key that is not a tree path, or that would escape `targetDir`, is
- * refused instead of written, and so is a hash entry, which needs a blob store.
+ * entry as UTF-8, a Base64 entry decoded. `targetDir` is the tree's root and holds
+ * nothing else, so no file a run writes can land on a file of the method. Every key
+ * is checked before any write, so a key that is not a tree path, or that would
+ * escape `targetDir`, is refused instead of written, and so is a hash entry, which
+ * needs a blob store.
  */
-export function materializeBundleFiles(
-  targetDir: string,
-  files: MethodFiles,
-  main?: string,
-): string {
+export function materializeMethodFiles(targetDir: string, files: MethodFiles): void {
   const root = resolve(targetDir);
   const writes = Object.entries(files).map(
     ([rel, entry]) => [resolveSafeBundlePath(root, rel), entryBytes(rel, entry)] as const,
   );
+  mkdirSync(root, { recursive: true });
   for (const [abs, bytes] of writes) {
     mkdirSync(dirname(abs), { recursive: true });
     writeFileSync(abs, bytes);
   }
-  const mainRel =
-    main != null && main.endsWith(".mthds") && Object.hasOwn(files, main)
-      ? main
-      : pickMainBundleFile(files);
-  return join(root, ...mainRel.split("/"));
 }
 
 /** A target the bundle-closure resolver refuses: neither a `.mthds` file nor a directory holding one. */

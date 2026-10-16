@@ -582,6 +582,17 @@ describe("MthdsApiClient answers that are no problem document", () => {
     },
   );
 
+  it.each([
+    ["an empty string", ""],
+    ["a number", 42],
+  ])("reads a start whose run id is %s as client.outcome_unknown naming no run", async (_t, id) => {
+    const client = makeClient();
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(jsonResponse(202, { pipeline_run_id: id }));
+    const err = await rejection(client.start({ pipe_code: "p" }));
+    expect(err).toBeInstanceOf(ApiResponseError);
+    expect((err as ApiResponseError).problem).toEqual(buildProblem("client.outcome_unknown", {}));
+  });
+
   it("reads a 2xx on start that is not its result as client.outcome_unknown", async () => {
     const client = makeClient();
     vi.spyOn(globalThis, "fetch").mockResolvedValue(jsonResponse(202, { state: "queued" }));

@@ -627,9 +627,12 @@ function isRunResultExecute(value: unknown): boolean {
   );
 }
 
-/** The base of `POST /start`'s result: the run's id. */
+/**
+ * The base of `POST /start`'s result: the run's id, a non-empty string (`runIdOf`), since a start
+ * that names no run gives the caller nothing to read the run by.
+ */
 function isRunResultStart(value: unknown): boolean {
-  return isObject(value) && typeof value.pipeline_run_id === "string";
+  return runIdOf(value) !== undefined;
 }
 
 /**

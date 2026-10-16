@@ -253,10 +253,33 @@ The client implements the MTHDS Protocol plus the Pipelex API's pipe I/O extensi
 |--------|-------|-------------|
 | `execute(options)` | `POST /v1/execute` | Execute a method and wait for the result — returns a `RunResultExecute` (throws `RunStillRunningError` on the protocol's optional 202 degrade) |
 | `start(options)` | `POST /v1/start` | Start a method asynchronously — returns a `RunResultStart` with the authoritative `pipeline_run_id` |
-| `validate(mthdsContents, allowSignatures?, mthdsSources?)` | `POST /v1/validate` | Parse, validate, and dry-run a bundle — returns the protocol's `ValidationResult` discriminated on `is_valid`; an invalid bundle is a produced verdict (`is_valid: false` with `validation_errors`), not a throw. Only a no-verdict non-2xx (malformed request, auth, server fault) throws `ApiResponseError`. `mthdsSources` (optional, parallel to `mthdsContents`) names each submitted file so cross-file diagnostics resolve the owning file |
+| `validate(mthdsContents, allowSignatures?, mthdsSources?)` | `POST /v1/validate` | Parse, validate, and dry-run a bundle — returns the protocol's `ValidationResult` discriminated on `is_valid`; an invalid bundle is a produced verdict (`is_valid: false` with its faults in `errors`, each a problem item), not a throw. Only a no-verdict non-2xx (malformed request, auth, server fault) throws `ApiResponseError`. `mthdsSources` (optional, parallel to `mthdsContents`) names each submitted file so cross-file diagnostics resolve the owning file |
 | `models(category?)` | `GET /v1/models` | The model deck the runner routes to |
-| `pipeIo(request)` | `POST /v1/pipe-io` | A method's pipe I/O contracts, input form and output form in one call, with no dry run (a Pipelex API extension) — returns a `PipeIOResponse` discriminated on `is_valid`. The closure is `files`, a `method_ref` address or a hosted `method_id`; a refused pipe selection is a `422` whose `errorType` is one of `PIPE_SELECTION_ERROR_TYPES`. See [docs/pipe-io.md](docs/pipe-io.md) |
+| `pipeIo(request)` | `POST /v1/pipe-io` | A method's pipe I/O contracts, input form and output form in one call, with no dry run (a Pipelex API extension) — returns a `PipeIOResponse` discriminated on `is_valid`. The closure is `files`, a `method_ref` address or a hosted `method_id`; a refused pipe selection is a `422` whose problem's code is one of `PIPE_SELECTION_CODES`. See [docs/pipe-io.md](docs/pipe-io.md) |
 | `version()` | `GET /v1/version` | Protocol + implementation versions (the feature-detection handshake) |
+
+### Errors
+
+Every failure is a `ProblemError` carrying `problem`, the MTHDS Protocol's error document coded from the core error registry, which this package vendors and types. Branch on `err.problem.code`, and on `domain`, `retry` and `next_step.kind` when several codes are handled alike:
+
+```typescript
+import { ProblemError } from "mthds/errors";
+
+try {
+  await client.execute({ pipe_code: "summarize", inputs });
+} catch (err) {
+  if (!(err instanceof ProblemError)) throw err;
+  if (err.code === "client.outcome_unknown") {
+    // The run may have started: look at the run history before starting it again.
+  } else if (err.retry === "yes") {
+    // Repeat after err.retryAfter seconds, when given.
+  } else {
+    console.error(err.message); // the problem's sentence, then its next step
+  }
+}
+```
+
+An answer of the runtime is read as the problem it carries (`ApiResponseError`), or, when its body is none, as the one core code of its status or `client.response_unreadable`; a `202` on `execute` is `client.follow_failed` (`RunStillRunningError`); no answer at all is `client.unreachable`, `client.timeout` or, after a request that creates a run left, `client.outcome_unknown` (`ApiTransportError`). See [docs/errors.md](docs/errors.md).
 
 ### Run options
 

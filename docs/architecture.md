@@ -11,7 +11,7 @@ flowchart TD
     B -->|import| C["protocol/ — PURE<br/>MTHDS Protocol interface + wire models"]
 ```
 
-Arrows point in the **import** direction. `protocol/` is the leaf — it depends on nothing internal. A `.dependency-cruiser.cjs` rule (run in `make check`) enforces that boundary, so the pure layer can never quietly grow a dependency on a runner, the CLI, or config.
+Arrows point in the **import** direction. `protocol/` is the leaf — it depends on nothing internal but `problems/`, the problem document it is coded with, which imports nothing but itself and `protocol/exceptions`. `.dependency-cruiser.cjs` rules (run in `make check`) enforce both boundaries, so the pure layer can never quietly grow a dependency on a runner, the CLI, or config, and `problems/` never one on a Node built-in, which keeps `mthds/errors` client-safe.
 
 ## Module map
 
@@ -19,8 +19,8 @@ Arrows point in the **import** direction. `protocol/` is the leaf — it depends
 src/protocol/                 PURE — the MTHDS Protocol mirror (imports nothing from runners/cli/config)
   protocol.ts                 MTHDSProtocol<PipeOutputT> — execute/start/validate/models/version (GENERIC)
   models.ts                   RunResultExecute<T>, RunResultStart, ModelDeck/Info/Category,
-                              ValidationResult (ValidationReport | InvalidValidationReport) + ValidationError,
-                              VersionInfo, MTHDS_PROTOCOL_VERSION — slim + extension-open
+                              ValidationResult (ValidationReport | InvalidValidationReport, whose errors are
+                              problem items), VersionInfo, MTHDS_PROTOCOL_VERSION — slim + extension-open
   options.ts                  RunRequest/StartRequest, RunOptions/StartOptions, ExtensionOptions (the arg surface)
   pipeline_inputs.ts          StuffContentOrData, PipelineInputs
   pipe_output.ts              VariableMultiplicity, PipeOutputAbstract<TWorkingMemory>
@@ -42,14 +42,23 @@ src/protocol/                 PURE — the MTHDS Protocol mirror (imports nothin
   stuff.ts                    StuffAbstract<TConcept, TContent>, StuffContentAbstract
   working_memory.ts           WorkingMemoryAbstract<TStuff>
   exceptions.ts               PipelineRequestError (protocol-level base)
+src/problems/                 the protocol's problem document, coded from the core error registry — see errors.md
+  registry.generated.ts       GENERATED from scripts/registry/mthds-error-registry.json by scripts/gen-error-registry.mjs:
+                              the registry's version, families, extension prefixes, ERROR_CODES, the typed parameters
+                              of every code (ProblemParamsByCode) and every entry (CORE_REGISTRY)
+  registry-target.ts          MTHDS_ERROR_REGISTRY_TARGET_VERSION, the registry version this package targets
+  vocabulary.ts / types.ts    the closed lists (domains, retry verdicts, step kinds, fix safeties and operations) and
+                              the Problem, ProblemItem, SuggestedFix and FixOp types
+  registry.ts / reading.ts    looking a code up, and reading a value this reader does not know into a closed list
+  build.ts / read.ts          building a problem from the registry, and reading an answer as its problem
+  render.ts / errors.ts       the Markdown and plain-line renderings, and ProblemError
 src/runners/api/
   client.ts                   MthdsApiClient — IS the api runner: implements Runner (protocol + health), plus pipeIo
-  models.ts                   DictStuff/DictWorkingMemory/DictPipeOutput + DictRunResultExecute (default binding);
-                              ValidationErrorItem/Category (the pipe-io verdict's and run refusal's item) — the Pipelex
-                              /v1/validate narrowing (PipelexValidationResult) now lives in @pipelex/sdk
-  exceptions.ts               ApiResponseError (+ validationErrors and the problem members: type, title, instance,
-                              requestId, errorDomain, retryable, userAction), ApiUnreachableError, ClientAuthenticationError,
-                              RunStillRunningError, PipelineExecuteTimeoutError
+  models.ts                   DictStuff/DictWorkingMemory/DictPipeOutput + DictRunResultExecute (default binding) — the
+                              Pipelex /v1/validate narrowing (PipelexValidationResult) lives in @pipelex/sdk
+  exceptions.ts               ApiResponseError (an answer read as its problem), RunStillRunningError (a 202 on execute),
+                              ApiTransportError (no answer) — every one a ProblemError
+  transport.ts                whether a transport failure proves the request never left
 src/runners/pipelex/
   runner.ts                   PipelexRunner (drives the pipelex CLI on this machine)
 src/runners/
@@ -59,7 +68,7 @@ src/method-tree/              the method tree, Node-side: listMethodTree + Metho
                               .gitignore matching, tree paths and case folding, the tree digest, file references,
                               function names, reading a map of file entries — see method-tree.md
 src/index.ts                  public barrel → re-exports protocol/ + runners/ + method-tree/
-src/errors.ts                 client-safe error subpath (mthds/errors) → re-exports the exception classes only
+src/errors.ts                 client-safe error subpath (mthds/errors) → the exception classes and the problem module
 ```
 
 ## Entry points
@@ -70,15 +79,15 @@ The package's entry points differ in what they drag into a bundler's graph:
 |---|---|---|---|---|
 | `mthds` | `src/index.ts` | protocol surface + `MthdsApiClient` + error classes + the method tree | **server/Node** (statically pulls `MthdsApiClient → config/ → node:fs`) | the full SDK |
 | `mthds/protocol` | `src/protocol/index.ts` | the pure protocol surface — types + runtime values (`PipelineRequestError`, `MTHDS_PROTOCOL_VERSION`/`MODEL_CATEGORIES`/`FIELD_KINDS`, `conceptRef`, the run-source predicates `assertExclusiveRunSources`/`hasBundlePayload`, the method-file serialization `serializeMethodFiles`/`parseMethodFiles`, the inputs-template projection `renderInputsTemplate`/`projectInputsTemplate`/`projectConceptComments`/`formatSlotSignature` with `INPUTS_TEMPLATE_FORMATS`, `TemplateFloat` and the two errors `InputsTemplateError`/`TomlEmissionError`) | isomorphic | the protocol surface, with no runner or Node deps |
-| `mthds/errors` | `src/errors.ts` | the exception classes only | **client-safe** (no `node:fs`) | `instanceof` checks in client code |
+| `mthds/errors` | `src/errors.ts` | the exception classes and the problem module (`ProblemError`, the problem types, the core registry, its readers and renderers) | **client-safe** (no `node:fs`) | classifying a failure by its problem's code in client code |
 
 ### Why `mthds/errors` exists
 
 The top-level barrel can't be imported from a client bundle: re-exporting `MthdsApiClient` drags `config/ → node:fs` into the graph, which a bundler like Turbopack cannot externalize — even for a consumer that only wanted an error class for an `instanceof` check (a Next.js client component classifying a Server Action rejection is the motivating case).
 
-So `mthds/errors` re-exports only the exception classes — `ApiResponseError`, `ApiUnreachableError`, `ClientAuthenticationError`, `PipelineExecuteTimeoutError`, `RunStillRunningError`, and the protocol base `PipelineRequestError`. Its graph is `protocol/exceptions` (zero imports) plus `runners/api/exceptions` (whose only runtime import is `protocol/exceptions`), so it carries no `node:fs` and survives a browser/client bundler. Client-reachable code imports error classes from here; server code that needs the client keeps importing `MthdsApiClient` from `mthds`. The two error sets cannot drift — both re-export from the same source modules.
+So `mthds/errors` re-exports only the exception classes — `ApiResponseError`, `ApiTransportError`, `RunStillRunningError`, `ProblemError` and the protocol base `PipelineRequestError` — and the problem module they carry. Its graph is `protocol/exceptions` (zero imports), `problems/` (importing only itself and `protocol/exceptions`) and `runners/api/exceptions` (importing only those), so it carries no `node:fs` and survives a browser/client bundler. Client-reachable code imports error classes from here; server code that needs the client keeps importing `MthdsApiClient` from `mthds`. The two error sets cannot drift — both re-export from the same source modules.
 
-See [errors.md](./errors.md) for the full taxonomy — each class's fields, when it is thrown, the inheritance tree, and how to classify an error in client code.
+See [errors.md](./errors.md) for the problem document, each class, how the client reads every answer, and how to classify an error in client code.
 
 ## Design decisions
 
@@ -110,11 +119,11 @@ The protocol layer models the verdict as `ValidationResult = ValidationReport (i
 | Arm | Discriminant | Carries |
 |---|---|---|
 | `ValidationReport` | `is_valid: true` | only the discriminant; any structural artifacts the server adds (`bundle_blueprint`, `graph_spec`, `validated_pipes`, …) ride the extension index signature — preserved but untyped, except the two the standard recommends, `pipe_io_contracts` and `input_form`, which have types to narrow by (see below) |
-| `InvalidValidationReport` | `is_valid: false` | `validation_errors[]` (typed `ValidationError` = `category` + `message`, non-empty on every invalid verdict), `pending_signatures`, `is_runnable: false`, `message` |
+| `InvalidValidationReport` | `is_valid: false` | `errors[]` (`ProblemItem`: `code`, `detail`, `params`, `location`, `suggested_fix`; non-empty on every invalid verdict), `warnings[]`, `pending_signatures`, `is_runnable: false`, and the runner's own `message` |
 
-- **The Pipelex-API narrowing lives in `@pipelex/sdk`, not here.** `PipelexValidationResult` (its `PipelexValidationReport` / `PipelexInvalidReport` arms typing `bundle_blueprint`, `graph_spec`, `validated_pipes`, the closed-vocabulary `validation_errors[]`, and the opt-in `rendered_markdown`) is owned by the runtime SDK. A consumer that wants the typed Pipelex artifacts uses `@pipelex/sdk`'s `PipelexApiClient`; `mthds` keeps to the standard. This is the MTHDS/Pipelex brand boundary: the standard's client returns the standard's neutral verdict. The two artifacts the standard itself owns — `pipe_io_contracts` and `input_form` — are the exception, typed here and imported by the SDK rather than restated (see the next section).
-- `mthds_sources` (a third, optional, parallel-array arg to `validate()`) names each submitted content so the server threads `blueprint.source` for cross-file diagnostics (an unnamed content yields `source: null`).
-- `ValidationErrorItem` (+ the closed `ValidationErrorCategory`, incl. `dry_run`) — the one structured per-error item — stays in `mthds` because the `200` invalid verdict of **`pipe-io`** carries it (`CrateInvalidReport.validation_errors`) and a **run route's** `422` refusal parses it onto `ApiResponseError.validationErrors` (`undefined` for any error with no per-error list). It is neutrally named, so no brand violation; the SDK's `/v1/validate` narrowing reuses the same shape.
+- **The Pipelex-API narrowing lives in `@pipelex/sdk`, not here.** `PipelexValidationResult` (its `PipelexValidationReport` / `PipelexInvalidReport` arms typing `bundle_blueprint`, `graph_spec`, `validated_pipes` and the opt-in `rendered_markdown`) is owned by the runtime SDK. A consumer that wants the typed Pipelex artifacts uses `@pipelex/sdk`'s `PipelexApiClient`; `mthds` keeps to the standard. This is the MTHDS/Pipelex brand boundary: the standard's client returns the standard's neutral verdict. The two artifacts the standard itself owns — `pipe_io_contracts` and `input_form` — are the exception, typed here and imported by the SDK rather than restated (see the next section).
+- `mthds_sources` (a third, optional, parallel-array arg to `validate()`) names each submitted content so the server names its file in each item's `location.file` for cross-file diagnostics.
+- `ProblemItem`, the one structured per-fault item, is the protocol's: the invalid verdicts of `validate` and **`pipe-io`** (`CrateInvalidReport.errors`) carry it, and so does a **run route's** `422` refusal, in its problem's `errors`. The client refuses an invalid verdict whose items are not of that shape as `client.response_unreadable`.
 - `VersionInfo.implementation_version` — the one well-known `VersionInfo` extension is typed (still optional) so capability gating reads `version().implementation_version` directly.
 
 ### The standard's recommended validate extensions are typed here
@@ -159,7 +168,7 @@ There is one class, not a client wrapped by a runner. `MthdsApiClient implements
 
 ## See also
 
-- [errors.md](./errors.md) — the full exception taxonomy (`mthds/errors`): each class, its fields, when it is thrown, and client-side classification.
+- [errors.md](./errors.md) — the problem document and the classes carrying it (`mthds/errors`): how every answer is read, the codes the client raises, and client-side classification.
 - [run-lifecycle.md](./run-lifecycle.md) — the `execute` / `start` run model these types back.
 - [api-runner.md](./api-runner.md) — pointing the client at a hosted or self-hosted runner.
 - [method-tree.md](./method-tree.md) — listing a method's files, the tree digest, file references and file entries, against the conformance corpus.

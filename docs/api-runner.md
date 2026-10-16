@@ -76,7 +76,7 @@ See the [`pipelex-api` documentation](https://docs.pipelex.com/latest/api-server
 
 **Synchronous runs.** `mthds run pipe` and `mthds run bundle` call the blocking `POST /v1/execute` (see [run-lifecycle.md](./run-lifecycle.md)).
 
-- *Hosted:* the gateway caps synchronous requests at ~30s; a longer run raises `PipelineExecuteTimeoutError`.
+- *Hosted:* the gateway caps synchronous requests at ~30s; a longer run ends with the gateway's answer, read as `client.response_unreadable`, or a cut connection, read as `client.outcome_unknown` (see [errors.md](./errors.md#how-the-client-reads-an-answer)).
 - *Self-hosted:* the runner holds the connection as long as it needs, but your own reverse proxy (nginx, ALB, Cloud Run, …) typically imposes an idle timeout (~60s). Raise it for long runs.
 
 For anything long-running, prefer `start` over `execute`. The async `start` primitive is part of the **SDK** (`client.start`), not a CLI subcommand — `mthds run …` is always synchronous.
@@ -123,5 +123,5 @@ With no options, the constructor reads `MTHDS_BASE_URL` and `MTHDS_API_KEY` from
 - [run-lifecycle.md](./run-lifecycle.md) — `execute` vs. `start`, and durable poll-by-id.
 - [pipe-io.md](./pipe-io.md) — `pipeIo()`: a method's pipe I/O contracts, input form and output form in one call, with no dry run.
 - [architecture.md](./architecture.md) — the SDK's protocol/runner split and the `MthdsApiClient` surface.
-- [errors.md](./errors.md) — the exception taxonomy: `PipelineExecuteTimeoutError`, `ApiResponseError`, `ApiUnreachableError`, and the rest.
+- [errors.md](./errors.md) — the problem document, the classes carrying it (`ApiResponseError`, `ApiTransportError`, `RunStillRunningError`) and how every answer is read.
 - [`pipelex-api`](https://docs.pipelex.com/latest/api-server/) — the runner's documentation and its own [OpenAPI contract](https://docs.pipelex.com/latest/api-server/openapi/pipelex-api.openapi.yaml); its source is the [`api/` member of the pipelex repository](https://github.com/Pipelex/pipelex/tree/main/api). The MTHDS Protocol spec (`mthds-protocol.openapi.yaml`) lives in the standard repo.

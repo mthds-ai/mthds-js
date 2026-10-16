@@ -41,8 +41,8 @@ console.log(result.pipe_output);
 
 **Two things can cut the wait short:**
 
-- **Hosted timeout.** Behind the Pipelex Hosted gateway, synchronous requests are capped at ~30s; a longer run surfaces as `PipelineExecuteTimeoutError`. Switch to `start` for long methods. (A self-hosted runner imposes no such cap of its own — but your reverse proxy usually does; see [api-runner.md](./api-runner.md).)
-- **Async degrade (202).** The protocol lets a runner *accept* an `execute` request and finish it in the background, answering `202` with the run id instead of the result. `mthds-js` surfaces that as `RunStillRunningError`, carrying the `pipeline_run_id`, `Retry-After`, and `Location` so you can collect the result by id.
+- **Hosted timeout.** Behind the Pipelex Hosted gateway, synchronous requests are capped at ~30s. A longer run ends with the gateway's own answer, which is no problem document and reads as `client.response_unreadable` naming its status, or with the connection cut, which reads as `client.outcome_unknown`; either way the run may have started, so it is not repeated by itself. Switch to `start` for long methods. (A self-hosted runner imposes no such cap of its own — but your reverse proxy usually does; see [api-runner.md](./api-runner.md).)
+- **Async degrade (202).** The protocol lets a runner *accept* an `execute` request and finish it in the background, answering `202` with the run id instead of the result. `mthds-js` surfaces that as `RunStillRunningError`, whose problem is `client.follow_failed`, carrying the `pipeline_run_id`, `Retry-After`, and `Location` so you can collect the result by id.
 
 ## `start` — submit now, collect later
 
@@ -88,4 +88,4 @@ Reach for that SDK when you want a durable, resumable handle on a run — its cl
 - [`@pipelex/sdk`](https://github.com/Pipelex/pipelex-sdk/tree/main/js) — the Pipelex runtime SDK that provides the durable run-lifecycle (poll-by-id).
 - [api-runner.md](./api-runner.md) — pointing `mthds-js` at a hosted or self-hosted runner, and the timeout/run-store differences between them.
 - [architecture.md](./architecture.md) — the `RunResultExecute` / `RunResultStart` types and why the run response is split.
-- [errors.md](./errors.md) — `PipelineExecuteTimeoutError` and `RunStillRunningError` (the `202` degrade) in full, with the rest of the exception taxonomy.
+- [errors.md](./errors.md) — how the client reads every answer and every failure to get one as a problem, `RunStillRunningError` (the `202` degrade) included.

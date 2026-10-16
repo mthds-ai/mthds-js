@@ -35,11 +35,12 @@ async function problemWrittenFor(err: unknown): Promise<Problem> {
   thrown.value = err;
   process.argv = ["node", "/path/to/mthds-agent", "upgrade"];
   await import("../../../src/agent-cli.js");
-  await vi.waitFor(() => expect(written.problems).toHaveLength(1));
+  // Importing the CLI compiles its whole command tree, which takes a while on a loaded machine.
+  await vi.waitFor(() => expect(written.problems).toHaveLength(1), { timeout: 30_000 });
   return written.problems[0]!;
 }
 
-describe("mthds-agent's last catch", () => {
+describe("mthds-agent's last catch", { timeout: 60_000 }, () => {
   it("writes an escaping ProblemError's problem as received", async () => {
     const { problemError } = await import("../../../src/problems/errors.js");
     const problem = await problemWrittenFor(

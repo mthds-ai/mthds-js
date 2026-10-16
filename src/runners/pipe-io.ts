@@ -4,8 +4,7 @@
  */
 
 import type { PipeInputFormDescriptor } from "../protocol/input_form.js";
-import { ProblemError } from "../problems/errors.js";
-import { buildProblem } from "../problems/build.js";
+import { problemError, ProblemError } from "../problems/errors.js";
 import type { PipeIOValidReport } from "./types.js";
 
 /**
@@ -14,7 +13,7 @@ import type { PipeIOValidReport } from "./types.js";
  */
 export class PipeIOAnswerError extends ProblemError {
   constructor(message: string) {
-    super(buildProblem("client.response_unreadable", { status: 200 }, { extra: { message } }));
+    super(problemError("client.response_unreadable", { status: 200 }, { message }).problem);
     this.name = "PipeIOAnswerError";
   }
 }

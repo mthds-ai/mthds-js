@@ -65,7 +65,10 @@ describe("mthds-agent error stream for a runner's refusal", () => {
       runProtocolValidate(throwingRunner(apiError(problem, 500)), ["x"], false, undefined, "json"),
     ).rejects.toThrow("__exit__");
     const { status: _status, ...relayed } = problem;
-    expect(firstEnvelope()).toEqual(relayed);
+    expect(firstEnvelope()).toEqual({
+      ...relayed,
+      answer: { route: "POST /v1/validate", status: 500 },
+    });
     expect(firstEnvelope()).toMatchObject({
       code: "runtime.misconfigured",
       domain: "operator",

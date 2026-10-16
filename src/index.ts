@@ -47,7 +47,7 @@ export {
   ApiTransportError,
   RunStillRunningError,
 } from "./runners/api/exceptions.js";
-export type { ApiAnswerFacts } from "./runners/api/exceptions.js";
+export type { AnswerReport, ApiAnswerFacts } from "./runners/api/exceptions.js";
 
 // ── Dict-serialized concretes (runners/api) ──
 //

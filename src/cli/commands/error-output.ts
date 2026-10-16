@@ -3,19 +3,27 @@
  * (`renderProblemLines`), which states its title and detail, the command's own sentence, the next
  * step, the code with its domain and retry verdict, the request id and the run when it names
  * them (the request id of the answer's header when the problem names none), and every item of its
- * `errors` with its suggested fix. Every error the runners and the client raise carries a problem;
- * any other error prints its message alone.
+ * `errors` with its suggested fix, then, for an answer of the runtime, the route, the status and
+ * the start of a body that is no problem document. Every error the runners and the client raise
+ * carries a problem; any other error prints its message alone.
  */
 
 import { ProblemError, reportedProblem } from "../../problems/errors.js";
 import { formatItem, formatSuggestedFix, renderProblemLines } from "../../problems/render.js";
 import { CORE_REGISTRY } from "../../problems/registry.generated.js";
 import type { ProblemItem } from "../../problems/types.js";
+import { ApiResponseError } from "../../runners/api/exceptions.js";
 
 /** The text the `mthds` CLI prints for a failed command. */
 export function formatCliError(err: unknown): string {
-  if (err instanceof ProblemError) return renderProblemLines(reportedProblem(err)).join("\n");
-  return err instanceof Error ? err.message : String(err);
+  if (!(err instanceof ProblemError)) return err instanceof Error ? err.message : String(err);
+  const lines = renderProblemLines(reportedProblem(err));
+  if (err instanceof ApiResponseError) {
+    const { route, status, excerpt } = err.answer;
+    lines.push(`Answer: ${route} (${status})`);
+    if (excerpt !== undefined) lines.push(`The server answered: ${excerpt}`);
+  }
+  return lines.join("\n");
 }
 
 /** The sentence an invalid verdict opens with: its own `message`, else the title of `method.invalid`. */

@@ -14,6 +14,7 @@
 import { buildInstallCommand } from "./binaries.js";
 import type { BinaryRecoveryInfo } from "./binaries.js";
 import { ProblemError, reportedProblem } from "../problems/errors.js";
+import { ApiResponseError } from "../runners/api/exceptions.js";
 import { buildProblem } from "../problems/build.js";
 import { renderProblemMarkdown } from "../problems/render.js";
 import type { CoreErrorCode, ProblemParamsByCode } from "../problems/registry.generated.js";
@@ -104,12 +105,17 @@ export function agentProblem<Code extends CoreErrorCode>(
 /**
  * The problem of an error a command caught: the problem a `ProblemError` carries, as received or
  * as the client built it, with the request id of the answer's header when the problem names none
- * (`reportedProblem`), else `fallback`, the problem the command reads an error of its kind as,
- * with the error's message in `message`.
+ * (`reportedProblem`) and, for an answer of the runtime, this CLI's `answer` member naming its
+ * route, its status and the start of a body that is no problem document, else `fallback`, the
+ * problem the command reads an error of its kind as, with the error's message in `message`.
  */
 export function problemOfError(err: unknown, fallback: (message: string) => Problem): Problem {
-  if (err instanceof ProblemError) return reportedProblem(err);
-  return fallback(err instanceof Error ? err.message : String(err));
+  if (!(err instanceof ProblemError))
+    return fallback(err instanceof Error ? err.message : String(err));
+  const problem = reportedProblem(err);
+  return err instanceof ApiResponseError && !("answer" in problem)
+    ? { ...problem, answer: err.answer }
+    : problem;
 }
 
 /** The catch-all problem, `runtime.unexpected`, of a failure no other code describes. */
@@ -160,11 +166,21 @@ function inline(value: unknown): string {
 
 /**
  * The extras of a failure rendered as Markdown sections after the problem's own, so that the
- * default error stream says what the JSON form carries: the command that installs a missing tool,
- * the methods the resolver refused with their reasons, and what mthds.sh answered for each method.
+ * default error stream says what the JSON form carries: the runtime's answer, the command that
+ * installs a missing tool, the methods the resolver refused with their reasons, and what mthds.sh
+ * answered for each method.
  */
-function renderExtrasMarkdown(extras: AgentErrorExtras | undefined): string {
+function renderExtrasMarkdown(problem: Problem, extras: AgentErrorExtras | undefined): string {
   const sections: string[] = [];
+  const answer = problem.answer as
+    | { route?: unknown; status?: unknown; excerpt?: unknown }
+    | undefined;
+  if (answer !== undefined && typeof answer === "object") {
+    const lines = [`- Route: \`${inline(answer.route)}\`, status ${inline(answer.status)}`];
+    if (answer.excerpt !== undefined)
+      lines.push(`- The server answered: ${inline(answer.excerpt)}`);
+    sections.push(`### Answer\n\n${lines.join("\n")}`);
+  }
   if (extras?.recovery !== undefined) {
     sections.push(`### Recovery\n\nRun \`${buildInstallCommand(extras.recovery)}\`.`);
   }
@@ -199,7 +215,7 @@ export function agentError(problem: Problem, extras?: AgentErrorExtras): never {
   const output =
     errorFormat() === "json"
       ? `${JSON.stringify(written, null, 2)}\n`
-      : renderProblemMarkdown(written) + renderExtrasMarkdown(extras);
+      : renderProblemMarkdown(written) + renderExtrasMarkdown(written, extras);
   process.stderr.write(output);
   process.exit(1);
 }

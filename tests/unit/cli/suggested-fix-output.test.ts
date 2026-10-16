@@ -218,6 +218,7 @@ describe("mthds run prints a refused run's problem items", () => {
         MODEL_LINE,
         `  ${FIX_LINE}`,
         `- method.pipe_unresolved: ${NO_FIX_ITEM.detail} (pipe 'main')`,
+        "Answer: POST /v1/execute (422)",
       ].join("\n"),
     ]);
   });
@@ -232,6 +233,7 @@ describe("mthds run prints a refused run's problem items", () => {
         "The method does not validate: The method is invalid and was not run.",
         "Next step: Fix each fault the errors list.",
         "Code: method.invalid (domain method, retry no)",
+        "Answer: POST /v1/execute (422)",
       ].join("\n"),
     ]);
   });

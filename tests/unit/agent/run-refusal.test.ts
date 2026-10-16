@@ -97,7 +97,7 @@ describe("mthds-agent run start envelope for a refused invalid method", () => {
     await expect(runStart(problemResponse(422, problem))).rejects.toThrow("__exit__");
 
     const { status: _status, ...relayed } = problem;
-    expect(envelope()).toEqual(relayed);
+    expect(envelope()).toEqual({ ...relayed, answer: { route: "POST /v1/start", status: 422 } });
     expect(envelope()).toMatchObject({
       code: "method.invalid",
       domain: "method",

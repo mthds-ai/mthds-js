@@ -12,6 +12,7 @@ import {
   isProblem,
   isProblemItem,
   parseJsonBody,
+  parseHttpDate,
   readErrorAnswer,
   retryAfterSeconds,
 } from "../../../src/problems/read.js";
@@ -215,6 +216,80 @@ describe("reading Retry-After", () => {
     expect(retryAfterSeconds({ "retry-after": "Fri, 16 Oct 2026 11:00:00 GMT" }, now)).toBe(0);
     expect(retryAfterSeconds({ "retry-after": "soon" }, now)).toBeUndefined();
     expect(retryAfterSeconds({}, now)).toBeUndefined();
+  });
+});
+
+describe("parseHttpDate", () => {
+  const now = Date.parse("2026-10-16T12:00:00Z");
+  const moment = Date.parse("1994-11-06T08:49:37Z");
+
+  it.each([
+    ["the IMF-fixdate", "Sun, 06 Nov 1994 08:49:37 GMT"],
+    ["the RFC 850 form", "Sunday, 06-Nov-94 08:49:37 GMT"],
+    ["the asctime form", "Sun Nov  6 08:49:37 1994"],
+  ])("reads %s", (_form, text) => {
+    expect(parseHttpDate(text, now)).toBe(moment);
+  });
+
+  it.each([
+    ["a numeric zone", "Sun, 06 Nov 1994 08:49:37 +0000"],
+    ["no day name", "06 Nov 1994 08:49:37 GMT"],
+    ["a lower-case month", "Sun, 06 nov 1994 08:49:37 GMT"],
+    ["a lower-case day name", "sun, 06 Nov 1994 08:49:37 GMT"],
+    ["a zone other than GMT", "Sun, 06 Nov 1994 08:49:37 UTC"],
+    ["a long day name in the IMF-fixdate", "Sunday, 06 Nov 1994 08:49:37 GMT"],
+    ["a zone in the asctime form", "Sun Nov  6 08:49:37 1994 GMT"],
+    ["a one-digit day in the IMF-fixdate", "Sun, 6 Nov 1994 08:49:37 GMT"],
+    ["the 31st of February", "Sun, 31 Feb 1994 08:49:37 GMT"],
+    ["the hour 24", "Sun, 06 Nov 1994 24:00:00 GMT"],
+    ["the minute 60", "Sun, 06 Nov 1994 08:60:00 GMT"],
+    ["the second 61", "Sun, 06 Nov 1994 08:49:61 GMT"],
+    ["the year 0", "Sun, 06 Nov 0000 08:49:37 GMT"],
+    ["the 29th of February of a common year", "Sun, 29 Feb 1900 08:49:37 GMT"],
+    ["surrounding text", "Sun, 06 Nov 1994 08:49:37 GMT, later"],
+  ])("refuses %s", (_topic, text) => {
+    expect(parseHttpDate(text, now)).toBeUndefined();
+  });
+
+  it("does not check the day name against the date", () => {
+    expect(parseHttpDate("Mon, 06 Nov 1994 08:49:37 GMT", now)).toBe(moment);
+  });
+
+  it("reads the 29th of February of a leap year", () => {
+    expect(parseHttpDate("Tue, 29 Feb 2000 00:00:00 GMT", now)).toBe(
+      Date.parse("2000-02-29T00:00:00Z"),
+    );
+  });
+
+  it("counts a second of 60 as the next minute", () => {
+    expect(parseHttpDate("Wed, 31 Dec 2025 23:59:60 GMT", now)).toBe(
+      Date.parse("2026-01-01T00:00:00Z"),
+    );
+  });
+
+  it("reads a two-digit year from 49 years before now to 50 years after", () => {
+    expect(parseHttpDate("Monday, 01-Jan-76 00:00:00 GMT", now)).toBe(
+      Date.parse("2076-01-01T00:00:00Z"),
+    );
+    expect(parseHttpDate("Friday, 01-Jan-77 00:00:00 GMT", now)).toBe(
+      Date.parse("1977-01-01T00:00:00Z"),
+    );
+    expect(parseHttpDate("Friday, 01-Jan-26 00:00:00 GMT", now)).toBe(
+      Date.parse("2026-01-01T00:00:00Z"),
+    );
+  });
+
+  it("reads a year below 100 as itself", () => {
+    expect(new Date(parseHttpDate("Mon, 01 Jan 0099 00:00:00 GMT", now)!).getUTCFullYear()).toBe(
+      99,
+    );
+  });
+
+  it("reads a leap second at the edge of the range without throwing", () => {
+    const header = { "retry-after": "Fri, 31 Dec 9999 23:59:60 GMT" };
+    expect(() => retryAfterSeconds(header, now)).not.toThrow();
+    const seconds = retryAfterSeconds(header, now);
+    expect(seconds === undefined || Number.isSafeInteger(seconds)).toBe(true);
   });
 });
 

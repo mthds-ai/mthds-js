@@ -270,13 +270,103 @@ function header(headers: AnswerHeaders, name: string): string | undefined {
   return found === undefined ? undefined : map[found];
 }
 
-/** The start of an HTTP date (RFC 9110, "Date/Time Formats"): a day name, in each of its three forms. */
-const HTTP_DATE_START = /^(Mon|Tue|Wed|Thu|Fri|Sat|Sun)[a-z]*,? /;
+// The three forms of an HTTP date a recipient accepts (RFC 9110, section 5.6.7), names case-sensitive.
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const MONTH = `(${MONTHS.join("|")})`;
+const DAY_NAME = "(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)";
+const DAY_NAME_LONG = "(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)";
+const TIME_OF_DAY = "([0-9]{2}):([0-9]{2}):([0-9]{2})";
+/** `Sun, 06 Nov 1994 08:49:37 GMT`: day, month, year, hour, minute, second. */
+const IMF_FIXDATE = new RegExp(`^${DAY_NAME}, ([0-9]{2}) ${MONTH} ([0-9]{4}) ${TIME_OF_DAY} GMT$`);
+/** `Sunday, 06-Nov-94 08:49:37 GMT`: day, month, two-digit year, hour, minute, second. */
+const RFC850_DATE = new RegExp(
+  `^${DAY_NAME_LONG}, ([0-9]{2})-${MONTH}-([0-9]{2}) ${TIME_OF_DAY} GMT$`,
+);
+/** `Sun Nov  6 08:49:37 1994`: month, day, hour, minute, second, year. */
+const ASCTIME_DATE = new RegExp(
+  `^${DAY_NAME} ${MONTH} ([0-9]{2}| [0-9]) ${TIME_OF_DAY} ([0-9]{4})$`,
+);
+/** A second of 60, a leap second, which counts as the next minute. */
+const LEAP_SECOND = 60;
+/** The years a date may name, those the Python twin's `datetime` holds. */
+const FIRST_YEAR = 1;
+const LAST_YEAR = 9999;
+
+function isLeapYear(year: number): boolean {
+  return (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0;
+}
+
+function daysInMonth(year: number, monthIndex: number): number {
+  const days = [31, isLeapYear(year) ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  return days[monthIndex] ?? 0;
+}
+
+/** The year ending in `twoDigits` that lies from 49 years before `currentYear` to 50 years after it. */
+function rfc850Year(twoDigits: number, currentYear: number): number {
+  const year = currentYear - (currentYear % 100) + twoDigits;
+  if (year > currentYear + 50) return year - 100;
+  if (year <= currentYear - 50) return year + 100;
+  return year;
+}
+
+/**
+ * An HTTP date as milliseconds since the epoch, in exactly the three forms a recipient must accept
+ * (RFC 9110, section 5.6.7), and no other: the IMF-fixdate `Sun, 06 Nov 1994 08:49:37 GMT`, the
+ * obsolete RFC 850 form `Sunday, 06-Nov-94 08:49:37 GMT` and the asctime form
+ * `Sun Nov  6 08:49:37 1994`, every name case-sensitive as the grammar writes it. The day name is
+ * part of the form but not checked against the date. The RFC 850 form's two-digit year reads as the
+ * year ending in those digits from 49 years before `now` to 50 years after it. A second of `60`, a
+ * leap second, counts as the next minute. `undefined` when `text` is in none of the three forms or
+ * names no real moment, such as the 31st of February or the hour 24.
+ */
+export function parseHttpDate(text: string, now: number = Date.now()): number | undefined {
+  let day: string;
+  let month: string;
+  let year: number;
+  let time: [string, string, string];
+  const imf = IMF_FIXDATE.exec(text);
+  const asctime = imf === null ? ASCTIME_DATE.exec(text) : null;
+  const rfc850 = imf === null && asctime === null ? RFC850_DATE.exec(text) : null;
+  if (imf !== null) {
+    [, day, month] = imf as unknown as [string, string, string];
+    year = Number(imf[3]);
+    time = [imf[4]!, imf[5]!, imf[6]!];
+  } else if (asctime !== null) {
+    [, month, day] = asctime as unknown as [string, string, string];
+    time = [asctime[3]!, asctime[4]!, asctime[5]!];
+    year = Number(asctime[6]);
+  } else if (rfc850 !== null) {
+    [, day, month] = rfc850 as unknown as [string, string, string];
+    year = rfc850Year(Number(rfc850[3]), new Date(now).getUTCFullYear());
+    time = [rfc850[4]!, rfc850[5]!, rfc850[6]!];
+  } else {
+    return undefined;
+  }
+  const monthIndex = MONTHS.indexOf(month);
+  const dayOfMonth = Number(day.trim());
+  const [hour, minute, second] = time.map(Number) as [number, number, number];
+  if (
+    year < FIRST_YEAR ||
+    year > LAST_YEAR ||
+    dayOfMonth < 1 ||
+    dayOfMonth > daysInMonth(year, monthIndex) ||
+    hour > 23 ||
+    minute > 59 ||
+    second > LEAP_SECOND
+  ) {
+    return undefined;
+  }
+  // `Date.UTC` reads a year below 100 as 19xx, so the year is set on its own.
+  const moment = new Date(0);
+  moment.setUTCFullYear(year, monthIndex, dayOfMonth);
+  moment.setUTCHours(hour, minute, 0, 0);
+  return moment.getTime() + second * 1000;
+}
 
 /**
  * The seconds a `Retry-After` header asks to wait: its delta-seconds, ASCII digits only, or the
- * seconds from `now` until its HTTP date, never fewer than zero. `undefined` when the header is
- * absent or unreadable, a number too large to hold exactly included; it never throws.
+ * seconds from `now` until its HTTP date (`parseHttpDate`), never fewer than zero. `undefined` when
+ * the header is absent or unreadable, a number too large to hold exactly included; it never throws.
  */
 export function retryAfterSeconds(
   headers: AnswerHeaders,
@@ -288,9 +378,8 @@ export function retryAfterSeconds(
     const seconds = Number(raw);
     return Number.isSafeInteger(seconds) ? seconds : undefined;
   }
-  if (!HTTP_DATE_START.test(raw)) return undefined;
-  const date = Date.parse(raw);
-  if (!Number.isFinite(date)) return undefined;
+  const date = parseHttpDate(raw, now);
+  if (date === undefined) return undefined;
   return Math.max(0, Math.ceil((date - now) / 1000));
 }
 

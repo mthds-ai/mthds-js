@@ -29,7 +29,7 @@ export type { AppInfo } from "./runners/api/user-agent.js";
 export { MTHDS_JS_VERSION } from "./version.js";
 
 // ── Pipe I/O (runners — `MthdsApiClient.pipeIo`, a Pipelex API extension) ──
-export { PIPE_SELECTION_ERROR_TYPES } from "./runners/types.js";
+export { PIPE_SELECTION_CODES } from "./runners/types.js";
 export type {
   CrateInvalidReport,
   CrateRequestBase,
@@ -39,49 +39,27 @@ export type {
   PipeIOValidReport,
 } from "./runners/types.js";
 
-// ── API-runner errors (runners/api — the protocol-base `PipelineRequestError`
-//    rides the protocol barrel above) ──────────────────────────────────
+// ── API-runner errors (runners/api — the protocol-base `PipelineRequestError`, the
+//    `ProblemError` every one of them is, and the problem types ride the protocol
+//    barrel above) ──────────────────────────────────────────────────────
 export {
   ApiResponseError,
-  ApiUnreachableError,
-  ClientAuthenticationError,
-  PipelineExecuteTimeoutError,
+  ApiTransportError,
   RunStillRunningError,
 } from "./runners/api/exceptions.js";
-export type {
-  ApiResponseErrorOptions,
-  ProblemDetails,
-  UserAction,
-} from "./runners/api/exceptions.js";
+export type { ApiAnswerFacts } from "./runners/api/exceptions.js";
 
-// ── Dict-serialized concretes + validation-error item (runners/api) ──
+// ── Dict-serialized concretes (runners/api) ──
 //
 // The Pipelex-API `/v1/validate` narrowing (`PipelexValidationResult` and its
 // arms) is NOT exported here — it lives in the runtime SDK (`@pipelex/sdk`).
-// `MthdsApiClient.validate()` returns the protocol's neutral `ValidationResult`
-// (re-exported via the protocol barrel above). `ValidationErrorItem` /
-// `ValidationErrorCategory` remain because they type the `200` invalid verdict of
-// `pipe-io` and a run route's `422` refusal (`ApiResponseError.validationErrors`).
-// `SuggestedFix` and its op types are the next step an item carries.
+// `MthdsApiClient.validate()` returns the protocol's `ValidationResult`, whose
+// faults are problem items (`ProblemItem`, re-exported via the protocol barrel above).
 export type {
   DictStuff,
   DictWorkingMemory,
   DictPipeOutput,
   DictRunResultExecute,
-  ValidationErrorItem,
-  ValidationErrorCategory,
-  SuggestedFix,
-  FixSafety,
-  FixOpKind,
-  FixValue,
-  FixOp,
-  SetKeyOp,
-  EnsureTableOp,
-  DeleteKeyOp,
-  DeleteTableOp,
-  RenameTableKeyOp,
-  MoveKeyOp,
-  RemapValueOp,
 } from "./runners/api/models.js";
 
 // ── Method tree (src/method-tree — Node-side: listing reads the file system) ──

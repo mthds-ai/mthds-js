@@ -20,6 +20,17 @@ vi.mock("../../../../src/installer/runtime/check.js", () => ({
 import { execFileSync } from "node:child_process";
 import { requireUv, uvToolInstallSync } from "../../../../src/installer/runtime/installer.js";
 import { BINARY_RECOVERY } from "../../../../src/agent/binaries.js";
+import { ToolInstallError } from "../../../../src/installer/runtime/exceptions.js";
+
+/** The error `run` throws, which the test expects to be thrown. */
+function thrownBy(run: () => unknown): unknown {
+  try {
+    run();
+  } catch (err) {
+    return err;
+  }
+  return expect.fail("expected a throw");
+}
 
 const PX_CONSTRAINT = BINARY_RECOVERY["pipelex"].version_constraint;
 
@@ -51,6 +62,8 @@ describe("requireUv", () => {
 
     expect(() => requireUv()).toThrow("uv is required but not found");
     expect(() => requireUv()).toThrow("https://docs.astral.sh/uv");
+    expect(thrownBy(() => requireUv())).toMatchObject({ reason: "uv_missing", tool: "uv" });
+    expect(thrownBy(() => requireUv())).toBeInstanceOf(ToolInstallError);
   });
 
   it("throws with actual error when uv exists but fails (non-ENOENT)", () => {
@@ -62,6 +75,7 @@ describe("requireUv", () => {
 
     expect(() => requireUv()).toThrow("uv was found but failed to run");
     expect(() => requireUv()).toThrow("Permission denied");
+    expect(thrownBy(() => requireUv())).toMatchObject({ reason: "uv_missing", tool: "uv" });
   });
 });
 
@@ -113,6 +127,12 @@ describe("uvToolInstallSync", () => {
       });
       uvToolInstallSync("nonexistent", ">=1.0.0");
     }).toThrow("No matching distribution found");
+    mockedExecFileSync.mockReturnValueOnce(Buffer.from("uv 0.7.2")).mockImplementationOnce(() => {
+      throw uvError;
+    });
+    const err = thrownBy(() => uvToolInstallSync("nonexistent", ">=1.0.0"));
+    expect(err).toBeInstanceOf(ToolInstallError);
+    expect(err).toMatchObject({ reason: "install_failed", tool: "nonexistent" });
   });
 
   it("throws requireUv error when uv is missing", () => {

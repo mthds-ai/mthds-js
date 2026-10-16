@@ -10,12 +10,19 @@ import { existsSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import {
   agentError,
+  agentProblem,
   agentSuccess,
+  agentWarning,
   agentMarkdownSuccess,
   agentMarkdownError,
-  AGENT_ERROR_DOMAINS,
-  runnerProblemExtras,
+  chooseErrorFormat,
+  errorFormat,
+  problemOfError,
+  unexpectedProblem,
 } from "../output.js";
+import { fileErrorReason } from "../problems.js";
+import { buildProblem } from "../../problems/build.js";
+import type { Problem, ProblemItem } from "../../problems/types.js";
 import { isApiRunner } from "../../cli/commands/utils.js";
 import {
   BundleTargetError,
@@ -28,7 +35,6 @@ import {
 import type { BundleClosure } from "../../runners/bundle.js";
 import { readBundleMeta } from "../../runners/pipe-ref.js";
 import type { MthdsFileItem, PipeIORequest, PipeIOResponse, Runner } from "../../runners/types.js";
-import { PIPE_SELECTION_ERROR_TYPES } from "../../runners/types.js";
 import {
   INPUTS_TEMPLATE_FORMATS,
   projectInputsTemplate,
@@ -41,7 +47,6 @@ import { selectedInputDescriptor } from "../../runners/pipe-io.js";
 import type { StartOptions } from "../../protocol/options.js";
 import type { ModelCategory } from "../../protocol/models.js";
 import { MODEL_CATEGORIES } from "../../protocol/models.js";
-import { ApiResponseError } from "../../runners/api/exceptions.js";
 
 /**
  * Register all API-runner commands on the program.
@@ -119,7 +124,7 @@ export function registerApiRunnerCommands(program: Command, makeRunner: () => Ru
           options.allowSignatures ?? false,
           validateSources(closure.files),
           options.format,
-          options.errorFormat,
+          errorFormat(),
         );
         warnGraphNotDrawn(options);
       },
@@ -159,9 +164,11 @@ export function registerApiRunnerCommands(program: Command, makeRunner: () => Ru
         const runner = safeCreateRunner(makeRunner);
         if (!target.endsWith(".mthds")) {
           agentError(
-            "Validating a bare pipe code is not supported via the API runner — the protocol validate takes bundle contents. Pass a .mthds file.",
-            "ArgumentError",
-            { error_domain: AGENT_ERROR_DOMAINS.ARGUMENT },
+            agentProblem(
+              "client.argument_invalid",
+              { argument: "target", reason: "not_a_bundle_file" },
+              "Validating a bare pipe code is not supported via the API runner — the protocol validate takes bundle contents. Pass a .mthds file.",
+            ),
           );
           return;
         }
@@ -176,7 +183,7 @@ export function registerApiRunnerCommands(program: Command, makeRunner: () => Ru
           options.allowSignatures ?? false,
           validateSources(closure.files),
           options.format,
-          options.errorFormat,
+          errorFormat(),
         );
       },
     );
@@ -191,9 +198,10 @@ export function registerApiRunnerCommands(program: Command, makeRunner: () => Ru
     .exitOverride()
     .action(async () => {
       agentError(
-        "'validate method' is not supported via the API runner — the protocol validate takes bundle contents, not a method URL. Pass a .mthds file to 'validate bundle', or use --runner pipelex.",
-        "UnsupportedError",
-        { error_domain: AGENT_ERROR_DOMAINS.RUNNER },
+        unsupportedOnApiRunner(
+          "validate_method",
+          "'validate method' is not supported via the API runner — the protocol validate takes bundle contents, not a method URL. Pass a .mthds file to 'validate bundle', or use --runner pipelex.",
+        ),
       );
     });
 
@@ -259,9 +267,11 @@ export function registerApiRunnerCommands(program: Command, makeRunner: () => Ru
       const runner = safeCreateRunner(makeRunner);
       if (!target.endsWith(".mthds")) {
         agentError(
-          "Pipe code without a bundle file is not supported yet. Provide a .mthds file.",
-          "ArgumentError",
-          { error_domain: AGENT_ERROR_DOMAINS.ARGUMENT },
+          agentProblem(
+            "client.argument_invalid",
+            { argument: "target", reason: "not_a_bundle_file" },
+            "Pipe code without a bundle file is not supported yet. Provide a .mthds file.",
+          ),
         );
       }
       const closure = resolveClosureOrError(target, undefined, libraryDirsWith(options.libraryDir));
@@ -318,9 +328,12 @@ export function registerApiRunnerCommands(program: Command, makeRunner: () => Ru
     .allowExcessArguments(true)
     .exitOverride()
     .action(async () => {
-      agentError("'run method' is not yet supported via the API runner.", "UnsupportedError", {
-        error_domain: AGENT_ERROR_DOMAINS.RUNNER,
-      });
+      agentError(
+        unsupportedOnApiRunner(
+          "run_method",
+          "'run method' is not yet supported via the API runner.",
+        ),
+      );
     });
 
   // ── run start ──
@@ -370,10 +383,7 @@ export function registerApiRunnerCommands(program: Command, makeRunner: () => Ru
           const ack = await runner.start(startOptions);
           agentSuccess({ ...ack });
         } catch (err) {
-          agentError((err as Error).message, "RunnerError", {
-            error_domain: AGENT_ERROR_DOMAINS.RUNNER,
-            ...runnerProblemExtras(err),
-          });
+          agentError(problemOfError(err, unexpectedProblem));
         }
       },
     );
@@ -394,10 +404,7 @@ export function registerApiRunnerCommands(program: Command, makeRunner: () => Ru
         const result = await runner.models(category);
         agentSuccess({ ...result });
       } catch (err) {
-        agentError((err as Error).message, "RunnerError", {
-          error_domain: AGENT_ERROR_DOMAINS.RUNNER,
-          ...runnerProblemExtras(err),
-        });
+        agentError(problemOfError(err, unexpectedProblem));
       }
     });
 
@@ -416,9 +423,10 @@ export function registerApiRunnerCommands(program: Command, makeRunner: () => Ru
     .exitOverride()
     .action(async () => {
       agentError(
-        "check-model is not available on the API runner — the Pipelex API has no check-model route. It is a local capability of the pipelex runner: re-run with --runner pipelex. To list what the API can route to, use: mthds-agent models",
-        "UnsupportedError",
-        { error_domain: AGENT_ERROR_DOMAINS.RUNNER },
+        unsupportedOnApiRunner(
+          "check_model",
+          "check-model is not available on the API runner — the Pipelex API has no check-model route. It is a local capability of the pipelex runner: re-run with --runner pipelex. To list what the API can route to, use: mthds-agent models",
+        ),
       );
     });
 
@@ -429,9 +437,10 @@ export function registerApiRunnerCommands(program: Command, makeRunner: () => Ru
 
   const codegenUnsupported = () => {
     agentError(
-      "codegen is not available on the API runner — the Pipelex API has no codegen routes yet. It is a local capability of the pipelex runner: re-run with --runner pipelex.",
-      "UnsupportedError",
-      { error_domain: AGENT_ERROR_DOMAINS.RUNNER },
+      unsupportedOnApiRunner(
+        "codegen",
+        "codegen is not available on the API runner — the Pipelex API has no codegen routes yet. It is a local capability of the pipelex runner: re-run with --runner pipelex.",
+      ),
     );
   };
 
@@ -467,14 +476,23 @@ export function registerApiRunnerCommands(program: Command, makeRunner: () => Ru
 
 // ── Helpers ──
 
+/**
+ * An operation the API runner does not offer, `runtime.unsupported` naming it: the pipelex runner
+ * offers it, so the step for whoever reads it is to choose that runner.
+ */
+function unsupportedOnApiRunner(capability: string, message: string): Problem {
+  return agentProblem("runtime.unsupported", { capability }, message, { reader: "other" });
+}
+
 function safeCreateRunner(makeRunner: () => Runner): Runner {
   try {
     return makeRunner();
   } catch (err) {
-    agentError((err as Error).message, "RunnerError", {
-      error_domain: AGENT_ERROR_DOMAINS.RUNNER,
-    });
-    throw err; // unreachable, agentError exits
+    agentError(
+      problemOfError(err, (message) =>
+        agentProblem("client.not_configured", { setting: "runner" }, message),
+      ),
+    );
   }
 }
 
@@ -482,10 +500,13 @@ function parseJsonOrError(raw: string, label: string): Record<string, unknown> {
   try {
     return JSON.parse(raw) as Record<string, unknown>;
   } catch {
-    agentError(`${label} must be valid JSON.`, "ArgumentError", {
-      error_domain: AGENT_ERROR_DOMAINS.ARGUMENT,
-    });
-    throw new Error("unreachable");
+    agentError(
+      agentProblem(
+        "client.argument_invalid",
+        { argument: label, reason: "not_json" },
+        `${label} must be valid JSON.`,
+      ),
+    );
   }
 }
 
@@ -493,10 +514,13 @@ function readFileOrError(path: string): string {
   try {
     return readFileSync(path, "utf-8");
   } catch (err) {
-    agentError(`Cannot read file: ${(err as Error).message}`, "IOError", {
-      error_domain: AGENT_ERROR_DOMAINS.IO,
-    });
-    throw err;
+    agentError(
+      agentProblem(
+        "client.file_unreadable",
+        { path, reason: fileErrorReason(err) },
+        `Cannot read file: ${(err as Error).message}`,
+      ),
+    );
   }
 }
 
@@ -511,8 +535,8 @@ function collectLibraryDir(value: string, previous: string[]): string[] {
 /**
  * Resolve what a validate or inputs command sends: the inline `--content` or the
  * target, with every `.mthds` file of the library directories, as one closure
- * (`resolveBundleClosure`). A bad target is an `ArgumentError`, an unreadable file
- * or directory an `IOError`.
+ * (`resolveBundleClosure`). A bad target is a `client.argument_invalid`, an
+ * unreadable file or directory a `client.file_unreadable`.
  */
 function resolveClosureOrError(
   target: string | undefined,
@@ -520,20 +544,21 @@ function resolveClosureOrError(
   libraryDirs: readonly string[],
 ): BundleClosure {
   if (!content && !target) {
-    agentError("Either <target> or --content is required.", "ArgumentError", {
-      error_domain: AGENT_ERROR_DOMAINS.ARGUMENT,
-    });
+    agentError(targetMissingProblem());
   }
   try {
     return resolveBundleClosure(content ? { content } : { path: target! }, libraryDirs);
   } catch (err) {
-    if (err instanceof BundleTargetError) {
-      agentError(err.message, "ArgumentError", { error_domain: AGENT_ERROR_DOMAINS.ARGUMENT });
-    }
-    agentError(`Cannot read file: ${(err as Error).message}`, "IOError", {
-      error_domain: AGENT_ERROR_DOMAINS.IO,
-    });
-    throw err;
+    if (err instanceof BundleTargetError) agentError(err.problem);
+    agentError(
+      problemOfError(err, (message) =>
+        agentProblem(
+          "client.file_unreadable",
+          { path: target ?? "--content", reason: fileErrorReason(err) },
+          `Cannot read file: ${message}`,
+        ),
+      ),
+    );
   }
 }
 
@@ -563,18 +588,15 @@ const GRAPH_OPTIONS = [
  * `--graph` rely on the verdict above all. Declaring the options keeps them from
  * being swallowed by `allowUnknownOption`, which would print the verdict as if the
  * graph had been drawn. Called once the verdict is a success, as the pipelex runner
- * draws the graph only then, so an invalid verdict's error envelope stays the one
- * JSON document on stderr. The warning takes the CLI's stderr warning shape.
+ * draws the graph only then, so an invalid verdict's problem stays the one
+ * document on stderr. The warning takes the error stream's form (`agentWarning`).
  */
 function warnGraphNotDrawn(options: Record<string, unknown>): void {
   const given = GRAPH_OPTIONS.filter(([key]) => options[key] !== undefined).map(([, flag]) => flag);
   if (given.length === 0) return;
   const one = given.length === 1;
-  process.stderr.write(
-    JSON.stringify({
-      warning: true,
-      message: `${given.join(", ")} ${one ? "was" : "were"} not applied: the API runner validated the method but cannot draw its graph, which only the pipelex runner draws. Re-run with --runner pipelex for the graph. On the API runner, the JSON verdict (--format json) carries the method's graph as graph_spec.`,
-    }) + "\n",
+  agentWarning(
+    `${given.join(", ")} ${one ? "was" : "were"} not applied: the API runner validated the method but cannot draw its graph, which only the pipelex runner draws. Re-run with --runner pipelex for the graph. On the API runner, the JSON verdict (--format json) carries the method's graph as graph_spec.`,
   );
 }
 
@@ -584,9 +606,7 @@ function resolveContentForRun(
 ): string {
   if (options.content) return options.content;
   if (!target) {
-    agentError("Either <target> or --content is required.", "ArgumentError", {
-      error_domain: AGENT_ERROR_DOMAINS.ARGUMENT,
-    });
+    agentError(targetMissingProblem());
   }
   let bundlePath = target;
   if (existsSync(target) && statSync(target).isDirectory()) {
@@ -596,9 +616,13 @@ function resolveContentForRun(
     // otherwise-valid bundles before they could run.
     const files = collectBundleFiles(target);
     if (!Object.keys(files).some((rel) => rel.endsWith(".mthds"))) {
-      agentError(`No .mthds file found in directory: ${target}`, "IOError", {
-        error_domain: AGENT_ERROR_DOMAINS.IO,
-      });
+      agentError(
+        agentProblem(
+          "client.argument_invalid",
+          { argument: "target", reason: "no_mthds_file" },
+          `No .mthds file found in directory: ${target}`,
+        ),
+      );
     }
     bundlePath = join(target, pickMainBundleFile(files));
     // TODO: refactor to return { bundleContent, resolvedInputsPath } instead of mutating
@@ -628,10 +652,13 @@ function resolvePipeCode(mthdsContent: string, pipeCodeOption: string | undefine
   // valid bundles as having no derivable pipe.
   const { mainPipe } = readBundleMeta(mthdsContent);
   if (mainPipe) return mainPipe;
-  agentError("Could not determine pipe code. Use --pipe to specify it.", "ArgumentError", {
-    error_domain: AGENT_ERROR_DOMAINS.ARGUMENT,
-  });
-  throw new Error("unreachable");
+  agentError(
+    agentProblem(
+      "client.argument_invalid",
+      { argument: "pipe", reason: "missing" },
+      "Could not determine pipe code. Use --pipe to specify it.",
+    ),
+  );
 }
 
 // ── inputs: the pipe I/O read and the local projection ──
@@ -688,30 +715,32 @@ export function methodSelector(target: string): InputsSelector {
   // as the runner's registry-form `501`, which says nothing about local files.
   if (looksLikeLocalPath(trimmed)) {
     agentError(
-      `'${target}' is a local path, not a published method's address. On the API runner, 'inputs method' takes an address (github.com/<owner>/<repo>[/<selector>][@<tag>]) or a hosted catalog id (mt_…): pass a local bundle to 'inputs bundle', or re-run with --runner pipelex.`,
-      "ArgumentError",
-      { error_domain: AGENT_ERROR_DOMAINS.ARGUMENT },
+      agentProblem(
+        "client.argument_invalid",
+        { argument: "target", reason: "local_path" },
+        `'${target}' is a local path, not a published method's address. On the API runner, 'inputs method' takes an address (github.com/<owner>/<repo>[/<selector>][@<tag>]) or a hosted catalog id (mt_…): pass a local bundle to 'inputs bundle', or re-run with --runner pipelex.`,
+      ),
     );
   }
   if (trimmed.includes("/")) return { method_ref: trimmed };
   agentError(
-    `'${target}' is neither a published method's address nor a catalog id. On the API runner, 'inputs method' takes an address (github.com/<owner>/<repo>[/<selector>][@<tag>]) or a hosted catalog id (mt_…). An installed method's name is resolved only by the pipelex runner: re-run with --runner pipelex, or pass the bundle to 'inputs bundle'.`,
-    "ArgumentError",
-    { error_domain: AGENT_ERROR_DOMAINS.ARGUMENT },
+    agentProblem(
+      "client.argument_invalid",
+      { argument: "target", reason: "not_a_method_address" },
+      `'${target}' is neither a published method's address nor a catalog id. On the API runner, 'inputs method' takes an address (github.com/<owner>/<repo>[/<selector>][@<tag>]) or a hosted catalog id (mt_…). An installed method's name is resolved only by the pipelex runner: re-run with --runner pipelex, or pass the bundle to 'inputs bundle'.`,
+    ),
   );
-  throw new Error("unreachable");
 }
 
 /**
  * Read a pipe's input form from `POST /v1/pipe-io`, project its fill-in template
  * locally, and emit it.
  *
- * - **A refused selection** — a `422` typed by one of `PIPE_SELECTION_ERROR_TYPES`
- *   (an unknown `--pipe`, no entry pipe, several) — is an `ArgumentError` carrying
- *   the runner's own sentence, which is where it lists the candidates. Every other
- *   refusal is a `RunnerError` quoting it. Both carry the problem document's members.
+ * - **A refusal** is the runner's problem, relayed whole: a refused selection is coded
+ *   by one of `PIPE_SELECTION_CODES` (an unknown `--pipe`, no entry pipe, several),
+ *   whose parameters list the candidates.
  * - **An invalid closure** is a PRODUCED verdict, a 200 `is_valid: false`, and is the
- *   `ValidateBundleError` arm, the same envelope `validate` emits.
+ *   `method.invalid` problem holding its items, the same one `validate` writes.
  * - **A valid answer** is projected from `input_form[pipe_ref]`, the RESOLVED
  *   qualified ref the server picked rather than the `--pipe` the caller may have
  *   omitted. JSON prints the `{success, pipe_ref, inputs}` envelope; TOML prints the
@@ -724,10 +753,13 @@ export async function emitInputsTemplate(
   rendering: InputsRendering,
 ): Promise<void> {
   if (!isApiRunner(runner)) {
-    agentError("'inputs' on this path requires the API runner (--runner api).", "RunnerError", {
-      error_domain: AGENT_ERROR_DOMAINS.RUNNER,
-    });
-    return;
+    agentError(
+      agentProblem(
+        "client.not_configured",
+        { setting: "runner" },
+        "'inputs' on this path requires the API runner (--runner api).",
+      ),
+    );
   }
   // An empty `--pipe ""` is still a selection: sent as given, the runner refuses it,
   // where dropping it would template the default pipe and report success.
@@ -737,33 +769,14 @@ export async function emitInputsTemplate(
   try {
     result = await runner.pipeIo(request);
   } catch (err) {
-    if (isPipeSelectionRefusal(err)) {
-      agentError(err.serverMessage ?? err.message, "ArgumentError", {
-        error_domain: AGENT_ERROR_DOMAINS.ARGUMENT,
-        ...runnerProblemExtras(err),
-      });
-      return;
-    }
-    agentError((err as Error).message, "RunnerError", {
-      error_domain: AGENT_ERROR_DOMAINS.RUNNER,
-      ...runnerProblemExtras(err),
-    });
-    return;
+    agentError(problemOfError(err, unexpectedProblem));
   }
 
   if (!result.is_valid) {
     // A 200 `is_valid: false` is a PRODUCED verdict, not a transport/runtime
-    // failure — the `ValidateBundleError` arm, same envelope as
-    // `runProtocolValidate` (`ValidationError` is the no-verdict type; `is_valid`
-    // rides only a verdict, while a refusal above may carry `validation_errors`
-    // through `runnerProblemExtras`, never `is_valid`). `error_domain` stays
-    // `validation` for machine triage.
-    agentError(result.message, "ValidateBundleError", {
-      error_domain: AGENT_ERROR_DOMAINS.VALIDATION,
-      is_valid: false,
-      validation_errors: result.validation_errors,
-    });
-    return;
+    // failure — the `method.invalid` problem holding the verdict's items, the same
+    // one `runProtocolValidate` writes, with `is_valid: false` beside it.
+    agentError(methodInvalidProblem(result.errors, result.message), { is_valid: false });
   }
 
   let resolvedRef: string;
@@ -771,8 +784,7 @@ export async function emitInputsTemplate(
   try {
     ({ pipeRef: resolvedRef, descriptor } = selectedInputDescriptor(result));
   } catch (err) {
-    agentError((err as Error).message, "RunnerError", { error_domain: AGENT_ERROR_DOMAINS.RUNNER });
-    return;
+    agentError(problemOfError(err, unexpectedProblem));
   }
 
   let rendered: string | undefined;
@@ -787,11 +799,10 @@ export async function emitInputsTemplate(
     // The descriptor came from the runner, so a template it cannot yield (a concept
     // ref a TOML comment cannot hold) is the runner's answer at fault.
     agentError(
-      `Cannot render the inputs template of '${resolvedRef}': ${(err as Error).message}`,
-      "RunnerError",
-      { error_domain: AGENT_ERROR_DOMAINS.RUNNER },
+      unexpectedProblem(
+        `Cannot render the inputs template of '${resolvedRef}': ${(err as Error).message}`,
+      ),
     );
-    return;
   }
 
   if (rendered !== undefined) {
@@ -817,13 +828,21 @@ function looksLikeLocalPath(target: string): boolean {
   );
 }
 
-function isPipeSelectionRefusal(err: unknown): err is ApiResponseError {
-  return (
-    err instanceof ApiResponseError &&
-    err.status === 422 &&
-    err.errorType !== undefined &&
-    PIPE_SELECTION_ERROR_TYPES.has(err.errorType)
+/** The refusal of a run command naming neither a target nor `--content`. */
+function targetMissingProblem(): Problem {
+  return agentProblem(
+    "client.argument_invalid",
+    { argument: "target", reason: "missing" },
+    "Either <target> or --content is required.",
   );
+}
+
+/**
+ * The problem of a method that does not validate, `method.invalid`, holding one item per fault of
+ * the verdict. Whoever validates a method reads it as its author, so it carries the author's step.
+ */
+export function methodInvalidProblem(errors: ProblemItem[], message: string | undefined): Problem {
+  return buildProblem("method.invalid", {}, { reader: "actor", errors, extra: { message } });
 }
 
 function resolveRunInputs(options: {
@@ -896,10 +915,13 @@ function parseExtraOption(raw: string | undefined): Record<string, unknown> | un
   if (!raw) return undefined;
   const parsed = parseJsonOrError(raw, "--extra");
   if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
-    agentError("--extra must be a JSON object of server-specific args.", "ArgumentError", {
-      error_domain: AGENT_ERROR_DOMAINS.ARGUMENT,
-    });
-    throw new Error("unreachable");
+    agentError(
+      agentProblem(
+        "client.argument_invalid",
+        { argument: "--extra", reason: "not_an_object" },
+        "--extra must be a JSON object of server-specific args.",
+      ),
+    );
   }
   return parsed;
 }
@@ -912,11 +934,12 @@ function parseMultiplicity(raw: string | undefined): boolean | number | undefine
   const count = Number(raw);
   if (Number.isInteger(count) && count > 0) return count;
   agentError(
-    "--output-multiplicity must be 'true', 'false', or a positive integer.",
-    "ArgumentError",
-    { error_domain: AGENT_ERROR_DOMAINS.ARGUMENT },
+    agentProblem(
+      "client.argument_invalid",
+      { argument: "--output-multiplicity", reason: "unknown_value" },
+      "--output-multiplicity must be 'true', 'false', or a positive integer.",
+    ),
   );
-  throw new Error("unreachable");
 }
 
 /** Parse the `--type` model-category filter, erroring on unknown values. */
@@ -925,10 +948,13 @@ function parseModelCategory(raw: string | undefined): ModelCategory | undefined 
   if ((MODEL_CATEGORIES as readonly string[]).includes(raw)) {
     return raw as ModelCategory;
   }
-  agentError(`--type must be one of: ${MODEL_CATEGORIES.join(", ")}.`, "ArgumentError", {
-    error_domain: AGENT_ERROR_DOMAINS.ARGUMENT,
-  });
-  throw new Error("unreachable");
+  agentError(
+    agentProblem(
+      "client.argument_invalid",
+      { argument: "--type", reason: "unknown_value" },
+      `--type must be one of: ${MODEL_CATEGORIES.join(", ")}.`,
+    ),
+  );
 }
 
 /** Normalize a `--format` / `--error-format` value: markdown unless explicitly `json`. */
@@ -937,20 +963,22 @@ function normValidateFormat(format?: string): "markdown" | "json" {
 }
 
 /**
- * Run the protocol validate (`POST /v1/validate`) and emit the agent envelope.
+ * Run the protocol validate (`POST /v1/validate`) and emit the verdict.
  * `/validate` is a diagnostic endpoint: a valid bundle returns the structural
  * artifacts (`is_valid: true`); an invalid bundle is a produced verdict (a 200
- * `is_valid: false` body), surfaced as a structured ValidateBundleError envelope —
- * not a thrown error. A non-2xx (a no-verdict condition) still throws.
+ * `is_valid: false` body), written as the `method.invalid` problem holding its
+ * items — not a thrown error. A non-2xx (a no-verdict condition) still throws,
+ * and its problem is relayed whole.
  *
  * `outputFormat` (default `markdown`, matching the local `pipelex-agent`) governs
  * the success arm; `errorFormat` (default = `outputFormat`) governs the failure
  * arm. When Markdown is wanted, the request opts into the server's `rendered_markdown`
  * extra (`render: ["markdown"]`) and emits it verbatim — stdout on the valid arm,
  * stderr (exit 1) on the invalid arm — so the API runner matches the local CLI.
- * If the server omits `rendered_markdown` (older server), each arm falls back to its
- * JSON envelope so output is never empty. No-verdict conditions stay JSON (no server
- * Markdown rides a non-200).
+ * If the server omits `rendered_markdown` (older server), the valid arm falls back to its
+ * JSON envelope and the invalid arm to this CLI's own Markdown rendering of the problem,
+ * so output is never empty. A no-verdict condition is written in the error format too,
+ * rendered by this CLI, since no server Markdown rides a non-200.
  */
 export async function runProtocolValidate(
   runner: Runner,
@@ -962,12 +990,13 @@ export async function runProtocolValidate(
 ): Promise<void> {
   const successWantsMarkdown = normValidateFormat(outputFormat) === "markdown";
   const errorWantsMarkdown = normValidateFormat(errorFormat ?? outputFormat) === "markdown";
+  chooseErrorFormat(errorWantsMarkdown ? "markdown" : "json");
   // Opt into the server's rendered_markdown extra when either arm wants Markdown.
   const render = successWantsMarkdown || errorWantsMarkdown ? ["markdown"] : undefined;
   try {
     // `mthds_sources` + `render` are Pipelex-API extensions (not the pure protocol),
     // so they ride only the concrete client — reach it via `isApiRunner`. The server
-    // threads each source onto `validation_errors[].source` and (when `render` asks)
+    // names each source in its items' `location.file` and (when `render` asks)
     // attaches `rendered_markdown` to the verdict body.
     const report = isApiRunner(runner)
       ? await runner.validate(mthdsContents, allowSignatures, mthdsSources, render)
@@ -981,14 +1010,11 @@ export async function runProtocolValidate(
         ? renderedMarkdownRaw
         : undefined;
     if (report.is_valid === false) {
+      const problem = methodInvalidProblem(report.errors, report.message);
       if (errorWantsMarkdown && renderedMarkdown !== undefined) {
-        agentMarkdownError(renderedMarkdown, AGENT_ERROR_DOMAINS.VALIDATION);
+        agentMarkdownError(renderedMarkdown, problem);
       }
-      agentError(report.message, "ValidateBundleError", {
-        error_domain: AGENT_ERROR_DOMAINS.VALIDATION,
-        is_valid: false,
-        validation_errors: report.validation_errors,
-      });
+      agentError(problem, { is_valid: false });
     }
     if (successWantsMarkdown && renderedMarkdown !== undefined) {
       agentMarkdownSuccess(renderedMarkdown);
@@ -997,19 +1023,8 @@ export async function runProtocolValidate(
     agentSuccess({ success: true, ...report });
   } catch (err) {
     // Only no-verdict conditions reach here now: a request-shape 422 (malformed
-    // body / mthds_sources mismatch), auth, or a server fault. Their envelope never
-    // carries `is_valid`, though a refusal that lists items carries them as
-    // `validation_errors` through `runnerProblemExtras`.
-    if (err instanceof ApiResponseError && err.status === 422) {
-      agentError(err.serverMessage ?? err.message, "ValidationError", {
-        error_domain: AGENT_ERROR_DOMAINS.VALIDATION,
-        ...runnerProblemExtras(err),
-      });
-      return;
-    }
-    agentError((err as Error).message, "RunnerError", {
-      error_domain: AGENT_ERROR_DOMAINS.RUNNER,
-      ...runnerProblemExtras(err),
-    });
+    // body / mthds_sources mismatch), auth, or a server fault. Their problem is
+    // relayed whole, and never carries `is_valid`, which rides only a verdict.
+    agentError(problemOfError(err, unexpectedProblem));
   }
 }

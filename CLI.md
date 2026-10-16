@@ -720,9 +720,9 @@ mthds package list
 
 Machine-oriented CLI for AI agents. Output goes to stdout on success and to stderr on failure, with no interactive prompts. Native commands print structured JSON; a command forwarded to `pipelex-agent` prints what `pipelex-agent` prints, which is Markdown by default for the commands that take `--format`, and JSON with `--format json`.
 
-A path naming a command `mthds-agent` does not register on the active runner, such as `mthds-agent concept`, fails on both runners with an `ArgumentError` (`Unknown command: concept. …`), whether it is run or asked for its help, and nothing is forwarded to `pipelex-agent`.
+**Every failure is one problem on stderr, and the exit code is 1.** The problem is the MTHDS Protocol's error document, coded from the core error registry: its `code` (such as `client.argument_invalid` or `method.invalid`) is what a program branches on, and its `domain`, `retry` and `next_step` say who acts, whether to repeat and what to do. Every command accepts `--error-format markdown|json`, on the command or before it. Without it, the error stream follows `--format` when that is `json`, and is Markdown otherwise, the rendering an agent reads. On the pipelex runner, a command forwarded to `pipelex-agent` has its failure written by `pipelex-agent` itself, which accepts `--error-format` after a command only: `mthds-agent` moves the option there wherever it was given, and drops it for `inputs`, whose failures `pipelex-agent` always writes as JSON. The JSON form is the problem without `status`, the command's own sentence in `message`, and, where they apply, `recovery` (how to install a missing tool), `is_valid: false` (on an invalid verdict), `skipped_methods` and `registrations`. A refusal from the API runner is the runner's problem relayed whole, its items and suggested fixes included. See [docs/errors.md → "What the CLIs print"](docs/errors.md#what-the-clis-print).
 
-When the API runner refuses a call, the error envelope carries what the runner's problem document said: its `error_domain` (`input`, `config` or `runtime`) in place of the command's own, its next step as the `hint`, `retryable: true` when a retry can succeed, the `request_id` to hand to support, and, when the runner refused an invalid method (`run start` answered with a 422, for one), the bundle's `validation_errors`, each item whole with its locators and its `suggested_fix`. See [docs/errors.md → "What the CLIs print for a runner's refusal"](docs/errors.md#what-the-clis-print-for-a-runners-refusal).
+A path naming a command `mthds-agent` does not register on the active runner, such as `mthds-agent concept`, fails on both runners as `client.argument_invalid` (`Unknown command: concept. …`), whether it is run or asked for its help, and nothing is forwarded to `pipelex-agent`.
 
 ### `mthds-agent runner setup pipelex`
 
@@ -812,7 +812,7 @@ mthds-agent init -g --config '{"execution": "hosted"}'
 
 Publish methods to mthds.sh (non-interactive) through the hub's registry route, one request per method, reporting each method's answer. Publishing does not depend on telemetry. No files are written. See [docs/publishing.md](docs/publishing.md).
 
-`published_methods` names only the methods mthds.sh listed, and `registrations` carries the route's answer for every method sent, with its `name`, `outcome` (`registered`, `updated`, `unchanged`, `refused` or `error`) and the rest of the answer whole. When mthds.sh listed none, the command fails with a `PublishError` whose message gives each answer, with `registrations` on the error envelope and `retryable: true` when every failure can be retried. A private repository or an address naming a subdirectory is refused before any request.
+`published_methods` names only the methods mthds.sh listed, and `registrations` carries the route's answer for every method sent, with its `name`, `outcome` (`registered`, `updated`, `unchanged`, `refused` or `error`) and the rest of the answer whole. When mthds.sh listed none, the command fails with a problem whose message gives each answer and whose `registrations` carries them: `runtime.unavailable` when every answer is an error worth retrying, `client.unreachable` when mthds.sh could not be reached, the code every refusal reads as when they agree (`method.not_found`, naming the repository, or the method as `<owner>/<repo>/<method>` when the hub found the repository but not the method, and `method.package_invalid`), else `runtime.unexpected`. A private repository or an address naming a subdirectory is refused before any request.
 
 With `--local`, nothing is registered: mthds.sh lists what a public GitHub repository holds. The command answers `success: true` with `published_methods` naming the selected methods, `registrations: []`, and a `message` saying so. `published_methods` alone therefore does not say that a method was listed: an empty `registrations` with that `message` is how a caller tells that nothing was registered.
 
@@ -907,7 +907,7 @@ mthds-agent share --local ./my-methods --platform x
 
 ### `mthds-agent run method|pipe|bundle`
 
-Execute a pipeline via the pipelex runner. All three subcommands are passthroughs that forward every argument to `pipelex-agent run`, except `--runner`, which `mthds-agent` keeps for itself, so the options are `pipelex-agent run`'s own, and `pipelex-agent run bundle <target> --help` lists them all. On the API runner, `run method` answers `UnsupportedError`, `run pipe` and `run bundle` do not exist, and `run start` submits a run and returns its id.
+Execute a pipeline via the pipelex runner. All three subcommands are passthroughs that forward every argument to `pipelex-agent run`, except `--runner`, which `mthds-agent` keeps for itself, so the options are `pipelex-agent run`'s own, and `pipelex-agent run bundle <target> --help` lists them all. On the API runner, `run method` answers `runtime.unsupported`, `run pipe` and `run bundle` do not exist, and `run start` submits a run and returns its id.
 
 ```bash
 mthds-agent run method <name> [OPTIONS]
@@ -980,7 +980,7 @@ With the **API runner**, the command posts the whole bundle to `POST /v1/validat
 - a directory walk skips the folders pipelex's library scan skips (`venv/`, `.venv/`, `env/`, `virtualenv/`, `results/`, `node_modules/`, `.git/` and the Python caches), so a virtual environment holding pipelex's own `.mthds` files is never sent, and it skips a folder you may not list, as pipelex does;
 - each file is named by its path, so a diagnostic's `source` says which file it is about.
 
-The graph options are not applied, because the graph is drawn locally by the pipelex runner. The bundle is still validated, and after a valid verdict a warning on stderr (`{"warning": true, "message": …}`) names the options that were not applied; the JSON verdict (`--format json`) carries the method's graph as `graph_spec`. `--pipe` is ignored, since the runner validates every pipe it receives. A target that is neither a `.mthds` file nor a directory whose entry file can be chosen is an `ArgumentError`, and an unreadable file, target directory or `-L` directory is an `IOError`.
+The graph options are not applied, because the graph is drawn locally by the pipelex runner. The bundle is still validated, and after a valid verdict a warning on stderr, in the error stream's form (`{"warning": true, "message": …}` in JSON), names the options that were not applied; the JSON verdict (`--format json`) carries the method's graph as `graph_spec`. `--pipe` is ignored, since the runner validates every pipe it receives. A target that is neither a `.mthds` file nor a directory whose entry file can be chosen is a `client.argument_invalid`, and an unreadable file, target directory or `-L` directory is a `client.file_unreadable`.
 
 `validate pipe <file>`, `inputs bundle` and `inputs pipe` send the same closure on the API runner, and take `-L` in the same two positions. When the closure holds several files, the template is for the entry's own `main_pipe` (the named file's, or the directory's entry file's) unless `--pipe` says otherwise, which is the pipe the pipelex runner templates.
 
@@ -1011,15 +1011,15 @@ mthds-agent inputs method <target> [OPTIONS]
 | `--format <fmt>` | string | no | `json` | `json` prints the result envelope; `toml` prints the raw TOML template on stdout |
 | `--explicit` | flag | no | -- | Keep the `{concept, content}` envelope on every input instead of the light values |
 
-With the **API runner**, the command reads the pipe's input form from `POST /v1/pipe-io` and projects the template locally with the `mthds` package's projection, whose TOML output `mthds-python` reproduces byte for byte. `bundle` and `pipe` send the bundle's whole closure, as `validate bundle` does above, and pick the entry's own `main_pipe` when `--pipe` is omitted and the closure holds several files. The `method` target is a published method's address (`github.com/<owner>/<repo>[/<selector>][@<tag>]`), which the runner fetches, or a hosted catalog id (`mt_…`), which only a hosted API resolves; a bare name or a local path is refused with an `ArgumentError`. With the **pipelex runner**, every subcommand forwards to `pipelex-agent inputs`, where the `method` target is an installed method's name.
+With the **API runner**, the command reads the pipe's input form from `POST /v1/pipe-io` and projects the template locally with the `mthds` package's projection, whose TOML output `mthds-python` reproduces byte for byte. `bundle` and `pipe` send the bundle's whole closure, as `validate bundle` does above, and pick the entry's own `main_pipe` when `--pipe` is omitted and the closure holds several files. The `method` target is a published method's address (`github.com/<owner>/<repo>[/<selector>][@<tag>]`), which the runner fetches, or a hosted catalog id (`mt_…`), which only a hosted API resolves; a bare name or a local path is refused as `client.argument_invalid`. With the **pipelex runner**, every subcommand forwards to `pipelex-agent inputs`, where the `method` target is an installed method's name.
 
 The JSON output is `{ "success": true, "pipe_ref": "<domain.pipe_code>", "inputs": { … } }`, where `pipe_ref` is the pipe the runner resolved. A pipe that declares no inputs prints `inputs: {}`, or a TOML comment saying so.
 
-Failures print the JSON error envelope on stderr and exit 1:
+Failures print the problem on stderr and exit 1:
 
-- a `--pipe` the method does not declare, or no `--pipe` when the method declares no entry pipe or several, is an `ArgumentError` carrying the runner's message, which lists the candidates (against `pipelex-api` v0.33.1 or later; an older runner's refusal is a `RunnerError`);
-- an invalid method is a `ValidateBundleError` carrying `is_valid: false` and `validation_errors`, as on `validate`;
-- any other refusal from the runner, or a runner that cannot be reached, is a `RunnerError`.
+- a `--pipe` the method does not declare, or no `--pipe` when the method declares no entry pipe or several, is the runner's `request.pipe_not_found`, `request.pipe_ambiguous` or `request.pipe_unspecified`, whose parameters list the candidates;
+- an invalid method is `method.invalid` carrying `is_valid: false` and the verdict's items in `errors`, as on `validate`;
+- any other refusal is the runner's problem, and a runner that cannot be reached is `client.unreachable`.
 
 **Examples:**
 
@@ -1039,7 +1039,7 @@ mthds-agent codegen types [paths...] --target <flavor> [OPTIONS]
 mthds-agent codegen check [root] [OPTIONS]
 ```
 
-All arguments are forwarded to `pipelex-agent codegen`; the output contract (two-stream `--format` / `--error-format` markdown|json envelopes, `0/1/2` verdict exit codes) is defined there. Requires the pipelex runner. `codegen` shipped in pipelex 0.39.0, below the version floor mthds-agent already enforces on `pipelex-agent`, so an install old enough to lack it is upgraded or refused with an `InstallError` before the command is forwarded. On the API runner the commands error cleanly as `UnsupportedError` — there are no codegen routes yet.
+All arguments are forwarded to `pipelex-agent codegen`; the output contract (two-stream `--format` / `--error-format` markdown|json envelopes, `0/1/2` verdict exit codes) is defined there. Requires the pipelex runner. `codegen` shipped in pipelex 0.39.0, below the version floor mthds-agent already enforces on `pipelex-agent`, so an install old enough to lack it is upgraded or refused as `client.tool_outdated` before the command is forwarded. On the API runner the commands fail cleanly as `runtime.unsupported` — there are no codegen routes yet.
 
 **Example:**
 

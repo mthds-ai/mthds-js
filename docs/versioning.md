@@ -1,16 +1,17 @@
 # Versioning
 
-This package copies two version numbers that are cut elsewhere, and publishes one of its own. Which is which is the thing to get right before touching any of them.
+This package copies three version numbers that are cut elsewhere, and publishes one of its own. Which is which is the thing to get right before touching any of them.
 
 | Number | Declared at | Cut by |
 |---|---|---|
 | **MTHDS standard version** — `MTHDS_STANDARD_VERSION` | `src/package/manifest/schema.ts` | `mthds/docs/spec/versioning.md` § "The Standard Version" |
 | **MTHDS Protocol version** — `MTHDS_PROTOCOL_VERSION` | `src/protocol/models.ts` | `mthds/docs/spec/versioning.md` § "The Protocol Version" |
+| **MTHDS core error registry version** — `MTHDS_ERROR_REGISTRY_TARGET_VERSION` | `src/problems/registry-target.ts`, beside the vendored registry `scripts/registry/mthds-error-registry.json` (test-guarded) | `mthds/docs/spec/error-registry.md` |
 | This package's own release — `version` | `package.json`, mirrored by `MTHDS_JS_VERSION` in `src/version.ts` (test-guarded) | this repo's `/release` skill |
 
-The first two are **copies of a cut made in the standard's repo**, not numbers this repo decides. They move only when the specification moves them, and they move independently of each other: a release of the standard that leaves the HTTP runner contract alone leaves the protocol version exactly where it was. Neither has anything to do with `package.json`'s `version`, which is this npm package's own release number.
+The first three are **copies of a cut made in the standard's repo**, not numbers this repo decides. They move only when the specification moves them, and they move independently of each other: a release of the standard that leaves the HTTP runner contract alone leaves the protocol version exactly where it was. The registry version moves by vendoring the registry it names, which [errors.md → "The vendored registry"](./errors.md#the-vendored-registry) walks through. Neither has anything to do with `package.json`'s `version`, which is this npm package's own release number.
 
-Each is declared in exactly one place, so following a cut is a single edit. Do not re-declare either constant, and do not derive one from the other.
+Each is declared in exactly one place, so following a cut is a single edit. Do not re-declare any of these constants, and do not derive one from another.
 
 ## What the standard version governs here
 

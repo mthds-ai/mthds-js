@@ -47,6 +47,14 @@ function runAgent(
   return { stdout: result.stdout, stderr: result.stderr, status: result.status };
 }
 
+/** Run mthds-agent with its error stream in JSON, the problem document a program reads. */
+function runAgentJson(
+  args: string[],
+  sandbox?: Sandbox,
+): { stdout: string; stderr: string; status: number | null } {
+  return runAgent([...args, "--error-format", "json"], sandbox);
+}
+
 function parseJson(text: string): Record<string, unknown> {
   return JSON.parse(text) as Record<string, unknown>;
 }
@@ -151,10 +159,17 @@ describe("mthds-agent and the methods it refuses (e2e)", () => {
   });
 
   it("tells --method why a refused method is unusable instead of calling it missing", () => {
-    const { stderr, status } = runAgent(["publish", "--local", repoDir, "--method", "legacy_tool"]);
+    const { stderr, status } = runAgentJson([
+      "publish",
+      "--local",
+      repoDir,
+      "--method",
+      "legacy_tool",
+    ]);
 
     expect(status).toBe(1);
     const result = parseJson(stderr);
+    expect(result.code).toBe("method.invalid");
     expect(result.message).toContain('Method "legacy_tool" was found but skipped');
     expect(result.message).toContain("mthds_version");
     expect(result.message).not.toContain("not found");
@@ -162,10 +177,18 @@ describe("mthds-agent and the methods it refuses (e2e)", () => {
   });
 
   it("still reports a genuinely absent name as not found", () => {
-    const { stderr, status } = runAgent(["publish", "--local", repoDir, "--method", "typo_tool"]);
+    const { stderr, status } = runAgentJson([
+      "publish",
+      "--local",
+      repoDir,
+      "--method",
+      "typo_tool",
+    ]);
 
     expect(status).toBe(1);
     const result = parseJson(stderr);
+    expect(result.code).toBe("method.not_found");
+    expect(result.params).toEqual({ method_ref: "typo_tool" });
     expect(result.message).toContain('Method "typo_tool" not found');
     expect(result.message).toContain("new_tool");
   });
@@ -177,20 +200,32 @@ describe("mthds-agent and the methods it refuses (e2e)", () => {
     // produced them.
     writeFileSync(join(box.cwd, ".mthds"), "not a directory\n");
 
-    const { stderr, status } = runAgent(
+    const { stderr, status } = runAgentJson(
       ["install", "--local", repoDir, "--location", "local", "--no-runner"],
       box,
     );
 
     expect(status).toBe(1);
     const result = parseJson(stderr);
-    expect(result.error).toBe(true);
+    expect(result.code).toBe("client.write_failed");
+    expect(result.params).toMatchObject({ path: expect.any(String), reason: expect.any(String) });
     expect(result.message).toContain("Install failed:");
     expect(skippedNames(result)).toEqual(["legacy_tool"]);
   });
 
+  it("writes the refusal as Markdown by default", () => {
+    rmSync(join(repoDir, "methods", "new_tool"), { recursive: true, force: true });
+
+    const { stderr, status } = runAgent(["publish", "--local", repoDir]);
+
+    expect(status).toBe(1);
+    expect(stderr).toMatch(/^## The method does not validate\n/);
+    expect(stderr).toContain("No valid methods to publish.");
+    expect(stderr).toContain("- Code: `method.invalid`");
+  });
+
   it("rejects an unknown platform before it reads the repository", () => {
-    const { stderr, status } = runAgent([
+    const { stderr, status } = runAgentJson([
       "share",
       "--local",
       join(repoDir, "no-such-directory"),
@@ -200,20 +235,22 @@ describe("mthds-agent and the methods it refuses (e2e)", () => {
 
     expect(status).toBe(1);
     const result = parseJson(stderr);
-    expect(result.error_type).toBe("ArgumentError");
+    expect(result.code).toBe("client.argument_invalid");
+    expect(result.params).toEqual({ argument: "--platform", reason: "unknown_value" });
     expect(result.message).toContain('Invalid platform "twitter"');
     // Nothing was read, so there is no skip list to report — the absence of the
-    // key is what tells a consumer this envelope precedes the read.
+    // key is what tells a consumer this problem precedes the read.
     expect(result).not.toHaveProperty("skipped_methods");
   });
 
   it("says why nothing survived, rather than only that nothing did", () => {
     rmSync(join(repoDir, "methods", "new_tool"), { recursive: true, force: true });
 
-    const { stderr, status } = runAgent(["publish", "--local", repoDir]);
+    const { stderr, status } = runAgentJson(["publish", "--local", repoDir]);
 
     expect(status).toBe(1);
     const result = parseJson(stderr);
+    expect(result.code).toBe("method.invalid");
     expect(result.message).toBe("No valid methods to publish.");
     expect(skippedNames(result)).toEqual(["legacy_tool"]);
     expect((result.skipped_methods as SkipReport[])[0]!.errors.join(" ")).toContain(

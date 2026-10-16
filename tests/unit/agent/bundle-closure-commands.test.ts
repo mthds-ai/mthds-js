@@ -4,6 +4,7 @@ import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { Command } from "commander";
 import { registerApiRunnerCommands } from "../../../src/agent/commands/api-commands.js";
+import { chooseErrorFormat } from "../../../src/agent/output.js";
 import { MthdsApiClient } from "../../../src/runners/api/client.js";
 
 // On the API runner, `validate bundle` and `inputs bundle` must send a method split
@@ -76,6 +77,7 @@ describe("API-runner validate and inputs send the whole bundle", () => {
     writeFileSync(join(method, "child.mthds"), CHILD);
     writeFileSync(join(shared, "shared.mthds"), SHARED);
 
+    chooseErrorFormat("json");
     stdoutSpy = vi.spyOn(process.stdout, "write").mockReturnValue(true);
     stderrSpy = vi.spyOn(process.stderr, "write").mockReturnValue(true);
     // agentError ends in process.exit(1); throw a sentinel so the test can catch it.
@@ -97,6 +99,7 @@ describe("API-runner validate and inputs send the whole bundle", () => {
   });
 
   afterEach(() => {
+    chooseErrorFormat(undefined);
     vi.restoreAllMocks();
     rmSync(dir, { recursive: true, force: true });
   });
@@ -202,7 +205,12 @@ describe("API-runner validate and inputs send the whole bundle", () => {
             JSON.stringify({
               is_valid: false,
               message: "bad bundle",
-              validation_errors: [{ category: "concept", message: "undeclared" }],
+              errors: [
+                {
+                  code: "method.concept_unresolved",
+                  detail: "The concept is undeclared.",
+                },
+              ],
               pending_signatures: [],
               is_runnable: false,
             }),
@@ -215,7 +223,12 @@ describe("API-runner validate and inputs send the whole bundle", () => {
       ).rejects.toThrow("__exit__");
 
       // The stubbed exit throws, so later writes are the stub's echo; the first is the envelope.
-      expect(firstStderrJson()).toMatchObject({ error: true, error_type: "ValidateBundleError" });
+      expect(firstStderrJson()).toMatchObject({
+        code: "method.invalid",
+        is_valid: false,
+        message: "bad bundle",
+        errors: [{ code: "method.concept_unresolved", detail: "The concept is undeclared." }],
+      });
       for (const [written] of stderrSpy.mock.calls) {
         expect(String(written)).not.toContain('"warning"');
       }
@@ -235,18 +248,22 @@ describe("API-runner validate and inputs send the whole bundle", () => {
 
       expect(requests).toHaveLength(0);
       expect(firstStderrJson()).toMatchObject({
-        error_type: "ArgumentError",
-        error_domain: "argument",
+        code: "client.argument_invalid",
+        domain: "input",
+        params: { argument: "target", reason: "not_a_bundle" },
       });
     });
 
-    it("reports a missing target as an IOError", async () => {
-      await expect(agent("validate", "bundle", join(dir, "missing.mthds"))).rejects.toThrow(
-        "__exit__",
-      );
+    it("reports a missing target as a file it cannot read", async () => {
+      const missing = join(dir, "missing.mthds");
+      await expect(agent("validate", "bundle", missing)).rejects.toThrow("__exit__");
 
       expect(requests).toHaveLength(0);
-      expect(firstStderrJson()).toMatchObject({ error_type: "IOError", error_domain: "io" });
+      expect(firstStderrJson()).toMatchObject({
+        code: "client.file_unreadable",
+        domain: "input",
+        params: { path: missing, reason: "enoent" },
+      });
     });
   });
 

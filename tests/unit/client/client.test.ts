@@ -342,6 +342,54 @@ describe("MthdsApiClient transport failures", () => {
   });
 });
 
+describe("MthdsApiClient answers with a status that is no HTTP status", () => {
+  let server: Server | undefined;
+
+  /** A loopback runtime answering every request with the status 999 and `body`. */
+  async function runtimeAnswering999(body: string, contentType: string): Promise<string> {
+    server = createServer((_request, response) => {
+      response.writeHead(999, { "Content-Type": contentType });
+      response.end(body);
+    });
+    await new Promise<void>((resolve) => server!.listen(0, "127.0.0.1", resolve));
+    return `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  }
+
+  afterEach(async () => {
+    await new Promise<void>((resolve) => (server ? server.close(() => resolve()) : resolve()));
+    server = undefined;
+  });
+
+  it("reads a problem body that omits its status as received, its status left out", async () => {
+    const received = {
+      type: "https://mthds.ai/errors/runtime.unexpected",
+      title: "An unexpected error occurred",
+      detail: "The runtime met an unexpected error.",
+      code: "runtime.unexpected",
+      domain: "runtime",
+      retry: "no",
+      next_step: { kind: "report", detail: "Report it." },
+    };
+    const origin = await runtimeAnswering999(JSON.stringify(received), "application/problem+json");
+    const err = await rejection(
+      new MthdsApiClient({ baseUrl: origin, apiKey: "test-key" }).models(),
+    );
+    expect(err).toBeInstanceOf(ApiResponseError);
+    expect((err as ApiResponseError).status).toBe(999);
+    expect((err as ApiResponseError).problem).toEqual(received);
+  });
+
+  it("reads a body that is no problem as client.response_unreadable naming the status", async () => {
+    const origin = await runtimeAnswering999("odd", "text/plain");
+    const err = await rejection(
+      new MthdsApiClient({ baseUrl: origin, apiKey: "test-key" }).models(),
+    );
+    expect((err as ApiResponseError).problem).toEqual(
+      buildProblem("client.response_unreadable", { status: 999 }),
+    );
+  });
+});
+
 describe("MthdsApiClient redirects", () => {
   let server: Server | undefined;
   const requests: string[] = [];

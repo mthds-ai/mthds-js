@@ -3,7 +3,9 @@
  * tests/fixtures/problem-reading-cases.json put through `MthdsApiClient`, each expected to read as
  * the exact problem the case pins. The file is the Python twin's (mthds-python
  * tests/data/problem-reading-cases.json), copied byte for byte, so both clients read every case
- * the same way.
+ * the same way. A case may also pin how the problem reads into the closed lists, in `reading`: its
+ * domain, retry verdict and step kind as `problemDomain`, `problemRetry` and `problemStepKind`
+ * read them, a value the problem was received with that this reader does not know included.
  */
 
 import { readFileSync } from "node:fs";
@@ -12,6 +14,8 @@ import { MthdsApiClient } from "../../../src/runners/api/client.js";
 import { ProblemError } from "../../../src/problems/errors.js";
 import { isProblem } from "../../../src/problems/read.js";
 import { codeFamily, isCoreErrorCode } from "../../../src/problems/registry.js";
+import { problemDomain, problemRetry, problemStepKind } from "../../../src/problems/reading.js";
+import type { Problem } from "../../../src/problems/types.js";
 import {
   EXTENSION_PREFIXES,
   MTHDS_ERROR_REGISTRY_VERSION,
@@ -44,11 +48,18 @@ interface LostAfterSendInput {
   kind: "lost_after_send";
   route: string;
 }
+/** How the problem a case reads as reads into the closed lists, when the case pins it. */
+interface ExpectedReading {
+  domain?: string;
+  retry?: string;
+  step_kind?: string;
+}
 interface ReadingCase {
   name: string;
   description: string;
   input: ResponseInput | UnreachableInput | TimeoutInput | LostAfterSendInput;
   expected: Record<string, unknown>;
+  reading?: ExpectedReading;
 }
 
 const CASE_FILE = JSON.parse(
@@ -146,6 +157,15 @@ describe("the shared problem reading cases", () => {
     const problem = await readCase(readingCase.input);
     expect(problem).toEqual(readingCase.expected);
     expect(isProblem(problem), "the problem read is a problem document").toBe(true);
+    const reading = readingCase.reading;
+    if (reading !== undefined) {
+      const read = problem as Problem;
+      if (reading.domain !== undefined) expect(problemDomain(read), "domain").toBe(reading.domain);
+      if (reading.retry !== undefined) expect(problemRetry(read), "retry").toBe(reading.retry);
+      if (reading.step_kind !== undefined) {
+        expect(problemStepKind(read), "step kind").toBe(reading.step_kind);
+      }
+    }
   });
 
   it("expect only problems a client builds with a registered code, or codes received as sent", () => {

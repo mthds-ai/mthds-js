@@ -17,16 +17,10 @@ import {
   runnerProblemExtras,
 } from "../output.js";
 import { isApiRunner } from "../../cli/commands/utils.js";
-import {
-  BundleTargetError,
-  closureEntryPipeRef,
-  resolveBundleClosure,
-} from "../../runners/bundle.js";
-import type { BundleClosure } from "../../runners/bundle.js";
 import { MethodTargetError, resolveMethodTarget } from "../../runners/method-target.js";
 import type { ResolvedMethodTarget } from "../../runners/method-target.js";
 import { MethodTreeError } from "../../method-tree/exceptions.js";
-import type { MthdsFileItem, PipeIORequest, PipeIOResponse, Runner } from "../../runners/types.js";
+import type { PipeIORequest, PipeIOResponse, Runner } from "../../runners/types.js";
 import { PIPE_SELECTION_ERROR_TYPES } from "../../runners/types.js";
 import {
   INPUTS_TEMPLATE_FORMATS,
@@ -69,7 +63,7 @@ export function registerApiRunnerCommands(program: Command, makeRunner: () => Ru
     .argument("[target]", "Bundle file (.mthds) or directory")
     .option("--allow-signatures", "Tolerate unimplemented pipe signatures")
     .option("--content <mthds>", "Bundle content as a string")
-    .option(LIBRARY_DIR_FLAGS, VALIDATE_LIBRARY_DIR_HELP, collectLibraryDir, [] as string[])
+    .option(LIBRARY_DIR_FLAGS, LIBRARY_DIR_HELP, collectLibraryDir, [] as string[])
     .option("-g, --graph", "Save graph HTML files (pipelex runner only)")
     .option("-f, --graph-format <fmt>", "Graph format to generate (pipelex runner only)")
     .option("--view", "Include a GraphSpec in the output (pipelex runner only)")
@@ -128,7 +122,7 @@ export function registerApiRunnerCommands(program: Command, makeRunner: () => Ru
     .command("pipe")
     .argument("<target>", ".mthds bundle file")
     .option("--allow-signatures", "Tolerate unimplemented pipe signatures")
-    .option(LIBRARY_DIR_FLAGS, VALIDATE_LIBRARY_DIR_HELP, collectLibraryDir, [] as string[])
+    .option(LIBRARY_DIR_FLAGS, LIBRARY_DIR_HELP, collectLibraryDir, [] as string[])
     .addOption(
       new Option("--format <fmt>", "Success output format: markdown (default) or json").choices([
         "markdown",
@@ -197,6 +191,8 @@ export function registerApiRunnerCommands(program: Command, makeRunner: () => Ru
     });
 
   // ── inputs ──
+  // `bundle` and `pipe` send the method's tree as `validate` sends it, and ask for a
+  // named bundle's own `main_pipe`, qualified with its domain, unless `--pipe` names one.
   // The template is PROJECTED here from the input-form descriptor `POST /v1/pipe-io`
   // returns (`projectInputsTemplate` / `renderInputsTemplate` in `mthds/protocol`),
   // so both rendering axes — `--format` and `--explicit` — are this CLI's own. The
@@ -227,17 +223,18 @@ export function registerApiRunnerCommands(program: Command, makeRunner: () => Ru
         options: InputsCommandOptions & { content?: string; libraryDir?: string[] },
       ) => {
         const runner = safeCreateRunner(makeRunner);
-        // `--content` overrides the target, so the inline item carries no source:
-        // stamping diagnostics with `target` would point at a file we never submitted.
-        const closure = resolveClosureOrError(
+        // The method's tree, as `validate` and `run start` send it: a directory leaves the
+        // pipe to the runner's entry rule, a named bundle or `--content` asks for its own.
+        const resolved = await resolveMethodOrError(
+          runner,
           target,
           options.content,
           libraryDirsWith(options.libraryDir),
         );
         await emitInputsTemplate(
           runner,
-          { files: closure.files },
-          options.pipe ?? closureEntryPipeRef(closure),
+          resolved.method,
+          options.pipe ?? resolved.entryPipeRef,
           inputsRendering(options),
         );
       },
@@ -263,11 +260,16 @@ export function registerApiRunnerCommands(program: Command, makeRunner: () => Ru
           { error_domain: AGENT_ERROR_DOMAINS.ARGUMENT },
         );
       }
-      const closure = resolveClosureOrError(target, undefined, libraryDirsWith(options.libraryDir));
+      const resolved = await resolveMethodOrError(
+        runner,
+        target,
+        undefined,
+        libraryDirsWith(options.libraryDir),
+      );
       await emitInputsTemplate(
         runner,
-        { files: closure.files },
-        options.pipe ?? closureEntryPipeRef(closure),
+        resolved.method,
+        options.pipe ?? resolved.entryPipeRef,
         inputsRendering(options),
       );
     });
@@ -345,7 +347,7 @@ export function registerApiRunnerCommands(program: Command, makeRunner: () => Ru
       "Output multiplicity: 'false', 'true', or an exact count",
     )
     .option("--dynamic-output <concept_ref>", "Override for the dynamic output concept ref")
-    .option(LIBRARY_DIR_FLAGS, VALIDATE_LIBRARY_DIR_HELP, collectLibraryDir, [] as string[])
+    .option(LIBRARY_DIR_FLAGS, LIBRARY_DIR_HELP, collectLibraryDir, [] as string[])
     .description("Start a run and return its id without waiting")
     .allowUnknownOption()
     .allowExcessArguments(true)
@@ -507,8 +509,7 @@ function readFileOrError(path: string): string {
 }
 
 const LIBRARY_DIR_FLAGS = "-L, --library-dir <dir>";
-const LIBRARY_DIR_HELP = "Library directory whose .mthds files join the bundle (can be repeated)";
-const VALIDATE_LIBRARY_DIR_HELP =
+const LIBRARY_DIR_HELP =
   "Library directory: one holding a lone bundle file becomes the root of the tree sent, one inside the tree adds nothing (can be repeated)";
 
 /** Commander collector for the repeatable `-L, --library-dir`. */
@@ -517,37 +518,7 @@ function collectLibraryDir(value: string, previous: string[]): string[] {
 }
 
 /**
- * Resolve what an inputs command sends to `/v1/pipe-io`, which takes `.mthds` files
- * alone rather than a method's tree: the inline `--content` or the target, with
- * every `.mthds` file of the library directories, as one closure
- * (`resolveBundleClosure`). A bad target is an `ArgumentError`, an unreadable file
- * or directory an `IOError`.
- */
-function resolveClosureOrError(
-  target: string | undefined,
-  content: string | undefined,
-  libraryDirs: readonly string[],
-): BundleClosure {
-  if (!content && !target) {
-    agentError("Either <target> or --content is required.", "ArgumentError", {
-      error_domain: AGENT_ERROR_DOMAINS.ARGUMENT,
-    });
-  }
-  try {
-    return resolveBundleClosure(content ? { content } : { path: target! }, libraryDirs);
-  } catch (err) {
-    if (err instanceof BundleTargetError) {
-      agentError(err.message, "ArgumentError", { error_domain: AGENT_ERROR_DOMAINS.ARGUMENT });
-    }
-    agentError(`Cannot read file: ${(err as Error).message}`, "IOError", {
-      error_domain: AGENT_ERROR_DOMAINS.IO,
-    });
-    throw err;
-  }
-}
-
-/**
- * Resolve what a validate or run command sends: the method tree of the target, or
+ * Resolve what a validate, inputs or run command sends: the method tree of the target, or
  * the inline `--content` as a one-file tree, with the library directories that
  * belong to it (`resolveMethodTarget`), listed within the limits the runner
  * announces. A target that cannot be sent as one tree, or a tree the standard's
@@ -629,9 +600,13 @@ function warnGraphNotDrawn(options: Record<string, unknown>): void {
 
 // ── inputs: the pipe I/O read and the local projection ──
 
-/** The closure selector `inputs` sends: exactly one of the three `/v1/pipe-io` takes. */
+/**
+ * The method `inputs` sends: exactly one of the three `/v1/pipe-io` takes, the method's
+ * tree (a listed tree, or `--content` as a one-file `files` map), a published
+ * method's address or a hosted catalog id.
+ */
 export type InputsSelector =
-  | { files: MthdsFileItem[] }
+  | ResolvedMethodTarget["method"]
   | { method_ref: string }
   | { method_id: string };
 
@@ -703,7 +678,7 @@ export function methodSelector(target: string): InputsSelector {
  *   (an unknown `--pipe`, no entry pipe, several) — is an `ArgumentError` carrying
  *   the runner's own sentence, which is where it lists the candidates. Every other
  *   refusal is a `RunnerError` quoting it. Both carry the problem document's members.
- * - **An invalid closure** is a PRODUCED verdict, a 200 `is_valid: false`, and is the
+ * - **An invalid method** is a PRODUCED verdict, a 200 `is_valid: false`, and is the
  *   `ValidateBundleError` arm, the same envelope `validate` emits.
  * - **A valid answer** is projected from `input_form[pipe_ref]`, the RESOLVED
  *   qualified ref the server picked rather than the `--pipe` the caller may have

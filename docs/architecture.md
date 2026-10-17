@@ -60,7 +60,7 @@ src/runners/pipelex/
   runner.ts                   PipelexRunner (drives the pipelex CLI on this machine)
 src/runners/
   method-target.ts            resolveMethodTarget: a command line's path or --content and -L into one method tree
-  bundle.ts                   writing a files map to disk for the pipelex runner; the .mthds closure /v1/pipe-io takes
+  bundle.ts                   writing a files map to disk for the pipelex runner
   types.ts                    Runner interface (extends MTHDSProtocol<DictPipeOutput>) + Runners enum + pipe-io types
   registry.ts                 createRunner() factory
 src/method-tree/              the method tree, Node-side: listMethodTree + MethodTree, the membership rule with git's

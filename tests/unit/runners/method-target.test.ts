@@ -1,6 +1,6 @@
 /**
- * What a `run` or `validate` command line sends: one method tree, and the bundle it named in it
- * (`src/runners/method-target.ts`).
+ * What a `run`, `validate` or `inputs` command line sends: one method tree, and the bundle it named
+ * in it (`src/runners/method-target.ts`).
  */
 
 import { mkdtempSync, mkdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
@@ -44,6 +44,7 @@ describe("resolveMethodTarget", () => {
     expect(treePaths(resolved)).toEqual(["bundle.mthds", "funcs/f.py"]);
     expect(resolved.entry).toBeNull();
     expect(resolved.entryMainPipe).toBeUndefined();
+    expect(resolved.entryPipeRef).toBeUndefined();
   });
 
   it("sends a .mthds file alone, with no manifest above it, as a one-file tree", async () => {
@@ -53,6 +54,7 @@ describe("resolveMethodTarget", () => {
     expect(treePaths(resolved)).toEqual(["child.mthds"]);
     expect(resolved.entry).toBe("child.mthds");
     expect(resolved.entryMainPipe).toBe("child_run");
+    expect(resolved.entryPipeRef).toBe("m.child_run");
   });
 
   it("sends a .mthds file under a METHODS.toml in its manifest's tree, the file as entry", async () => {
@@ -63,6 +65,30 @@ describe("resolveMethodTarget", () => {
     expect(treePaths(resolved)).toEqual(["METHODS.toml", "bundle.mthds", "steps/step.mthds"]);
     expect(resolved.entry).toBe("steps/step.mthds");
     expect(resolved.entryMainPipe).toBe("step");
+    expect(resolved.entryPipeRef).toBe("pkg.step");
+  });
+
+  it("qualifies a named bundle's main_pipe only when it declares both its domain and main_pipe", async () => {
+    const noMainPipe = await resolveMethodTarget({ content: "domain = 'x'\n" }, []);
+    expect(noMainPipe.entryMainPipe).toBeUndefined();
+    expect(noMainPipe.entryPipeRef).toBeUndefined();
+    const unreadable = await resolveMethodTarget({ content: "main_pipe = 'go'\n[oops\n" }, []);
+    expect(unreadable.entryPipeRef).toBeUndefined();
+  });
+
+  it("reads an empty main_pipe as none, and qualifies nothing with an empty domain", async () => {
+    const emptyMainPipe = await resolveMethodTarget(
+      { content: "domain = 'demo'\nmain_pipe = ''\n" },
+      [],
+    );
+    expect(emptyMainPipe.entryMainPipe).toBeUndefined();
+    expect(emptyMainPipe.entryPipeRef).toBeUndefined();
+    const emptyDomain = await resolveMethodTarget(
+      { content: "domain = ''\nmain_pipe = 'go'\n" },
+      [],
+    );
+    expect(emptyDomain.entryMainPipe).toBe("go");
+    expect(emptyDomain.entryPipeRef).toBeUndefined();
   });
 
   it("roots a lone file at a library directory holding it, so the files beside it travel", async () => {
@@ -153,6 +179,7 @@ describe("resolveMethodTarget", () => {
     });
     expect(resolved.entry).toBe(INLINE_CONTENT_TREE_PATH);
     expect(resolved.entryMainPipe).toBe("go");
+    expect(resolved.entryPipeRef).toBe("x.go");
     write("lib/other.mthds", "domain = 'lib'\n");
     const withLibrary = await resolveMethodTarget({ content: "domain = 'x'" }, [
       join(scratch, "lib"),

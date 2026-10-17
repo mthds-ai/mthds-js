@@ -7,8 +7,8 @@ import type { CrateInvalidReport, RunnerType } from "../../runners/types.js";
 import { INPUTS_TEMPLATE_FORMATS, renderInputsTemplate } from "../../protocol/inputs_template.js";
 import type { InputsTemplateFormat } from "../../protocol/inputs_template.js";
 import { selectedInputDescriptor } from "../../runners/pipe-io.js";
-import { closureEntryPipeRef, resolveBundleClosure } from "../../runners/bundle.js";
-import type { BundleClosure } from "../../runners/bundle.js";
+import { resolveMethodTarget } from "../../runners/method-target.js";
+import type { ResolvedMethodTarget } from "../../runners/method-target.js";
 
 interface WithRunner {
   runner?: RunnerType;
@@ -16,9 +16,9 @@ interface WithRunner {
 }
 
 /**
- * Render an invalid-closure VERDICT (the `is_valid: false` arm) and exit non-zero.
+ * Render an invalid-method VERDICT (the `is_valid: false` arm) and exit non-zero.
  *
- * `POST /v1/pipe-io` answers a bad closure with a 200 carrying diagnostics, not an
+ * `POST /v1/pipe-io` answers a bad method with a 200 carrying diagnostics, not an
  * exception — so a CLI that only caught throws would print a success message over
  * an unusable result. Returns true when the verdict is valid and the caller should
  * carry on. It never returns on the invalid arm (`process.exit`), but TypeScript
@@ -112,13 +112,14 @@ export async function buildInputsPipe(
     process.exit(1);
   }
 
-  // The bundle file first, then every `.mthds` file of the `-L` directories, so a
-  // method split across files gets its template as it does on the pipelex runner.
-  let closure: BundleClosure;
+  // The method's tree, with the `-L` directories that belong to it, as `mthds validate`
+  // and `mthds run` send it, listed within the limits the runner announces.
+  let resolved: ResolvedMethodTarget;
   try {
-    closure = resolveBundleClosure({ path: target }, options.libraryDir ?? []);
+    const limits = await runner.methodTreeLimits();
+    resolved = await resolveMethodTarget({ path: target }, options.libraryDir ?? [], limits);
   } catch (err) {
-    p.log.error((err as Error).message);
+    p.log.error(formatCliError(err));
     p.outro("");
     process.exit(1);
   }
@@ -129,10 +130,12 @@ export async function buildInputsPipe(
   try {
     // The template is projected here from the pipe's input-form descriptor, which
     // `POST /v1/pipe-io` returns, rather than fetched from a build route.
-    const result = await runner.pipeIo({
-      files: closure.files,
-      pipe_ref: options.pipe ?? closureEntryPipeRef(closure),
-    });
+    // A named bundle asks for its own `main_pipe`, qualified with its domain; a
+    // directory leaves the choice to the runner's entry rule.
+    const requested = options.pipe ?? resolved.entryPipeRef;
+    const result = await runner.pipeIo(
+      requested !== undefined ? { ...resolved.method, pipe_ref: requested } : resolved.method,
+    );
     if (!reportIfInvalid(s, result)) return;
     const { pipeRef, descriptor } = selectedInputDescriptor(result);
     const rendered = renderInputsTemplate(descriptor, {

@@ -838,25 +838,62 @@ describe("MthdsApiClient.pipeIo", () => {
     is_runnable: true,
   };
 
-  it("posts the request verbatim to /v1/pipe-io and returns the valid arm", async () => {
+  it("posts a files map and the other fields as given to /v1/pipe-io and returns the valid arm", async () => {
     const client = makeClient();
     const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(jsonResponse(200, VALID));
+    const request = {
+      files: {
+        "METHODS.toml": "[package]\n",
+        "smoke.mthds": "domain = 'smoke'",
+        "templates/t.docx": { base64: "UEsDBA==" },
+        "data/big.bin": { sha256: "a".repeat(64), size: 1048576 },
+      },
+      dependencies: { "github.com/acme/lib": { "lib.mthds": "domain = 'lib'" } },
+      resources: { "templates/extra.html": "PHAvPg==" },
+      read_scope: "org/acme",
+      pipe_ref: "smoke.echo",
+      all_pipes: true,
+      include_files: true,
+    };
+
+    const result = await client.pipeIo(request);
+
+    // A caller's own files map needs no handshake: the one call is the route's.
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(fetchSpy.mock.calls[0]![0]).toBe("http://localhost:8081/v1/pipe-io");
+    expect(bodyOf(fetchSpy)).toEqual(request);
+    expect(result).toEqual(VALID);
+  });
+
+  it("reads the include_files echo as a map from tree path to bundle text", async () => {
+    const client = makeClient();
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      jsonResponse(200, { ...VALID, files: { "smoke.mthds": "domain = 'smoke'" } }),
+    );
 
     const result = await client.pipeIo({
-      files: [{ content: "domain = 'smoke'", source: "smoke.mthds" }],
-      pipe_ref: "smoke.echo",
-      all_pipes: true,
+      files: { "smoke.mthds": "domain = 'smoke'" },
       include_files: true,
     });
 
-    expect(fetchSpy.mock.calls[0]![0]).toBe("http://localhost:8081/v1/pipe-io");
-    expect(bodyOf(fetchSpy)).toEqual({
-      files: [{ content: "domain = 'smoke'", source: "smoke.mthds" }],
-      pipe_ref: "smoke.echo",
-      all_pipes: true,
-      include_files: true,
-    });
-    expect(result).toEqual(VALID);
+    if (!result.is_valid) throw new Error("expected the valid arm");
+    expect(result.files).toEqual({ "smoke.mthds": "domain = 'smoke'" });
+  });
+
+  it("refuses files and tree together, and an empty files map, before anything is sent", async () => {
+    const client = makeClient();
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(jsonResponse(200, VALID));
+    const tree = {
+      files: [{ path: "smoke.mthds", size: 1, sha256: "b".repeat(64) }],
+      digest: `sha256:${"c".repeat(64)}`,
+      readFile: async () => new Uint8Array([0x78]),
+    };
+
+    await expect(client.pipeIo({ files: { "smoke.mthds": "x" }, tree })).rejects.toBeInstanceOf(
+      PipelineRequestError,
+    );
+    await expect(client.pipeIo({ files: {} })).rejects.toThrow(EMPTY_METHOD_TREE_MESSAGE);
+    expect(fetchSpy).not.toHaveBeenCalled();
   });
 
   // The hosted catalog selector is a pass-through: the platform resolves it, so the
@@ -880,7 +917,7 @@ describe("MthdsApiClient.pipeIo", () => {
       }),
     );
 
-    const result = await client.pipeIo({ files: [{ content: "domain = 'smoke'" }] });
+    const result = await client.pipeIo({ files: { "smoke.mthds": "domain = 'smoke'" } });
 
     expect(result.is_valid).toBe(false);
   });
@@ -899,7 +936,7 @@ describe("MthdsApiClient.pipeIo", () => {
     );
 
     const err = await client
-      .pipeIo({ files: [{ content: "domain = 'smoke'" }], pipe_ref: "smoke.nope" })
+      .pipeIo({ files: { "smoke.mthds": "domain = 'smoke'" }, pipe_ref: "smoke.nope" })
       .catch((e: unknown) => e);
 
     expect(err).toBeInstanceOf(ApiResponseError);
@@ -919,14 +956,14 @@ describe("MthdsApiClient.pipeIo", () => {
     const client = makeClient();
     vi.spyOn(globalThis, "fetch").mockRejectedValue(networkError("ECONNREFUSED"));
 
-    await expect(client.pipeIo({ files: [{ content: "x" }] })).rejects.toBeInstanceOf(
+    await expect(client.pipeIo({ files: { "x.mthds": "x" } })).rejects.toBeInstanceOf(
       ApiUnreachableError,
     );
   });
 
   // A `method_ref` can make the server clone a repository first, so it gets the
-  // fetch-sized budget; inline files get the static-route one.
-  it("gives a method_ref the fetch-sized budget and inline files the static one", async () => {
+  // fetch-sized budget; a tree gets the static-route one.
+  it("gives a method_ref the fetch-sized budget and a tree the static one", async () => {
     const client = makeClient();
     vi.spyOn(globalThis, "fetch").mockImplementation(() =>
       Promise.resolve(jsonResponse(200, VALID)),
@@ -937,7 +974,7 @@ describe("MthdsApiClient.pipeIo", () => {
     expect(armedTimeouts(timeoutSpy)).toContain(180_000);
 
     timeoutSpy.mockClear();
-    await client.pipeIo({ files: [{ content: "x" }] });
+    await client.pipeIo({ files: { "x.mthds": "x" } });
     expect(armedTimeouts(timeoutSpy)).toContain(30_000);
     expect(armedTimeouts(timeoutSpy)).not.toContain(180_000);
   });
@@ -996,7 +1033,7 @@ describe("MthdsApiClient validation items keep their next step", () => {
       }),
     );
 
-    const result = await client.pipeIo({ files: [{ content: "domain = 'demo'" }] });
+    const result = await client.pipeIo({ files: { "demo.mthds": "domain = 'demo'" } });
 
     if (result.is_valid) throw new Error("expected the invalid arm");
     const [modelItem, pipeItem] = result.validation_errors;

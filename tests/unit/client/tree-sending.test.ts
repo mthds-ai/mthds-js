@@ -1,7 +1,8 @@
 /**
  * How `MthdsApiClient` sends a method's tree (mthds/docs/spec/protocol.md, "Method files" and
- * "Sending files by hash"): the wire shape of `files` on `/execute`, `/start` and `/validate`,
- * the `/blobs/missing` exchange, the uploads, and the resend after a `422` naming `missing_blobs`.
+ * "Sending files by hash"): the wire shape of `files` on `/execute`, `/start`, `/validate` and
+ * `/pipe-io`, the `/blobs/missing` exchange, the uploads, and the resend after a `422` naming
+ * `missing_blobs`.
  */
 
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
@@ -564,6 +565,108 @@ describe("validate sends the method's tree", () => {
   it("refuses an empty tree before anything is sent", async () => {
     const { calls } = routeFetch(() => jsonResponse(200, { is_valid: true }));
     await expect(makeClient().validate({ files: {} })).rejects.toBeInstanceOf(PipelineRequestError);
+    expect(calls).toHaveLength(0);
+  });
+});
+
+describe("pipeIo sends the method's tree", () => {
+  const PIPE_IO_VALID = {
+    is_valid: true,
+    pipe_ref: "x.run",
+    pipe_io_contracts: {},
+    input_form: { "x.run": { fields: [] } },
+    output_form: {},
+    default_pipe_ref: "x.run",
+    pending_signatures: [],
+    is_runnable: true,
+  };
+
+  it("sends a small tree inline beside the pipe selector, and never the tree itself", async () => {
+    const tree = memoryTree({
+      "bundle.mthds": "domain = 'x'\nmain_pipe = 'run'\n",
+      "images/logo.png": new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0xff, 0x00]),
+    });
+    const { calls } = routeFetch((call) =>
+      call.url.endsWith("/v1/version")
+        ? jsonResponse(200, NO_BLOB_STORE)
+        : jsonResponse(200, PIPE_IO_VALID),
+    );
+    await makeClient().pipeIo({ tree, pipe_ref: "x.run", include_files: true });
+    const pipeIo = calls.find((call) => call.url === `${BASE_URL}/v1/pipe-io`)!;
+    expect(pipeIo.body).toEqual({
+      files: {
+        "bundle.mthds": "domain = 'x'\nmain_pipe = 'run'\n",
+        "images/logo.png": { base64: "iVBOR/8A" },
+      },
+      pipe_ref: "x.run",
+      include_files: true,
+    });
+  });
+
+  it("sends a large tree by hash, uploading what the runner lacks first", async () => {
+    const tree = memoryTree({ "bundle.mthds": "domain = 'x'", "data/big.txt": bigText("big") });
+    const big = tree.files.find((file) => file.path === "data/big.txt")!;
+    const { calls } = routeFetch((call) => {
+      if (call.url.endsWith("/v1/version")) return jsonResponse(200, WITH_BLOB_STORE);
+      if (call.url.endsWith("/v1/blobs/missing")) {
+        return jsonResponse(200, {
+          missing: [
+            {
+              sha256: big.sha256,
+              size: big.size,
+              upload: { method: "PUT", url: `${STORE_URL}/k?sig=s`, headers: {} },
+            },
+          ],
+        });
+      }
+      if (call.method === "PUT") return new Response(null, { status: 204 });
+      return jsonResponse(200, PIPE_IO_VALID);
+    });
+    await makeClient().pipeIo({ tree, read_scope: "org/acme" });
+    const upload = calls.find((call) => call.method === "PUT")!;
+    const pipeIo = calls.find((call) => call.url === `${BASE_URL}/v1/pipe-io`)!;
+    expect(calls.indexOf(pipeIo)).toBeGreaterThan(calls.indexOf(upload));
+    expect(pipeIo.body).toEqual({
+      files: Object.fromEntries(
+        tree.files.map((file) => [file.path, { sha256: file.sha256, size: file.size }]),
+      ),
+      read_scope: "org/acme",
+    });
+  });
+
+  it("prepares a tree refused as too large again on a fresh handshake and sends it once more", async () => {
+    const tree = memoryTree({ "bundle.mthds": "domain = 'x'" });
+    let versions = 0;
+    let reads = 0;
+    const { calls } = routeFetch((call) => {
+      if (call.url.endsWith("/v1/version")) {
+        versions += 1;
+        return jsonResponse(
+          200,
+          versions === 1
+            ? WITH_BLOB_STORE
+            : { ...WITH_BLOB_STORE, limits: { method_tree: { max_inline_bytes: 4 } } },
+        );
+      }
+      if (call.url.endsWith("/v1/blobs/missing")) return jsonResponse(200, { missing: [] });
+      reads += 1;
+      return reads === 1
+        ? jsonResponse(422, RUNNER_TREE_TOO_LARGE)
+        : jsonResponse(200, PIPE_IO_VALID);
+    });
+    await expect(makeClient().pipeIo({ tree })).resolves.toMatchObject({ is_valid: true });
+    const sends = calls.filter((call) => call.url.endsWith("/v1/pipe-io"));
+    expect(sends).toHaveLength(2);
+    expect((sends[1]!.body as { files: unknown }).files).toEqual({
+      "bundle.mthds": { sha256: tree.files[0]!.sha256, size: 12 },
+    });
+  });
+
+  it("refuses an empty tree before anything is sent", async () => {
+    const { calls } = routeFetch(() => jsonResponse(200, PIPE_IO_VALID));
+    await expect(makeClient().pipeIo({ tree: memoryTree({}) })).rejects.toThrow(
+      EMPTY_METHOD_TREE_MESSAGE,
+    );
     expect(calls).toHaveLength(0);
   });
 });

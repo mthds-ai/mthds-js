@@ -116,7 +116,7 @@ describe("mthds-agent invalid-verdict envelope keeps each item's next step", () 
     );
   });
 
-  it("inputs prints the suggested fix and the missing pipe of an invalid closure", async () => {
+  it("inputs prints the suggested fix and the missing pipe of an invalid method", async () => {
     const runner = {
       type: "api",
       pipeIo: vi.fn().mockResolvedValue({
@@ -127,7 +127,7 @@ describe("mthds-agent invalid-verdict envelope keeps each item's next step", () 
     } as unknown as Runner;
 
     await expect(
-      emitInputsTemplate(runner, { files: [{ content: 'domain = "demo"\n' }] }, undefined, {
+      emitInputsTemplate(runner, { files: { "demo.mthds": 'domain = "demo"\n' } }, undefined, {
         format: "json",
         explicit: false,
       }),

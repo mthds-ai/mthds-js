@@ -106,6 +106,8 @@ function referenceMessage(refusal: Omit<ReferenceRefusal, "message">): string {
         virtual_environment: "a Python virtual environment is never part of a tree",
         nested_repository: `the nested repository${directory} is out of the tree`,
         nested_package: `the nested package${directory} is a tree of its own`,
+        run_inputs:
+          "a file named inputs.json or inputs.toml is a run's inputs, never part of a tree",
         gitignore: "a .gitignore file of the tree excludes it",
         package_exclude: "the manifest's exclude patterns exclude it",
       };

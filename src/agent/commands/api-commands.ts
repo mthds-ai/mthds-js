@@ -834,7 +834,8 @@ async function resolveStartOptions(
   if (!target && !options.content) {
     return { pipe_code: options.pipe, inputs: resolveRunInputs(options), ...outputs, extra };
   }
-  // A directory target's own `inputs.json` is its inputs when none are given.
+  // A directory target's own `inputs.json` is its inputs when none are given. The membership
+  // rule keeps a run's inputs file out of every tree, so it never travels with the method.
   if (target && !options.content && !options.inputs && !options.inputsJson) {
     const candidate = join(target, "inputs.json");
     if (existsSync(target) && statSync(target).isDirectory() && existsSync(candidate)) {

@@ -49,7 +49,7 @@ The CLI will:
 3. If `--method <name>` is provided, install only that method (errors if name not found)
 4. Ask where to install — **local** (current project) or **global** (your machine)
 5. Optionally install a [runner](#runners)
-6. Copy each method's whole tree to `.mthds/methods/<name>/`: its `METHODS.toml`, its `.mthds` files and every other file the MTHDS standard counts as part of the method, such as its Python, templates and images, each with its exact bytes. Hidden files and folders, `__pycache__`, `node_modules`, virtual environments, nested repositories and packages, and whatever a `.gitignore` or the manifest's `exclude` ignores stay behind. The tree is validated whole before it is installed, and a reinstall replaces the method's directory.
+6. Copy each method's whole tree to `.mthds/methods/<name>/`: its `METHODS.toml`, its `.mthds` files and every other file the MTHDS standard counts as part of the method, such as its Python, templates and images, each with its exact bytes. Hidden files and folders, `__pycache__`, `node_modules`, virtual environments, nested repositories and packages, a run's inputs file named `inputs.json` or `inputs.toml`, and whatever a `.gitignore` or the manifest's `exclude` ignores stay behind. The tree is validated whole before it is installed, and a reinstall replaces the method's directory.
 
 You can also install from a local directory:
 

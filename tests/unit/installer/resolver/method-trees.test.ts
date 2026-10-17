@@ -85,6 +85,8 @@ describe("resolveFromLocal", () => {
     write("methods/demo/__pycache__/f.pyc", "x");
     write("methods/demo/sub/METHODS.toml", "[package]\n");
     write("methods/demo/sub/other.mthds", "domain = 'other'\n");
+    write("methods/demo/inputs.json", '{"invoice": "invoice-7.pdf"}\n');
+    write("methods/demo/examples/inputs.toml", 'invoice = "sample.pdf"\n');
 
     const resolved = await resolveFromLocal(repo);
 
@@ -224,6 +226,8 @@ describe("resolveFromGitHub", () => {
       { path: "env/lib/site.py", blob: blob("b-site", "x") },
       { path: "sub/METHODS.toml", blob: blob("b-sub", "[package]\n") },
       { path: "sub/other.mthds", blob: blob("b-other", "domain = 'other'\n") },
+      { path: "inputs.json", blob: blob("b-inputs", '{"invoice": "invoice-7.pdf"}\n') },
+      { path: "examples/inputs.toml", mode: "120000", blob: blob("b-inputs-link", "x.toml") },
       { path: "vendored", type: "commit", mode: "160000" },
     ]);
 
@@ -234,9 +238,36 @@ describe("resolveFromGitHub", () => {
       "METHODS.toml",
       "bundle.mthds",
     ]);
-    for (const sha of ["b-ci", "b-node", "b-venv", "b-site", "b-sub", "b-other"]) {
+    for (const sha of [
+      "b-ci",
+      "b-node",
+      "b-venv",
+      "b-site",
+      "b-sub",
+      "b-other",
+      "b-inputs",
+      "b-inputs-link",
+    ]) {
       expect(asked.some((url) => url.endsWith(`/git/blobs/${sha}`))).toBe(false);
     }
+  });
+
+  it("keeps a case variant of a run's inputs file, which collides with nothing once that file is out", async () => {
+    serve([
+      { path: "METHODS.toml", blob: blob("b-manifest", MANIFEST) },
+      { path: "bundle.mthds", blob: blob("b-bundle", "domain = 'demo'\n") },
+      { path: "inputs.json", blob: blob("b-inputs", "{}\n") },
+      { path: "Inputs.json", blob: blob("b-variant", '{"a": 1}\n') },
+    ]);
+
+    const resolved = await resolveFromGitHub(parsed);
+
+    expect(resolved.skipped).toEqual([]);
+    expect(contents(resolved.methods[0]!)).toEqual({
+      "Inputs.json": bytesOf('{"a": 1}\n'),
+      "METHODS.toml": bytesOf(MANIFEST),
+      "bundle.mthds": bytesOf("domain = 'demo'\n"),
+    });
   });
 
   it("skips a method whose tree holds a symbolic link, as a lister refuses it", async () => {

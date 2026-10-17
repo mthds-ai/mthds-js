@@ -146,6 +146,17 @@ describe("API-runner commands send the method's tree", () => {
       expect(requests[0]!.body.files).toEqual({ "bundle.mthds": ROOT, "child.mthds": CHILD });
     });
 
+    it("reads a directory's own inputs.json as the run's inputs, which never travels with the tree", async () => {
+      writeFileSync(join(method, "inputs.json"), '{"topic": "invoices"}\n');
+
+      await agent("run", "start", method);
+
+      expect(requests).toHaveLength(1);
+      expect(requests[0]!.url).toMatch(/\/v1\/start$/);
+      expect(requests[0]!.body.inputs).toEqual({ topic: "invoices" });
+      expect(requests[0]!.body.files).toEqual({ "bundle.mthds": ROOT, "child.mthds": CHILD });
+    });
+
     it("starts inline --content beside a global -L, which does not apply to it", async () => {
       await agent("-L", shared, "run", "start", "--content", ROOT);
 

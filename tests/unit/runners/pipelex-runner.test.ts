@@ -566,11 +566,11 @@ describe("PipelexRunner", () => {
 
     it("keeps the files a run writes outside the method's directory", async () => {
       mockSpawnExit(0);
-      // A method holding files named like the run's own artifacts keeps them intact.
+      // A method holding files named like the run's own artifacts keeps them intact. No tree holds
+      // an `inputs.json`, which the membership rule keeps out as a run's inputs file.
       await runner.execute({
         files: {
           "bundle.mthds": BUNDLE,
-          "inputs.json": '{"mine": true}',
           "working_memory.json": "{}",
           "results/keep.txt": "kept",
         },
@@ -589,7 +589,7 @@ describe("PipelexRunner", () => {
         expect(artifact.startsWith(`${METHOD_DIR}/`)).toBe(false);
       }
       const writes = mockedWriteFileSync.mock.calls.map((call) => [call[0], call[1]]);
-      expect(writes).toContainEqual([`${METHOD_DIR}/inputs.json`, '{"mine": true}']);
+      expect(writes).toContainEqual([`${METHOD_DIR}/working_memory.json`, "{}"]);
       expect(writes).toContainEqual([
         "/tmp/mthds-test/inputs.json",
         JSON.stringify({ text: { concept: "native.Text", content: "hi" } }),

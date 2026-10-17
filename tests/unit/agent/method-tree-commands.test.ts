@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { Command } from "commander";
@@ -144,6 +144,58 @@ describe("API-runner commands send the method's tree", () => {
       await agent("-L", method, "run", "start", join(method, "child.mthds"));
 
       expect(requests[0]!.body.files).toEqual({ "bundle.mthds": ROOT, "child.mthds": CHILD });
+    });
+
+    it("reads a directory's own inputs.json as the run's inputs, which never travels with the tree", async () => {
+      writeFileSync(join(method, "inputs.json"), '{"topic": "invoices"}\n');
+
+      await agent("run", "start", method);
+
+      expect(requests).toHaveLength(1);
+      expect(requests[0]!.url).toMatch(/\/v1\/start$/);
+      expect(requests[0]!.body.inputs).toEqual({ topic: "invoices" });
+      expect(requests[0]!.body.files).toEqual({ "bundle.mthds": ROOT, "child.mthds": CHILD });
+    });
+
+    // A link found by name could carry JSON from outside the method's folder to the runner.
+    it.each([
+      ["a link to JSON outside the method's folder", "a symbolic link", "outside"],
+      ["a dangling link", "a symbolic link", "dangling"],
+      ["a directory", "not a regular file", "directory"],
+    ])(
+      "refuses a directory's own inputs.json that is %s, starting nothing",
+      async (_what, described, kind) => {
+        const candidate = join(method, "inputs.json");
+        if (kind === "outside") {
+          writeFileSync(join(dir, "elsewhere.json"), '{"topic": "from outside"}\n');
+          symlinkSync(join(dir, "elsewhere.json"), candidate);
+        } else if (kind === "dangling") {
+          symlinkSync(join(dir, "missing.json"), candidate);
+        } else {
+          mkdirSync(candidate);
+        }
+        const start = vi.spyOn(MthdsApiClient.prototype, "start");
+
+        await expect(agent("run", "start", method)).rejects.toThrow("__exit__");
+
+        expect(start).not.toHaveBeenCalled();
+        expect(requests).toHaveLength(0);
+        const error = firstStderrJson();
+        expect(error.error_type).toBe("ArgumentError");
+        expect(String(error.message)).toContain(`'${candidate}'`);
+        expect(String(error.message)).toContain(`it is ${described}`);
+        expect(String(error.message)).toContain("--inputs <path>");
+      },
+    );
+
+    it("reads an inputs file named with --inputs as given, a link included", async () => {
+      writeFileSync(join(dir, "elsewhere.json"), '{"topic": "chosen"}\n');
+      symlinkSync(join(dir, "elsewhere.json"), join(dir, "chosen.json"));
+
+      await agent("run", "start", method, "--inputs", join(dir, "chosen.json"));
+
+      expect(requests).toHaveLength(1);
+      expect(requests[0]!.body.inputs).toEqual({ topic: "chosen" });
     });
 
     it("starts inline --content beside a global -L, which does not apply to it", async () => {

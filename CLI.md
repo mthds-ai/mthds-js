@@ -64,7 +64,7 @@ A method is the tree of files under its root, so its Python, templates, images a
 - a directory sends the tree it belongs to, rooted at the nearest `METHODS.toml` at or above it, else at the directory itself;
 - a `.mthds` file under a `METHODS.toml` sends that manifest's tree, and the file is the bundle that runs;
 - a `.mthds` file with no manifest above it travels alone, with nothing beside it: name its directory, or add a `METHODS.toml`, to send the files beside it;
-- the files the standard leaves out stay behind: hidden files and folders, `__pycache__`, `node_modules`, virtual environments, nested repositories and packages, and whatever a `.gitignore` of the tree or the manifest's `exclude` ignores.
+- the files the standard leaves out stay behind: hidden files and folders, `__pycache__`, `node_modules`, virtual environments, nested repositories and packages, a run's inputs file named `inputs.json` or `inputs.toml` at any depth, and whatever a `.gitignore` of the tree or the manifest's `exclude` ignores.
 
 A request carries one tree, so `-L` cannot add a second one. A library directory inside the tree's root adds nothing. For a `.mthds` file named alone, the outermost library directory holding it becomes the root of its tree, whatever order the `-L` flags come in, so `mthds run bundle ./method/child.mthds -L ./method/` sends the whole directory and runs `child.mthds`, and every other library directory must lie inside that root. Any other library directory is refused with a message saying how to make one tree of the files, or to pass `--runner pipelex`.
 
@@ -283,7 +283,7 @@ mthds validate bundle ./bundle.mthds --pipe my_pipe
 
 ### `mthds files`
 
-List the method tree of a directory or of a `.mthds` file: the files that travel with the method, each with its size, and the tree digest, read from the file system alone, before anything travels. The tree follows the standard's membership rule: a file belongs unless a segment of its path starts with a dot, it lies in a `__pycache__`, `node_modules`, Python virtual environment, nested repository or nested package, or a `.gitignore` file of the tree or the manifest's `[package] exclude` ignores it. A directory or a `.mthds` file is rooted at the nearest `METHODS.toml` at or above it; with none, a directory is its own root and a `.mthds` file named alone is a tree of that one file. See [docs/method-tree.md](docs/method-tree.md).
+List the method tree of a directory or of a `.mthds` file: the files that travel with the method, each with its size, and the tree digest, read from the file system alone, before anything travels. The tree follows the standard's membership rule: a file belongs unless a segment of its path starts with a dot, it lies in a `__pycache__`, `node_modules`, Python virtual environment, nested repository or nested package, it is a run's inputs file, named exactly `inputs.json` or `inputs.toml` at any depth, or a `.gitignore` file of the tree or the manifest's `[package] exclude` ignores it. A directory or a `.mthds` file is rooted at the nearest `METHODS.toml` at or above it; with none, a directory is its own root and a `.mthds` file named alone is a tree of that one file. See [docs/method-tree.md](docs/method-tree.md).
 
 ```bash
 mthds files [path] [OPTIONS]
@@ -565,7 +565,7 @@ mthds install [address] [OPTIONS]
 You must provide either `address` or `--local`, but not both.
 
 The install flow is interactive:
-1. Resolves methods from the address or local directory: each method's whole tree, as the MTHDS standard's lister defines it from the method's directory, so its Python, templates, images and other files come with its `METHODS.toml` and bundles, and the files the standard leaves out (hidden files and folders, `__pycache__`, `node_modules`, virtual environments, nested repositories and packages, and whatever a `.gitignore` or the manifest's `exclude` ignores) stay behind. A method whose tree the standard refuses, such as one holding a symbolic link, is skipped with the reason.
+1. Resolves methods from the address or local directory: each method's whole tree, as the MTHDS standard's lister defines it from the method's directory, so its Python, templates, images and other files come with its `METHODS.toml` and bundles, and the files the standard leaves out (hidden files and folders, `__pycache__`, `node_modules`, virtual environments, nested repositories and packages, a run's inputs file named `inputs.json` or `inputs.toml`, and whatever a `.gitignore` or the manifest's `exclude` ignores) stay behind. A method whose tree the standard refuses, such as one holding a symbolic link, is skipped with the reason.
 2. Displays a summary of found methods, with each one's count of files and of bundles
 3. Checks that the configured runner is healthy, then validates each method's whole tree with it (`pipelex validate bundle` on the pipelex runner, `POST /v1/validate` on the API runner). If validation fails, the install is aborted. If the health check fails, the install goes on without validating and prints `No runner configured — skipping pipe validation`. On the pipelex runner, the health check currently always fails, because it runs `pipelex doctor -g` and `pipelex doctor` has no `-g` option, so methods are installed unvalidated.
 4. Prompts for install location (local `.mthds/methods/` or global `~/.mthds/methods/`)
@@ -922,7 +922,7 @@ mthds-agent share --local ./my-methods --platform x
 
 ### `mthds-agent run method|pipe|bundle`
 
-Execute a pipeline via the pipelex runner. All three subcommands are passthroughs that forward every argument to `pipelex-agent run`, except `--runner`, which `mthds-agent` keeps for itself, so the options are `pipelex-agent run`'s own, and `pipelex-agent run bundle <target> --help` lists them all. On the API runner, `run method` answers `UnsupportedError`, `run pipe` and `run bundle` do not exist, and `run start` submits a run, sending its target's method tree as `validate bundle` does below, and returns its id. `run start` takes `-L` as `validate bundle` does, before or after the subcommand, so `mthds-agent run start ./my_method/child.mthds -L ./my_method/` sends the whole directory and runs `child.mthds`.
+Execute a pipeline via the pipelex runner. All three subcommands are passthroughs that forward every argument to `pipelex-agent run`, except `--runner`, which `mthds-agent` keeps for itself, so the options are `pipelex-agent run`'s own, and `pipelex-agent run bundle <target> --help` lists them all. On the API runner, `run method` answers `UnsupportedError`, `run pipe` and `run bundle` do not exist, and `run start` submits a run, sending its target's method tree as `validate bundle` does below, and returns its id. `run start` takes `-L` as `validate bundle` does, before or after the subcommand, so `mthds-agent run start ./my_method/child.mthds -L ./my_method/` sends the whole directory and runs `child.mthds`. Given a directory and no `--inputs`, `run start` reads the directory's own `inputs.json` as the run's inputs, and that file never travels with the tree, since the standard keeps a run's inputs file out of every tree. Only a regular file is read that way: a symbolic link or anything else named `inputs.json` there is refused with an `ArgumentError` naming its path, so a link can never carry data from outside the method's folder, and `--inputs <path>` reads any file as given.
 
 ```bash
 mthds-agent run method <name> [OPTIONS]
@@ -992,7 +992,7 @@ With the **API runner**, the command posts the method's tree to `POST /v1/valida
 - a directory target sends the tree it belongs to, rooted at the nearest `METHODS.toml` at or above it, else at the directory itself;
 - a `.mthds` file target under a `METHODS.toml` sends that manifest's tree; with no manifest above it, the file travels alone, unless an `-L` directory holds it, which then becomes the root of the tree sent, as in `validate bundle <file> -L <its dir>/`;
 - `--content` sends a one-file tree of its own, under the tree path `bundle.mthds`, to which `-L` does not apply;
-- the files the standard leaves out stay behind: hidden files and folders, `__pycache__`, `node_modules`, virtual environments, nested repositories and packages, and whatever a `.gitignore` of the tree or the manifest's `exclude` ignores;
+- the files the standard leaves out stay behind: hidden files and folders, `__pycache__`, `node_modules`, virtual environments, nested repositories and packages, a run's inputs file named `inputs.json` or `inputs.toml` at any depth, and whatever a `.gitignore` of the tree or the manifest's `exclude` ignores;
 - each diagnostic's `source` names its file by tree path.
 
 A tree of 256 KiB or less travels inside the request; a larger one travels by hash when the runner keeps a blob store, uploading only the files the runner lacks (see [docs/api-runner.md](docs/api-runner.md#sending-a-methods-tree)).

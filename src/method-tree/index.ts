@@ -68,6 +68,7 @@ export {
   DEFAULT_EXCLUDED_DIRECTORY_NAMES,
   GIT_ENTRY_NAME,
   MANIFEST_NAME,
+  RUN_INPUTS_NAMES,
   VENV_MARKER_NAME,
   isExcludedName,
   isValidExcludePattern,

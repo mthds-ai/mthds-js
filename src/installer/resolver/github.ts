@@ -25,6 +25,7 @@ import {
   VENV_MARKER_NAME,
   isDefaultExcludedDirectory,
   isDotSegment,
+  isRunInputsFile,
 } from "../../method-tree/membership.js";
 import { directoriesOf } from "../../method-tree/tree-path.js";
 import { caseFold } from "../../method-tree/case-folding.js";
@@ -151,8 +152,9 @@ type GitHubContent = GitHubContentFile | GitHubContentDir;
  * The blobs of a method's git tree that can be members of its tree, the rest left unread: a path
  * under a directory starting with a dot, a `__pycache__` or `node_modules` directory, or a
  * directory below the root that a `pyvenv.cfg` file or link marks as a virtual environment or a
- * `METHODS.toml` file as a package of its own, and a dotted file other than a `.gitignore`. These
- * the rule excludes whatever else the tree holds. What is left goes to the lister, which applies
+ * `METHODS.toml` file as a package of its own, a dotted file other than a `.gitignore`, and a run's
+ * inputs file, named `inputs.json` or `inputs.toml`, which every blob of either name is, a file or
+ * a link alike. These the rule excludes whatever else the tree holds. What is left goes to the lister, which applies
  * the whole rule, `.gitignore` files and the manifest's `exclude` included. A submodule is a
  * repository of its own and never part of a tree.
  */
@@ -178,6 +180,7 @@ function memberCandidates(entries: readonly GitTreeEntry[]): GitTreeEntry[] {
       return false;
     }
     if (isDotSegment(name) && name !== GITIGNORE_NAME) return false;
+    if (isRunInputsFile(name, blob.mode === GIT_SYMLINK_MODE ? "symlink" : "file")) return false;
     return !directoriesOf(blob.path).some((directory) => markedDirectories.has(directory));
   });
 }

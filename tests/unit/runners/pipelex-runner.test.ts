@@ -461,6 +461,16 @@ describe("PipelexRunner", () => {
       expect(mockedSpawn).not.toHaveBeenCalled();
     });
 
+    it("refuses a map holding a name no tree holds, which pipelex would read as the run's inputs", async () => {
+      for (const key of ["inputs.json", ".env"]) {
+        await expect(
+          runner.execute({ files: { "bundle.mthds": BUNDLE, [key]: '{"leaked": true}' } }),
+        ).rejects.toThrow(new RegExp(`'${key.replace(/\./g, "\\.")}', a name the membership rule`));
+      }
+      expect(mockedWriteFileSync).not.toHaveBeenCalled();
+      expect(mockedSpawn).not.toHaveBeenCalled();
+    });
+
     it("refuses files beside a tree, two forms of one method", async () => {
       await expect(
         runner.execute({

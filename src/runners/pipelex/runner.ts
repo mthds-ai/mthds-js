@@ -48,7 +48,7 @@ async function methodDirectory(
   else files = source.files ?? undefined;
   if (files === undefined) return undefined;
   const directory = join(scratch, METHOD_DIR_NAME);
-  materializeMethodFiles(directory, files);
+  await materializeMethodFiles(directory, files);
   return directory;
 }
 

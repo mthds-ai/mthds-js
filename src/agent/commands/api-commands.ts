@@ -6,7 +6,7 @@
  */
 
 import { Command, Option } from "commander";
-import { existsSync, readFileSync, statSync } from "node:fs";
+import { existsSync, lstatSync, readFileSync, statSync, type Stats } from "node:fs";
 import { join } from "node:path";
 import {
   agentError,
@@ -20,6 +20,7 @@ import { isApiRunner } from "../../cli/commands/utils.js";
 import { MethodTargetError, resolveMethodTarget } from "../../runners/method-target.js";
 import type { ResolvedMethodTarget } from "../../runners/method-target.js";
 import { MethodTreeError } from "../../method-tree/exceptions.js";
+import { readMember } from "../../method-tree/file-reading.js";
 import type { PipeIORequest, PipeIOResponse, Runner } from "../../runners/types.js";
 import { PIPE_SELECTION_ERROR_TYPES } from "../../runners/types.js";
 import {
@@ -497,6 +498,63 @@ function parseJsonOrError(raw: string, label: string): Record<string, unknown> {
   }
 }
 
+/** The inputs file a directory target is run with when the caller names none. */
+const AUTO_DETECTED_INPUTS_NAME = "inputs.json";
+
+/** Refuse an inputs file found by name that is not a regular file, naming its path. */
+function refuseAutoDetectedInputs(path: string, what: string): never {
+  agentError(
+    `'${path}' was found as the run's inputs because no --inputs was given, but it is ${what}. An inputs file found automatically must be a regular file, so that a link never carries data from outside the method's folder to the runner. Replace it with the file itself, or name the inputs with --inputs <path>.`,
+    "ArgumentError",
+    { error_domain: AGENT_ERROR_DOMAINS.ARGUMENT },
+  );
+  throw new Error("unreachable");
+}
+
+/**
+ * A directory target's own `inputs.json`, parsed, or `undefined` when the directory holds none.
+ * Found by name rather than named by the caller, it is read only when it is a regular file, judged
+ * by `lstat` and opened without following a link, since a link could carry JSON from outside the
+ * method's folder to the runner; the membership rule keeps a link of that name out of the tree
+ * without following it, and the file found beside the tree is held to the same. An inputs file
+ * the caller names with `--inputs` is read as given.
+ */
+async function readAutoDetectedInputs(
+  target: string,
+): Promise<Record<string, unknown> | undefined> {
+  if (!existsSync(target) || !statSync(target).isDirectory()) return undefined;
+  const candidate = join(target, AUTO_DETECTED_INPUTS_NAME);
+  let stats: Stats;
+  try {
+    stats = lstatSync(candidate);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+    agentError(`Cannot read file: ${(err as Error).message}`, "IOError", {
+      error_domain: AGENT_ERROR_DOMAINS.IO,
+    });
+    throw err;
+  }
+  if (stats.isSymbolicLink()) refuseAutoDetectedInputs(candidate, "a symbolic link");
+  if (!stats.isFile()) refuseAutoDetectedInputs(candidate, "not a regular file");
+  let bytes: Buffer | null;
+  try {
+    // Opened without following a link, so a file swapped for one since the `lstat` is refused too.
+    ({ bytes } = await readMember(candidate, AUTO_DETECTED_INPUTS_NAME, target, true));
+  } catch (err) {
+    if (err instanceof MethodTreeError && err.code === "symbolic_link") {
+      refuseAutoDetectedInputs(candidate, "a symbolic link");
+    }
+    if (err instanceof MethodTreeError && err.code === "special_file") {
+      refuseAutoDetectedInputs(candidate, "not a regular file");
+    }
+    agentError(`Cannot read file: ${(err as Error).message}`, "IOError", {
+      error_domain: AGENT_ERROR_DOMAINS.IO,
+    });
+    throw err;
+  }
+  return parseJsonOrError(bytes!.toString("utf-8"), "inputs file");
+}
+
 function readFileOrError(path: string): string {
   try {
     return readFileSync(path, "utf-8");
@@ -834,14 +892,13 @@ async function resolveStartOptions(
   if (!target && !options.content) {
     return { pipe_code: options.pipe, inputs: resolveRunInputs(options), ...outputs, extra };
   }
-  // A directory target's own `inputs.json` is its inputs when none are given. The membership
-  // rule keeps a run's inputs file out of every tree, so it never travels with the method.
-  if (target && !options.content && !options.inputs && !options.inputsJson) {
-    const candidate = join(target, "inputs.json");
-    if (existsSync(target) && statSync(target).isDirectory() && existsSync(candidate)) {
-      options.inputs = candidate;
-    }
-  }
+  // A directory target's own `inputs.json` is its inputs when none are given, read only when it
+  // is a regular file. The membership rule keeps a run's inputs file out of every tree, so it
+  // never travels with the method.
+  const autoDetectedInputs =
+    target && !options.content && !options.inputs && !options.inputsJson
+      ? await readAutoDetectedInputs(target)
+      : undefined;
   // The method's whole tree travels, so its Python, templates and other files reach
   // the runner with its bundles. `--content` is a one-file tree of its own.
   const resolved = await resolveMethodOrError(runner, target, options.content, libraryDirs);
@@ -856,7 +913,7 @@ async function resolveStartOptions(
   return {
     ...resolved.method,
     pipe_code: pipeCode,
-    inputs: resolveRunInputs(options),
+    inputs: autoDetectedInputs ?? resolveRunInputs(options),
     ...outputs,
     extra,
   };

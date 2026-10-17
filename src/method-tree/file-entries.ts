@@ -214,6 +214,37 @@ export async function readFileEntryMapValue(
   return { files, digest: treeDigest(files) };
 }
 
+/**
+ * A JavaScript value as the JSON value it would be written as, keeping every own key of an object,
+ * so a map handed over as an object is judged as the same map sent as text would be. A value JSON
+ * cannot hold, such as `undefined`, becomes `null`, which no file entry is, and a number keeps the
+ * lexeme `JSON.stringify` writes for it.
+ */
+function jsonValueOf(value: unknown): JsonValue {
+  if (typeof value === "string") return { kind: "string", value };
+  if (typeof value === "boolean") return { kind: "boolean", value };
+  if (typeof value === "number") return { kind: "number", lexeme: JSON.stringify(value) };
+  if (Array.isArray(value)) return { kind: "array", items: value.map(jsonValueOf) };
+  if (value !== null && typeof value === "object") {
+    return {
+      kind: "object",
+      pairs: Object.entries(value).map(([key, entry]) => [key, jsonValueOf(entry)] as const),
+    };
+  }
+  return { kind: "null" };
+}
+
+/**
+ * Read a map of file entries handed over as an object, such as a run's `files`, into the tree it
+ * carries, refusing it exactly as `readFileEntryMap` refuses the same map sent as JSON text.
+ */
+export async function readFileEntryObject(
+  files: Readonly<Record<string, unknown>>,
+  blobStore: BlobStore = EMPTY_BLOB_STORE,
+): Promise<ReadTree> {
+  return readFileEntryMapValue(jsonValueOf(files), blobStore);
+}
+
 /** Read a map of file entries from its JSON text into the tree it carries. */
 export async function readFileEntryMap(
   text: string,

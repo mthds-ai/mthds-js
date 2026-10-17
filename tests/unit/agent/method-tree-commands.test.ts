@@ -162,6 +162,15 @@ describe("API-runner commands send the method's tree", () => {
       expect(requests).toHaveLength(0);
       expect(String(firstStderrJson().message)).toContain("outside that tree");
     });
+
+    it("refuses a named bundle whose main_pipe is empty without --pipe, starting nothing", async () => {
+      await expect(
+        agent("run", "start", "--content", 'domain = "demo"\nmain_pipe = ""\n'),
+      ).rejects.toThrow("__exit__");
+
+      expect(requests).toHaveLength(0);
+      expect(String(firstStderrJson().message)).toContain("Could not determine pipe code");
+    });
   });
 
   describe("validate bundle", () => {
@@ -367,6 +376,18 @@ describe("API-runner commands send the method's tree", () => {
       await agent("inputs", "bundle", join(shared, "shared.mthds"));
 
       expect(requests[0]!.body).toEqual({ files: { "shared.mthds": SHARED } });
+    });
+
+    it("sends no malformed pipe_ref for an empty domain or an empty main_pipe", async () => {
+      const emptyDomain = 'domain = ""\nmain_pipe = "go"\n';
+      const emptyMainPipe = 'domain = "demo"\nmain_pipe = ""\n';
+      await agent("inputs", "bundle", "--content", emptyDomain);
+      await agent("inputs", "bundle", "--content", emptyMainPipe);
+
+      expect(requests.map((request) => request.body)).toEqual([
+        { files: { "bundle.mthds": emptyDomain } },
+        { files: { "bundle.mthds": emptyMainPipe } },
+      ]);
     });
 
     it("sends inline --content as a one-file tree with its own pipe, with no handshake", async () => {

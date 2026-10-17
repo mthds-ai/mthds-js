@@ -76,6 +76,21 @@ describe("resolveMethodTarget", () => {
     expect(unreadable.entryPipeRef).toBeUndefined();
   });
 
+  it("reads an empty main_pipe as none, and qualifies nothing with an empty domain", async () => {
+    const emptyMainPipe = await resolveMethodTarget(
+      { content: "domain = 'demo'\nmain_pipe = ''\n" },
+      [],
+    );
+    expect(emptyMainPipe.entryMainPipe).toBeUndefined();
+    expect(emptyMainPipe.entryPipeRef).toBeUndefined();
+    const emptyDomain = await resolveMethodTarget(
+      { content: "domain = ''\nmain_pipe = 'go'\n" },
+      [],
+    );
+    expect(emptyDomain.entryMainPipe).toBe("go");
+    expect(emptyDomain.entryPipeRef).toBeUndefined();
+  });
+
   it("roots a lone file at a library directory holding it, so the files beside it travel", async () => {
     const file = write("m/sub/child.mthds", "domain = 'm'\nmain_pipe = 'child_run'\n");
     write("m/root.mthds", "domain = 'm'\n");

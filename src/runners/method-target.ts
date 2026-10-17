@@ -147,15 +147,19 @@ export async function resolveMethodTarget(
   return { method: { tree }, entry, ...entryPipe };
 }
 
-/** The entry pipe a named bundle declares, bare and qualified with its domain, from its text. */
+/**
+ * The entry pipe a named bundle declares, bare and qualified with its domain, from its text. An
+ * empty `domain` or `main_pipe` declares nothing: an empty `main_pipe` is no entry pipe, so a run
+ * without `--pipe` still refuses the bundle, and neither ever yields a malformed ref such as
+ * `demo.` or `.go`.
+ */
 function entryPipeOf(
   text: string | null,
 ): Pick<ResolvedMethodTarget, "entryMainPipe" | "entryPipeRef"> {
   const { domain, mainPipe } = text === null ? {} : readBundleMeta(text);
   return {
-    entryMainPipe: mainPipe,
-    entryPipeRef:
-      domain !== undefined && mainPipe !== undefined ? `${domain}.${mainPipe}` : undefined,
+    entryMainPipe: mainPipe || undefined,
+    entryPipeRef: domain && mainPipe ? `${domain}.${mainPipe}` : undefined,
   };
 }
 

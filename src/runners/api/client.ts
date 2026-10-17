@@ -106,11 +106,11 @@ const SHA256_HEX = /^[0-9a-f]{64}$/;
 export const HANDSHAKE_TTL_MS = 5 * 60_000;
 
 /**
- * How a runner refuses a tree past one of its limits, on a run or a validation. The standard
- * asks for "a problem naming the limit" and pins no member to recognize it by, so the client
- * reads the two runners that send one: the hosted platform's problem `code` (with its `limit:
- * {name, value, reached}`), and pipelex-api's `error_type`, which the platform also relays when
- * the runner behind it refuses the tree.
+ * How a runner refuses a tree past one of its limits, on a run, a validation or a pipe I/O
+ * read. The standard asks for "a problem naming the limit" and pins no member to recognize it
+ * by, so the client reads the two runners that send one: the hosted platform's problem `code`
+ * (with its `limit: {name, value, reached}`), and pipelex-api's `error_type`, which the platform
+ * also relays when the runner behind it refuses the tree.
  */
 const METHOD_TREE_TOO_LARGE_CODE = "method_tree_too_large";
 const METHOD_TREE_TOO_LARGE_ERROR_TYPE = "MethodTreeTooLarge";
@@ -144,8 +144,9 @@ type ReadBytes = Map<string, Uint8Array>;
  *   optional blob routes (`findMissingBlobs`, `uploadBlob`) when the runner
  *   declares a blob store and the tree is large.
  * - **`pipeIo`** (`/v1/pipe-io`) — a Pipelex API extension carrying the standard's
- *   I/O artifacts. It lives on this class and not on `Runner`: the local pipelex
- *   runner shells out and has no use for it.
+ *   I/O artifacts, which takes the method's tree as the protocol routes do. It lives
+ *   on this class and not on `Runner`: the local pipelex runner shells out and has
+ *   no use for it.
  *
  * The durable run-lifecycle (poll a run by id: `getRunStatus` / `getRunResult` /
  * `waitForResult` / `startAndWaitForResult`) is NOT part of this client — it now
@@ -545,8 +546,8 @@ export class MthdsApiClient implements Runner {
    * (`INLINE_TREE_MAX_BYTES`) and no more than the inline limit the runner
    * announces; otherwise every file travels by hash, after
    * `POST /v1/blobs/missing` with the tree's digest and the upload of each blob it
-   * names. `execute`, `start` and `validate` call it for a `tree`; a caller building
-   * its own request calls it directly.
+   * names. `execute`, `start`, `validate` and `pipeIo` call it for a `tree`; a
+   * caller building its own request calls it directly.
    */
   async prepareMethodFiles(tree: MethodTreeSource): Promise<MethodFiles> {
     assertOneMethodSource({ tree });
@@ -699,8 +700,8 @@ export class MthdsApiClient implements Runner {
   /**
    * Post a request carrying a method: prepare its `files` (a `tree` sent inline or by
    * hash, a `files` map as given), post it, and answer a `422` naming `missing_blobs`
-   * (see `postWithBlobRetry`). When a run or a validation refuses a tree the client
-   * prepared as past one of the runner's limits (`isMethodTreeTooLarge`), the limits the
+   * (see `postWithBlobRetry`). When a run, a validation or a pipe I/O read refuses a
+   * tree the client prepared as past one of the runner's limits (`isMethodTreeTooLarge`), the limits the
    * handshake announced may be stale, so the client asks the handshake again, prepares
    * the tree as the fresh limits say and sends it once more.
    */
@@ -851,30 +852,48 @@ export class MthdsApiClient implements Runner {
   /**
    * Read a method's three I/O artifacts — `POST /v1/pipe-io`.
    *
-   * Resolves the closure through the server's static core, selects a pipe, and
+   * Resolves the method through the server's static core, selects a pipe, and
    * returns its pipe I/O contracts, input form and output form (the MTHDS standard's
    * artifacts, typed from `mthds/protocol`) beside the resolved `pipe_ref`, the
    * method's own `default_pipe_ref` and the runnability facts. It runs no dry run, so
    * it costs one load and one derivation where `validate` dry-runs every pipe.
    *
+   * The method travels as `validate` sends it: `files`, the map posted as given, or
+   * `tree`, which the client sends inline or by hash (see `prepareMethodFiles`), the
+   * two refused together, as is an empty tree, before anything is sent. A tree sent
+   * by hash and refused with a `422` naming `missing_blobs` is uploaded and resent
+   * once, and a tree refused as too large is prepared again on a fresh handshake and
+   * resent once. A `method_ref` or a `method_id` is posted as given.
+   *
    * Returns a **200 verdict**: pattern-match `is_valid` before reading the arm. A
-   * closure that does not load comes back as `is_valid: false` with
+   * method that does not load comes back as `is_valid: false` with
    * `validation_errors[]`, never as a throw. Only a no-verdict condition throws an
-   * `ApiResponseError`: a malformed selector, an over-limit file and a refused pipe
+   * `ApiResponseError`: a malformed selector, a tree the runner refuses
+   * (`InvalidMethodFiles`, `MissingBlobs`, `MethodTreeTooLarge`) and a refused pipe
    * selection are `422`s (a selection refusal is typed by one of
    * `PIPE_SELECTION_ERROR_TYPES`), a registry-form `method_ref` is a `501`, and an
    * artifact that cannot be derived is a `500`. An unreachable server is an
    * `ApiUnreachableError`.
    *
-   * The request is posted as given, `method_id` included, and the selector XOR is the
-   * server's to enforce. A `method_ref` gets the fetch-sized budget; every other
-   * request gets the static-route one.
+   * The selector XOR between the tree, `method_ref` and `method_id` is the server's
+   * to enforce. A `method_ref` gets the fetch-sized budget; every other request gets
+   * the static-route one.
    */
   async pipeIo(request: PipeIORequest): Promise<PipeIOResponse> {
-    const res = await this.requestRaw("POST", this.url("pipe-io"), {
-      body: request,
-      timeoutMs: crateRequestTimeoutMs(request),
-    });
+    const { files, tree, ...rest } = request;
+    const timeoutMs = crateRequestTimeoutMs(request);
+    let res: RawResponse;
+    if (files == null && tree == null) {
+      res = await this.requestRaw("POST", this.url("pipe-io"), { body: rest, timeoutMs });
+    } else {
+      assertOneMethodSource({ files, tree });
+      res = await this.postMethodRequest(
+        "pipe-io",
+        { files, tree },
+        (prepared) => ({ files: prepared, ...rest }),
+        { timeoutMs },
+      );
+    }
     if (res.status < 200 || res.status >= 300) {
       this.throwApiResponseError("POST", "pipe-io", res);
     }
@@ -1018,7 +1037,7 @@ function nonEmptyString(value: string | null | undefined): string | undefined {
 }
 
 /**
- * The request budget for a crate-route call: the fetch-sized one when the closure
+ * The request budget for a crate-route call: the fetch-sized one when the method
  * is a `method_ref` the server may have to clone first, the static-route one
  * otherwise.
  */

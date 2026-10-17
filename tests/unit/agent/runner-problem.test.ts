@@ -175,7 +175,7 @@ describe("mthds-agent envelope for a runner's refusal", () => {
       ),
     } as unknown as Runner;
     await expect(
-      emitInputsTemplate(runner, { files: [{ content: "x" }] }, "demo.nope", {
+      emitInputsTemplate(runner, { files: { "x.mthds": "x" } }, "demo.nope", {
         format: "json",
         explicit: false,
       }),

@@ -6,13 +6,12 @@ import { Command } from "commander";
 import { registerApiRunnerCommands } from "../../../src/agent/commands/api-commands.js";
 import { MthdsApiClient } from "../../../src/runners/api/client.js";
 
-// On the API runner, `validate` sends the method's tree as the standard's lister defines it, each
-// file under its tree path, and `-L` can only root a lone file's tree at a directory holding it.
-// `inputs` still sends a closure of `.mthds` files, since `/v1/pipe-io` takes no tree: every
-// `.mthds` file of a directory target and of each `-L` directory, the entrypoint first. `-L` must
-// reach the subcommand when written after it, and the graph options, which only the pipelex runner
-// can honour, must be named in a warning rather than swallowed, without keeping the bundle from
-// being validated.
+// On the API runner, `validate`, `run start` and `inputs` send the method's tree as the standard's
+// lister defines it, each file under its tree path, and `-L` can only root a lone file's tree at a
+// directory holding it. `inputs` asks for a named bundle's own `main_pipe`, qualified with its
+// domain, and leaves a directory's pipe to the runner's entry rule. `-L` must reach the subcommand
+// when written after it, and the graph options, which only the pipelex runner can honour, must be
+// named in a warning rather than swallowed, without keeping the bundle from being validated.
 
 const ROOT = 'domain = "demo"\nmain_pipe = "main"\n';
 const CHILD = 'domain = "demo"\nmain_pipe = "step"\n[pipe.step]\ntype = "PipeLLM"\n';
@@ -59,7 +58,7 @@ function pipeIoAnswer(body: Record<string, unknown>): Record<string, unknown> {
   };
 }
 
-describe("API-runner validate sends the method's tree, inputs the whole bundle", () => {
+describe("API-runner commands send the method's tree", () => {
   let dir: string;
   let method: string;
   let shared: string;
@@ -68,7 +67,7 @@ describe("API-runner validate sends the method's tree, inputs the whole bundle",
   let requests: Captured[];
 
   beforeEach(() => {
-    dir = mkdtempSync(join(tmpdir(), "closure-commands-test-"));
+    dir = mkdtempSync(join(tmpdir(), "method-tree-commands-test-"));
     method = join(dir, "method");
     shared = join(dir, "shared");
     mkdirSync(method);
@@ -312,36 +311,33 @@ describe("API-runner validate sends the method's tree, inputs the whole bundle",
   });
 
   describe("inputs bundle", () => {
-    it("sends every file of a directory target and asks for its entry file's pipe", async () => {
+    it("sends a directory target as its tree and leaves the pipe to the runner's entry rule", async () => {
       await agent("inputs", "bundle", method);
 
+      expect(requests).toHaveLength(1);
       expect(requests[0]!.url).toMatch(/\/v1\/pipe-io$/);
-      expect(requests[0]!.body.files).toEqual([
-        { content: ROOT, source: join(method, "bundle.mthds") },
-        { content: CHILD, source: join(method, "child.mthds") },
-      ]);
-      // The child declares a main_pipe too, so the runner's chain alone could not choose.
-      expect(requests[0]!.body.pipe_ref).toBe("demo.main");
+      expect(requests[0]!.body).toEqual({ files: { "bundle.mthds": ROOT, "child.mthds": CHILD } });
     });
 
-    it("leaves the pipe to the runner for a directory holding its entry alone", async () => {
-      await agent("inputs", "bundle", shared);
+    it("roots a named file at the -L directory holding it and asks for its own pipe", async () => {
+      await agent("inputs", "bundle", join(method, "child.mthds"), "-L", method);
 
-      expect(requests[0]!.body.files).toEqual([
-        { content: SHARED, source: join(shared, "shared.mthds") },
-      ]);
-      expect(requests[0]!.body).not.toHaveProperty("pipe_ref");
+      expect(requests[0]!.body).toEqual({
+        files: { "bundle.mthds": ROOT, "child.mthds": CHILD },
+        pipe_ref: "demo.step",
+      });
     });
 
-    it("keeps a named file the entrypoint among the -L files", async () => {
-      const child = join(method, "child.mthds");
-      await agent("inputs", "bundle", child, "-L", method);
+    it("qualifies the named bundle's main_pipe with its own domain, so two domains declaring it are told apart", async () => {
+      const twoDomains = join(dir, "two-domains");
+      mkdirSync(twoDomains);
+      writeFileSync(join(twoDomains, "alpha.mthds"), 'domain = "alpha"\nmain_pipe = "run"\n');
+      writeFileSync(join(twoDomains, "beta.mthds"), 'domain = "beta"\nmain_pipe = "run"\n');
 
-      expect(requests[0]!.body.files).toEqual([
-        { content: CHILD, source: child },
-        { content: ROOT, source: join(method, "bundle.mthds") },
-      ]);
-      expect(requests[0]!.body.pipe_ref).toBe("demo.step");
+      await agent("inputs", "bundle", join(twoDomains, "beta.mthds"), "-L", twoDomains);
+
+      expect(requests[0]!.body.pipe_ref).toBe("beta.run");
+      expect(Object.keys(requests[0]!.body.files as object)).toEqual(["alpha.mthds", "beta.mthds"]);
     });
 
     it("lets --pipe override the named file's main pipe", async () => {
@@ -358,25 +354,80 @@ describe("API-runner validate sends the method's tree, inputs the whole bundle",
       expect(requests[0]!.body).toHaveProperty("pipe_ref", "");
     });
 
-    it("sends a named file alone, with no pipe_ref, when no library directory is given", async () => {
-      const root = join(method, "bundle.mthds");
-      await agent("inputs", "bundle", root);
+    it("sends a named file alone when no library directory holds it, asking for its own pipe", async () => {
+      await agent("inputs", "bundle", join(method, "bundle.mthds"));
 
-      expect(requests[0]!.body.files).toEqual([{ content: ROOT, source: root }]);
-      expect(requests[0]!.body).not.toHaveProperty("pipe_ref");
+      expect(requests[0]!.body).toEqual({
+        files: { "bundle.mthds": ROOT },
+        pipe_ref: "demo.main",
+      });
+    });
+
+    it("leaves the pipe to the runner for a named bundle declaring no main_pipe", async () => {
+      await agent("inputs", "bundle", join(shared, "shared.mthds"));
+
+      expect(requests[0]!.body).toEqual({ files: { "shared.mthds": SHARED } });
+    });
+
+    it("sends inline --content as a one-file tree with its own pipe, with no handshake", async () => {
+      await agent("-L", shared, "inputs", "bundle", "--content", ROOT);
+
+      expect(requests).toHaveLength(1);
+      expect(requests[0]!.body).toEqual({
+        files: { "bundle.mthds": ROOT },
+        pipe_ref: "demo.main",
+      });
+      expect(vi.mocked(globalThis.fetch)).toHaveBeenCalledTimes(1);
+    });
+
+    it("sends the files the membership rule keeps, leaving hidden folders behind", async () => {
+      const broken = 'domain = "broken"\n[pipe.oops\n';
+      mkdirSync(join(method, ".drafts"));
+      writeFileSync(join(method, ".drafts", "broken.mthds"), broken);
+      mkdirSync(join(method, "results"));
+      writeFileSync(join(method, "results", "kept.mthds"), SHARED);
+
+      await agent("inputs", "bundle", method);
+
+      expect(requests[0]!.body.files).toEqual({
+        "bundle.mthds": ROOT,
+        "child.mthds": CHILD,
+        "results/kept.mthds": SHARED,
+      });
+    });
+
+    it("refuses an -L directory outside the tree, sending nothing", async () => {
+      await expect(
+        agent("inputs", "bundle", join(method, "child.mthds"), "-L", method, "-L", shared),
+      ).rejects.toThrow("__exit__");
+
+      expect(requests).toHaveLength(0);
+      expect(firstStderrJson()).toMatchObject({
+        error_type: "ArgumentError",
+        error_domain: "argument",
+      });
+      expect(String(firstStderrJson().message)).toContain("outside that tree");
+    });
+
+    it("reports a missing target as an IOError, sending nothing", async () => {
+      await expect(agent("inputs", "bundle", join(dir, "missing.mthds"))).rejects.toThrow(
+        "__exit__",
+      );
+
+      expect(requests).toHaveLength(0);
+      expect(firstStderrJson()).toMatchObject({ error_type: "IOError", error_domain: "io" });
     });
   });
 
   describe("inputs pipe", () => {
-    it("sends the named file and the -L directory's files", async () => {
+    it("sends the tree of the -L directory holding the named file", async () => {
       const child = join(method, "child.mthds");
       await agent("inputs", "pipe", child, "-L", method);
 
-      expect(requests[0]!.body.files).toEqual([
-        { content: CHILD, source: child },
-        { content: ROOT, source: join(method, "bundle.mthds") },
-      ]);
-      expect(requests[0]!.body.pipe_ref).toBe("demo.step");
+      expect(requests[0]!.body).toEqual({
+        files: { "bundle.mthds": ROOT, "child.mthds": CHILD },
+        pipe_ref: "demo.step",
+      });
       expect(JSON.parse(String(stdoutSpy.mock.calls[0]![0]))).toEqual({
         success: true,
         pipe_ref: "demo.step",
@@ -384,7 +435,7 @@ describe("API-runner validate sends the method's tree, inputs the whole bundle",
       });
     });
 
-    it("renders the closure's template in TOML beside -L", async () => {
+    it("renders the tree's template in TOML beside -L", async () => {
       const child = join(method, "child.mthds");
       await agent("inputs", "pipe", child, "-L", method, "--format", "toml");
 

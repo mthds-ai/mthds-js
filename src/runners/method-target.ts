@@ -1,7 +1,7 @@
 /**
- * What a `run` or `validate` command line names, resolved into the method it sends: one method
- * tree, as the MTHDS standard's lister defines it (`src/method-tree/`), and the bundle the command
- * named inside it.
+ * What a `run`, `validate` or `inputs` command line names, resolved into the method it sends: one
+ * method tree, as the MTHDS standard's lister defines it (`src/method-tree/`), and the bundle the
+ * command named inside it.
  *
  * A directory is listed from its root, found by Manifest Discovery; a `.mthds` file is listed in
  * the tree of the nearest `METHODS.toml` above it, or alone as a one-file tree when there is none,
@@ -35,7 +35,7 @@ export class MethodTargetError extends Error {
   }
 }
 
-/** What a `run` or `validate` command names: a path, or inline `--content`. */
+/** What a `run`, `validate` or `inputs` command names: a path, or inline `--content`. */
 export type MethodTarget = { path: string } | { content: string };
 
 /** A command line's method, as a request carries it. */
@@ -46,6 +46,12 @@ export interface ResolvedMethodTarget {
   readonly entry: string | null;
   /** The `main_pipe` the named bundle declares, when it declares one. */
   readonly entryMainPipe: string | undefined;
+  /**
+   * The named bundle's `main_pipe` qualified with the bundle's own domain
+   * (`domain.main_pipe`), when it declares both: the pipe ref that names it in a tree
+   * where several domains declare the same pipe code.
+   */
+  readonly entryPipeRef: string | undefined;
 }
 
 /**
@@ -72,7 +78,7 @@ export async function resolveMethodTarget(
     return {
       method: { files },
       entry: INLINE_CONTENT_TREE_PATH,
-      entryMainPipe: readBundleMeta(target.content).mainPipe,
+      ...entryPipeOf(target.content),
     };
   }
 
@@ -134,12 +140,23 @@ export async function resolveMethodTarget(
       `The method tree at ${tree.root ?? target.path} holds no .mthds file.`,
     );
   }
-  let entryMainPipe: string | undefined;
+  let entryPipe = entryPipeOf(null);
   if (entry !== null) {
-    const text = utf8TextOf(await tree.readFile(entry));
-    entryMainPipe = text === null ? undefined : readBundleMeta(text).mainPipe;
+    entryPipe = entryPipeOf(utf8TextOf(await tree.readFile(entry)));
   }
-  return { method: { tree }, entry, entryMainPipe };
+  return { method: { tree }, entry, ...entryPipe };
+}
+
+/** The entry pipe a named bundle declares, bare and qualified with its domain, from its text. */
+function entryPipeOf(
+  text: string | null,
+): Pick<ResolvedMethodTarget, "entryMainPipe" | "entryPipeRef"> {
+  const { domain, mainPipe } = text === null ? {} : readBundleMeta(text);
+  return {
+    entryMainPipe: mainPipe,
+    entryPipeRef:
+      domain !== undefined && mainPipe !== undefined ? `${domain}.${mainPipe}` : undefined,
+  };
 }
 
 /** Whether `path` is `directory` or lies below it; both are real paths. */

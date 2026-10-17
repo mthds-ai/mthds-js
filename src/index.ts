@@ -37,7 +37,6 @@ export { PIPE_SELECTION_ERROR_TYPES } from "./runners/types.js";
 export type {
   CrateInvalidReport,
   CrateRequestBase,
-  MthdsFileItem,
   PipeIORequest,
   PipeIOResponse,
   PipeIOValidReport,

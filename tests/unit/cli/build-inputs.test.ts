@@ -5,8 +5,9 @@ import { join } from "node:path";
 
 // `mthds build inputs pipe` on the API runner reads the pipe's input form from
 // `POST /v1/pipe-io` and projects the template locally, as `mthds-agent inputs`
-// does. These tests pin the request it sends, the rendering on both axes against the
-// shared projection corpus, and the answer that contradicts itself.
+// does. These tests pin the method's tree and the pipe it asks for, the rendering on
+// both axes against the shared projection corpus, and the answer that contradicts
+// itself.
 
 // ── Mocks ────────────────────────────────────────────────────────────
 
@@ -33,7 +34,7 @@ import * as p from "@clack/prompts";
 import { createRunner } from "../../../src/runners/registry.js";
 import { buildInputsPipe } from "../../../src/cli/commands/build.js";
 import type { InputForm } from "../../../src/protocol/input_form.js";
-import type { PipeIOValidReport, Runner } from "../../../src/runners/types.js";
+import type { PipeIORequest, PipeIOValidReport, Runner } from "../../../src/runners/types.js";
 
 const CORPUS_URL = new URL("../../fixtures/protocol/", import.meta.url);
 const INPUT_FORM = JSON.parse(
@@ -79,7 +80,22 @@ beforeEach(() => {
 });
 
 function useApiRunner(pipeIo: ReturnType<typeof vi.fn>): void {
-  vi.mocked(createRunner).mockReturnValue({ type: "api", pipeIo } as unknown as Runner);
+  vi.mocked(createRunner).mockReturnValue({
+    type: "api",
+    pipeIo,
+    methodTreeLimits: vi.fn().mockResolvedValue({}),
+  } as unknown as Runner);
+}
+
+/** The tree paths and the pipe selector of the one request `pipeIo` received. */
+function sent(pipeIo: ReturnType<typeof vi.fn>): { paths: string[]; pipeRef: unknown } {
+  expect(pipeIo).toHaveBeenCalledTimes(1);
+  const request = pipeIo.mock.calls[0]![0] as PipeIORequest;
+  expect(request).not.toHaveProperty("files");
+  return {
+    paths: request.tree!.files.map((file) => file.path),
+    pipeRef: "pipe_ref" in request ? request.pipe_ref : "(absent)",
+  };
 }
 
 function infoLines(): string[] {
@@ -91,39 +107,59 @@ function errorLines(): string[] {
 }
 
 describe("mthds build inputs pipe on the API runner", () => {
-  it("sends the bundle and the pipe ref to pipeIo, labelled with its path", async () => {
+  it("sends a bundle with no manifest above it as a one-file tree, with the pipe asked for", async () => {
     const pipeIo = vi.fn().mockResolvedValue(validReport());
     useApiRunner(pipeIo);
 
     await buildInputsPipe(bundlePath, { pipe: PIPE_REF });
 
-    expect(pipeIo).toHaveBeenCalledWith({
-      files: [{ content: BUNDLE, source: bundlePath }],
-      pipe_ref: PIPE_REF,
-    });
+    expect(sent(pipeIo)).toEqual({ paths: ["probe.mthds"], pipeRef: PIPE_REF });
   });
 
-  it("sends the -L directory's files after the bundle and asks for the bundle's main pipe", async () => {
-    const libraryDir = join(workDir, "library");
-    mkdirSync(libraryDir, { recursive: true });
-    const sibling = 'domain = "other"\nmain_pipe = "elsewhere"\n';
-    writeFileSync(join(libraryDir, "other.mthds"), sibling);
-    const entry = join(workDir, "entry.mthds");
-    const entryBundle = 'domain = "input_semantics_probe"\nmain_pipe = "probe_markers"\n';
-    writeFileSync(entry, entryBundle);
+  it("roots the bundle at the -L directory holding it and asks for its own main pipe, qualified", async () => {
+    const method = join(workDir, "method");
+    mkdirSync(join(method, "funcs"), { recursive: true });
+    writeFileSync(join(method, "other.mthds"), 'domain = "other"\nmain_pipe = "probe_markers"\n');
+    writeFileSync(join(method, "funcs", "f.py"), "def f(): ...\n");
+    const entry = join(method, "entry.mthds");
+    writeFileSync(entry, 'domain = "input_semantics_probe"\nmain_pipe = "probe_markers"\n');
     const pipeIo = vi.fn().mockResolvedValue(validReport());
     useApiRunner(pipeIo);
 
-    await buildInputsPipe(entry, { libraryDir: [libraryDir] });
+    await buildInputsPipe(entry, { libraryDir: [method] });
 
-    // Both files declare a main_pipe, so the runner's chain alone could not choose.
-    expect(pipeIo).toHaveBeenCalledWith({
-      files: [
-        { content: entryBundle, source: entry },
-        { content: sibling, source: join(libraryDir, "other.mthds") },
-      ],
-      pipe_ref: PIPE_REF,
+    // Both bundles declare `probe_markers`, so only the domain tells the entry's apart.
+    expect(sent(pipeIo)).toEqual({
+      paths: ["entry.mthds", "funcs/f.py", "other.mthds"],
+      pipeRef: PIPE_REF,
     });
+  });
+
+  it("leaves a directory's pipe to the runner's entry rule", async () => {
+    const method = join(workDir, "folder");
+    mkdirSync(method, { recursive: true });
+    writeFileSync(join(method, "main.mthds"), 'domain = "input_semantics_probe"\n');
+    const pipeIo = vi.fn().mockResolvedValue(validReport());
+    useApiRunner(pipeIo);
+
+    await buildInputsPipe(method, {});
+
+    expect(sent(pipeIo)).toEqual({ paths: ["main.mthds"], pipeRef: "(absent)" });
+  });
+
+  it("refuses an -L directory that does not hold the bundle, sending nothing", async () => {
+    const elsewhere = join(workDir, "elsewhere");
+    mkdirSync(elsewhere, { recursive: true });
+    writeFileSync(join(elsewhere, "lib.mthds"), 'domain = "lib"\n');
+    const pipeIo = vi.fn();
+    useApiRunner(pipeIo);
+
+    await expect(buildInputsPipe(bundlePath, { libraryDir: [elsewhere] })).rejects.toThrow(
+      "__exit__",
+    );
+
+    expect(pipeIo).not.toHaveBeenCalled();
+    expect(errorLines()[0]).toContain("named alone");
   });
 
   it.each([

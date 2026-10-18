@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { runProtocolValidate } from "../../../src/agent/commands/api-commands.js";
+import { chooseErrorFormat } from "../../../src/agent/output.js";
 import type { Runner } from "../../../src/runners/types.js";
 import type { ValidationResult } from "../../../src/protocol/models.js";
 import { outcomeNotes, resetOutcomeNotes } from "../../../src/usage-stats/outcome.js";
@@ -29,7 +30,7 @@ const INVALID_WITH_MD: ValidationResult = {
   message: "Bundle is invalid",
   pending_signatures: [],
   is_runnable: false,
-  validation_errors: [{ category: "blueprint_validation", message: "boom" } as never],
+  errors: [{ code: "method.syntax", detail: "The method does not parse (boom)." }],
   rendered_markdown: "# Validation failed\n\nboom",
 } as ValidationResult;
 
@@ -48,6 +49,7 @@ describe("runProtocolValidate — --format handling", () => {
   });
 
   afterEach(() => {
+    chooseErrorFormat(undefined);
     vi.restoreAllMocks();
   });
 
@@ -96,6 +98,13 @@ describe("runProtocolValidate — --format handling", () => {
       ).rejects.toThrow("__exit__");
       const written = String(stderrSpy.mock.calls[0]![0]);
       expect(written.startsWith("{")).toBe(errorFormat === "json");
+      if (errorFormat === "json") {
+        expect(JSON.parse(written)).toMatchObject({
+          code: "method.invalid",
+          is_valid: false,
+          errors: [{ code: "method.syntax" }],
+        });
+      }
       expect(domainsAtExit[0]).toBe("input");
     },
   );

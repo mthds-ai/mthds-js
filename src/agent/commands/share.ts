@@ -3,11 +3,16 @@
  * Resolves methods and returns share URLs for social media — no browser opening.
  */
 
-import { agentSuccess, agentError, AGENT_ERROR_DOMAINS } from "../output.js";
+import { agentSuccess, agentError, agentProblem } from "../output.js";
+import {
+  noUsableMethodProblem,
+  resolveFailureProblem,
+  unusableMethodProblem,
+} from "../problems.js";
 import { parseAddress } from "../../installer/resolver/address.js";
 import { resolveFromGitHub } from "../../installer/resolver/github.js";
 import { resolveFromLocal } from "../../installer/resolver/local.js";
-import { describeUnusableMethod, skippedMethodReports } from "../../installer/resolver/skipped.js";
+import { skippedMethodReports } from "../../installer/resolver/skipped.js";
 import { buildShareUrls } from "../../cli/commands/share.js";
 import type { SharePlatform } from "../../cli/commands/share.js";
 import type { ResolvedRepo } from "../../package/manifest/types.js";
@@ -25,15 +30,23 @@ export async function agentShare(
   options: AgentShareOptions,
 ): Promise<void> {
   if (address && options.local) {
-    agentError("Cannot use both an address and --local at the same time.", "ArgumentError", {
-      error_domain: AGENT_ERROR_DOMAINS.ARGUMENT,
-    });
+    agentError(
+      agentProblem(
+        "client.argument_invalid",
+        { argument: "--local", reason: "conflicts_with_address" },
+        "Cannot use both an address and --local at the same time.",
+      ),
+    );
   }
 
   if (!address && !options.local) {
-    agentError("Provide an address (org/repo) or use --local <path>.", "ArgumentError", {
-      error_domain: AGENT_ERROR_DOMAINS.ARGUMENT,
-    });
+    agentError(
+      agentProblem(
+        "client.argument_invalid",
+        { argument: "address", reason: "missing" },
+        "Provide an address (org/repo) or use --local <path>.",
+      ),
+    );
   }
 
   // Checked here rather than after the resolve: an argument the caller spelled
@@ -43,9 +56,11 @@ export async function agentShare(
   for (const platform of platforms) {
     if (!VALID_PLATFORMS.includes(platform)) {
       agentError(
-        `Invalid platform "${platform}". Valid platforms: ${VALID_PLATFORMS.join(", ")}`,
-        "ArgumentError",
-        { error_domain: AGENT_ERROR_DOMAINS.ARGUMENT },
+        agentProblem(
+          "client.argument_invalid",
+          { argument: "--platform", reason: "unknown_value" },
+          `Invalid platform "${platform}". Valid platforms: ${VALID_PLATFORMS.join(", ")}`,
+        ),
       );
     }
   }
@@ -60,9 +75,13 @@ export async function agentShare(
     try {
       resolved = await resolveFromLocal(options.local);
     } catch (err) {
-      agentError(`Failed to resolve local methods: ${(err as Error).message}`, "ShareError", {
-        error_domain: AGENT_ERROR_DOMAINS.INSTALL,
-      });
+      agentError(
+        resolveFailureProblem(
+          err,
+          options.local!,
+          `Failed to resolve local methods: ${(err as Error).message}`,
+        ),
+      );
     }
     if (resolved.methods.length > 0) {
       const addr = resolved.methods[0]!.manifest.package.address;
@@ -73,31 +92,42 @@ export async function agentShare(
     try {
       parsed = parseAddress(address);
     } catch (err) {
-      agentError((err as Error).message, "ShareError", {
-        error_domain: AGENT_ERROR_DOMAINS.INSTALL,
-      });
+      agentError(
+        agentProblem(
+          "client.argument_invalid",
+          { argument: "address", reason: "invalid_address" },
+          (err as Error).message,
+        ),
+      );
     }
 
     try {
       resolved = await resolveFromGitHub(parsed);
     } catch (err) {
-      agentError(`Failed to resolve methods: ${(err as Error).message}`, "ShareError", {
-        error_domain: AGENT_ERROR_DOMAINS.INSTALL,
-      });
+      agentError(
+        resolveFailureProblem(
+          err,
+          address!,
+          `Failed to resolve methods: ${(err as Error).message}`,
+        ),
+      );
     }
     orgRepo = `${parsed.org}/${parsed.repo}`;
   } else {
-    agentError("No address or local path provided.", "ArgumentError", {
-      error_domain: AGENT_ERROR_DOMAINS.ARGUMENT,
-    });
+    agentError(
+      agentProblem(
+        "client.argument_invalid",
+        { argument: "address", reason: "missing" },
+        "No address or local path provided.",
+      ),
+    );
   }
 
   // Filter by --method
   if (methodFilter) {
     const match = resolved.methods.find((m) => m.name === methodFilter);
     if (!match) {
-      agentError(describeUnusableMethod(resolved, methodFilter), "ShareError", {
-        error_domain: AGENT_ERROR_DOMAINS.INSTALL,
+      agentError(unusableMethodProblem(resolved, methodFilter), {
         skipped_methods: skippedMethodReports(resolved),
       });
     }
@@ -105,10 +135,10 @@ export async function agentShare(
   }
 
   if (resolved.methods.length === 0) {
-    agentError("No valid methods to share.", "ShareError", {
-      error_domain: AGENT_ERROR_DOMAINS.INSTALL,
-      skipped_methods: skippedMethodReports(resolved),
-    });
+    agentError(
+      noUsableMethodProblem(resolved, address ?? options.local!, "No valid methods to share."),
+      { skipped_methods: skippedMethodReports(resolved) },
+    );
   }
 
   const allUrls = buildShareUrls({

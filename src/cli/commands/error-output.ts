@@ -1,98 +1,56 @@
-import { ApiResponseError } from "../../runners/api/exceptions.js";
-
 /**
- * How the `mthds` CLI reads each `error_domain` of a runner's problem document
- * to the person at the terminal: whose move the fix is.
+ * What the `mthds` CLI prints for a failure: the problem's plain-line rendering
+ * (`renderProblemLines`), which states its title and detail, the command's own sentence, the next
+ * step, the code with its domain and retry verdict, the request id and the run when it names
+ * them (the request id of the answer's header when the problem names none), and every item of its
+ * `errors` with its suggested fix. For an answer of the runtime that is not the route's result, the
+ * route and the status come before the next step, and so does what the server said when the body
+ * is no problem document, which no member of the problem holds. Every error the runners and the
+ * client raise carries a problem; any other error prints its message alone.
  */
-const ERROR_DOMAIN_READINGS: Record<string, string> = {
-  input: "the request must change",
-  config: "the runner's configuration must change, not the request",
-  runtime: "a failure on the runner's side, not in the request",
-};
 
-/**
- * The text the `mthds` CLI prints for a failed command: the error's message
- * and, when a runner answered with a problem document, what it said about the
- * failure — the validation items of a refusal that lists them (a run route
- * refusing an invalid method), each with its locators and suggested fix, then
- * who can fix it (the error domain), the next step, whether a retry can
- * succeed, and the request id to quote to support. A member the runner did not
- * send prints nothing; any error other than an `ApiResponseError` prints its
- * message alone.
- */
+import { ProblemError, reportedProblem } from "../../problems/errors.js";
+import { formatItem, formatSuggestedFix, renderProblemLines } from "../../problems/render.js";
+import { CORE_REGISTRY } from "../../problems/registry.generated.js";
+import type { ProblemItem } from "../../problems/types.js";
+import { serverAnswerOf } from "../../runners/api/exceptions.js";
+
+/** The text the `mthds` CLI prints for a failed command. */
 export function formatCliError(err: unknown): string {
-  const message = err instanceof Error ? err.message : String(err);
-  if (!(err instanceof ApiResponseError)) return message;
-  const lines = [message];
-  // The items come off the wire, so a version-skewed payload may hold anything:
-  // keep only real objects, as the Codex hook does with its envelope.
-  const items: unknown[] = Array.isArray(err.validationErrors) ? err.validationErrors : [];
-  for (const item of items) {
-    if (typeof item === "object" && item !== null) lines.push(formatValidationItem(item));
+  if (err instanceof ProblemError) {
+    return renderProblemLines(reportedProblem(err), answerLines(err)).join("\n");
   }
-  if (err.errorDomain) {
-    const reading = ERROR_DOMAIN_READINGS[err.errorDomain];
-    lines.push(`Error domain: ${err.errorDomain}${reading ? ` (${reading})` : ""}`);
-  }
-  if (err.userAction) lines.push(`Next step: ${err.userAction.detail}`);
-  if (err.retryable !== undefined) lines.push(`Retryable: ${err.retryable ? "yes" : "no"}`);
-  if (err.requestId) lines.push(`Request id: ${err.requestId} (quote it to support)`);
-  return lines.join("\n");
-}
-
-/** The locators a printed validation item names, in order, each with its label. */
-const ITEM_LOCATORS: ReadonlyArray<readonly [string, string]> = [
-  ["pipe_code", "pipe"],
-  ["concept_code", "concept"],
-  ["domain_code", "domain"],
-  ["field_name", "field"],
-  ["missing_pipe_code", "missing pipe"],
-  ["missing_concept_code", "missing concept"],
-  ["source", "source"],
-];
-
-/**
- * One validation item as a list line: `- [<category>] <message> (<locators>)`, the
- * locators being the pipe, concept, domain, field, missing pipe or concept and source
- * the item carries, followed by its suggested fix when it has one ({@link withSuggestedFix}).
- * It is the one way a list of items is printed — the `mthds` CLI's refusal of a run and
- * the Codex hook's blocking reason — so the person and the agent read the same item.
- *
- * The item is read loosely, as it may come from a version-skewed payload: a field the
- * item does not carry is left out, and any other value prints as it came.
- */
-export function formatValidationItem(item: object): string {
-  const fields = item as Record<string, unknown>;
-  const locators = ITEM_LOCATORS.filter(([key]) => fields[key])
-    .map(([key, label]) => `${label}: ${String(fields[key])}`)
-    .join(", ");
-  const category = fields.category ? `[${String(fields.category)}] ` : "";
-  const message = String(fields.message ?? "");
-  return withSuggestedFix(`- ${category}${message}${locators ? ` (${locators})` : ""}`, item);
+  return err instanceof Error ? err.message : String(err);
 }
 
 /**
- * A printed validation item followed by its suggested fix: the item's `line`, then
- * `Suggested fix: <description>` indented two spaces past it, when the item carries a
- * `suggested_fix` with a description. It is the one way every surface prints a fix
- * under an item — the `mthds` CLI's `validate`, `build`, `install` and `run`, and the
- * Codex hook's blocking reason — so the person and the agent read the same next step.
- *
- * The item is read defensively, as it may come from a version-skewed payload: an item
- * with no fix, a `suggested_fix` that is not an object, or a description that is not a
- * non-blank string leaves the line alone.
+ * What an answer of the runtime says beside its problem (`serverAnswerOf`): the route that answered
+ * and its status, then the start of its body when the body is no problem document, as the error's
+ * own message quotes it. Nothing for an error that is no answer.
  */
-export function withSuggestedFix(line: string, item: unknown): string {
-  const description = suggestedFixDescription(item);
-  if (!description) return line;
-  const indent = /^\s*/.exec(line)?.[0] ?? "";
-  return `${line}\n${indent}  Suggested fix: ${description}`;
+function answerLines(err: ProblemError): string[] {
+  const answer = serverAnswerOf(err);
+  if (answer === undefined) return [];
+  const status = answer.statusText ? `${answer.status} ${answer.statusText}` : `${answer.status}`;
+  const lines = [`${answer.route} failed (${status}).`];
+  if (answer.excerpt !== undefined) lines.push(`The server answered: ${answer.excerpt}`);
+  return lines;
 }
 
-function suggestedFixDescription(item: unknown): string | undefined {
-  if (!item || typeof item !== "object") return undefined;
-  const fix = (item as { suggested_fix?: unknown }).suggested_fix;
-  if (!fix || typeof fix !== "object") return undefined;
-  const description = (fix as { description?: unknown }).description;
-  return typeof description === "string" && description.trim() ? description.trim() : undefined;
+/** The sentence an invalid verdict opens with: its own `message`, else the title of `method.invalid`. */
+export function verdictSummary(message: string | undefined): string {
+  return message ?? CORE_REGISTRY["method.invalid"].title;
+}
+
+/**
+ * One item of a verdict as list lines: `- <code>: <detail> (<location>)`, then its suggested
+ * fix indented two spaces past it when it has one. It is the one way the `mthds` CLI prints an
+ * item, in `validate`, `build` and `install`, so each reads the same as in a refusal's rendering.
+ */
+export function formatItemLines(item: ProblemItem, indent = ""): string[] {
+  const lines = [`${indent}- ${formatItem(item)}`];
+  if (item.suggested_fix !== undefined) {
+    lines.push(`${indent}  ${formatSuggestedFix(item.suggested_fix)}`);
+  }
+  return lines;
 }

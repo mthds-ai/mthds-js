@@ -1,8 +1,8 @@
 /**
  * How `MthdsApiClient` sends a method's tree (mthds/docs/spec/protocol.md, "Method files" and
  * "Sending files by hash"): the wire shape of `files` on `/execute`, `/start`, `/validate` and
- * `/pipe-io`, the `/blobs/missing` exchange, the uploads, and the resend after a `422` naming
- * `missing_blobs`.
+ * `/pipe-io`, the `/blobs/missing` exchange, the uploads, and the resend after a `422`
+ * `request.blobs_missing` problem listing them in its `missing_blobs` parameter.
  */
 
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
@@ -142,6 +142,37 @@ const RUNNER_TREE_TOO_LARGE = {
   error_domain: "input",
   retryable: false,
 };
+
+/**
+ * A tree past a limit, as the runner refuses it in the problem shape (`ensure_within_tree_limits`):
+ * `method.package_invalid` naming the rule and the limit it reached.
+ */
+const RUNNER_PACKAGE_TOO_LARGE = {
+  type: "https://mthds.ai/errors/method.package_invalid",
+  title: "The method's package breaks a package rule",
+  status: 422,
+  detail: "The method's tree holds 30 bytes, past this runner's limit of 4 KiB for a method tree.",
+  code: "method.package_invalid",
+  domain: "method",
+  retry: "no",
+  next_step: { kind: "fix_method", detail: "Make the method's tree smaller." },
+  params: { reason: "tree_too_large", limit: 4096 },
+};
+
+/** The runner's refusal of a request naming blobs it does not hold, `request.blobs_missing`. */
+function blobsMissing(hashes: readonly string[]): Record<string, unknown> {
+  return {
+    type: "https://mthds.ai/errors/request.blobs_missing",
+    title: "The runner does not hold some files sent by hash",
+    status: 422,
+    detail: "The runner does not hold every blob the request names.",
+    code: "request.blobs_missing",
+    domain: "input",
+    retry: "no",
+    next_step: { kind: "change_input", detail: "Upload the missing blobs, then send again." },
+    params: { missing_blobs: [...hashes] },
+  };
+}
 
 function bigText(label: string): string {
   return `# ${label}\n` + "x".repeat(INLINE_TREE_MAX_BYTES);
@@ -486,12 +517,7 @@ describe("sending a tree by hash", () => {
       if (call.method === "PUT") return new Response(null, { status: 200 });
       executes += 1;
       return executes === 1
-        ? jsonResponse(422, {
-            type: "https://pipelex.com/errors/missing-blobs",
-            title: "Missing blobs",
-            detail: "The runner does not hold every blob the request names.",
-            missing_blobs: [big.sha256],
-          })
+        ? jsonResponse(422, blobsMissing([big.sha256]))
         : jsonResponse(200, { pipeline_run_id: "r", pipe_output: {} });
     });
 
@@ -505,31 +531,35 @@ describe("sending a tree by hash", () => {
     expect(sends[1]!.body).toEqual(sends[0]!.body);
   });
 
-  it("gives up after one resend, leaving missingBlobs on the ApiResponseError", async () => {
+  it("gives up after one resend, leaving the request.blobs_missing problem on the ApiResponseError", async () => {
     const tree = memoryTree({ "bundle.mthds": "domain = 'x'", "big.txt": bigText("big") });
     const big = tree.files.find((file) => file.path === "big.txt")!;
     const { calls } = routeFetch((call) => {
       if (call.url.endsWith("/v1/version")) return jsonResponse(200, WITH_BLOB_STORE);
       if (call.url.endsWith("/v1/blobs/missing")) return jsonResponse(200, { missing: [] });
-      return jsonResponse(422, { detail: "missing", missing_blobs: [big.sha256] });
+      return jsonResponse(422, blobsMissing([big.sha256]));
     });
     const error = await makeClient()
       .validate({ tree })
       .catch((err: unknown) => err);
     expect(error).toBeInstanceOf(ApiResponseError);
-    expect((error as ApiResponseError).missingBlobs).toEqual([big.sha256]);
+    expect((error as ApiResponseError).problem).toMatchObject({
+      code: "request.blobs_missing",
+      params: { missing_blobs: [big.sha256] },
+    });
     expect(calls.filter((call) => call.url.endsWith("/v1/validate"))).toHaveLength(2);
   });
 
   it("does not resend a caller's own files map, whose bytes it does not hold", async () => {
     const hash = "a".repeat(64);
-    const { calls } = routeFetch(() =>
-      jsonResponse(422, { detail: "missing", missing_blobs: [hash] }),
-    );
+    const { calls } = routeFetch(() => jsonResponse(422, blobsMissing([hash])));
     const error = await makeClient()
       .execute({ files: { "bundle.mthds": { sha256: hash, size: 3 } } })
       .catch((err: unknown) => err);
-    expect((error as ApiResponseError).missingBlobs).toEqual([hash]);
+    expect((error as ApiResponseError).problem).toMatchObject({
+      code: "request.blobs_missing",
+      params: { missing_blobs: [hash] },
+    });
     expect(calls).toHaveLength(1);
   });
 });
@@ -887,6 +917,7 @@ describe("the kept handshake", () => {
   it.each([
     ["the hosted platform's", PLATFORM_TREE_TOO_LARGE],
     ["pipelex-api's", RUNNER_TREE_TOO_LARGE],
+    ["the runner's method.package_invalid", RUNNER_PACKAGE_TOO_LARGE],
   ])(
     "is dropped when a run refuses the tree with %s refusal, and the tree sent once more as fresh limits say",
     async (_runner, refusal) => {
@@ -927,6 +958,7 @@ describe("the kept handshake", () => {
   it.each([
     ["the hosted platform's", PLATFORM_TREE_TOO_LARGE],
     ["pipelex-api's", RUNNER_TREE_TOO_LARGE],
+    ["the runner's method.package_invalid", RUNNER_PACKAGE_TOO_LARGE],
   ])(
     "gives validate the same retry when it refuses the tree with %s refusal",
     async (_runner, refusal) => {

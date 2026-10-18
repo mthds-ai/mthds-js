@@ -12,6 +12,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, resolve, sep } from "node:path";
 import type { FileEntry, MethodFiles } from "../protocol/file_entries.js";
 import { PipelineRequestError } from "../protocol/exceptions.js";
+import { problemError } from "../problems/errors.js";
 import { decodeCanonicalBase64, readFileEntryObject } from "../method-tree/file-entries.js";
 import { MethodTreeError } from "../method-tree/exceptions.js";
 
@@ -54,8 +55,10 @@ function isHashEntry(entry: unknown): boolean {
 function resolveSafeBundlePath(root: string, rel: string): string {
   const abs = resolve(root, ...rel.split("/"));
   if (abs !== root && !abs.startsWith(root + sep)) {
-    throw new PipelineRequestError(
-      `Unsafe file path ${JSON.stringify(rel)}: it escapes the method's directory.`,
+    throw problemError(
+      "security.input_path_refused",
+      { rule: "outside_root" },
+      { message: `Unsafe file path ${JSON.stringify(rel)}: it escapes the method's directory.` },
     );
   }
   return abs;

@@ -12,7 +12,7 @@
  *   - empty / no output                      → silent pass (no .mthds touched, or all clean)
  *   - {"decision":"block",...}               → block the turn with the given reason
  *   - {"hookSpecificOutput":{...}}           → emit additionalContext (no block) for
- *                                              config/runtime-domain validation issues —
+ *                                              validation issues of the environment —
  *                                              the agent is informed but does NOT edit
  *                                              the file
  */
@@ -20,7 +20,11 @@
 import { accessSync, constants as fsConstants, existsSync, readFileSync, statSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { posix as path } from "node:path";
-import { formatValidationItem } from "../../cli/commands/error-output.js";
+import { formatItemLines } from "../../cli/commands/error-output.js";
+import { isProblemItem } from "../../problems/read.js";
+import { codeFamily, familyEntries } from "../../problems/registry.js";
+import type { RegistryEntry } from "../../problems/types.js";
+import { PROBLEM_DOMAINS } from "../../problems/vocabulary.js";
 import { passthroughEnv } from "../passthrough.js";
 
 const PLXT_INSTALL_HINT = "uv tool install pipelex-tools";
@@ -96,31 +100,44 @@ export function buildAdditionalContextPayload(context: string): string {
   );
 }
 
-/** One structured diagnostic on an invalid verdict (the `--error-format json` envelope). */
-interface AgentValidationErrorItem {
-  category?: string;
-  message?: string;
-  pipe_code?: string;
-  concept_code?: string;
-  domain_code?: string;
-  field_name?: string;
-  source?: string;
-  missing_pipe_code?: string;
-  missing_concept_code?: string;
+/**
+ * One fault of the envelope pipelex-agent wrote before it wrote problem documents: its
+ * `validation_errors` items, read loosely.
+ */
+interface LegacyValidationItem {
+  category?: unknown;
+  message?: unknown;
+  pipe_code?: unknown;
+  concept_code?: unknown;
+  domain_code?: unknown;
+  field_name?: unknown;
+  source?: unknown;
+  missing_pipe_code?: unknown;
+  missing_concept_code?: unknown;
   /** The runner's correction for this error; the hook reads only its `description`. */
-  suggested_fix?: { description?: string };
+  suggested_fix?: unknown;
 }
 
 /**
- * The agent CLI's `--error-format json` failure envelope (the subset the hook reads).
- * `is_valid` / `error_domain` drive the block-vs-warn decision; `message` +
- * `validation_errors` build the agent-facing reason.
+ * What `pipelex-agent validate bundle --error-format json` writes on stderr when it fails, the
+ * subset the hook reads, in either of its two forms:
+ *
+ * - a problem document (docs/errors.md): `code` and `detail`, the faults in `errors`, each with
+ *   its `code`, `detail`, `location` and `suggested_fix`, and the command's sentence in `message`;
+ * - the envelope a pipelex-agent that predates problem documents writes: `error_domain`,
+ *   `message` and `validation_errors`. Read until the pipelex floor of this CLI writes problems.
+ *
+ * Either is parsed from another program's output, so every member is read as unknown.
  */
-interface AgentErrorEnvelope {
-  is_valid?: boolean;
-  error_domain?: string;
-  message?: string;
-  validation_errors?: AgentValidationErrorItem[];
+export interface AgentErrorEnvelope {
+  code?: unknown;
+  detail?: unknown;
+  domain?: unknown;
+  errors?: unknown;
+  is_valid?: unknown;
+  error_domain?: unknown;
+  message?: unknown;
+  validation_errors?: unknown;
 }
 
 /**
@@ -137,8 +154,8 @@ function safeStr(value: unknown): string {
  * Parse the agent CLI's JSON error envelope from a stream. Returns undefined when
  * the text is empty or not a JSON object — the caller defaults to block (safety).
  *
- * Exported for testability — the structured-read contract replaces the old
- * Markdown grep (the decision now keys on `is_valid` / `error_domain`, per D-C).
+ * Exported for testability — the decision keys on the structured envelope, never on
+ * a Markdown rendering.
  */
 export function parseAgentErrorEnvelope(text: string): AgentErrorEnvelope | undefined {
   const trimmed = text.trim();
@@ -149,32 +166,128 @@ export function parseAgentErrorEnvelope(text: string): AgentErrorEnvelope | unde
   } catch {
     return undefined;
   }
-  if (parsed === null || typeof parsed !== "object") return undefined;
+  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) return undefined;
   return parsed as AgentErrorEnvelope;
+}
+
+/** Whether the envelope is a problem document: a `code` and a `detail`, both strings. */
+function isProblemEnvelope(envelope: AgentErrorEnvelope): boolean {
+  return typeof envelope.code === "string" && typeof envelope.detail === "string";
+}
+
+/**
+ * The client codes whose fix is the machine's set-up, not the file: a configuration, a tool
+ * missing or too old. Their domain is `input`, the caller's, which the hook would otherwise read
+ * as the file's.
+ */
+const ENVIRONMENT_CODES: ReadonlySet<string> = new Set([
+  "client.not_configured",
+  "client.tool_missing",
+  "client.tool_outdated",
+]);
+
+/**
+ * The domains whose failure is the environment's, not the file's: the agent is told and does not
+ * edit the file. A problem's `account`, `operator` and `runtime`, the client codes of the
+ * machine's set-up, and the legacy envelope's `config` and `runtime`.
+ */
+const ENVIRONMENT_DOMAINS: ReadonlySet<string> = new Set([
+  "account",
+  "operator",
+  "runtime",
+  "environment",
+  "config",
+]);
+
+/** How the hook reads a code the core registry declares: `environment` for `ENVIRONMENT_CODES`, else its domain. */
+function knownCodeDomain(entry: RegistryEntry): string {
+  return ENVIRONMENT_CODES.has(entry.code) ? "environment" : entry.domain;
+}
+
+/**
+ * The domain a problem reads as. A code of `ENVIRONMENT_CODES` reads as `environment`, then the
+ * problem's own `domain` when the hook knows it. A problem whose domain the hook does not know is
+ * read as the codes of its family the hook knows (protocol.md, "A reader falls back on the
+ * family"): their domain when they share one, or, when they disagree, `environment` if every one
+ * of them would warn and `""` otherwise, which blocks.
+ *
+ * A problem of a family the hook knows nothing of, such as an extension code
+ * (`pipelex.validation.foo`) or a core family newer than the registry this CLI vendors, reads as
+ * `""` and blocks. The protocol reads such a problem as `runtime` (`problemDomain` in
+ * `problems/reading.ts`, which every other reader of this CLI keeps), a reading made to show a
+ * problem, not to gate an edit: here it would warn, letting a fault of the file through as the
+ * environment's. The hook is a gate, so it fails closed: the agent reads the problem and decides.
+ */
+function problemEnvelopeDomain(code: string, domain: string): string {
+  if (ENVIRONMENT_CODES.has(code)) return "environment";
+  if ((PROBLEM_DOMAINS as readonly string[]).includes(domain)) return domain;
+  const readings = familyEntries(codeFamily(code)).map(knownCodeDomain);
+  const first = readings[0];
+  if (first === undefined) return "";
+  if (readings.every((reading) => reading === first)) return first;
+  return readings.every((reading) => ENVIRONMENT_DOMAINS.has(reading)) ? "environment" : "";
+}
+
+/** The domain the envelope reads as: a problem's (`problemEnvelopeDomain`), else the legacy envelope's `error_domain`. */
+function envelopeDomain(envelope: AgentErrorEnvelope): string {
+  if (isProblemEnvelope(envelope)) {
+    return problemEnvelopeDomain(envelope.code as string, safeStr(envelope.domain));
+  }
+  return safeStr(envelope.error_domain);
+}
+
+/** The locators a legacy item names, in order, each with its label. */
+const LEGACY_ITEM_LOCATORS: ReadonlyArray<readonly [keyof LegacyValidationItem, string]> = [
+  ["pipe_code", "pipe"],
+  ["concept_code", "concept"],
+  ["domain_code", "domain"],
+  ["field_name", "field"],
+  ["missing_pipe_code", "missing pipe"],
+  ["missing_concept_code", "missing concept"],
+  ["source", "source"],
+];
+
+/** A legacy item as list lines: `- [<category>] <message> (<locators>)`, then its suggested fix. */
+function formatLegacyItem(item: LegacyValidationItem): string {
+  const locators = LEGACY_ITEM_LOCATORS.filter(([key]) => item[key])
+    .map(([key, label]) => `${label}: ${String(item[key])}`)
+    .join(", ");
+  const category = item.category ? `[${String(item.category)}] ` : "";
+  const line = `- ${category}${String(item.message ?? "")}${locators ? ` (${locators})` : ""}`;
+  const fix = item.suggested_fix;
+  const description =
+    typeof fix === "object" && fix !== null
+      ? safeStr((fix as { description?: unknown }).description).trim()
+      : "";
+  return description ? `${line}\n  Suggested fix: ${description}` : line;
 }
 
 /**
  * Build an agent-facing reason from the structured envelope: the message plus a compact
- * error list. An item carrying a suggested fix gets a `Suggested fix:` line under it with
- * the fix's description, the next step the agent should take.
+ * error list. An item carrying a suggested fix gets a `Suggested fix` line under it, the
+ * next step the agent should take.
+ *
+ * The items come from another program, so a malformed list or item is left out rather than
+ * crashing the hook: a malformed envelope still produces a clean block.
  */
 export function formatValidationReason(
   file: string,
   envelope: AgentErrorEnvelope,
   fallback: string,
 ): string {
-  const message = safeStr(envelope.message).trim() || fallback;
-  // Guard against a malformed / version-skewed envelope: `validation_errors` may be a
-  // non-array (→ `.map` crash) and individual items may be null/non-objects (→ field-access
-  // crash). Keep only real objects so a malformed envelope still produces a clean block.
-  const rawErrors = Array.isArray(envelope.validation_errors) ? envelope.validation_errors : [];
-  const errors = rawErrors.filter(
-    (item): item is AgentValidationErrorItem => typeof item === "object" && item !== null,
-  );
-  if (errors.length === 0) return `Validation failed for ${file}:\n\n${message}`;
-  // `formatValidationItem` reads each item loosely and its `suggested_fix` defensively, as
-  // either may be anything on a version-skewed envelope.
-  const lines = errors.map((item) => formatValidationItem(item));
+  const problem = isProblemEnvelope(envelope);
+  const message =
+    safeStr(envelope.message).trim() ||
+    (problem ? safeStr(envelope.detail).trim() : "") ||
+    fallback;
+  const rawItems = problem ? envelope.errors : envelope.validation_errors;
+  const items: unknown[] = Array.isArray(rawItems) ? rawItems : [];
+  const lines = problem
+    ? items.filter(isProblemItem).map((item) => formatItemLines(item).join("\n"))
+    : items
+        .filter((item): item is LegacyValidationItem => typeof item === "object" && item !== null)
+        .map(formatLegacyItem);
+  if (lines.length === 0) return `Validation failed for ${file}:\n\n${message}`;
   return `Validation failed for ${file}:\n\n${message}\n\n${lines.join("\n")}`;
 }
 
@@ -191,13 +304,15 @@ export type Stage3Outcome =
 
 /**
  * Decide what to emit for a single file's `pipelex-agent validate bundle` result,
- * reading the STRUCTURED JSON envelope (`is_valid` / `error_domain`) rather than
- * grepping Markdown (D-C). The block/warn split mirrors the bash hook in mthds-plugins.
+ * reading the STRUCTURED JSON envelope (its domain) rather than grepping Markdown.
+ * The block/warn split mirrors the bash hook in mthds-plugins.
  *
  * - exit 0                          → pass (no output)
- * - error_domain ∈ {config,runtime} → warn (additionalContext, environment issue)
- * - anything else (input, unknown, no-verdict) → block (default-to-block safety),
- *   reason built from the envelope's `message` + `validation_errors`
+ * - a domain of the environment     → warn (additionalContext, environment issue): a
+ *   problem's `account`, `operator` or `runtime`, the legacy envelope's `config` or `runtime`
+ * - anything else (input, method, unknown, no-verdict) → block (default-to-block safety),
+ *   reason built from the envelope's message and its items; a problem of a code family the hook
+ *   knows nothing of is unknown here, never read as `runtime` (`problemEnvelopeDomain`)
  * - unparseable / empty stderr      → block with a generic reason
  */
 export function classifyStage3Result(file: string, result: PipelexValidateResult): Stage3Outcome {
@@ -215,10 +330,11 @@ export function classifyStage3Result(file: string, result: PipelexValidateResult
     };
   }
 
-  const domain = envelope.error_domain;
-  if (domain === "config" || domain === "runtime") {
+  const domain = envelopeDomain(envelope);
+  if (ENVIRONMENT_DOMAINS.has(domain)) {
     const header = `Validation warning for ${file} (${domain} domain — environment issue, do not edit the file):\n\n`;
-    const body = safeStr(envelope.message).trim() || result.stderr.trim();
+    const body =
+      safeStr(envelope.message).trim() || safeStr(envelope.detail).trim() || result.stderr.trim();
     return {
       kind: "warn",
       domain,
@@ -335,9 +451,9 @@ function runPlxt(args: string[]): PlxtRunResult {
  * offline-safe.
  *
  * `--format json --error-format json` is the load-bearing decision input: the
- * hook reads the structured `is_valid` / `error_domain` from the JSON envelope
- * (stderr on a non-zero exit) rather than grepping Markdown — so the block/warn
- * decision no longer depends on a fragile text shape.
+ * hook reads the structured domain from the JSON envelope (stderr on a non-zero
+ * exit) rather than grepping Markdown — so the block/warn decision no longer
+ * depends on a fragile text shape.
  *
  * `--allow-signatures` makes validation lenient: a bundle that forward-declares
  * pipes as `PipeSignature` placeholders validates structurally instead of
@@ -452,10 +568,10 @@ export async function runCodexHook(deps: CodexHookDeps): Promise<void> {
     // Stage 3: pipelex-agent validate bundle — semantic validation, run
     // leniently (`--allow-signatures`, inside runPipelexValidate) so a bundle
     // mid-refinement with leftover PipeSignature placeholders still passes.
-    // The decision reads the structured JSON envelope (`is_valid` / `error_domain`).
-    // Block on input/unknown domain (agent revises the bundle); warn via
-    // additionalContext on config/runtime (environment issue, agent should not
-    // edit the file).
+    // The decision reads the structured JSON envelope's domain. Block on an
+    // input, method or unknown domain (agent revises the bundle); warn via
+    // additionalContext on a domain of the environment (agent should not edit
+    // the file).
     const libraryDir = path.dirname(file) + "/";
     const validateResult = deps.runPipelexValidate(file, libraryDir);
     const outcome = classifyStage3Result(file, validateResult);

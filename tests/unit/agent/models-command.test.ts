@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Command } from "commander";
 import { registerApiRunnerCommands } from "../../../src/agent/commands/api-commands.js";
+import { chooseErrorFormat } from "../../../src/agent/output.js";
 import { MODEL_CATEGORIES } from "../../../src/protocol/models.js";
 import { MthdsApiClient } from "../../../src/runners/api/client.js";
 
@@ -37,6 +38,7 @@ describe("mthds-agent models on the API runner", () => {
   let stderrSpy: ReturnType<typeof vi.spyOn>;
 
   beforeEach(() => {
+    chooseErrorFormat("json");
     stdoutSpy = vi.spyOn(process.stdout, "write").mockReturnValue(true);
     stderrSpy = vi.spyOn(process.stderr, "write").mockReturnValue(true);
     // agentError ends in process.exit(1); throw a sentinel so the test can catch it.
@@ -46,6 +48,7 @@ describe("mthds-agent models on the API runner", () => {
   });
 
   afterEach(() => {
+    chooseErrorFormat(undefined);
     vi.restoreAllMocks();
   });
 
@@ -68,7 +71,11 @@ describe("mthds-agent models on the API runner", () => {
 
     expect(fetchSpy).not.toHaveBeenCalled();
     const envelope = JSON.parse(String(stderrSpy.mock.calls[0]![0])) as Record<string, unknown>;
-    expect(envelope).toMatchObject({ error: true, error_type: "ArgumentError" });
+    expect(envelope).toMatchObject({
+      code: "client.argument_invalid",
+      domain: "input",
+      params: { argument: "--type", reason: "unknown_value" },
+    });
     expect(envelope.message).toBe(`--type must be one of: ${MODEL_CATEGORIES.join(", ")}.`);
   });
 

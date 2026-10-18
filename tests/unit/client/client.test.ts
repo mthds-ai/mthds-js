@@ -1,16 +1,25 @@
+import { createServer } from "node:http";
+import type { Server } from "node:http";
+import type { AddressInfo } from "node:net";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MthdsApiClient } from "../../../src/runners/api/client.js";
 import {
   ApiResponseError,
-  ApiUnreachableError,
-  PipelineExecuteTimeoutError,
+  ApiTransportError,
   PipelineRequestError,
+  ProblemError,
   RunStillRunningError,
 } from "../../../src/runners/api/exceptions.js";
+import { buildProblem } from "../../../src/problems/build.js";
+import { MAX_BODY_NESTING } from "../../../src/problems/read.js";
+import { PIPE_SELECTION_CODES } from "../../../src/runners/types.js";
 import { MTHDS_JS_VERSION } from "../../../src/version.js";
 import { EMPTY_METHOD_TREE_MESSAGE } from "../../../src/protocol/options.js";
 
 const BASE_URL = "http://localhost:8081";
+
+/** The smallest body `POST /execute` answers with: the run's id and its output. */
+const RUN_RESULT = { pipeline_run_id: "x", pipe_output: {} };
 
 function makeClient(): MthdsApiClient {
   return new MthdsApiClient({
@@ -19,9 +28,12 @@ function makeClient(): MthdsApiClient {
   });
 }
 
-function networkError(code: string): TypeError {
-  const err = new TypeError("fetch failed") as TypeError & { cause?: { code: string } };
-  err.cause = { code };
+/** What fetch throws when the transport fails: undici's own failure as the `cause`. */
+function networkError(code: string, syscall?: string): TypeError {
+  const err = new TypeError("fetch failed") as TypeError & {
+    cause?: { code: string; syscall?: string };
+  };
+  err.cause = syscall === undefined ? { code } : { code, syscall };
   return err;
 }
 
@@ -49,8 +61,28 @@ function jsonResponse(
   });
 }
 
-function textResponse(status: number, body: string, statusText = ""): Response {
-  return new Response(body, { status, statusText });
+function textResponse(
+  status: number,
+  body: string,
+  statusText = "",
+  headers: Record<string, string> = {},
+): Response {
+  return new Response(body, { status, statusText, headers });
+}
+
+/** A fetch that answers only when the request is aborted, rejecting with the abort's reason. */
+function fetchWaitingForAbort(_url: string | URL | Request, init?: RequestInit): Promise<Response> {
+  return new Promise((_resolve, reject) => {
+    init?.signal?.addEventListener("abort", () => reject(init.signal?.reason), { once: true });
+  });
+}
+
+/** The error a call rejects with, which the test expects it to. */
+async function rejection(call: Promise<unknown>): Promise<unknown> {
+  return call.then(
+    () => expect.fail("expected the call to throw"),
+    (err: unknown) => err,
+  );
 }
 
 beforeEach(() => {
@@ -58,6 +90,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.restoreAllMocks();
 });
 
@@ -69,7 +102,7 @@ describe("MthdsApiClient constructor", () => {
       const client = new MthdsApiClient({ apiKey: "t" });
       const fetchSpy = vi
         .spyOn(globalThis, "fetch")
-        .mockResolvedValue(jsonResponse(200, { pipeline_run_id: "x" }));
+        .mockResolvedValue(jsonResponse(200, RUN_RESULT));
       await client.execute({ pipe_code: "p" });
       expect(fetchSpy).toHaveBeenCalledWith(
         "https://api.pipelex.com/v1/execute",
@@ -84,9 +117,7 @@ describe("MthdsApiClient constructor", () => {
     const client = new MthdsApiClient({
       baseUrl: "http://localhost:8081///",
     });
-    const fetchSpy = vi
-      .spyOn(globalThis, "fetch")
-      .mockResolvedValue(jsonResponse(200, { pipeline_run_id: "x" }));
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(jsonResponse(200, RUN_RESULT));
     await client.execute({ pipe_code: "p" });
     expect(fetchSpy).toHaveBeenCalledWith(
       "http://localhost:8081/v1/execute",
@@ -106,6 +137,35 @@ describe("MthdsApiClient constructor", () => {
     );
   });
 
+  it("refuses the base URL as client.not_configured naming the setting", () => {
+    let caught: unknown;
+    try {
+      new MthdsApiClient({ baseUrl: "https://api.pipelex.com/v1" });
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(ProblemError);
+    const problem = (caught as ProblemError).problem;
+    expect(problem.code).toBe("client.not_configured");
+    expect(problem.params).toEqual({ setting: "base_url" });
+    expect(problem).not.toHaveProperty("status");
+    expect((caught as ProblemError).message).toContain("host-only");
+  });
+
+  it.each(["localhost:8081", "api.pipelex.com", "ftp://api.pipelex.com", "file:///tmp"])(
+    "refuses the base URL %s, whose scheme is missing or unsupported, as client.not_configured",
+    (baseUrl) => {
+      let caught: unknown;
+      try {
+        new MthdsApiClient({ baseUrl });
+      } catch (err) {
+        caught = err;
+      }
+      expect(caught).toBeInstanceOf(ProblemError);
+      expect((caught as ProblemError).problem.code).toBe("client.not_configured");
+    },
+  );
+
   it("reads MTHDS_BASE_URL from the environment", async () => {
     const originalUrl = process.env.MTHDS_BASE_URL;
     process.env.MTHDS_BASE_URL = "http://env-host:9999";
@@ -113,7 +173,7 @@ describe("MthdsApiClient constructor", () => {
       const client = new MthdsApiClient({ apiKey: "t" });
       const fetchSpy = vi
         .spyOn(globalThis, "fetch")
-        .mockResolvedValue(jsonResponse(200, { pipeline_run_id: "x" }));
+        .mockResolvedValue(jsonResponse(200, RUN_RESULT));
       await client.execute({ pipe_code: "p" });
       expect(fetchSpy).toHaveBeenCalledWith(
         "http://env-host:9999/v1/execute",
@@ -131,178 +191,532 @@ describe("MthdsApiClient.execute argument validation", () => {
     const client = makeClient();
     await expect(client.execute({})).rejects.toBeInstanceOf(PipelineRequestError);
   });
+
+  it("codes the refusal client.argument_invalid, with no status, before any request leaves", async () => {
+    const client = makeClient();
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+    const err = await rejection(client.execute({}));
+    expect(err).toBeInstanceOf(ProblemError);
+    const problem = (err as ProblemError).problem;
+    expect(problem.code).toBe("client.argument_invalid");
+    expect(problem.params).toEqual({ argument: "pipe_code", reason: "missing" });
+    expect(problem).not.toHaveProperty("status");
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
 });
 
-describe("MthdsApiClient network errors", () => {
-  it("wraps ECONNREFUSED in ApiUnreachableError with code", async () => {
-    const client = makeClient();
-    vi.spyOn(globalThis, "fetch").mockRejectedValue(networkError("ECONNREFUSED"));
+describe("MthdsApiClient transport failures", () => {
+  // Made-up keys, never real ones: each holds a character the `Authorization` header cannot carry
+  // as written, which fetch would refuse or silently trim at every request.
+  it.each([
+    ["ending in a line break", "test-key-abc\n"],
+    ["ending in a space", "test-key-abc "],
+    ["ending in CRLF", "test-key-abc\r\n"],
+    ["holding a NUL", "test-key-\u0000abc"],
+    ["holding a Latin-1 letter", "test-key-\u00e9abc"],
+    ["holding the euro sign", "test-key-\u20acabc"],
+  ])("refuses an API key %s at construction, as client.not_configured", (_what, apiKey) => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+    let caught: unknown;
     try {
-      await client.execute({ pipe_code: "p" });
-      expect.fail("expected throw");
+      new MthdsApiClient({ baseUrl: BASE_URL, apiKey });
     } catch (err) {
-      expect(err).toBeInstanceOf(ApiUnreachableError);
-      expect(err).toBeInstanceOf(PipelineRequestError);
-      const e = err as ApiUnreachableError;
-      expect(e.code).toBe("ECONNREFUSED");
-      expect(e.apiUrl).toBe(BASE_URL);
-      expect(e.message).toContain(BASE_URL);
-      expect(e.message).toContain("ECONNREFUSED");
-      expect(e.cause).toBeInstanceOf(TypeError);
+      caught = err;
     }
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(caught).toBeInstanceOf(ProblemError);
+    expect((caught as ProblemError).problem).toMatchObject({
+      code: "client.not_configured",
+      params: { setting: "api_key" },
+    });
+    expect((caught as ProblemError).message).not.toContain("test-key");
+    expect(JSON.stringify((caught as ProblemError).problem)).not.toContain("test-key");
+    expect((caught as ProblemError).cause).toBeUndefined();
   });
 
-  it("wraps ENOTFOUND in ApiUnreachableError with code", async () => {
+  it.each([
+    ["execute", "client.outcome_unknown"],
+    ["models", "client.unreachable"],
+  ] as const)(
+    "gives up the request when %s's answer fails half way through its body, as %s",
+    async (call, code) => {
+      const client = makeClient();
+      let signal: AbortSignal | undefined;
+      vi.spyOn(globalThis, "fetch").mockImplementation(async (_url, init) => {
+        signal = init?.signal ?? undefined;
+        const body = new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(new TextEncoder().encode('{"pipeline_run_id":'));
+          },
+          pull(controller) {
+            controller.error(networkError("ECONNRESET", "read"));
+          },
+        });
+        return new Response(body, { status: 200 });
+      });
+      const run = call === "execute" ? client.execute({ pipe_code: "p" }) : client.models();
+      const err = await rejection(run);
+      expect(err).toBeInstanceOf(ApiTransportError);
+      expect((err as ApiTransportError).code).toBe(code);
+      // The request is aborted, which releases the connection and what arrived of the body.
+      expect(signal?.aborted).toBe(true);
+    },
+  );
+
+  it("reads a refused connection as client.unreachable, even on a route that creates a run", async () => {
     const client = makeClient();
-    vi.spyOn(globalThis, "fetch").mockRejectedValue(networkError("ENOTFOUND"));
-    try {
-      await client.execute({ pipe_code: "p" });
-      expect.fail("expected throw");
-    } catch (err) {
-      expect(err).toBeInstanceOf(ApiUnreachableError);
-      expect((err as ApiUnreachableError).code).toBe("ENOTFOUND");
-    }
+    vi.spyOn(globalThis, "fetch").mockRejectedValue(networkError("ECONNREFUSED", "connect"));
+    const err = await rejection(client.execute({ pipe_code: "p" }));
+    expect(err).toBeInstanceOf(ApiTransportError);
+    expect(err).toBeInstanceOf(ProblemError);
+    expect(err).toBeInstanceOf(PipelineRequestError);
+    const e = err as ApiTransportError;
+    expect(e.problem).toEqual(buildProblem("client.unreachable", { base_url: BASE_URL }));
+    expect(e.networkCode).toBe("ECONNREFUSED");
+    expect(e.apiUrl).toBe(BASE_URL);
+    expect(e.message).toContain(BASE_URL);
+    expect(e.retry).toBe("yes");
+    expect(e.cause).toBeInstanceOf(TypeError);
   });
 
-  it("maps AbortSignal.timeout DOMException to ABORT_TIMEOUT", async () => {
+  it("reads an unknown host as client.unreachable", async () => {
     const client = makeClient();
-    const timeoutErr = new DOMException("timed out", "TimeoutError");
-    vi.spyOn(globalThis, "fetch").mockRejectedValue(timeoutErr);
-    try {
-      await client.execute({ pipe_code: "p" });
-      expect.fail("expected throw");
-    } catch (err) {
-      expect(err).toBeInstanceOf(ApiUnreachableError);
-      expect((err as ApiUnreachableError).code).toBe("ABORT_TIMEOUT");
-    }
+    vi.spyOn(globalThis, "fetch").mockRejectedValue(networkError("ENOTFOUND", "getaddrinfo"));
+    const err = await rejection(client.execute({ pipe_code: "p" }));
+    expect(err).toBeInstanceOf(ApiTransportError);
+    expect((err as ApiTransportError).code).toBe("client.unreachable");
+    expect((err as ApiTransportError).networkCode).toBe("ENOTFOUND");
   });
 
-  it("falls back to undefined code when cause has no code", async () => {
+  it("reads a connection lost once execute's request left as client.outcome_unknown", async () => {
+    const client = makeClient();
+    vi.spyOn(globalThis, "fetch").mockRejectedValue(networkError("ECONNRESET", "read"));
+    const err = await rejection(client.execute({ pipe_code: "p" }));
+    expect(err).toBeInstanceOf(ApiTransportError);
+    const e = err as ApiTransportError;
+    expect(e.problem).toEqual(buildProblem("client.outcome_unknown", {}));
+    expect(e.problem.params).toEqual({});
+    expect(e.retry).toBe("outcome_unknown");
+    expect(e.networkCode).toBe("ECONNRESET");
+  });
+
+  it("reads a failure that names no cause on a route that creates a run as client.outcome_unknown", async () => {
     const client = makeClient();
     vi.spyOn(globalThis, "fetch").mockRejectedValue(new TypeError("fetch failed"));
-    try {
-      await client.execute({ pipe_code: "p" });
-      expect.fail("expected throw");
-    } catch (err) {
-      expect(err).toBeInstanceOf(ApiUnreachableError);
-      expect((err as ApiUnreachableError).code).toBeUndefined();
-      expect((err as ApiUnreachableError).message).toContain("network error");
-    }
+    const err = await rejection(client.start({ pipe_code: "p" }));
+    expect((err as ApiTransportError).code).toBe("client.outcome_unknown");
+    expect((err as ApiTransportError).networkCode).toBeUndefined();
+  });
+
+  it("reads a lost connection on a route that creates nothing as client.unreachable", async () => {
+    const client = makeClient();
+    vi.spyOn(globalThis, "fetch").mockRejectedValue(networkError("ECONNRESET", "read"));
+    const err = await rejection(client.models());
+    expect(err).toBeInstanceOf(ApiTransportError);
+    expect((err as ApiTransportError).problem).toEqual(
+      buildProblem("client.unreachable", { base_url: BASE_URL }),
+    );
+  });
+
+  it("reads the client's own time limit on a read as client.timeout naming the seconds", async () => {
+    vi.useFakeTimers();
+    const client = makeClient();
+    vi.spyOn(globalThis, "fetch").mockImplementation(fetchWaitingForAbort);
+    const pending = rejection(client.models());
+    await vi.advanceTimersByTimeAsync(30_000);
+    const err = await pending;
+    expect(err).toBeInstanceOf(ApiTransportError);
+    expect((err as ApiTransportError).problem).toEqual(
+      buildProblem("client.timeout", { seconds: 30 }),
+    );
+  });
+
+  it("reads the client's own time limit on execute as client.outcome_unknown", async () => {
+    vi.useFakeTimers();
+    const client = makeClient();
+    vi.spyOn(globalThis, "fetch").mockImplementation(fetchWaitingForAbort);
+    const pending = rejection(client.execute({ pipe_code: "p" }));
+    await vi.advanceTimersByTimeAsync(1_200_000);
+    const err = await pending;
+    expect((err as ApiTransportError).problem).toEqual(buildProblem("client.outcome_unknown", {}));
+  });
+
+  it("never repeats a request by itself", async () => {
+    const client = makeClient();
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockRejectedValue(networkError("ECONNRESET", "read"));
+    await rejection(client.execute({ pipe_code: "p" }));
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
   });
 });
 
-describe("MthdsApiClient HTTP error responses", () => {
-  it("parses 401 with detail string (auth error shape)", async () => {
+describe("MthdsApiClient answers with a status that is no HTTP status", () => {
+  let server: Server | undefined;
+
+  /** A loopback runtime answering every request with the status 999 and `body`. */
+  async function runtimeAnswering999(body: string, contentType: string): Promise<string> {
+    server = createServer((_request, response) => {
+      response.writeHead(999, { "Content-Type": contentType });
+      response.end(body);
+    });
+    await new Promise<void>((resolve) => server!.listen(0, "127.0.0.1", resolve));
+    return `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  }
+
+  afterEach(async () => {
+    await new Promise<void>((resolve) => (server ? server.close(() => resolve()) : resolve()));
+    server = undefined;
+  });
+
+  it("reads a problem body that omits its status as received, its status left out", async () => {
+    const received = {
+      type: "https://mthds.ai/errors/runtime.unexpected",
+      title: "An unexpected error occurred",
+      detail: "The runtime met an unexpected error.",
+      code: "runtime.unexpected",
+      domain: "runtime",
+      retry: "no",
+      next_step: { kind: "report", detail: "Report it." },
+    };
+    const origin = await runtimeAnswering999(JSON.stringify(received), "application/problem+json");
+    const err = await rejection(
+      new MthdsApiClient({ baseUrl: origin, apiKey: "test-key" }).models(),
+    );
+    expect(err).toBeInstanceOf(ApiResponseError);
+    expect((err as ApiResponseError).status).toBe(999);
+    expect((err as ApiResponseError).problem).toEqual(received);
+  });
+
+  it("reads a body that is no problem as client.response_unreadable naming the status", async () => {
+    const origin = await runtimeAnswering999("odd", "text/plain");
+    const err = await rejection(
+      new MthdsApiClient({ baseUrl: origin, apiKey: "test-key" }).models(),
+    );
+    expect((err as ApiResponseError).problem).toEqual(
+      buildProblem("client.response_unreadable", { status: 999 }),
+    );
+  });
+});
+
+describe("MthdsApiClient redirects", () => {
+  let server: Server | undefined;
+  const requests: string[] = [];
+
+  /** A loopback runtime that redirects `/v1/execute`, `/v1/start` and `/v1/models`. */
+  async function redirectingRuntime(target: (origin: string) => string): Promise<string> {
+    requests.length = 0;
+    server = createServer((request, response) => {
+      requests.push(`${request.method} ${request.url}`);
+      const origin = `http://127.0.0.1:${(server!.address() as AddressInfo).port}`;
+      if (request.url === "/v1/models-moved") {
+        response.writeHead(200, { "Content-Type": "application/json" });
+        response.end(JSON.stringify({ models: [] }));
+        return;
+      }
+      response.writeHead(307, { Location: target(origin), "Content-Type": "text/plain" });
+      response.end("Temporary Redirect");
+    });
+    await new Promise<void>((resolve) => server!.listen(0, "127.0.0.1", resolve));
+    return `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  }
+
+  afterEach(async () => {
+    await new Promise<void>((resolve) => (server ? server.close(() => resolve()) : resolve()));
+    server = undefined;
+  });
+
+  it.each([
+    ["execute", (client: MthdsApiClient) => client.execute({ pipe_code: "p" })],
+    ["start", (client: MthdsApiClient) => client.start({ pipe_code: "p" })],
+  ])(
+    "reads a redirect on %s as the answer, never sending the request again",
+    async (_route, call) => {
+      // The target refuses every connection: followed, the redirect would read as a runtime the
+      // client never reached, although the request reached the one that redirected it.
+      const origin = await redirectingRuntime(() => "http://127.0.0.1:9/v1/elsewhere");
+      const client = new MthdsApiClient({ baseUrl: origin, apiKey: "test-token" });
+      const err = await rejection(call(client));
+      expect(err).toBeInstanceOf(ApiResponseError);
+      const e = err as ApiResponseError;
+      expect(e.status).toBe(307);
+      expect(e.problem).toEqual(buildProblem("client.response_unreadable", { status: 307 }));
+      expect(e.responseBody).toBe("Temporary Redirect");
+      expect(requests).toHaveLength(1);
+    },
+  );
+
+  it("follows a redirect on a route that creates nothing", async () => {
+    const origin = await redirectingRuntime((self) => `${self}/v1/models-moved`);
+    const client = new MthdsApiClient({ baseUrl: origin, apiKey: "test-token" });
+    await expect(client.models()).resolves.toEqual({ models: [] });
+    expect(requests).toEqual(["GET /v1/models", "GET /v1/models-moved"]);
+  });
+});
+
+describe("MthdsApiClient answers that are no problem document", () => {
+  // A result holds whatever a run produced, so it is read as JSON reads it: the guards that keep a
+  // problem document's parsing bounded never turn a successful, possibly paid, run into a failure.
+  it("reads a success holding a number no double holds as the result, as JSON reads it", async () => {
+    const client = makeClient();
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      textResponse(200, '{"models":[{"score":1e999}]}'),
+    );
+    await expect(client.models()).resolves.toEqual({ models: [{ score: Infinity }] });
+  });
+
+  it("reads an execute whose output holds such a number as its result", async () => {
+    const client = makeClient();
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      textResponse(200, '{"pipeline_run_id":"r","pipe_output":{"score":1e999}}'),
+    );
+    await expect(client.execute({ pipe_code: "p" })).resolves.toEqual({
+      pipeline_run_id: "r",
+      pipe_output: { score: Infinity },
+    });
+  });
+
+  it("reads an execute whose output nests deeper than MAX_BODY_NESTING as its result", async () => {
+    const client = makeClient();
+    const depth = MAX_BODY_NESTING + 10;
+    const nested = "[".repeat(depth) + "]".repeat(depth);
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      textResponse(200, `{"pipeline_run_id":"r","pipe_output":{"tree":${nested}}}`),
+    );
+    const result = await client.execute({ pipe_code: "p" });
+    expect(result.pipeline_run_id).toBe("r");
+  });
+
+  it("still refuses a problem body holding a number no double holds", async () => {
+    const client = makeClient();
+    const body = JSON.stringify(buildProblem("runtime.unavailable", {})).replace(
+      /}$/,
+      ',"retry_after":1e999}',
+    );
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(textResponse(422, body));
+    const err = await rejection(client.models());
+    expect((err as ApiResponseError).problem.code).toBe("client.response_unreadable");
+  });
+
+  it("reads an overlong Retry-After as no delay, without throwing", async () => {
+    const client = makeClient();
+    const problem = buildProblem("runtime.unavailable", {});
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      jsonResponse(503, problem, { "Retry-After": "9".repeat(400) }),
+    );
+    const err = await rejection(client.models());
+    expect(err).toBeInstanceOf(ApiResponseError);
+    expect((err as ApiResponseError).problem).not.toHaveProperty("retry_after");
+    expect((err as ApiResponseError).retryAfter).toBeUndefined();
+  });
+
+  it("reads a JSON body of another shape as client.response_unreadable naming the status", async () => {
     const client = makeClient();
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
       jsonResponse(401, { detail: "Invalid authentication token" }),
     );
-    try {
-      await client.execute({ pipe_code: "p" });
-      expect.fail("expected throw");
-    } catch (err) {
-      expect(err).toBeInstanceOf(ApiResponseError);
-      const e = err as ApiResponseError;
-      expect(e.status).toBe(401);
-      expect(e.errorType).toBeUndefined();
-      expect(e.serverMessage).toBe("Invalid authentication token");
-      expect(e.responseBody).toContain("Invalid authentication token");
-      expect(e.message).toContain("Invalid authentication token");
-    }
+    const err = await rejection(client.execute({ pipe_code: "p" }));
+    expect(err).toBeInstanceOf(ApiResponseError);
+    const e = err as ApiResponseError;
+    expect(e.status).toBe(401);
+    expect(e.route).toBe("POST /v1/execute");
+    expect(e.problem).toEqual(buildProblem("client.response_unreadable", { status: 401 }));
+    expect(e.responseBody).toContain("Invalid authentication token");
+    // A problem the client builds carries no status: the answer's is in its parameters.
+    expect(e.problem).not.toHaveProperty("status");
+    // The message names the route and status and the problem's sentence, quotes the start of the
+    // body, which no member of the problem holds, on its own line, and ends with the next step.
+    expect(e.message).toBe(
+      `POST /v1/execute failed (401): ${e.problem.detail}\n` +
+        `The server answered: {"detail":"Invalid authentication token"}\n` +
+        `Next step: ${e.problem.next_step.detail}`,
+    );
+    expect(JSON.stringify(e.problem)).not.toContain("Invalid authentication token");
   });
 
-  it("parses 500 with nested detail dict (pipeline error shape)", async () => {
+  it("reads a pre-registry error envelope as client.response_unreadable too", async () => {
     const client = makeClient();
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
       jsonResponse(500, {
         detail: { error_type: "CredentialsError", message: "Missing OPENAI_API_KEY" },
       }),
     );
-    try {
-      await client.execute({ pipe_code: "p" });
-      expect.fail("expected throw");
-    } catch (err) {
-      expect(err).toBeInstanceOf(ApiResponseError);
-      const e = err as ApiResponseError;
-      expect(e.status).toBe(500);
-      expect(e.errorType).toBe("CredentialsError");
-      expect(e.serverMessage).toBe("Missing OPENAI_API_KEY");
-    }
+    const err = await rejection(client.models());
+    expect((err as ApiResponseError).status).toBe(500);
+    expect((err as ApiResponseError).problem.code).toBe("client.response_unreadable");
+    expect((err as ApiResponseError).problem.params).toEqual({ status: 500 });
   });
 
-  it("parses top-level error_type/message shape", async () => {
-    const client = makeClient();
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      jsonResponse(500, { error_type: "FooError", message: "bar" }),
-    );
-    try {
-      await client.execute({ pipe_code: "p" });
-      expect.fail("expected throw");
-    } catch (err) {
-      const e = err as ApiResponseError;
-      expect(e.errorType).toBe("FooError");
-      expect(e.serverMessage).toBe("bar");
-    }
-  });
-
-  it("retains raw body when response is non-JSON", async () => {
+  it("retains the raw body and the status text when the body is not JSON", async () => {
     const client = makeClient();
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
       textResponse(502, "Bad Gateway", "Bad Gateway"),
     );
-    try {
-      await client.execute({ pipe_code: "p" });
-      expect.fail("expected throw");
-    } catch (err) {
-      expect(err).toBeInstanceOf(ApiResponseError);
-      const e = err as ApiResponseError;
-      expect(e.status).toBe(502);
-      expect(e.errorType).toBeUndefined();
-      expect(e.serverMessage).toBeUndefined();
-      expect(e.responseBody).toBe("Bad Gateway");
-    }
+    const err = await rejection(client.version());
+    expect(err).toBeInstanceOf(ApiResponseError);
+    const e = err as ApiResponseError;
+    expect(e.status).toBe(502);
+    expect(e.statusText).toBe("Bad Gateway");
+    expect(e.responseBody).toBe("Bad Gateway");
+    expect(e.problem.code).toBe("client.response_unreadable");
+    expect(e.problem.params).toEqual({ status: 502 });
   });
 
-  it("falls back to statusText when body is empty", async () => {
+  it.each([500, 502, 503, 504])(
+    "reads a %i that is no problem document on execute and start as client.outcome_unknown",
+    async (status) => {
+      // A gateway's time limit or a proxy's page may stand in front of a run that started.
+      for (const call of [
+        (client: MthdsApiClient) => client.execute({ pipe_code: "p" }),
+        (client: MthdsApiClient) => client.start({ pipe_code: "p" }),
+      ]) {
+        vi.spyOn(globalThis, "fetch").mockResolvedValue(
+          jsonResponse(status, { message: "Endpoint request timed out" }),
+        );
+        const err = await rejection(call(makeClient()));
+        expect(err).toBeInstanceOf(ApiResponseError);
+        const e = err as ApiResponseError;
+        expect(e.status).toBe(status);
+        expect(e.problem).toEqual(buildProblem("client.outcome_unknown", {}));
+        expect(e.retry).toBe("outcome_unknown");
+        expect(e.responseBody).toContain("Endpoint request timed out");
+      }
+    },
+  );
+
+  it("reads an empty 503 on a read as runtime.unavailable, with its status and Retry-After", async () => {
     const client = makeClient();
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(textResponse(503, "", "Service Unavailable"));
-    try {
-      await client.execute({ pipe_code: "p" });
-      expect.fail("expected throw");
-    } catch (err) {
-      const e = err as ApiResponseError;
-      expect(e.message).toContain("Service Unavailable");
-    }
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      textResponse(503, "", "Service Unavailable", { "Retry-After": "5" }),
+    );
+    const err = await rejection(client.models());
+    const e = err as ApiResponseError;
+    expect(e.problem).toEqual(
+      buildProblem("runtime.unavailable", {}, { status: 503, retryAfter: 5 }),
+    );
+    expect(e.problem.params).toEqual({});
+    expect(e.retry).toBe("yes");
+    expect(e.retryAfter).toBe(5);
+  });
+
+  it("never reads an empty 503 on execute as a code that invites a repeat", async () => {
+    // The answer may come after the run started, so it leaves the outcome unknown, whose verdict
+    // is not `yes`, rather than reading as runtime.unavailable.
+    const client = makeClient();
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      textResponse(503, "", "Service Unavailable", { "Retry-After": "5" }),
+    );
+    const err = await rejection(client.execute({ pipe_code: "p" }));
+    const e = err as ApiResponseError;
+    expect(e.problem).toEqual(buildProblem("client.outcome_unknown", {}));
+    expect(e.retry).not.toBe("yes");
+  });
+
+  it("reads a bare 405 as request.method_not_allowed", async () => {
+    const client = makeClient();
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(textResponse(405, ""));
+    const err = await rejection(client.version());
+    const e = err as ApiResponseError;
+    expect(e.problem).toEqual(buildProblem("request.method_not_allowed", {}, { status: 405 }));
+    expect(e.problem).not.toHaveProperty("params");
+  });
+
+  it("reads a 2xx whose body is not the route's result as client.response_unreadable", async () => {
+    const client = makeClient();
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(jsonResponse(200, ["fine"]));
+    const err = await rejection(client.health());
+    expect(err).toBeInstanceOf(ApiResponseError);
+    expect((err as ApiResponseError).problem).toEqual(
+      buildProblem("client.response_unreadable", { status: 200 }),
+    );
+  });
+
+  it("reads a 2xx on execute that is not its result as client.outcome_unknown naming the run", async () => {
+    const client = makeClient();
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      jsonResponse(200, { pipeline_run_id: "run_created", pipe_output: "incompatible" }),
+    );
+    const err = await rejection(client.execute({ pipe_code: "p" }));
+    expect(err).toBeInstanceOf(ApiResponseError);
+    expect((err as ApiResponseError).problem).toEqual(
+      buildProblem(
+        "client.outcome_unknown",
+        { pipeline_run_id: "run_created" },
+        { pipeline_run_id: "run_created" },
+      ),
+    );
+    expect((err as ApiResponseError).retry).toBe("outcome_unknown");
+  });
+
+  it.each([
+    ["no JSON", "OK"],
+    ["no run id", JSON.stringify({ pipe_output: {} })],
+    ["a run id that is no string", JSON.stringify({ pipeline_run_id: 7, pipe_output: {} })],
+  ])(
+    "reads a 2xx on execute holding %s as client.outcome_unknown naming no run",
+    async (_t, body) => {
+      const client = makeClient();
+      vi.spyOn(globalThis, "fetch").mockResolvedValue(textResponse(200, body));
+      const err = await rejection(client.execute({ pipe_code: "p" }));
+      expect((err as ApiResponseError).problem).toEqual(buildProblem("client.outcome_unknown", {}));
+    },
+  );
+
+  it.each([
+    ["an empty string", ""],
+    ["a number", 42],
+  ])("reads a start whose run id is %s as client.outcome_unknown naming no run", async (_t, id) => {
+    const client = makeClient();
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(jsonResponse(202, { pipeline_run_id: id }));
+    const err = await rejection(client.start({ pipe_code: "p" }));
+    expect(err).toBeInstanceOf(ApiResponseError);
+    expect((err as ApiResponseError).problem).toEqual(buildProblem("client.outcome_unknown", {}));
+  });
+
+  it("reads a 2xx on start that is not its result as client.outcome_unknown", async () => {
+    const client = makeClient();
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(jsonResponse(202, { state: "queued" }));
+    const err = await rejection(client.start({ pipe_code: "p" }));
+    expect((err as ApiResponseError).problem).toEqual(buildProblem("client.outcome_unknown", {}));
+  });
+
+  it("reads a 2xx whose body is not JSON as client.response_unreadable", async () => {
+    const client = makeClient();
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(textResponse(200, "OK"));
+    const err = await rejection(client.models());
+    expect((err as ApiResponseError).problem.code).toBe("client.response_unreadable");
+    expect((err as ApiResponseError).problem.params).toEqual({ status: 200 });
   });
 });
 
-describe("MthdsApiClient problem document members", () => {
-  // A runner's RFC 9457 problem document, as the reference runner emits it for a
-  // caller's own mistake: the standard members plus the classification the
-  // runner adds (who can fix it, whether a retry helps, what to do next, and the
-  // correlation id, also echoed in the `X-Request-ID` header).
+describe("MthdsApiClient problem documents", () => {
+  // A runner's problem document for a caller's own mistake: the core members,
+  // and members of the runner's own (`instance`, `request_id`, `rule_version`),
+  // which a reader keeps whatever they hold.
   const PROBLEM = {
-    type: "https://docs.pipelex.com/latest/errors/model-choice-not-found-error/",
-    title: "Model choice not found",
+    type: "https://mthds.ai/errors/model.unknown",
+    title: "The model is not known",
     status: 422,
     detail: "Model 'gpt-9' is not in the model deck.",
+    code: "model.unknown",
+    domain: "input",
+    retry: "no",
+    next_step: { kind: "change_input", detail: "Pick a model listed by `mthds-agent models`." },
+    params: { model: "gpt-9" },
     instance: "/v1/execute",
     request_id: "req-body-123",
-    error_type: "ModelChoiceNotFoundError",
-    error_domain: "input",
-    retryable: false,
-    user_action: { kind: "change_model", detail: "Pick a model listed by `mthds-agent models`." },
+    rule_version: 3,
   };
 
   async function executeError(response: Response): Promise<ApiResponseError> {
     const client = makeClient();
     vi.spyOn(globalThis, "fetch").mockResolvedValue(response);
-    const err = await client.execute({ pipe_code: "p" }).catch((e: unknown) => e);
+    const err = await rejection(client.execute({ pipe_code: "p" }));
     expect(err).toBeInstanceOf(ApiResponseError);
     return err as ApiResponseError;
   }
 
-  it("exposes type, title, instance, the domain, retryability, the next step and the request id", async () => {
+  it("keeps the problem as received, every member included", async () => {
     const e = await executeError(
       jsonResponse(422, PROBLEM, {
         "Content-Type": "application/problem+json",
@@ -310,37 +724,89 @@ describe("MthdsApiClient problem document members", () => {
       }),
     );
     expect(e.status).toBe(422);
-    expect(e.serverMessage).toBe("Model 'gpt-9' is not in the model deck.");
-    expect(e.errorType).toBe("ModelChoiceNotFoundError");
-    expect(e.type).toBe("https://docs.pipelex.com/latest/errors/model-choice-not-found-error/");
-    expect(e.title).toBe("Model choice not found");
-    expect(e.instance).toBe("/v1/execute");
-    expect(e.errorDomain).toBe("input");
-    expect(e.retryable).toBe(false);
-    expect(e.userAction).toEqual({
-      kind: "change_model",
+    expect(e.problem).toEqual(PROBLEM);
+    expect(e.code).toBe("model.unknown");
+    expect(e.domain).toBe("input");
+    expect(e.retry).toBe("no");
+    expect(e.nextStep).toEqual({
+      kind: "change_input",
       detail: "Pick a model listed by `mthds-agent models`.",
     });
     expect(e.requestId).toBe("req-body-123");
+    expect(e.message).toBe(
+      "POST /v1/execute failed (422): Model 'gpt-9' is not in the model deck. " +
+        "Pick a model listed by `mthds-agent models`.",
+    );
   });
 
-  it("reads retryable: true as true, not only its absence", async () => {
+  it("fills the status from the answer when the body leaves it out", async () => {
+    const { status: _status, ...withoutStatus } = PROBLEM;
+    const e = await executeError(jsonResponse(422, withoutStatus));
+    expect(e.problem.status).toBe(422);
+    expect(e.problem).toEqual({ ...withoutStatus, status: 422 });
+  });
+
+  it("fills retry_after from Retry-After only beside a retry of yes", async () => {
+    const retryable = {
+      ...PROBLEM,
+      status: 503,
+      code: "runtime.draining",
+      domain: "runtime",
+      retry: "yes",
+    };
+    const e = await executeError(jsonResponse(503, retryable, { "Retry-After": "2" }));
+    expect(e.problem.retry_after).toBe(2);
+    expect(e.retryAfter).toBe(2);
+
+    const final = await executeError(jsonResponse(422, PROBLEM, { "Retry-After": "2" }));
+    expect(final.problem).not.toHaveProperty("retry_after");
+  });
+
+  it("reads a domain, a retry verdict and a step kind it does not know by the fallbacks", async () => {
     const e = await executeError(
-      jsonResponse(500, { ...PROBLEM, status: 500, error_domain: "runtime", retryable: true }),
+      jsonResponse(503, {
+        ...PROBLEM,
+        code: "quorum.lost",
+        domain: "galaxy",
+        retry: "later",
+        next_step: { kind: "pray", detail: "Wait for the quorum." },
+      }),
     );
-    expect(e.errorDomain).toBe("runtime");
-    expect(e.retryable).toBe(true);
+    // As received on the problem, read into the closed lists on the error.
+    expect(e.problem.domain).toBe("galaxy");
+    expect(e.problem.retry).toBe("later");
+    expect(e.domain).toBe("runtime");
+    expect(e.retry).toBe("no");
+    expect(e.nextStep.kind).toBe("report");
+    expect(e.nextStep.detail).toBe("Wait for the quorum.");
+  });
+
+  it("keeps an extension code as received", async () => {
+    const e = await executeError(
+      jsonResponse(402, {
+        ...PROBLEM,
+        status: 402,
+        code: "pipelex.billing.credit_exhausted",
+        domain: "account",
+      }),
+    );
+    expect(e.code).toBe("pipelex.billing.credit_exhausted");
+    expect(e.domain).toBe("account");
+  });
+
+  it("reads a problem with a mistyped core member as client.response_unreadable", async () => {
+    const e = await executeError(jsonResponse(422, { ...PROBLEM, status: "422" }));
+    expect(e.problem).toEqual(buildProblem("client.response_unreadable", { status: 422 }));
   });
 
   it("takes the request id from the X-Request-ID header when the body carries none", async () => {
-    const e = await executeError(
-      jsonResponse(500, { detail: "An internal error occurred." }, { "X-Request-ID": "req-hdr-9" }),
-    );
+    const { request_id: _id, ...withoutId } = PROBLEM;
+    const e = await executeError(jsonResponse(422, withoutId, { "X-Request-ID": "req-hdr-9" }));
     expect(e.requestId).toBe("req-hdr-9");
-    expect(e.serverMessage).toBe("An internal error occurred.");
+    expect(e.problem).not.toHaveProperty("request_id");
   });
 
-  it("takes the request id from the header on a non-JSON body", async () => {
+  it("takes the request id from the header on a body that is not JSON", async () => {
     const e = await executeError(
       new Response("Bad Gateway", {
         status: 502,
@@ -359,87 +825,18 @@ describe("MthdsApiClient problem document members", () => {
     expect(e.requestId).toBe("req-body-123");
   });
 
-  it("still yields the message when the body carries none of the members", async () => {
-    const e = await executeError(jsonResponse(401, { detail: "Invalid authentication token" }));
-    expect(e.serverMessage).toBe("Invalid authentication token");
-    expect(e.message).toContain("Invalid authentication token");
-    expect(e.type).toBeUndefined();
-    expect(e.title).toBeUndefined();
-    expect(e.instance).toBeUndefined();
-    expect(e.requestId).toBeUndefined();
-    expect(e.errorDomain).toBeUndefined();
-    expect(e.retryable).toBeUndefined();
-    expect(e.userAction).toBeUndefined();
-  });
-
-  it("reads a malformed member as absent rather than as a wrong value", async () => {
-    const e = await executeError(
-      jsonResponse(422, {
-        detail: "boom",
-        type: 42,
-        request_id: "",
-        error_domain: null,
-        retryable: "no",
-        user_action: { kind: "change_input" },
-      }),
-    );
-    expect(e.serverMessage).toBe("boom");
-    expect(e.type).toBeUndefined();
-    expect(e.requestId).toBeUndefined();
-    expect(e.errorDomain).toBeUndefined();
-    expect(e.retryable).toBeUndefined();
-    expect(e.userAction).toBeUndefined();
-  });
-
-  it("carries the members on every route that raises ApiResponseError (start)", async () => {
+  it("carries the problem on every route that raises ApiResponseError (start)", async () => {
     const client = makeClient();
     vi.spyOn(globalThis, "fetch").mockResolvedValue(jsonResponse(422, PROBLEM));
-    const err = await client.start({ pipe_code: "p" }).catch((e: unknown) => e);
+    const err = await rejection(client.start({ pipe_code: "p" }));
     expect(err).toBeInstanceOf(ApiResponseError);
-    expect(err).toMatchObject({
-      errorDomain: "input",
-      retryable: false,
-      requestId: "req-body-123",
-      userAction: { kind: "change_model" },
-    });
-  });
-});
-
-describe("MthdsApiClient.execute gateway 30s timeout", () => {
-  it("translates a ~30s gateway 503 into a clear PipelineExecuteTimeoutError pointing at start", async () => {
-    const client = makeClient();
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(textResponse(503, "", "Service Unavailable"));
-    // start = 0ms, failure observed at 31s → over the 30s gateway ceiling.
-    vi.spyOn(Date, "now").mockReturnValueOnce(0).mockReturnValueOnce(31_000);
-    const err = await client.execute({ pipe_code: "p" }).catch((e: unknown) => e);
-    expect(err).toBeInstanceOf(PipelineExecuteTimeoutError);
-    const e = err as PipelineExecuteTimeoutError;
-    expect(e.message).toContain("30s");
-    expect(e.message).toContain("durable run API");
-    expect(e.elapsedMs).toBe(31_000);
-  });
-
-  it("also fires on a client-side abort timeout past the ceiling", async () => {
-    const client = makeClient();
-    vi.spyOn(globalThis, "fetch").mockRejectedValue(new DOMException("timed out", "TimeoutError"));
-    vi.spyOn(Date, "now").mockReturnValueOnce(0).mockReturnValueOnce(30_500);
-    await expect(client.execute({ pipe_code: "p" })).rejects.toBeInstanceOf(
-      PipelineExecuteTimeoutError,
-    );
-  });
-
-  it("leaves a fast 503 as an ordinary ApiResponseError (runner down, not a timeout)", async () => {
-    const client = makeClient();
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(textResponse(503, "", "Service Unavailable"));
-    vi.spyOn(Date, "now").mockReturnValueOnce(0).mockReturnValueOnce(2_000);
-    const err = await client.execute({ pipe_code: "p" }).catch((e: unknown) => e);
-    expect(err).toBeInstanceOf(ApiResponseError);
-    expect(err).not.toBeInstanceOf(PipelineExecuteTimeoutError);
+    expect((err as ApiResponseError).route).toBe("POST /v1/start");
+    expect((err as ApiResponseError).problem).toEqual(PROBLEM);
   });
 });
 
 describe("MthdsApiClient.execute 202 degrade (eng-review 3B)", () => {
-  it("throws RunStillRunningError carrying pipeline_run_id, Retry-After, and Location", async () => {
+  it("throws RunStillRunningError of client.follow_failed carrying the run, Retry-After and Location", async () => {
     const client = makeClient();
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
       jsonResponse(
@@ -448,22 +845,62 @@ describe("MthdsApiClient.execute 202 degrade (eng-review 3B)", () => {
         { "Retry-After": "5", Location: "/v1/runs/run-202/status" },
       ),
     );
-    const err = await client.execute({ pipe_code: "p" }).catch((e: unknown) => e);
+    const err = await rejection(client.execute({ pipe_code: "p" }));
     expect(err).toBeInstanceOf(RunStillRunningError);
+    expect(err).toBeInstanceOf(ApiResponseError);
     const e = err as RunStillRunningError;
+    expect(e.problem).toEqual(
+      buildProblem(
+        "client.follow_failed",
+        { pipeline_run_id: "run-202" },
+        { pipeline_run_id: "run-202" },
+      ),
+    );
+    // The run exists, so the problem names it as its own member too.
+    expect(e.problem.pipeline_run_id).toBe("run-202");
     expect(e.runId).toBe("run-202");
     expect(e.retryAfterSeconds).toBe(5);
     expect(e.location).toBe("/v1/runs/run-202/status");
     expect(e.message).toContain("run-202");
+    expect(e.message).toContain("Read the run 'run-202' by its id rather than start it again.");
+    expect(e.retry).toBe("outcome_unknown");
   });
 
-  it("survives a 202 with a malformed body (unknown run id)", async () => {
+  it.each([
+    ["a number", 42],
+    ["an empty string", ""],
+    ["an object", { id: "run-202" }],
+    ["null", null],
+  ])(
+    "reads a 202 whose run id is %s as client.outcome_unknown naming no run",
+    async (_topic, id) => {
+      const client = makeClient();
+      vi.spyOn(globalThis, "fetch").mockResolvedValue(jsonResponse(202, { pipeline_run_id: id }));
+      const err = await rejection(client.execute({ pipe_code: "p" }));
+      expect(err).not.toBeInstanceOf(RunStillRunningError);
+      expect((err as ApiResponseError).problem).toEqual(buildProblem("client.outcome_unknown", {}));
+      // The body is no problem document, so the error quotes what the server said.
+      expect((err as ApiResponseError).answerExcerpt).toBe(JSON.stringify({ pipeline_run_id: id }));
+    },
+  );
+
+  it("reads a 202 that names no run as client.outcome_unknown, quoting what it said", async () => {
     const client = makeClient();
     vi.spyOn(globalThis, "fetch").mockResolvedValue(textResponse(202, "accepted"));
-    const err = await client.execute({ pipe_code: "p" }).catch((e: unknown) => e);
+    const err = await rejection(client.execute({ pipe_code: "p" }));
+    expect(err).toBeInstanceOf(ApiResponseError);
+    expect(err).not.toBeInstanceOf(RunStillRunningError);
+    expect((err as ApiResponseError).problem).toEqual(buildProblem("client.outcome_unknown", {}));
+    expect((err as ApiResponseError).answerExcerpt).toBe("accepted");
+    expect((err as ApiResponseError).message).toContain("The server answered: accepted");
+  });
+
+  it("quotes nothing of a 202 naming its run, the problem naming the run itself", async () => {
+    const client = makeClient();
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(jsonResponse(202, { pipeline_run_id: "r" }));
+    const err = await rejection(client.execute({ pipe_code: "p" }));
     expect(err).toBeInstanceOf(RunStillRunningError);
-    expect((err as RunStillRunningError).runId).toBe("");
-    expect((err as RunStillRunningError).message).toContain("<unknown>");
+    expect((err as RunStillRunningError).answerExcerpt).toBeUndefined();
   });
 });
 
@@ -471,7 +908,12 @@ describe("MthdsApiClient happy path", () => {
   it("returns the parsed RunResult on 200", async () => {
     const client = makeClient();
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      jsonResponse(200, { pipeline_run_id: "ok", created_at: "t0", state: "COMPLETED" }),
+      jsonResponse(200, {
+        pipeline_run_id: "ok",
+        pipe_output: {},
+        created_at: "t0",
+        state: "COMPLETED",
+      }),
     );
     const result = await client.execute({ pipe_code: "p" });
     expect(result.pipeline_run_id).toBe("ok");
@@ -484,7 +926,7 @@ describe("MthdsApiClient method files on the run routes", () => {
     const client = makeClient();
     const fetchSpy = vi
       .spyOn(globalThis, "fetch")
-      .mockResolvedValue(jsonResponse(200, { pipeline_run_id: "ok" }));
+      .mockResolvedValue(jsonResponse(200, { pipeline_run_id: "ok", pipe_output: {} }));
     const files = {
       "m.mthds": "domain = 'x'",
       "funcs/f.py": "def f(): ...",
@@ -514,9 +956,14 @@ describe("MthdsApiClient method files on the run routes", () => {
   it("rejects the files map smuggled through `extra` (a protocol field)", async () => {
     const client = makeClient();
     const fetchSpy = vi.spyOn(globalThis, "fetch");
-    await expect(
+    const err = await rejection(
       client.execute({ pipe_code: "p", extra: { files: { "m.mthds": "domain = 'x'" } } }),
-    ).rejects.toBeInstanceOf(PipelineRequestError);
+    );
+    expect(err).toBeInstanceOf(PipelineRequestError);
+    expect((err as ProblemError).problem.params).toEqual({
+      argument: "extra",
+      reason: "reserved_arg",
+    });
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
@@ -524,7 +971,7 @@ describe("MthdsApiClient method files on the run routes", () => {
     const client = makeClient();
     const fetchSpy = vi
       .spyOn(globalThis, "fetch")
-      .mockResolvedValue(jsonResponse(200, { pipeline_run_id: "ok" }));
+      .mockResolvedValue(jsonResponse(200, { pipeline_run_id: "ok", pipe_output: {} }));
     // A tree holds at least one file, so an empty map is refused rather than dropped.
     await expect(client.execute({ pipe_code: "registered_pipe", files: {} })).rejects.toThrow(
       EMPTY_METHOD_TREE_MESSAGE,
@@ -623,6 +1070,7 @@ describe("MthdsApiClient.start", () => {
       .catch((e: unknown) => e);
     expect(err).toBeInstanceOf(ApiResponseError);
     expect((err as ApiResponseError).status).toBe(422);
+    expect((err as ApiResponseError).problem.code).toBe("client.response_unreadable");
   });
 });
 
@@ -697,25 +1145,26 @@ describe("MthdsApiClient.validate", () => {
   it("returns the InvalidReport arm (200, is_valid: false) for an invalid bundle — not a throw", async () => {
     const client = makeClient();
     // The 200-diagnostic contract: an invalid bundle is a produced verdict, not a
-    // transport failure. The body carries the discriminant + the structured list
-    // (each `source` the file's tree path), no structural artifacts.
+    // transport failure. The body carries the discriminant and one problem item per
+    // fault, each naming its file by tree path, no structural artifacts.
+    const items = [
+      {
+        code: "method.schema_violation",
+        detail: "The main pipe declares no output.",
+        location: { file: "broken.mthds" },
+      },
+      {
+        code: "method.concept_unresolved",
+        detail: "The concept 'demo.Missing' is not declared.",
+        params: { concept_ref: "demo.Missing" },
+        location: { pipe: "demo.greet", file: "broken.mthds", line: 12 },
+        rule_version: 2,
+      },
+    ];
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
       jsonResponse(200, {
         is_valid: false,
-        validation_errors: [
-          {
-            category: "blueprint_validation",
-            message: "missing main pipe output",
-            source: "broken.mthds",
-            domain_code: "demo",
-          },
-          {
-            category: "pipe_factory",
-            message: "unknown concept demo.Missing",
-            pipe_code: "demo.greet",
-            missing_concept_code: "demo.Missing",
-          },
-        ],
+        errors: items,
         pending_signatures: [],
         is_runnable: false,
         message: "MTHDS validation found errors",
@@ -725,93 +1174,104 @@ describe("MthdsApiClient.validate", () => {
     expect(report.is_valid).toBe(false);
     if (report.is_valid !== false) throw new Error("expected an invalid report");
     expect(report.is_runnable).toBe(false);
-    expect(report.validation_errors).toHaveLength(2);
-    expect(report.validation_errors[0]).toMatchObject({
-      category: "blueprint_validation",
-      source: "broken.mthds",
-    });
-    expect(report.validation_errors[1]!.category).toBe("pipe_factory");
-    // `missing_concept_code` rides the wire but is not on the neutral `ValidationError`
-    // (it is typed on the SDK's `ValidationErrorItem`) — assert its preservation.
-    expect(report.validation_errors[1]).toMatchObject({ missing_concept_code: "demo.Missing" });
+    expect(report.message).toBe("MTHDS validation found errors");
+    // Every item is kept as received, a member of the runner's own included.
+    expect(report.errors).toEqual(items);
+    expect(report.errors[1]!.location?.pipe).toBe("demo.greet");
+  });
+
+  it("reads an invalid verdict whose faults are not problem items as client.response_unreadable", async () => {
+    // A verdict of the shape before the error registry: `validation_errors`, no `errors`.
+    const client = makeClient();
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      jsonResponse(200, {
+        is_valid: false,
+        validation_errors: [{ category: "blueprint_validation", message: "boom" }],
+        message: "MTHDS validation found errors",
+      }),
+    );
+    const err = await rejection(client.validate({ files: { "broken.mthds": "broken" } }));
+    expect(err).toBeInstanceOf(ApiResponseError);
+    expect((err as ApiResponseError).problem).toEqual(
+      buildProblem("client.response_unreadable", { status: 200 }),
+    );
   });
 
   it("throws ApiResponseError on a request-shape 422 (a files map that is not a tree)", async () => {
     const client = makeClient();
-    // The no-verdict path: pipelex-api's RequestValidationError handler emits an
-    // RFC 7807 problem with a top-level error_type "ValidationError" and a string
-    // detail. A produced verdict never 422s — only request-shape errors do.
+    // The no-verdict path: the runner answers a malformed request with a problem
+    // document. A produced verdict never 422s — only request-shape errors do.
+    const problem = {
+      type: "https://mthds.ai/errors/request.invalid",
+      title: "The request is invalid",
+      status: 422,
+      detail: "The key 'a/../b.mthds' of files is not a tree path",
+      code: "request.invalid",
+      domain: "input",
+      retry: "no",
+      next_step: { kind: "change_input", detail: "Name each file by its tree path." },
+    };
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      jsonResponse(
-        422,
-        {
-          error_type: "ValidationError",
-          detail: "The key 'a/../b.mthds' of files is not a tree path",
-        },
-        { "content-type": "application/problem+json" },
-      ),
+      jsonResponse(422, problem, { "content-type": "application/problem+json" }),
     );
-    const err = await client.validate({ files: { "a/../b.mthds": "x" } }).catch((e: unknown) => e);
+    const err = await rejection(client.validate({ files: { "a/../b.mthds": "x" } }));
     expect(err).toBeInstanceOf(ApiResponseError);
     expect((err as ApiResponseError).status).toBe(422);
-    expect((err as ApiResponseError).errorType).toBe("ValidationError");
-    expect((err as ApiResponseError).validationErrors).toBeUndefined();
+    expect((err as ApiResponseError).problem).toEqual(problem);
+    expect((err as ApiResponseError).problem).not.toHaveProperty("errors");
   });
 });
 
 // `/health` is origin-level, outside the `/v1` prefix, and its refusal is an
-// ApiResponseError carrying the problem members, as on the protocol routes.
+// ApiResponseError carrying its problem, as on the protocol routes.
 describe("MthdsApiClient.health", () => {
-  it("raises a refusal as ApiResponseError with its problem members", async () => {
+  it("raises a refusal as ApiResponseError with its problem", async () => {
     const client = makeClient();
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      jsonResponse(
-        500,
-        {
-          type: "https://docs.pipelex.com/latest/errors/pipelex-config-error/",
-          title: "Pipelex config error",
-          status: 500,
-          detail: "The model deck could not be loaded.",
-          error_type: "PipelexConfigError",
-          error_domain: "config",
-          retryable: false,
-          user_action: { kind: "contact_support", detail: "Ask the runner's operator." },
-        },
-        { "X-Request-ID": "req-health-1" },
-      ),
-    );
+    const problem = {
+      type: "https://mthds.ai/errors/runtime.misconfigured",
+      title: "The runtime is misconfigured",
+      status: 500,
+      detail: "The model deck could not be loaded.",
+      code: "runtime.misconfigured",
+      domain: "operator",
+      retry: "no",
+      next_step: { kind: "contact_operator", detail: "Ask the runner's operator." },
+    };
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(jsonResponse(500, problem, { "X-Request-ID": "req-health-1" }));
 
-    const err = await client.health().catch((e: unknown) => e);
+    const err = await rejection(client.health());
 
+    expect(fetchSpy.mock.calls[0]![0]).toBe("http://localhost:8081/health");
     expect(err).toBeInstanceOf(ApiResponseError);
     const e = err as ApiResponseError;
     expect(e.message).toBe(
-      "API GET http://localhost:8081/health failed (500): The model deck could not be loaded.",
+      "GET /health failed (500): The model deck could not be loaded. Ask the runner's operator.",
     );
+    expect(e.problem).toEqual(problem);
     expect(e).toMatchObject({
       status: 500,
-      errorType: "PipelexConfigError",
-      serverMessage: "The model deck could not be loaded.",
-      type: "https://docs.pipelex.com/latest/errors/pipelex-config-error/",
-      errorDomain: "config",
-      retryable: false,
-      userAction: { kind: "contact_support", detail: "Ask the runner's operator." },
+      route: "GET /health",
+      code: "runtime.misconfigured",
+      domain: "operator",
+      retry: "no",
       requestId: "req-health-1",
     });
   });
 
-  it("raises a plain-text refusal as ApiResponseError too", async () => {
+  it("reads a plain-text 503 as runtime.unavailable", async () => {
     const client = makeClient();
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
       textResponse(503, "Service Unavailable", "Service Unavailable"),
     );
 
-    const err = await client.health().catch((e: unknown) => e);
+    const err = await rejection(client.health());
 
     expect(err).toBeInstanceOf(ApiResponseError);
     expect((err as ApiResponseError).status).toBe(503);
-    expect((err as ApiResponseError).message).toBe(
-      "API GET http://localhost:8081/health failed (503): Service Unavailable",
+    expect((err as ApiResponseError).problem).toEqual(
+      buildProblem("runtime.unavailable", {}, { status: 503 }),
     );
   });
 });
@@ -912,7 +1372,7 @@ describe("MthdsApiClient.pipeIo", () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
       jsonResponse(200, {
         is_valid: false,
-        validation_errors: [{ category: "blueprint_validation", message: "boom" }],
+        errors: [{ code: "method.syntax", detail: "boom", params: { finding: "boom" } }],
         message: "MTHDS library could not be resolved",
       }),
     );
@@ -920,45 +1380,48 @@ describe("MthdsApiClient.pipeIo", () => {
     const result = await client.pipeIo({ files: { "smoke.mthds": "domain = 'smoke'" } });
 
     expect(result.is_valid).toBe(false);
+    if (result.is_valid) throw new Error("expected the invalid arm");
+    expect(result.errors.map((item) => item.code)).toEqual(["method.syntax"]);
   });
 
-  it("raises a selection refusal as ApiResponseError carrying its error_type", async () => {
+  it("raises a selection refusal as ApiResponseError carrying its code", async () => {
     const client = makeClient();
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      jsonResponse(422, {
-        type: "https://docs.pipelex.com/latest/errors/entry-pipe-not-found-error/",
-        status: 422,
-        detail: "Pipe 'smoke.nope' not found in the submitted closure.",
-        error_type: "EntryPipeNotFoundError",
-        error_domain: "input",
-        request_id: "req-io-1",
-      }),
-    );
+    const problem = {
+      type: "https://mthds.ai/errors/request.pipe_not_found",
+      title: "The selected pipe is not in the method",
+      status: 422,
+      detail: "Pipe 'smoke.nope' not found in the submitted closure.",
+      code: "request.pipe_not_found",
+      domain: "input",
+      retry: "no",
+      next_step: { kind: "change_input", detail: "Select one of: smoke.echo." },
+      params: { pipe_ref: "smoke.nope", candidates: ["smoke.echo"] },
+      request_id: "req-io-1",
+    };
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(jsonResponse(422, problem));
 
-    const err = await client
-      .pipeIo({ files: { "smoke.mthds": "domain = 'smoke'" }, pipe_ref: "smoke.nope" })
-      .catch((e: unknown) => e);
+    const err = await rejection(
+      client.pipeIo({ files: { "smoke.mthds": "domain = 'smoke'" }, pipe_ref: "smoke.nope" }),
+    );
 
     expect(err).toBeInstanceOf(ApiResponseError);
-    expect(err).toMatchObject({
-      status: 422,
-      errorType: "EntryPipeNotFoundError",
-      serverMessage: "Pipe 'smoke.nope' not found in the submitted closure.",
-      errorDomain: "input",
-      requestId: "req-io-1",
-    });
-    expect((err as ApiResponseError).message).toBe(
-      "API POST /v1/pipe-io failed (422): Pipe 'smoke.nope' not found in the submitted closure.",
+    const e = err as ApiResponseError;
+    expect(PIPE_SELECTION_CODES.has(e.code)).toBe(true);
+    expect(e.problem).toEqual(problem);
+    expect(e).toMatchObject({ status: 422, route: "POST /v1/pipe-io", requestId: "req-io-1" });
+    expect(e.message).toBe(
+      "POST /v1/pipe-io failed (422): Pipe 'smoke.nope' not found in the submitted closure. " +
+        "Select one of: smoke.echo.",
     );
   });
 
-  it("wraps a network failure as ApiUnreachableError", async () => {
+  it("reads a network failure as ApiTransportError of client.unreachable", async () => {
     const client = makeClient();
-    vi.spyOn(globalThis, "fetch").mockRejectedValue(networkError("ECONNREFUSED"));
+    vi.spyOn(globalThis, "fetch").mockRejectedValue(networkError("ECONNREFUSED", "connect"));
 
-    await expect(client.pipeIo({ files: { "x.mthds": "x" } })).rejects.toBeInstanceOf(
-      ApiUnreachableError,
-    );
+    const err = await rejection(client.pipeIo({ files: { "x.mthds": "x" } }));
+    expect(err).toBeInstanceOf(ApiTransportError);
+    expect((err as ApiTransportError).code).toBe("client.unreachable");
   });
 
   // A `method_ref` can make the server clone a repository first, so it gets the
@@ -980,29 +1443,23 @@ describe("MthdsApiClient.pipeIo", () => {
   });
 });
 
-describe("MthdsApiClient validation items keep their next step", () => {
-  // The two items a runner sends for a refused bundle, as the reference runner
-  // serializes them (`exclude_none`): an unknown model, whose one close match
-  // becomes a `rename-model` suggested fix, and an unresolved pipe dependency,
-  // which names the missing pipe.
+describe("MthdsApiClient problem items keep their next step", () => {
+  // The two items a runner sends for a refused bundle: an unknown model, whose one
+  // close match becomes a `rename-model` suggested fix, and an unresolved pipe
+  // dependency, which names the missing pipe. Each carries members of the runner's
+  // own, which a reader keeps.
   const UNKNOWN_MODEL_ITEM = {
-    category: "pipe_validation",
-    error_type: "unknown_model",
-    message: "Model handle 'gpt-5.1' was not found in the model deck. Did you mean: gpt-5?",
-    pipe_code: "summarize",
-    domain_code: "demo",
-    source: "demo.mthds",
-    field_path: "pipe.summarize.model",
-    field_name: "model",
-    model_reference: "gpt-5.1",
-    model_type: "llm",
+    code: "model.unknown",
+    detail: "Model handle 'gpt-5.1' was not found in the model deck. Did you mean: gpt-5?",
+    params: { model: "gpt-5.1" },
+    location: { pipe: "summarize", file: "demo.mthds", path: ["pipe", "summarize", "model"] },
     suggestions: ["gpt-5"],
     suggested_fix: {
       fix_code: "rename-model",
       description:
         "Replace model 'gpt-5.1' of pipe 'summarize' with 'gpt-5', its one close match in the model deck",
       safety: "unsafe",
-      source: "demo.mthds",
+      file: "demo.mthds",
       ops: [
         {
           kind: "remap_value",
@@ -1012,15 +1469,13 @@ describe("MthdsApiClient validation items keep their next step", () => {
         },
       ],
     },
+    model_type: "llm",
   };
   const MISSING_PIPE_ITEM = {
-    category: "pipe_validation",
-    error_type: "unresolved_pipe_dependency",
-    message: "Pipe 'demo.main' refers to 'summarise', which no bundle declares.",
-    pipe_code: "main",
-    domain_code: "demo",
-    missing_pipe_code: "demo.summarise",
-    field_path: "pipe.main",
+    code: "method.pipe_unresolved",
+    detail: "Pipe 'demo.main' refers to 'summarise', which no bundle declares.",
+    params: { pipe_ref: "demo.summarise" },
+    location: { pipe: "main" },
   };
 
   it("keeps the suggested fix and the missing pipe on pipe-io's invalid verdict", async () => {
@@ -1028,7 +1483,7 @@ describe("MthdsApiClient validation items keep their next step", () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
       jsonResponse(200, {
         is_valid: false,
-        validation_errors: [UNKNOWN_MODEL_ITEM, MISSING_PIPE_ITEM],
+        errors: [UNKNOWN_MODEL_ITEM, MISSING_PIPE_ITEM],
         message: "MTHDS library could not be resolved",
       }),
     );
@@ -1036,9 +1491,9 @@ describe("MthdsApiClient validation items keep their next step", () => {
     const result = await client.pipeIo({ files: { "demo.mthds": "domain = 'demo'" } });
 
     if (result.is_valid) throw new Error("expected the invalid arm");
-    const [modelItem, pipeItem] = result.validation_errors;
+    const [modelItem, pipeItem] = result.errors;
     expect(modelItem).toEqual(UNKNOWN_MODEL_ITEM);
-    // Typed reads: these compile only because `ValidationErrorItem` declares the fields.
+    // Typed reads: these compile because `ProblemItem` declares the members.
     expect(modelItem!.suggested_fix?.description).toContain("with 'gpt-5'");
     expect(modelItem!.suggested_fix?.ops[0]).toEqual({
       kind: "remap_value",
@@ -1046,33 +1501,56 @@ describe("MthdsApiClient validation items keep their next step", () => {
       key: "model",
       mapping: { "gpt-5.1": "gpt-5" },
     });
-    expect(modelItem!.model_reference).toBe("gpt-5.1");
     expect(modelItem!.suggestions).toEqual(["gpt-5"]);
-    expect(pipeItem!.missing_pipe_code).toBe("demo.summarise");
+    expect(modelItem!.model_type).toBe("llm");
+    expect(pipeItem!.params).toEqual({ pipe_ref: "demo.summarise" });
   });
 
   it("keeps the suggested fix and the missing pipe on a refusal's problem document", async () => {
     const client = makeClient();
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
       jsonResponse(422, {
-        type: "https://docs.pipelex.com/latest/errors/validate-bundle-error/",
-        title: "Bundle validation failed",
+        type: "https://mthds.ai/errors/method.invalid",
+        title: "The method does not validate",
         status: 422,
         detail: "MTHDS validation found errors",
-        error_type: "ValidateBundleError",
-        error_domain: "input",
-        validation_errors: [UNKNOWN_MODEL_ITEM, MISSING_PIPE_ITEM],
+        code: "method.invalid",
+        domain: "method",
+        retry: "no",
+        next_step: { kind: "change_method", detail: "Fix each fault listed in errors." },
+        errors: [UNKNOWN_MODEL_ITEM, MISSING_PIPE_ITEM],
       }),
     );
 
-    const err = await client.execute({ pipe_code: "summarize" }).catch((e: unknown) => e);
+    const err = await rejection(client.execute({ pipe_code: "summarize" }));
 
     expect(err).toBeInstanceOf(ApiResponseError);
-    const items = (err as ApiResponseError).validationErrors;
+    const items = (err as ApiResponseError).problem.errors;
     expect(items).toEqual([UNKNOWN_MODEL_ITEM, MISSING_PIPE_ITEM]);
     expect(items![0]!.suggested_fix?.fix_code).toBe("rename-model");
     expect(items![0]!.suggested_fix?.safety).toBe("unsafe");
-    expect(items![1]!.missing_pipe_code).toBe("demo.summarise");
+    expect(items![1]!.code).toBe("method.pipe_unresolved");
+  });
+
+  it("reads a refusal holding an item that is not a problem item as client.response_unreadable", async () => {
+    const client = makeClient();
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      jsonResponse(422, {
+        type: "https://mthds.ai/errors/method.invalid",
+        title: "The method does not validate",
+        status: 422,
+        detail: "MTHDS validation found errors",
+        code: "method.invalid",
+        domain: "method",
+        retry: "no",
+        next_step: { kind: "change_method", detail: "Fix each fault listed in errors." },
+        errors: [{ category: "pipe_validation", message: "boom" }],
+      }),
+    );
+
+    const err = await rejection(client.execute({ pipe_code: "summarize" }));
+
+    expect((err as ApiResponseError).problem.code).toBe("client.response_unreadable");
   });
 });
 
@@ -1185,9 +1663,7 @@ describe("MthdsApiClient User-Agent (client-identification spec)", () => {
 
   it("sends the library User-Agent on requestRaw paths (protocol routes)", async () => {
     const client = makeClient();
-    const fetchSpy = vi
-      .spyOn(globalThis, "fetch")
-      .mockResolvedValue(jsonResponse(200, { pipeline_run_id: "x" }));
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(jsonResponse(200, RUN_RESULT));
     await client.execute({ pipe_code: "p" });
     expect(headersOf(fetchSpy)["User-Agent"]).toBe(LIBRARY_UA);
   });
@@ -1207,7 +1683,8 @@ describe("MthdsApiClient User-Agent (client-identification spec)", () => {
       .spyOn(globalThis, "fetch")
       .mockImplementation(async () => jsonResponse(200, { is_valid: true }));
     await client.pipeIo({ method_id: "mt_abc123" });
-    await client.version();
+    // The answer is no version, so the call fails: what it sent is what this checks.
+    await client.version().catch(() => undefined);
     expect(headersOf(fetchSpy, 0)["User-Agent"]).toBe(LIBRARY_UA);
     expect(headersOf(fetchSpy, 1)["User-Agent"]).toBe(LIBRARY_UA);
   });
@@ -1223,9 +1700,7 @@ describe("MthdsApiClient User-Agent (client-identification spec)", () => {
         url: "https://acme.test",
       },
     });
-    const fetchSpy = vi
-      .spyOn(globalThis, "fetch")
-      .mockResolvedValue(jsonResponse(200, { pipeline_run_id: "x" }));
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(jsonResponse(200, RUN_RESULT));
     await client.execute({ pipe_code: "p" });
     expect(headersOf(fetchSpy)["User-Agent"]).toBe(
       `acme-invoicer/1.4.0 (batch; +https://acme.test) ${LIBRARY_UA}`,
@@ -1234,9 +1709,7 @@ describe("MthdsApiClient User-Agent (client-identification spec)", () => {
 
   it("keeps the other headers alongside it", async () => {
     const client = makeClient();
-    const fetchSpy = vi
-      .spyOn(globalThis, "fetch")
-      .mockResolvedValue(jsonResponse(200, { pipeline_run_id: "x" }));
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(jsonResponse(200, RUN_RESULT));
     await client.execute({ pipe_code: "p" });
     expect(headersOf(fetchSpy)).toEqual({
       Accept: "application/json",
@@ -1265,9 +1738,7 @@ describe("MthdsApiClient User-Agent (client-identification spec)", () => {
     } finally {
       vi.unstubAllGlobals();
     }
-    const fetchSpy = vi
-      .spyOn(globalThis, "fetch")
-      .mockResolvedValue(jsonResponse(200, { pipeline_run_id: "x" }));
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(jsonResponse(200, RUN_RESULT));
     await client.execute({ pipe_code: "p" });
     await client.health().catch(() => undefined);
     expect(headersOf(fetchSpy, 0)).not.toHaveProperty("User-Agent");

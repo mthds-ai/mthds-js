@@ -3,7 +3,8 @@
  *
  * Each command is a thin stub that makes the command visible in --help,
  * then delegates to passthroughToPipelexAgent() which forwards the full
- * argv to pipelex-agent.
+ * argv to pipelex-agent, `--error-format` moved after the command, or dropped
+ * for `inputs`, which pipelex-agent does not give the option.
  */
 
 import type { Command } from "commander";
@@ -17,12 +18,14 @@ export function registerPipelexRunnerCommands(
   program: Command,
   getAutoInstall: () => boolean,
 ): void {
-  const action = () => {
-    passthroughToPipelexAgent(getAutoInstall());
-  };
-
-  const stub = (cmd: Command) =>
-    cmd.allowUnknownOption().allowExcessArguments(true).exitOverride().action(action);
+  const stub = (cmd: Command, forwardErrorFormat = true) =>
+    cmd
+      .allowUnknownOption()
+      .allowExcessArguments(true)
+      .exitOverride()
+      .action(() => {
+        passthroughToPipelexAgent(getAutoInstall(), { forwardErrorFormat });
+      });
 
   // ── init ──
 
@@ -105,23 +108,27 @@ export function registerPipelexRunnerCommands(
     .passThroughOptions()
     .allowUnknownOption();
 
+  // pipelex-agent's `inputs` takes no `--error-format`, and writes its failures as JSON.
   stub(
     inputsGroup
       .command("bundle")
       .argument("[target]", "Bundle file (.mthds) or directory")
       .description("Generate inputs from a bundle file or content"),
+    false,
   );
   stub(
     inputsGroup
       .command("pipe")
       .argument("<target>", "Bundle file (.mthds) or pipe code")
       .description("Generate inputs for a pipe"),
+    false,
   );
   stub(
     inputsGroup
       .command("method")
       .argument("<name>", "Method name")
       .description("Generate inputs for an installed method"),
+    false,
   );
 
   // ── codegen ──

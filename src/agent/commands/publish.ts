@@ -12,16 +12,23 @@
  * was registered are how a caller tells, and the message says to publish the GitHub address instead.
  */
 
-import { agentSuccess, agentError, AGENT_ERROR_DOMAINS } from "../output.js";
+import { agentSuccess, agentError, agentProblem } from "../output.js";
+import {
+  noUsableMethodProblem,
+  registrationsProblem,
+  resolveFailureProblem,
+  unusableMethodProblem,
+} from "../problems.js";
 import { parseAddress } from "../../installer/resolver/address.js";
 import { resolveFromGitHub } from "../../installer/resolver/github.js";
 import { resolveFromLocal } from "../../installer/resolver/local.js";
-import { describeUnusableMethod, skippedMethodReports } from "../../installer/resolver/skipped.js";
+import { skippedMethodReports } from "../../installer/resolver/skipped.js";
 import {
   describeRegistration,
   isAccepted,
   registerMethods,
   registrationReport,
+  HUB_URL_ENV,
   resolveHubUrl,
 } from "../../installer/registry/client.js";
 import {
@@ -45,15 +52,23 @@ export async function agentPublish(
   options: AgentPublishOptions,
 ): Promise<void> {
   if (address && options.local) {
-    agentError("Cannot use both an address and --local at the same time.", "ArgumentError", {
-      error_domain: AGENT_ERROR_DOMAINS.ARGUMENT,
-    });
+    agentError(
+      agentProblem(
+        "client.argument_invalid",
+        { argument: "--local", reason: "conflicts_with_address" },
+        "Cannot use both an address and --local at the same time.",
+      ),
+    );
   }
 
   if (!address && !options.local) {
-    agentError("Provide an address (org/repo) or use --local <path>.", "ArgumentError", {
-      error_domain: AGENT_ERROR_DOMAINS.ARGUMENT,
-    });
+    agentError(
+      agentProblem(
+        "client.argument_invalid",
+        { argument: "address", reason: "missing" },
+        "Provide an address (org/repo) or use --local <path>.",
+      ),
+    );
   }
 
   const methodFilter = options.method;
@@ -66,9 +81,13 @@ export async function agentPublish(
     try {
       resolved = await resolveFromLocal(options.local);
     } catch (err) {
-      agentError(`Failed to resolve local methods: ${(err as Error).message}`, "PublishError", {
-        error_domain: AGENT_ERROR_DOMAINS.INSTALL,
-      });
+      agentError(
+        resolveFailureProblem(
+          err,
+          options.local!,
+          `Failed to resolve local methods: ${(err as Error).message}`,
+        ),
+      );
     }
     if (resolved.methods.length > 0) {
       const addr = resolved.methods[0]!.manifest.package.address;
@@ -79,36 +98,51 @@ export async function agentPublish(
     try {
       parsed = parseAddress(address);
     } catch (err) {
-      agentError((err as Error).message, "PublishError", {
-        error_domain: AGENT_ERROR_DOMAINS.INSTALL,
-      });
+      agentError(
+        agentProblem(
+          "client.argument_invalid",
+          { argument: "address", reason: "invalid_address" },
+          (err as Error).message,
+        ),
+      );
     }
     if (parsed.subpath) {
-      agentError(subdirectoryRefusal(parsed), "PublishError", {
-        error_domain: AGENT_ERROR_DOMAINS.ARGUMENT,
-      });
+      agentError(
+        agentProblem(
+          "client.argument_invalid",
+          { argument: "address", reason: "subdirectory" },
+          subdirectoryRefusal(parsed),
+        ),
+      );
     }
 
     try {
       resolved = await resolveFromGitHub(parsed);
     } catch (err) {
-      agentError(`Failed to resolve methods: ${(err as Error).message}`, "PublishError", {
-        error_domain: AGENT_ERROR_DOMAINS.INSTALL,
-      });
+      agentError(
+        resolveFailureProblem(
+          err,
+          address!,
+          `Failed to resolve methods: ${(err as Error).message}`,
+        ),
+      );
     }
     orgRepo = `${parsed.org}/${parsed.repo}`;
   } else {
-    agentError("No address or local path provided.", "ArgumentError", {
-      error_domain: AGENT_ERROR_DOMAINS.ARGUMENT,
-    });
+    agentError(
+      agentProblem(
+        "client.argument_invalid",
+        { argument: "address", reason: "missing" },
+        "No address or local path provided.",
+      ),
+    );
   }
 
   // Filter by --method
   if (methodFilter) {
     const match = resolved.methods.find((m) => m.name === methodFilter);
     if (!match) {
-      agentError(describeUnusableMethod(resolved, methodFilter), "PublishError", {
-        error_domain: AGENT_ERROR_DOMAINS.INSTALL,
+      agentError(unusableMethodProblem(resolved, methodFilter, "actor"), {
         skipped_methods: skippedMethodReports(resolved),
       });
     }
@@ -116,10 +150,15 @@ export async function agentPublish(
   }
 
   if (resolved.methods.length === 0) {
-    agentError("No valid methods to publish.", "PublishError", {
-      error_domain: AGENT_ERROR_DOMAINS.INSTALL,
-      skipped_methods: skippedMethodReports(resolved),
-    });
+    agentError(
+      noUsableMethodProblem(
+        resolved,
+        address ?? options.local!,
+        "No valid methods to publish.",
+        "actor",
+      ),
+      { skipped_methods: skippedMethodReports(resolved) },
+    );
   }
 
   if (resolved.source === "local") {
@@ -135,16 +174,19 @@ export async function agentPublish(
   }
 
   if (!resolved.isPublic) {
-    agentError(privateRepositoryRefusal(orgRepo!), "PublishError", {
-      error_domain: AGENT_ERROR_DOMAINS.INSTALL,
-      skipped_methods: skippedMethodReports(resolved),
-    });
+    agentError(
+      agentProblem(
+        "client.argument_invalid",
+        { argument: "address", reason: "private_repository" },
+        privateRepositoryRefusal(orgRepo!),
+      ),
+      { skipped_methods: skippedMethodReports(resolved) },
+    );
   }
 
   const hub = resolveHubUrl();
   if (!hub.ok) {
-    agentError(hub.message, "PublishError", {
-      error_domain: AGENT_ERROR_DOMAINS.CONFIG,
+    agentError(agentProblem("client.not_configured", { setting: HUB_URL_ENV }, hub.message), {
       skipped_methods: skippedMethodReports(resolved),
     });
   }
@@ -166,19 +208,13 @@ export async function agentPublish(
 
   const reports = registrations.map(registrationReport);
   if (accepted.length === 0) {
-    const failures = registrations.map((registration) => registration.answer);
-    const retryable = failures.every(
-      (answer) => answer.outcome === "error" && answer.error.retryable,
-    );
+    const message = [
+      "Nothing was published: mthds.sh listed none of the selected methods.",
+      ...registrations.map(describeRegistration),
+    ].join("\n");
     agentError(
-      [
-        "Nothing was published: mthds.sh listed none of the selected methods.",
-        ...registrations.map(describeRegistration),
-      ].join("\n"),
-      "PublishError",
+      registrationsProblem(registrations, { hubUrl: hub.url, orgRepo: orgRepo!, message }),
       {
-        error_domain: AGENT_ERROR_DOMAINS.INSTALL,
-        retryable,
         skipped_methods: skippedMethodReports(resolved),
         registrations: reports,
       },

@@ -2,11 +2,12 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { runProtocolValidate } from "../../../src/agent/commands/api-commands.js";
 import type { Runner } from "../../../src/runners/types.js";
 import type { ValidationResult } from "../../../src/protocol/models.js";
+import { chooseErrorFormat } from "../../../src/agent/output.js";
 
 // `runProtocolValidate` is the live agent validate path. These tests pin that the method's tree
-// reaches the runner as given, each diagnostic naming its file by tree path, and that the
-// structured failure envelope forwards that path to agent consumers. The guard is duck-typed on
-// `.type`, so a stub runner suffices.
+// reaches the runner as given, each item naming its file by tree path in its `location.file`, and
+// that the `method.invalid` problem forwards that path to agent consumers. The guard is duck-typed
+// on `.type`, so a stub runner suffices.
 
 function makeRunner(
   type: "api" | "pipelex",
@@ -37,6 +38,7 @@ describe("runProtocolValidate — the method's tree", () => {
   });
 
   afterEach(() => {
+    chooseErrorFormat(undefined);
     vi.restoreAllMocks();
   });
 
@@ -52,32 +54,63 @@ describe("runProtocolValidate — the method's tree", () => {
     expect(validate).toHaveBeenCalledWith(SOURCE, false);
   });
 
-  it("forwards validation_errors naming their file by tree path into the failure envelope", async () => {
+  it("forwards the items' files, named by tree path, into the method.invalid problem", async () => {
     const invalid: ValidationResult = {
       is_valid: false,
       message: "Bundle is invalid",
       pending_signatures: [],
       is_runnable: false,
-      validation_errors: [
-        { category: "blueprint_validation", message: "boom", source: "bundle.mthds" } as never,
+      errors: [
+        {
+          code: "method.syntax",
+          detail: "The method does not parse (boom).",
+          params: { finding: "boom" },
+          location: { file: "bundle.mthds", line: 3 },
+        },
       ],
     };
     const { runner } = makeRunner("api", invalid);
 
-    await expect(runProtocolValidate(runner, SOURCE, false, "json")).rejects.toThrow("__exit__");
+    await expect(runProtocolValidate(runner, SOURCE, false, "markdown", "json")).rejects.toThrow(
+      "__exit__",
+    );
 
     expect(exitSpy).toHaveBeenCalledWith(1);
-    // The first stderr write is the real ValidateBundleError envelope (mocking
+    // The first stderr write is the real method.invalid problem (mocking
     // process.exit as a throw lets the function's own catch fire a second time —
     // a test artifact; in production process.exit terminates first).
     const written = String(stderrSpy.mock.calls[0]![0]);
     const payload = JSON.parse(written) as {
-      error_type: string;
+      code: string;
       is_valid: boolean;
-      validation_errors: Array<{ source?: string }>;
+      message: string;
+      errors: Array<{ location?: { file?: string } }>;
     };
-    expect(payload.error_type).toBe("ValidateBundleError");
+    expect(payload.code).toBe("method.invalid");
     expect(payload.is_valid).toBe(false);
-    expect(payload.validation_errors[0]?.source).toBe("bundle.mthds");
+    expect(payload.message).toBe("Bundle is invalid");
+    expect(payload.errors[0]?.location?.file).toBe("bundle.mthds");
+  });
+
+  it("names the items' files in the Markdown it renders when the runner renders none", async () => {
+    const invalid: ValidationResult = {
+      is_valid: false,
+      message: "Bundle is invalid",
+      is_runnable: false,
+      errors: [
+        {
+          code: "method.syntax",
+          detail: "The method does not parse (boom).",
+          location: { file: "bundle.mthds", line: 3 },
+        },
+      ],
+    };
+    const { runner } = makeRunner("api", invalid);
+
+    await expect(runProtocolValidate(runner, SOURCE, false)).rejects.toThrow("__exit__");
+
+    const markdown = String(stderrSpy.mock.calls[0]![0]);
+    expect(markdown).toContain("`method.syntax`: The method does not parse (boom).");
+    expect(markdown).toContain("file 'bundle.mthds', line 3");
   });
 });

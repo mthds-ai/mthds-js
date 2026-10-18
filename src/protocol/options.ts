@@ -14,7 +14,7 @@
  * definition instead of re-deriving it and drifting.
  */
 
-import { PipelineRequestError } from "./exceptions.js";
+import { argumentInvalid } from "../problems/errors.js";
 import type { MethodFiles, MethodTreeSource } from "./file_entries.js";
 import type { VariableMultiplicity } from "./pipe_output.js";
 import type { PipelineInputs } from "./pipeline_inputs.js";
@@ -117,21 +117,23 @@ export const EMPTY_METHOD_TREE_MESSAGE =
  * `files: {}` beside a `tree` still named two); and a tree holding no file is no
  * method, which the standard refuses (`empty_tree`), so `files: {}` or a tree with
  * no file is refused whatever else the request carries, before anything is read or
- * sent. Throws `PipelineRequestError`; the API client, the local runner and
- * `@pipelex/sdk` all call it on every route that takes a method, so they refuse the
- * same requests with the same message.
+ * sent. Throws a `ProblemError` of `client.argument_invalid`; the API client, the local
+ * runner and `@pipelex/sdk` all call it on every route that takes a method, so they
+ * refuse the same requests with the same message.
  */
 export function assertOneMethodSource(options: RunOptions): void {
   if (options.files != null && options.tree != null) {
-    throw new PipelineRequestError(
+    throw argumentInvalid(
+      "tree",
+      "conflicts_with_files",
       "files and tree are two forms of the method's tree and are mutually exclusive; provide one.",
     );
   }
-  const empty =
-    (options.files != null && Object.keys(options.files).length === 0) ||
-    (options.tree != null && options.tree.files.length === 0);
-  if (empty) {
-    throw new PipelineRequestError(EMPTY_METHOD_TREE_MESSAGE);
+  if (options.files != null && Object.keys(options.files).length === 0) {
+    throw argumentInvalid("files", "empty", EMPTY_METHOD_TREE_MESSAGE);
+  }
+  if (options.tree != null && options.tree.files.length === 0) {
+    throw argumentInvalid("tree", "empty", EMPTY_METHOD_TREE_MESSAGE);
   }
 }
 

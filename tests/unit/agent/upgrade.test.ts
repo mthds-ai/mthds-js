@@ -34,15 +34,12 @@ vi.mock("../../../src/agent/snooze.js", () => ({
   clearSnooze: vi.fn(),
 }));
 
-vi.mock("../../../src/agent/output.js", () => ({
-  agentError: vi.fn((_msg: string, _type: string, _extras?: unknown) => {
+vi.mock("../../../src/agent/output.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../../src/agent/output.js")>()),
+  agentError: vi.fn((_problem: unknown, _extras?: unknown) => {
     // Simulate process.exit(1) — the real agentError returns `never`
     throw new Error("agentError called");
   }),
-  AGENT_ERROR_DOMAINS: {
-    INSTALL: "install",
-    BINARY: "binary",
-  },
 }));
 
 // ── Imports (after mocks) ──────────────────────────────────────────
@@ -299,7 +296,7 @@ describe("agentUpgrade", () => {
   // ---------------------------------------------------------------------------
   // Case 8: requireUv failure
   // ---------------------------------------------------------------------------
-  it("calls agentError with InstallError when requireUv fails", async () => {
+  it("fails with client.tool_missing naming uv when requireUv fails", async () => {
     vi.mocked(requireUv).mockImplementation(() => {
       throw new Error("uv is required but not found in PATH");
     });
@@ -307,9 +304,12 @@ describe("agentUpgrade", () => {
     await expect(agentUpgrade()).rejects.toThrow("agentError called");
 
     expect(agentError).toHaveBeenCalledWith(
-      expect.stringContaining("uv is required"),
-      "InstallError",
-      expect.objectContaining({ error_domain: "install" }),
+      expect.objectContaining({
+        code: "client.tool_missing",
+        domain: "input",
+        params: { tool: "uv" },
+        message: expect.stringContaining("uv is required"),
+      }),
     );
     // Verify execution halted — no downstream calls after fatal error
     expect(loadConfig).not.toHaveBeenCalled();

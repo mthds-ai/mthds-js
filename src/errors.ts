@@ -13,25 +13,24 @@
  *
  * These are the same error classes the top-level barrel exports; the two cannot
  * drift because both re-export from the same source modules. The graph here is
- * `protocol/exceptions` (zero imports) + `runners/api/exceptions` (whose only
- * runtime import is `protocol/exceptions`), so it stays free of Node built-ins.
+ * `protocol/exceptions` (zero imports), `problems/` (the problem document, the
+ * generated core registry and its readers, importing only `protocol/exceptions`)
+ * and `runners/api/exceptions` (importing only those), so it stays free of Node
+ * built-ins.
  */
 
 // ── Protocol-base error (pure protocol layer — no Node deps) ──
 export { PipelineRequestError } from "./protocol/exceptions.js";
 
-// ── API-runner errors (runners/api/exceptions — graph is protocol-only) ──
+// ── Problems: `ProblemError`, the problem types, the core registry and its readers ──
+export * from "./problems/index.js";
+
+// ── API-runner errors (runners/api/exceptions — graph is protocol and problems only) ──
 export {
   ApiResponseError,
-  ApiUnreachableError,
+  ApiTransportError,
   BlobUploadError,
-  ClientAuthenticationError,
   MalformedBlobsAnswerError,
-  PipelineExecuteTimeoutError,
   RunStillRunningError,
 } from "./runners/api/exceptions.js";
-export type {
-  ApiResponseErrorOptions,
-  ProblemDetails,
-  UserAction,
-} from "./runners/api/exceptions.js";
+export type { ApiAnswerFacts } from "./runners/api/exceptions.js";

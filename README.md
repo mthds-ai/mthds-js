@@ -254,14 +254,37 @@ The client implements the MTHDS Protocol plus the Pipelex API's pipe I/O extensi
 |--------|-------|-------------|
 | `execute(options)` | `POST /v1/execute` | Execute a method and wait for the result — returns a `RunResultExecute` (throws `RunStillRunningError` on the protocol's optional 202 degrade) |
 | `start(options)` | `POST /v1/start` | Start a method asynchronously — returns a `RunResultStart` with the authoritative `pipeline_run_id` |
-| `validate(source, allowSignatures?, render?)` | `POST /v1/validate` | Parse, validate, and dry-run a method's tree, given as `{ files }` or `{ tree }` — returns the protocol's `ValidationResult` discriminated on `is_valid`; an invalid method is a produced verdict (`is_valid: false` with `validation_errors`, each naming its file by tree path), not a throw. Only a no-verdict non-2xx (malformed request, auth, server fault) throws `ApiResponseError` |
+| `validate(source, allowSignatures?, render?)` | `POST /v1/validate` | Parse, validate, and dry-run a method's tree, given as `{ files }` or `{ tree }` — returns the protocol's `ValidationResult` discriminated on `is_valid`; an invalid method is a produced verdict (`is_valid: false` with its faults in `errors`, each a problem item naming its file by tree path in `location.file`), not a throw. Only a no-verdict non-2xx (malformed request, auth, server fault) throws `ApiResponseError` |
 | `models(category?)` | `GET /v1/models` | The model deck the runner routes to |
-| `pipeIo(request)` | `POST /v1/pipe-io` | A method's pipe I/O contracts, input form and output form in one call, with no dry run (a Pipelex API extension) — returns a `PipeIOResponse` discriminated on `is_valid`. The method is its tree, given as `{ tree }` or `{ files }` and sent as `validate` sends it, a `method_ref` address or a hosted `method_id`; a refused pipe selection is a `422` whose `errorType` is one of `PIPE_SELECTION_ERROR_TYPES`. See [docs/pipe-io.md](docs/pipe-io.md) |
+| `pipeIo(request)` | `POST /v1/pipe-io` | A method's pipe I/O contracts, input form and output form in one call, with no dry run (a Pipelex API extension) — returns a `PipeIOResponse` discriminated on `is_valid`. The method is its tree, given as `{ tree }` or `{ files }` and sent as `validate` sends it, a `method_ref` address or a hosted `method_id`; a refused pipe selection is a `422` whose problem's code is one of `PIPE_SELECTION_CODES`. See [docs/pipe-io.md](docs/pipe-io.md) |
 | `version()` | `GET /v1/version` | Protocol + implementation versions (the feature-detection handshake) |
 | `findMissingBlobs(request)` | `POST /v1/blobs/missing` | Which blobs of a tree the runner's blob store lacks, each with its upload target — the step before sending a tree by hash, which `execute`, `start`, `validate` and `pipeIo` take themselves when given a `tree` |
 | `uploadBlob(blob, bytes)` | the target the runner gave | Upload one missing blob with exactly the headers the runner named; throws `BlobUploadError`, which never carries the target's URL |
 
-`findMissingBlobs` raises `MalformedBlobsAnswerError`, naming the faulty entry, when the runner's answer is not shaped as the protocol says. The client keeps the runner's handshake for `HANDSHAKE_TTL_MS`, and asks it again sooner when a refusal shows it to be stale.
+`findMissingBlobs` raises `MalformedBlobsAnswerError`, a `ProblemError` of `client.response_unreadable` naming the faulty entry, when the runner's answer is not shaped as the protocol says. The client keeps the runner's handshake for `HANDSHAKE_TTL_MS`, and asks it again sooner when a refusal shows it to be stale.
+
+### Errors
+
+Every failure is a `ProblemError` carrying `problem`, the MTHDS Protocol's error document coded from the core error registry, which this package vendors and types. Branch on `err.problem.code`, and on `domain`, `retry` and `next_step.kind` when several codes are handled alike:
+
+```typescript
+import { ProblemError } from "mthds/errors";
+
+try {
+  await client.execute({ pipe_code: "summarize", inputs });
+} catch (err) {
+  if (!(err instanceof ProblemError)) throw err;
+  if (err.code === "client.outcome_unknown") {
+    // The run may have started: look at the run history before starting it again.
+  } else if (err.retry === "yes") {
+    // Repeat after err.retryAfter seconds, when given.
+  } else {
+    console.error(err.message); // the problem's sentence, then its next step
+  }
+}
+```
+
+An answer of the runtime is read as the problem it carries (`ApiResponseError`), or, when its body is none, as the one core code of its status or `client.response_unreadable`; a `202` on `execute` is `client.follow_failed` (`RunStillRunningError`); no answer at all is `client.unreachable`, `client.timeout` or, after a request that creates a run left, `client.outcome_unknown` (`ApiTransportError`). See [docs/errors.md](docs/errors.md).
 
 ### Run options
 

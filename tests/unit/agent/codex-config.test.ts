@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync, readFileSync, writeFileSync, existsSync, mkdirSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parse as parseToml } from "smol-toml";
+import type { Problem } from "../../../src/problems/types.js";
 
 // ── Mock homedir so all filesystem writes land in a scratch dir ─────
 
@@ -20,31 +21,43 @@ vi.mock("node:os", async () => {
 
 class AgentErrorThrow extends Error {
   constructor(
-    public errorType: string,
+    public problem: Problem,
     public extras?: Record<string, unknown>,
   ) {
-    super(errorType);
+    super(problem.code);
   }
 }
 
 const successSpy = vi.fn();
-const errorSpy = vi.fn((message: string, errorType: string, extras?: Record<string, unknown>) => {
-  throw new AgentErrorThrow(errorType, { message, ...extras });
+const errorSpy = vi.fn((problem: Problem, extras?: Record<string, unknown>) => {
+  throw new AgentErrorThrow(problem, extras);
 });
 
-vi.mock("../../../src/agent/output.js", () => ({
+// The problems are the real ones, built from the registry; only their writing is captured.
+vi.mock("../../../src/agent/output.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../../src/agent/output.js")>()),
   agentSuccess: (result: Record<string, unknown>) => successSpy(result),
-  agentError: (message: string, errorType: string, extras?: Record<string, unknown>) =>
-    errorSpy(message, errorType, extras),
-  AGENT_ERROR_DOMAINS: {
-    CONFIG: "config",
-    IO: "io",
-  },
+  agentError: (problem: Problem, extras?: Record<string, unknown>) => errorSpy(problem, extras),
 }));
+
+/** The problem of the first failure the command wrote. */
+function firstProblem(): Problem {
+  return errorSpy.mock.calls[0]![0] as Problem;
+}
+
+/** The command's own sentence on the first failure it wrote. */
+function firstMessage(): string {
+  return String(firstProblem().message);
+}
 
 // ── Mock the Codex app version check so tests never spawn `codex` ───
 
-type VersionFinding = { code: string; severity: "warning" | "error"; message: string };
+type VersionFinding = {
+  code: string;
+  severity: "warning" | "error";
+  version: string;
+  message: string;
+};
 const assessCodexVersionMock = vi.fn<() => VersionFinding | null>();
 
 // Only `assessCodexVersion` is stubbed: the real constants stay exported so the
@@ -59,6 +72,13 @@ import { MIN_CODEX_VERSION } from "../../../src/agent/codex-version.js";
 let agentCodexApplyConfig: (opts?: { check?: boolean; dryRun?: boolean }) => Promise<void>;
 
 const HOOK_COMMAND = "mthds-agent codex hook";
+
+/** A ~/.codex/config.toml the plugin cannot work with: a setting of this machine to fix by hand. */
+const CONFIG_PROBLEM = {
+  code: "client.not_configured",
+  domain: "input",
+  params: { setting: "codex_config" },
+};
 
 describe("agentCodexApplyConfig", () => {
   beforeEach(async () => {
@@ -226,7 +246,7 @@ network_access = false
     writeConfig(original);
 
     await expect(agentCodexApplyConfig()).rejects.toBeInstanceOf(AgentErrorThrow);
-    expect(errorSpy.mock.calls[0][1]).toBe("ConfigError");
+    expect(firstProblem()).toMatchObject(CONFIG_PROBLEM);
     // File untouched — apply-config never overrides an explicit user choice.
     expect(readConfig()).toBe(original);
   });
@@ -241,9 +261,9 @@ plugin_hooks = false
     writeConfig(original);
 
     await expect(agentCodexApplyConfig()).rejects.toBeInstanceOf(AgentErrorThrow);
-    expect(errorSpy.mock.calls[0][1]).toBe("ConfigError");
-    expect(errorSpy.mock.calls[0][0]).toContain("plugin_hooks = false");
-    expect(errorSpy.mock.calls[0][0]).toContain("ignored by Codex 0.134+");
+    expect(firstProblem()).toMatchObject(CONFIG_PROBLEM);
+    expect(firstMessage()).toContain("plugin_hooks = false");
+    expect(firstMessage()).toContain("ignored by Codex 0.134+");
     // File untouched — apply-config never overrides an explicit user choice,
     // and errors before writing anything (not even the network key).
     expect(readConfig()).toBe(original);
@@ -256,10 +276,10 @@ network_access = "true"
     writeConfig(original);
 
     await expect(agentCodexApplyConfig()).rejects.toBeInstanceOf(AgentErrorThrow);
-    expect(errorSpy.mock.calls[0][1]).toBe("ConfigError");
+    expect(firstProblem()).toMatchObject(CONFIG_PROBLEM);
     // The quoted form makes clear the current value is a string, not the
     // boolean the plugin needs.
-    expect(errorSpy.mock.calls[0][0]).toContain('network_access = "true"');
+    expect(firstMessage()).toContain('network_access = "true"');
     expect(readConfig()).toBe(original);
   });
 
@@ -275,9 +295,9 @@ hooks = false
     writeConfig(original);
 
     await expect(agentCodexApplyConfig()).rejects.toBeInstanceOf(AgentErrorThrow);
-    expect(errorSpy.mock.calls[0][1]).toBe("ConfigError");
-    expect(errorSpy.mock.calls[0][0]).toContain("hooks = false");
-    expect(errorSpy.mock.calls[0][0]).toContain("disables ALL Codex hooks");
+    expect(firstProblem()).toMatchObject(CONFIG_PROBLEM);
+    expect(firstMessage()).toContain("hooks = false");
+    expect(firstMessage()).toContain("disables ALL Codex hooks");
     expect(readConfig()).toBe(original);
   });
 
@@ -288,9 +308,9 @@ codex_hooks = false
     writeConfig(original);
 
     await expect(agentCodexApplyConfig()).rejects.toBeInstanceOf(AgentErrorThrow);
-    expect(errorSpy.mock.calls[0][1]).toBe("ConfigError");
-    expect(errorSpy.mock.calls[0][0]).toContain("codex_hooks = false");
-    expect(errorSpy.mock.calls[0][0]).toContain("deprecated alias");
+    expect(firstProblem()).toMatchObject(CONFIG_PROBLEM);
+    expect(firstMessage()).toContain("codex_hooks = false");
+    expect(firstMessage()).toContain("deprecated alias");
     expect(readConfig()).toBe(original);
   });
 
@@ -303,7 +323,7 @@ codex_hooks = false
 `);
 
     await expect(agentCodexApplyConfig()).rejects.toBeInstanceOf(AgentErrorThrow);
-    const message = errorSpy.mock.calls[0][0] as string;
+    const message = firstMessage();
     expect(message).toContain("[features] hooks = false");
     expect(message).toContain("[features] codex_hooks = false");
   });
@@ -316,7 +336,7 @@ hooks = false
 `);
 
     await expect(agentCodexApplyConfig({ dryRun: true })).rejects.toBeInstanceOf(AgentErrorThrow);
-    expect(errorSpy.mock.calls[0][1]).toBe("ConfigError");
+    expect(firstProblem()).toMatchObject(CONFIG_PROBLEM);
   });
 
   // ── Warnings (warn-only, never modify) ─────────────────────────────
@@ -338,6 +358,7 @@ hooks = false
     assessCodexVersionMock.mockReturnValue({
       code: "CODEX_VERSION_TOO_OLD",
       severity: "warning",
+      version: "0.135.0",
       message: `Codex 0.135.0 is older than ${MIN_CODEX_VERSION}, the minimum version the mthds plugin supports`,
     });
 
@@ -360,12 +381,16 @@ hooks = false
     assessCodexVersionMock.mockReturnValue({
       code: "CODEX_HOOKS_UNAVAILABLE",
       severity: "error",
+      version: "0.130.0",
       message: "Codex 0.130.0 cannot load plugin-bundled hooks",
     });
 
     await expect(agentCodexApplyConfig()).rejects.toBeInstanceOf(AgentErrorThrow);
-    expect(errorSpy.mock.calls[0][1]).toBe("ConfigError");
-    expect(errorSpy.mock.calls[0][0]).toContain("cannot load plugin-bundled hooks");
+    expect(firstProblem()).toMatchObject({
+      code: "client.tool_outdated",
+      params: { tool: "codex", version: "0.130.0" },
+    });
+    expect(firstMessage()).toContain("cannot load plugin-bundled hooks");
     // Nothing written — not even the required network key.
     expect(existsSync(configFile())).toBe(false);
 
@@ -420,8 +445,11 @@ network_access = true
     // double-firing entry — apply-config errors (matching `apply-config
     // --check`) instead of reporting success while the problem persists.
     await expect(agentCodexApplyConfig()).rejects.toBeInstanceOf(AgentErrorThrow);
-    expect(errorSpy.mock.calls[0][1]).toBe("ConfigError");
-    expect(errorSpy.mock.calls[0][0]).toContain("hooks.json");
+    expect(firstProblem()).toMatchObject({
+      code: "client.not_configured",
+      params: { setting: "codex_hooks" },
+    });
+    expect(firstMessage()).toContain("hooks.json");
     // config.toml was still written before the hooks.json check ran.
     const parsed = parseToml(readConfig()) as Record<string, Record<string, unknown>>;
     expect(parsed.sandbox_workspace_write.network_access).toBe(true);
@@ -466,7 +494,7 @@ hooks = false
 
     await expect(agentCodexApplyConfig({ check: true })).rejects.toBeInstanceOf(AgentErrorThrow);
     // The conflict error is specific — not the generic "needs attention".
-    expect(errorSpy.mock.calls[0][0]).toContain("hooks = false");
+    expect(firstMessage()).toContain("hooks = false");
   });
 
   it("--check exits non-zero when a warning is present even if the required key is set", async () => {
@@ -483,6 +511,7 @@ network_access = true
     assessCodexVersionMock.mockReturnValue({
       code: "CODEX_VERSION_TOO_OLD",
       severity: "warning",
+      version: "0.135.0",
       message: `Codex 0.135.0 is older than ${MIN_CODEX_VERSION}, the minimum version the mthds plugin supports`,
     });
     writeConfig(`[sandbox_workspace_write]
@@ -570,20 +599,20 @@ network_access = true
     writeConfig("this is = = not valid toml");
 
     await expect(agentCodexApplyConfig()).rejects.toBeInstanceOf(AgentErrorThrow);
-    expect(errorSpy.mock.calls[0][1]).toBe("ConfigError");
+    expect(firstProblem()).toMatchObject(CONFIG_PROBLEM);
   });
 
-  it("surfaces a ConfigError when an intermediate edit produces unparseable TOML", async () => {
+  it("reports an unexpected failure when an intermediate edit produces unparseable TOML", async () => {
     // A dotted-key implicit table has no `[header]` line, so appendTomlTable
     // emits a second `[sandbox_workspace_write]` header that smol-toml rejects
     // as a duplicate. applyChanges re-parses between changes, so the bad
     // intermediate state throws inside applyChanges — it must surface as a
-    // ConfigError, not an uncaught crash that bypasses the error path.
+    // problem, not an uncaught crash that bypasses the error path.
     writeConfig(`sandbox_workspace_write.foo = 1
 `);
 
     await expect(agentCodexApplyConfig()).rejects.toBeInstanceOf(AgentErrorThrow);
-    expect(errorSpy.mock.calls[0][1]).toBe("ConfigError");
-    expect(errorSpy.mock.calls[0][0]).toContain("would not re-parse");
+    expect(firstProblem()).toMatchObject({ code: "runtime.unexpected", domain: "runtime" });
+    expect(firstMessage()).toContain("would not re-parse");
   });
 });

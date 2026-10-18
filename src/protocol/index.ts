@@ -4,8 +4,9 @@
  *
  * This is the single source of truth for the protocol wire types/helpers that
  * downstream packages (e.g. `@pipelex/sdk`) build their clients on. It re-exports
- * only `protocol/` modules — the interface, wire models, request/options surface,
- * abstract domain shapes, and the protocol-base exception. It imports NOTHING
+ * only `protocol/` modules and the problems they are coded with (`problems/`) — the
+ * interface, wire models, request/options surface, abstract domain shapes, the
+ * protocol-base exception and the problem document. It imports NOTHING
  * from `runners/`, `cli/`, `agent/`, or `config/`; `dependency-cruiser`'s
  * `protocol-stays-pure` rule enforces that purity. The top-level `mthds` barrel
  * (`src/index.ts`) re-exports this barrel so the two cannot drift.
@@ -16,6 +17,12 @@ export type { MTHDSProtocol } from "./protocol.js";
 
 // ── Protocol-base exception ──────────────────────────────────────────
 export { PipelineRequestError } from "./exceptions.js";
+
+// ── Problems: the error document, the core error registry, readers and builders ──
+// Every error a runner answers is a problem document coded from a registry, and a
+// client reads, builds and renders one the same way whichever route failed. Free of
+// Node built-ins, like the rest of this barrel; `mthds/errors` exports it too.
+export * from "../problems/index.js";
 
 // ── Request/options surface ──────────────────────────────────────────
 export type {
@@ -58,7 +65,6 @@ export type {
   ModelInfo,
   ModelDeck,
   ValidationReport,
-  ValidationError,
   InvalidValidationReport,
   ValidationResult,
   VersionInfo,

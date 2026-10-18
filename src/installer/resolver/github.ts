@@ -19,6 +19,7 @@ import type {
   SkippedMethod,
 } from "../../package/manifest/types.js";
 import { validateManifest } from "../../package/manifest/validate.js";
+import { isResolveFailure, MethodResolveError, rewordResolveFailure } from "./exceptions.js";
 import {
   GITIGNORE_NAME,
   MANIFEST_NAME,
@@ -60,29 +61,63 @@ function detectAuth(): AuthMethod {
   return { type: "none" };
 }
 
+/** Read an answer's body as JSON, a body GitHub garbled reading as a failed fetch. */
+function parseGitHubJson(text: string, apiPath: string): unknown {
+  try {
+    return JSON.parse(text) as unknown;
+  } catch (cause) {
+    throw new MethodResolveError(
+      `GitHub answered ${apiPath} with a body that is not JSON.`,
+      "fetch_failed",
+      { cause },
+    );
+  }
+}
+
+/**
+ * Ask GitHub's API for `apiPath`. Throws a `MethodResolveError`: `not_found` on a `404`,
+ * `not_configured` when GitHub refuses the credentials (`401`), of `GITHUB_TOKEN` or of the `gh`
+ * CLI, and `fetch_failed` for every failure a
+ * later attempt may get past, GitHub unreachable, a rate limit or a `403`, a `5xx`, or an answer
+ * that is not JSON.
+ */
 async function githubFetch(auth: AuthMethod, apiPath: string): Promise<unknown> {
   if (auth.type === "gh") {
+    let stdout: string;
     try {
-      const { stdout } = await execFileAsync("gh", ["api", apiPath], {
+      ({ stdout } = await execFileAsync("gh", ["api", apiPath], {
         encoding: "utf-8",
         // A blob comes back in Base64 inside the JSON, a third larger than the file.
         maxBuffer: GH_MAX_BUFFER_BYTES,
-      });
-      return JSON.parse(stdout);
+      }));
     } catch (err) {
       const stderr = (err as { stderr?: string })?.stderr ?? "";
-      if (stderr.includes("404") || stderr.includes("Not Found")) {
-        throw new Error(`Not found: ${apiPath}.`);
-      }
-      if (stderr.includes("403") || stderr.includes("rate limit")) {
-        throw new Error(
-          `GitHub API rate limit or permission error for ${apiPath}. Try setting GITHUB_TOKEN.`,
+      // `gh` names GitHub's status as `(HTTP 404)`, so the status is read there alone: a bare
+      // `404` or `403` may stand in a path or a SHA that a message about another failure quotes.
+      if (stderr.includes("HTTP 401") || stderr.includes("Bad credentials")) {
+        throw new MethodResolveError(
+          `GitHub refused the gh CLI's credentials (401) for ${apiPath}. Run gh auth login, or set GITHUB_TOKEN.`,
+          "not_configured",
+          { setting: "GITHUB_TOKEN", cause: err },
         );
       }
-      throw new Error(
+      if (/\bHTTP 404\b/.test(stderr)) {
+        throw new MethodResolveError(`Not found: ${apiPath}.`, "not_found", { cause: err });
+      }
+      if (/\bHTTP (403|429)\b/.test(stderr) || stderr.includes("rate limit")) {
+        throw new MethodResolveError(
+          `GitHub API rate limit or permission error for ${apiPath}. Try setting GITHUB_TOKEN.`,
+          "fetch_failed",
+          { cause: err },
+        );
+      }
+      throw new MethodResolveError(
         `GitHub API error for ${apiPath}: ${stderr.trim() || (err as Error).message}`,
+        "fetch_failed",
+        { cause: err },
       );
     }
+    return parseGitHubJson(stdout, apiPath);
   }
 
   const url = `https://api.github.com/${apiPath}`;
@@ -95,7 +130,7 @@ async function githubFetch(auth: AuthMethod, apiPath: string): Promise<unknown> 
     headers["Authorization"] = `Bearer ${auth.token}`;
   }
 
-  const res = await fetch(url, { headers });
+  const res = await fetchFromGitHub(url, headers, apiPath);
 
   if (!res.ok) {
     if (res.status === 404) {
@@ -103,17 +138,52 @@ async function githubFetch(auth: AuthMethod, apiPath: string): Promise<unknown> 
         auth.type === "none"
           ? " If this is a private repo, set GITHUB_TOKEN or install the gh CLI."
           : "";
-      throw new Error(`Not found: ${apiPath}.${hint}`);
+      throw new MethodResolveError(`Not found: ${apiPath}.${hint}`, "not_found");
     }
-    if (res.status === 403) {
-      throw new Error(
-        `GitHub API rate limit or permission error (403) for ${apiPath}. Try setting GITHUB_TOKEN.`,
+    if (res.status === 401) {
+      throw new MethodResolveError(
+        `GitHub refused the token in GITHUB_TOKEN (401) for ${apiPath}.`,
+        "not_configured",
+        { setting: "GITHUB_TOKEN" },
       );
     }
-    throw new Error(`GitHub API error ${res.status} for ${apiPath}.`);
+    if (res.status === 403 || res.status === 429) {
+      throw new MethodResolveError(
+        `GitHub API rate limit or permission error (${res.status}) for ${apiPath}. Try setting GITHUB_TOKEN.`,
+        "fetch_failed",
+      );
+    }
+    throw new MethodResolveError(`GitHub API error ${res.status} for ${apiPath}.`, "fetch_failed");
   }
 
-  return res.json();
+  return parseGitHubJson(await readGitHubBody(res, apiPath), apiPath);
+}
+
+/** `fetch`, a transport failure reading as a failed fetch of `what`. */
+async function fetchFromGitHub(
+  url: string,
+  headers: Record<string, string>,
+  what: string,
+): Promise<Response> {
+  try {
+    return await fetch(url, { headers });
+  } catch (cause) {
+    const reason = cause instanceof Error ? cause.message : String(cause);
+    throw new MethodResolveError(`Could not reach GitHub for ${what}: ${reason}`, "fetch_failed", {
+      cause,
+    });
+  }
+}
+
+/** An answer's body as text, a connection lost while reading it reading as a failed fetch. */
+async function readGitHubBody(res: Response, what: string): Promise<string> {
+  try {
+    return await res.text();
+  } catch (cause) {
+    throw new MethodResolveError(`Lost the connection to GitHub reading ${what}.`, "fetch_failed", {
+      cause,
+    });
+  }
 }
 
 interface GitHubContentFile {
@@ -185,19 +255,40 @@ function memberCandidates(entries: readonly GitTreeEntry[]): GitTreeEntry[] {
   });
 }
 
-/** A blob's bytes, `GET /repos/{owner}/{repo}/git/blobs/{sha}`. */
+/**
+ * Ask GitHub for something a listing already named, such as a method's git tree or one of its
+ * blobs. It exists, so a failure to read it, a `404` included, is `fetch_failed`, which a later
+ * attempt may get past, never `not_found`, which would read as a method that does not exist.
+ */
+async function fetchListed(auth: AuthMethod, apiPath: string): Promise<unknown> {
+  try {
+    return await githubFetch(auth, apiPath);
+  } catch (err) {
+    if (!isResolveFailure(err, "not_found")) throw err;
+    throw new MethodResolveError(
+      `GitHub no longer serves ${apiPath}, which its listing named.`,
+      "fetch_failed",
+      { cause: err },
+    );
+  }
+}
+
+/** A blob's bytes, `GET /repos/{owner}/{repo}/git/blobs/{sha}`, read as `fetchListed` reads it. */
 async function fetchBlob(
   auth: AuthMethod,
   org: string,
   repo: string,
   sha: string,
 ): Promise<Buffer> {
-  const data = (await githubFetch(auth, `repos/${org}/${repo}/git/blobs/${sha}`)) as {
+  const data = (await fetchListed(auth, `repos/${org}/${repo}/git/blobs/${sha}`)) as {
     content?: unknown;
     encoding?: unknown;
   };
   if (typeof data.content !== "string" || data.encoding !== "base64") {
-    throw new Error(`GitHub answered blob ${sha} of ${org}/${repo} without its Base64 content.`);
+    throw new MethodResolveError(
+      `GitHub answered blob ${sha} of ${org}/${repo} without its Base64 content.`,
+      "fetch_failed",
+    );
   }
   return Buffer.from(data.content, "base64");
 }
@@ -412,8 +503,9 @@ async function resolveOneMethod(
   const tomlPath = `${dirPath}/${MANIFEST_NAME}`;
 
   // The method's git tree, which the manifest and every file are read from, so all come from
-  // one commit whatever the default branch does meanwhile.
-  const gitTree = (await githubFetch(
+  // one commit whatever the default branch does meanwhile. GitHub failing to answer is no finding
+  // about the method, and fails the whole resolve; only a tree holding no manifest skips it.
+  const gitTree = (await fetchListed(
     auth,
     `repos/${org}/${repo}/git/trees/${treeSha}?recursive=1`,
   )) as GitTree;
@@ -485,8 +577,8 @@ export type RepositoryVisibility = "public" | "private" | "not_found";
 /**
  * Ask GitHub whether `org/repo` is public, with the credentials a resolve uses. GitHub answers
  * `not_found` for a repository that does not exist and for a private one these credentials cannot
- * see; an answer that does not say the repository is public counts as private. Throws when GitHub
- * cannot be asked.
+ * see; an answer that does not say the repository is public counts as private. Throws a
+ * `MethodResolveError` when GitHub cannot be asked.
  */
 export async function repositoryVisibility(
   org: string,
@@ -496,12 +588,17 @@ export async function repositoryVisibility(
   try {
     meta = (await githubFetch(detectAuth(), `repos/${org}/${repo}`)) as { private?: unknown };
   } catch (err) {
-    if ((err as Error).message.startsWith("Not found")) return "not_found";
+    if (isResolveFailure(err, "not_found")) return "not_found";
     throw err;
   }
   return meta.private === false ? "public" : "private";
 }
 
+/**
+ * Resolve the methods of a GitHub repository's `methods/` folder. Throws a `MethodResolveError`:
+ * `not_found` when the repository, its `methods/` folder or every method is missing, and the
+ * reason GitHub's own failure reads as otherwise (`githubFetch`).
+ */
 export async function resolveFromGitHub(parsed: ParsedAddress): Promise<ResolvedRepo> {
   const auth = detectAuth();
   const { org, repo, subpath } = parsed;
@@ -512,40 +609,46 @@ export async function resolveFromGitHub(parsed: ParsedAddress): Promise<Resolved
   try {
     repoMeta = (await githubFetch(auth, `repos/${org}/${repo}`)) as { private: boolean };
   } catch (err) {
-    const msg = (err as Error).message;
-    if (msg.includes("Not found")) {
-      throw new Error(
+    if (isResolveFailure(err, "not_found")) {
+      throw new MethodResolveError(
         `Repository "${org}/${repo}" not found on GitHub. Check the address and make sure the repository exists.`,
+        "not_found",
+        { cause: err },
       );
     }
-    throw new Error(`Could not connect to GitHub for "${org}/${repo}": ${msg}`);
+    throw rewordResolveFailure(
+      err,
+      `Could not connect to GitHub for "${org}/${repo}": ${(err as Error).message}`,
+      "fetch_failed",
+    );
   }
   const isPublic = !repoMeta.private;
 
   // List directories inside methods/
+  const noMethodsFolder = `No methods/ folder found in ${org}/${repo}${subpath ? `/${subpath}` : ""}. Expected a "methods/" directory.`;
   let contents: GitHubContent[];
   try {
     contents = (await githubFetch(
       auth,
       `repos/${org}/${repo}/contents/${methodsPath}`,
     )) as GitHubContent[];
-  } catch {
-    throw new Error(
-      `No methods/ folder found in ${org}/${repo}${subpath ? `/${subpath}` : ""}. Expected a "methods/" directory.`,
-    );
+  } catch (err) {
+    if (isResolveFailure(err, "not_found")) {
+      throw new MethodResolveError(noMethodsFolder, "not_found", { cause: err });
+    }
+    throw err;
   }
 
   if (!Array.isArray(contents)) {
-    throw new Error(
-      `No methods/ folder found in ${org}/${repo}${subpath ? `/${subpath}` : ""}. Expected a "methods/" directory.`,
-    );
+    throw new MethodResolveError(noMethodsFolder, "not_found");
   }
 
   const methodDirs = contents.filter((c): c is GitHubContentDir => c.type === "dir");
 
   if (methodDirs.length === 0) {
-    throw new Error(
+    throw new MethodResolveError(
       `No methods found in methods/ of ${org}/${repo}${subpath ? `/${subpath}` : ""}.`,
+      "not_found",
     );
   }
 

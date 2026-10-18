@@ -403,6 +403,7 @@ describe("agentDoctor", () => {
     vi.mocked(codexVersion.assessCodexVersion).mockReturnValueOnce({
       code: "CODEX_VERSION_TOO_OLD",
       severity: "warning",
+      version: "0.135.0",
       message: `Codex 0.135.0 is older than ${MIN_CODEX_VERSION}, the minimum version the mthds plugin supports`,
     });
 
@@ -429,6 +430,7 @@ describe("agentDoctor", () => {
     vi.mocked(codexVersion.assessCodexVersion).mockReturnValueOnce({
       code: "CODEX_HOOKS_UNAVAILABLE",
       severity: "error",
+      version: "0.130.0",
       message: "Codex 0.130.0 cannot load plugin-bundled hooks",
     });
 

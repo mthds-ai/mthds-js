@@ -18,6 +18,7 @@ import {
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { writeMethodFiles } from "../../../../src/installer/methods/writer.js";
+import { ProblemError } from "../../../../src/problems/errors.js";
 import type { MethodsFile, ResolvedRepo } from "../../../../src/package/manifest/types.js";
 
 const encode = (text: string): Uint8Array => new TextEncoder().encode(text);
@@ -89,6 +90,32 @@ describe("writeMethodFiles path traversal checks", () => {
     } finally {
       process.chdir(originalCwd);
     }
+  });
+
+  // A name or a path the writer refuses is a fault of the method's package, which its owner fixes,
+  // so the install reads it as that problem rather than as a write that failed.
+  it.each([
+    ["a name", ["../../escape"], undefined, { reason: "invalid_method_name" }],
+    [
+      "a file path",
+      ["legit-method"],
+      [{ path: "../../escape.mthds", bytes: encode("bad") }],
+      { reason: "invalid_tree_path", path: "../../escape.mthds" },
+    ],
+  ])("refuses %s that escapes as method.package_invalid", (_topic, names, files, params) => {
+    const repo = makeRepo(names, files);
+    let thrown: unknown;
+    try {
+      writeMethodFiles(repo, join(testDir, "methods"));
+    } catch (err) {
+      thrown = err;
+    }
+    expect(thrown).toBeInstanceOf(ProblemError);
+    expect((thrown as ProblemError).problem).toMatchObject({
+      code: "method.package_invalid",
+      params,
+      next_step: { kind: "contact_owner" },
+    });
   });
 
   it("allows valid names", () => {

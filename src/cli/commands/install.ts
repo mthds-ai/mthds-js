@@ -7,7 +7,7 @@ import { isPipelexInstalled } from "../../installer/runtime/check.js";
 import { ensureRuntime } from "../../installer/runtime/installer.js";
 import { shutdown } from "../../installer/telemetry/posthog.js";
 import { printLogo } from "./index.js";
-import { formatCliError, withSuggestedFix } from "./error-output.js";
+import { formatCliError, formatItemLines, verdictSummary } from "./error-output.js";
 import { parseAddress } from "../../installer/resolver/address.js";
 import { resolveFromGitHub } from "../../installer/resolver/github.js";
 import { resolveFromLocal } from "../../installer/resolver/local.js";
@@ -181,9 +181,9 @@ export async function installMethod(options: {
           // A produced "invalid" verdict (the 200 InvalidReport arm) — surface the
           // per-error diagnostics, not just the summary, so failures are debuggable.
           valSpinner.stop(`Validation failed: ${method.name}`);
-          p.log.error(`${method.name}: ${report.message}`);
-          for (const item of report.validation_errors) {
-            p.log.error(withSuggestedFix(`  [${item.category}] ${item.message}`, item));
+          p.log.error(`${method.name}: ${verdictSummary(report.message)}`);
+          for (const item of report.errors) {
+            p.log.error(formatItemLines(item, "  ").join("\n"));
           }
           allValid = false;
           continue;

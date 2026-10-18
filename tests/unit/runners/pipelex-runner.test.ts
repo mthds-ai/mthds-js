@@ -29,6 +29,8 @@ import { readFileSync, existsSync, writeFileSync } from "node:fs";
 import { spawn } from "node:child_process";
 import { PipelexRunner } from "../../../src/runners/pipelex/runner.js";
 import { MODEL_CATEGORIES } from "../../../src/protocol/models.js";
+import { isProblemItem } from "../../../src/problems/read.js";
+import { ProblemError } from "../../../src/problems/errors.js";
 import { EMPTY_METHOD_TREE_MESSAGE } from "../../../src/protocol/options.js";
 import { MethodTree } from "../../../src/method-tree/tree.js";
 
@@ -64,14 +66,24 @@ function onDiskTree(
   });
 }
 
-/** Make `spawn` return a fake child that closes with the given exit code. */
-function mockSpawnExit(code: number): void {
+/** Make `spawn` return a fake child that closes with the given exit code, or by `signal`. */
+function mockSpawnExit(code: number | null, signal: NodeJS.Signals | null = null): void {
   mockedSpawn.mockReturnValue({
-    on(event: string, cb: (arg: number) => void) {
-      if (event === "close") cb(code);
+    on(event: string, cb: (code: number | null, signal: NodeJS.Signals | null) => void) {
+      if (event === "close") cb(code, signal);
       return this;
     },
   } as unknown as ReturnType<typeof spawn>);
+}
+
+/** The `ProblemError` a call rejected with. */
+async function problemOf(call: Promise<unknown>): Promise<ProblemError> {
+  const err = await call.then(
+    () => expect.fail("expected a rejection"),
+    (caught: unknown) => caught,
+  );
+  expect(err).toBeInstanceOf(ProblemError);
+  return err as ProblemError;
 }
 
 describe("PipelexRunner", () => {
@@ -130,6 +142,13 @@ describe("PipelexRunner", () => {
       await expect(runner.checkModel({ reference: "gpt-4o" } as any)).rejects.toThrow(
         `(one of: ${MODEL_CATEGORIES.join(", ")})`,
       );
+    });
+
+    it("codes the refusal client.argument_invalid naming the argument", async () => {
+      const err = await runner.checkModel({ reference: "gpt-4o" } as any).catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(ProblemError);
+      expect((err as ProblemError).problem.code).toBe("client.argument_invalid");
+      expect((err as ProblemError).problem.params).toEqual({ argument: "type", reason: "missing" });
     });
   });
 
@@ -303,7 +322,9 @@ describe("PipelexRunner", () => {
     });
 
     it("refuses an empty tree before calling the CLI, with the one empty-tree message", async () => {
-      await expect(runner.validate({ files: {} })).rejects.toThrow(EMPTY_METHOD_TREE_MESSAGE);
+      const err = await runner.validate({ files: {} }).catch((e: unknown) => e);
+      expect((err as Error).message).toContain(EMPTY_METHOD_TREE_MESSAGE);
+      expect((err as ProblemError).problem.params).toEqual({ argument: "files", reason: "empty" });
       expect(execFileAsync).not.toHaveBeenCalled();
     });
 
@@ -349,7 +370,11 @@ describe("PipelexRunner", () => {
     it("refuses a pipelex too old to report the protocol it speaks", async () => {
       execFileAsync.mockResolvedValue({ stdout: "0.32.0\n", stderr: "" });
 
-      await expect(runner.version()).rejects.toThrow(/0\.32\.0 does not report the MTHDS Protocol/);
+      const err = await runner.version().catch((e: unknown) => e);
+      expect((err as Error).message).toMatch(/0\.32\.0 does not report the MTHDS Protocol/);
+      expect(err).toBeInstanceOf(ProblemError);
+      expect((err as ProblemError).problem.code).toBe("client.tool_outdated");
+      expect((err as ProblemError).problem.params).toEqual({ tool: "pipelex", version: "0.32.0" });
     });
   });
 
@@ -445,11 +470,59 @@ describe("PipelexRunner", () => {
       },
     );
 
-    it("throws `pipelex exited with code N` when the CLI fails", async () => {
+    it("throws runtime.unexpected saying `pipelex exited with code N` when the CLI fails", async () => {
       mockSpawnExit(1);
-      await expect(runner.execute({ files: { "bundle.mthds": "bundle content" } })).rejects.toThrow(
-        /pipelex exited with code 1/,
+      const err = await problemOf(runner.execute({ files: { "bundle.mthds": "bundle content" } }));
+      expect(err.message).toMatch(/pipelex exited with code 1/);
+      expect(err.problem.code).toBe("runtime.unexpected");
+    });
+
+    it.each([
+      ["killed by the interrupt", null, "SIGINT"],
+      ["exiting 130, having handled Ctrl-C", 130, null],
+    ] as const)("reads a run %s as client.aborted", async (_topic, code, signal) => {
+      mockSpawnExit(code, signal);
+      const err = await problemOf(runner.execute({ files: { "bundle.mthds": "bundle content" } }));
+      expect(err.problem.code).toBe("client.aborted");
+    });
+
+    it("reads a run stopped by another signal as runtime.unexpected naming the signal", async () => {
+      mockSpawnExit(null, "SIGKILL");
+      const err = await problemOf(runner.execute({ files: { "bundle.mthds": "bundle content" } }));
+      expect(err.problem.code).toBe("runtime.unexpected");
+      expect(err.message).toContain("stopped by the signal SIGKILL");
+    });
+
+    it("reads a stuff with no ref string as client.tool_outdated naming pipelex's version", async () => {
+      mockSpawnExit(0);
+      mockedExistsSync.mockReturnValue(true);
+      mockedReadFileSync.mockReturnValue(
+        JSON.stringify({ root: { main_stuff: { concept: { code: "X" } } }, aliases: {} }),
       );
+      execFileAsync.mockResolvedValue({ stdout: "pipelex 0.40.0\n", stderr: "" });
+      const err = await problemOf(runner.execute({ files: { "bundle.mthds": "bundle content" } }));
+      expect(err.problem.code).toBe("client.tool_outdated");
+      expect(err.problem.params).toEqual({ tool: "pipelex", version: "0.40.0" });
+      execFileAsync.mockRejectedValue(new Error("gone"));
+      const unknown = await problemOf(
+        runner.execute({ files: { "bundle.mthds": "bundle content" } }),
+      );
+      expect(unknown.problem.params).toEqual({ tool: "pipelex", version: "unknown" });
+    });
+
+    it("names the version on the report's pipelex line, as version() reads it", async () => {
+      mockSpawnExit(0);
+      mockedExistsSync.mockReturnValue(true);
+      mockedReadFileSync.mockReturnValue(
+        JSON.stringify({ root: { main_stuff: { concept: { code: "X" } } }, aliases: {} }),
+      );
+      // The one parser of the report reads pipelex's own line, whatever line comes first.
+      execFileAsync.mockResolvedValue({
+        stdout: "mthds-protocol 2.0.0\npipelex 0.80.1\nmthds-standard 7.0.0\n",
+        stderr: "",
+      });
+      const err = await problemOf(runner.execute({ files: { "bundle.mthds": "bundle content" } }));
+      expect(err.problem.params).toEqual({ tool: "pipelex", version: "0.80.1" });
     });
 
     it("refuses a hash entry — the local runner keeps no blob store", async () => {
@@ -694,8 +767,13 @@ describe("PipelexRunner", () => {
 
       expect(result.is_valid).toBe(false);
       if (result.is_valid !== false) return;
-      expect(result.message).toContain("undefined concept");
-      expect(result.validation_errors).toEqual([]);
+      expect(result.message).toBe("Bundle validation failed.");
+      // The CLI prints prose, not items, so the one item is the method not validating, stated by
+      // what the CLI printed rather than by the registry's detail the verdict's problem states.
+      expect(result.errors).toEqual([
+        { code: "method.invalid", detail: "Bundle validation failed: undefined concept" },
+      ]);
+      expect(result.errors.every(isProblemItem)).toBe(true);
       expect(result.is_runnable).toBe(false);
     });
 
@@ -707,18 +785,136 @@ describe("PipelexRunner", () => {
       });
       execFileAsync.mockRejectedValue(execError);
 
-      await expect(
-        runner.validate({ files: { "bundle.mthds": "bundle content" } }),
-      ).rejects.toThrow("Bundle validation failed");
+      const err = await problemOf(runner.validate({ files: { "bundle.mthds": "bundle content" } }));
+      expect(err.message).toContain("Bundle validation failed");
+      expect(err.message).toContain("no .mthds bundle file found");
+      expect(err.problem.code).toBe("runtime.unexpected");
     });
 
-    it("throws on a spawn failure (code is a string like ENOENT — a no-verdict)", async () => {
+    it("throws client.tool_missing on a spawn failure (code is a string like ENOENT — a no-verdict)", async () => {
       const execError = Object.assign(new Error("spawn ENOENT"), { code: "ENOENT" });
       execFileAsync.mockRejectedValue(execError);
 
-      await expect(
-        runner.validate({ files: { "bundle.mthds": "bundle content" } }),
-      ).rejects.toThrow();
+      const err = await problemOf(runner.validate({ files: { "bundle.mthds": "bundle content" } }));
+      expect(err.problem.code).toBe("client.tool_missing");
+      expect(err.problem.params).toEqual({ tool: "pipelex" });
+    });
+  });
+
+  describe("health", () => {
+    it("runs pipelex doctor with a time limit", async () => {
+      execFileAsync.mockResolvedValue({ stdout: "", stderr: "" });
+      await expect(runner.health()).resolves.toEqual({ status: "ok" });
+      const options = execFileAsync.mock.calls[0]![2] as { timeout?: number };
+      expect(execFileAsync.mock.calls[0]![1]).toContain("doctor");
+      expect(options.timeout).toBe(10_000);
+    });
+
+    it.each([
+      ["pipelex missing", { code: "ENOENT" }, "client.tool_missing"],
+      ["doctor out of time", { killed: true, signal: "SIGTERM", code: null }, "client.timeout"],
+      ["doctor finding issues", { code: 1, stderr: "Missing API key" }, "runtime.misconfigured"],
+      ["doctor failing otherwise", { code: 2, stderr: "No such option" }, "runtime.unexpected"],
+    ])("reads %s as %s", async (_topic, failure, code) => {
+      execFileAsync.mockRejectedValue(Object.assign(new Error("Command failed"), failure));
+      const err = await problemOf(runner.health());
+      expect(err.problem.code).toBe(code);
+    });
+
+    it("names the time limit of a health check out of time", async () => {
+      execFileAsync.mockRejectedValue(
+        Object.assign(new Error("Command failed"), { killed: true, signal: "SIGTERM", code: null }),
+      );
+      const err = await problemOf(runner.health());
+      expect(err.problem.params).toEqual({ seconds: 10 });
+    });
+
+    it("lets doctor print a full report, far past execFile's default of one MiB", async () => {
+      execFileAsync.mockResolvedValue({ stdout: "", stderr: "" });
+      await runner.health();
+      const options = execFileAsync.mock.calls[0]![2] as { maxBuffer?: number };
+      expect(options.maxBuffer).toBeGreaterThanOrEqual(16 * 1024 * 1024);
+    });
+
+    // execFile kills a child printing past maxBuffer, as it kills one out of time, so the kill
+    // alone does not say which: the error's code does.
+    it.each([
+      ["as Node raises it", {}],
+      ["even when the error says the child was killed", { killed: true, signal: "SIGTERM" }],
+    ])("reads doctor printing past the limit as runtime.unexpected, %s", async (_topic, extra) => {
+      execFileAsync.mockRejectedValue(
+        Object.assign(new Error("stdout maxBuffer length exceeded"), {
+          code: "ERR_CHILD_PROCESS_STDIO_MAXBUFFER",
+          stdout: "check ".repeat(1000),
+          ...extra,
+        }),
+      );
+      const err = await problemOf(runner.health());
+      expect(err.problem.code).toBe("runtime.unexpected");
+      expect(err.message).toContain("pipelex doctor printed more than");
+      expect(err.message).toContain("stdout maxBuffer length exceeded");
+      expect(err.message).not.toContain("check check");
+    });
+
+    // `component` is operator-only: the problem leaves it out of its params, and carries the step
+    // of a reader other than the operator, the one step that names it, so the caller reads no
+    // component and learns what to correct from what doctor printed.
+    it("names no component on doctor finding issues, its message quoting what doctor printed", async () => {
+      execFileAsync.mockRejectedValue(
+        Object.assign(new Error("Command failed"), { code: 1, stderr: "Missing API key" }),
+      );
+      const err = await problemOf(runner.health());
+      expect(err.problem.code).toBe("runtime.misconfigured");
+      expect(err.problem.params).toEqual({});
+      expect(err.problem.next_step).toEqual({
+        kind: "report",
+        detail: "Report this to whoever runs the runtime.",
+      });
+      expect(JSON.stringify(err.problem)).not.toContain("'pipelex'");
+      expect(err.problem.message).toBe("pipelex doctor found issues:\nMissing API key");
+    });
+  });
+
+  describe("pipelex-agent failures", () => {
+    it("relays the problem pipelex-agent printed on stderr", async () => {
+      const printed = {
+        type: "https://mthds.ai/errors/model.unknown",
+        code: "model.unknown",
+        title: "Unknown model",
+        detail: "The model 'gpt-9' is not in the model deck.",
+        domain: "method",
+        retry: "no",
+        next_step: { kind: "fix", detail: "Pick a model the deck lists." },
+      };
+      execFileAsync.mockRejectedValue(
+        Object.assign(new Error("Command failed"), { code: 1, stderr: JSON.stringify(printed) }),
+      );
+      const err = await problemOf(runner.checkModel({ reference: "gpt-9", type: "llm" }));
+      expect(err.problem).toEqual(printed);
+    });
+
+    it("reads a failure that printed no problem as runtime.unexpected with what it printed", async () => {
+      execFileAsync.mockRejectedValue(
+        Object.assign(new Error("Command failed"), { code: 1, stderr: "Traceback: boom" }),
+      );
+      const err = await problemOf(runner.models());
+      expect(err.problem.code).toBe("runtime.unexpected");
+      expect(err.message).toContain("Traceback: boom");
+    });
+
+    it("reads pipelex-agent missing as client.tool_missing", async () => {
+      execFileAsync.mockRejectedValue(Object.assign(new Error("spawn ENOENT"), { code: "ENOENT" }));
+      const err = await problemOf(runner.models());
+      expect(err.problem.params).toEqual({ tool: "pipelex-agent" });
+    });
+
+    it("reads pipelex missing on --version as client.tool_missing", async () => {
+      execFileAsync.mockRejectedValue(Object.assign(new Error("spawn ENOENT"), { code: "ENOENT" }));
+      const err = await problemOf(runner.version());
+      expect(err.problem).toMatchObject({
+        code: "client.tool_missing",
+        params: { tool: "pipelex" },
+      });
     });
   });
 });

@@ -52,7 +52,7 @@ export interface MTHDSProtocol<PipeOutputT = unknown> {
    *
    * `/validate` is a diagnostic endpoint: it returns a {@link ValidationResult}
    * discriminated on `is_valid` — the structural artifacts of a VALID bundle, or
-   * the `validation_errors[]` of an INVALID one. An invalid bundle is a produced
+   * the `errors[]` items of an INVALID one, each coded from the core registry. An invalid bundle is a produced
    * verdict (a 200 on API runners), NOT a thrown error; only a *no-verdict*
    * condition (a malformed request, auth, a server fault) throws. `allowSignatures`
    * tolerates unimplemented pipe signatures (strict by default) — they surface as

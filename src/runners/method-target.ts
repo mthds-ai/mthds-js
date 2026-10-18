@@ -23,14 +23,19 @@ import { listMethodTree, type MethodTreeLimits } from "../method-tree/lister.js"
 import type { MethodTree } from "../method-tree/tree.js";
 import { defineFileEntry, utf8TextOf } from "../method-tree/file-entry-encoding.js";
 import { readBundleMeta } from "./pipe-ref.js";
+import { argumentInvalid, ProblemError } from "../problems/errors.js";
 
 /** The tree path inline `--content` travels under. */
 export const INLINE_CONTENT_TREE_PATH = "bundle.mthds";
 
-/** A command line naming a method in a way that cannot be sent as one tree. */
-export class MethodTargetError extends Error {
-  constructor(message: string) {
-    super(message);
+/**
+ * A command line naming a method in a way that cannot be sent as one tree: `client.argument_invalid`
+ * naming the target, `reason` saying which way in one identifier, its message the resolver's own
+ * sentence.
+ */
+export class MethodTargetError extends ProblemError {
+  constructor(message: string, reason: string) {
+    super(argumentInvalid("target", reason, message).problem);
     this.name = "MethodTargetError";
   }
 }
@@ -88,6 +93,7 @@ export async function resolveMethodTarget(
   if (handedOver?.isFile() === true && !target.path.endsWith(".mthds")) {
     throw new MethodTargetError(
       `${target.path} is neither a .mthds file nor a directory; name a method's directory or one of its .mthds files.`,
+      "not_a_bundle_file",
     );
   }
   let tree = await listMethodTree(target.path, { limits });
@@ -100,6 +106,7 @@ export async function resolveMethodTarget(
     if (outside !== undefined) {
       throw new MethodTargetError(
         `The API runner sends a method as one tree, here the tree rooted at ${tree.root}, and the library directory ${outside.libraryDir} is outside it. Move those files under the root, add a METHODS.toml to a directory holding both, or pass --runner pipelex.`,
+        "library_dir_outside_tree",
       );
     }
   } else if (directories.length > 0) {
@@ -113,12 +120,14 @@ export async function resolveMethodTarget(
     if (root === undefined) {
       throw new MethodTargetError(
         `${target.path} is a .mthds file named alone, which travels without the files beside it, and no library directory given holds it. Name a directory holding both, add a METHODS.toml to one, or pass --runner pipelex.`,
+        "lone_file_unheld",
       );
     }
     const outside = directories.find(({ real }) => !isWithin(real, root.real));
     if (outside !== undefined) {
       throw new MethodTargetError(
         `${target.path} is a .mthds file named alone, which travels in the tree of the library directory ${root.libraryDir} holding it, and the library directory ${outside.libraryDir} is outside that tree. Name a directory holding both, add a METHODS.toml to one, or pass --runner pipelex.`,
+        "library_dir_outside_tree",
       );
     }
     const loneName = tree.entry!;
@@ -131,6 +140,7 @@ export async function resolveMethodTarget(
     if (!tree.has(entry)) {
       throw new MethodTargetError(
         `${target.path} is not a file of the method tree at ${root.real}, whose membership rule keeps it out, so it cannot be sent as that tree's entry.`,
+        "entry_not_in_tree",
       );
     }
   }
@@ -138,6 +148,7 @@ export async function resolveMethodTarget(
   if (!tree.files.some((file) => file.path.endsWith(".mthds"))) {
     throw new MethodTargetError(
       `The method tree at ${tree.root ?? target.path} holds no .mthds file.`,
+      "no_mthds_file",
     );
   }
   let entryPipe = entryPipeOf(null);

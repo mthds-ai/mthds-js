@@ -3,7 +3,8 @@ import type { InputForm } from "../protocol/input_form.js";
 import type { OutputForm } from "../protocol/output_form.js";
 import type { PipeIOContracts } from "../protocol/pipe_io_contracts.js";
 import type { MethodFiles, MethodTreeSource } from "../protocol/file_entries.js";
-import type { DictPipeOutput, ValidationErrorItem } from "./api/models.js";
+import type { DictPipeOutput } from "./api/models.js";
+import type { ProblemItem } from "../problems/types.js";
 
 // ── Runner type ─────────────────────────────────────────────────────
 
@@ -96,7 +97,7 @@ export interface PipeIORequest extends CrateRequestBase {
    * server's selection chain decides: the `main_pipe` of the `METHODS.toml` at the
    * tree's root, else the tree's single `main_pipe` declaration. A ref that names no
    * pipe, and (without `all_pipes`) a chain that finds no entry pipe or several, are
-   * input `422`s typed by {@link PIPE_SELECTION_ERROR_TYPES}, not malformed requests.
+   * input `422`s typed by {@link PIPE_SELECTION_CODES}, not malformed requests.
    */
   pipe_ref?: string;
   /**
@@ -113,18 +114,15 @@ export interface PipeIORequest extends CrateRequestBase {
 }
 
 /**
- * The `error_type` values a `/v1/pipe-io` `422` carries when
- * the request's pipe SELECTION failed, as opposed to its shape:
- * `EntryPipeNotFoundError` for a `pipe_ref` that names no pipe, a manifest
- * `main_pipe` the method lacks, or no `pipe_ref` and no `main_pipe`;
- * `EntryPipeAmbiguousError` for a bare code that matches pipes in several domains,
- * or no `pipe_ref` and several `main_pipe` declarations. A malformed request keeps
- * `ValidationError`. Branch on these two strings, never on the message, which is
- * the only place the runner lists the candidates.
+ * The codes of a refused pipe selection: the selected pipe is not in the method, the selection
+ * matches several pipes, or the request selects none and the method gives no main pipe. Each is
+ * the caller's to fix, by selecting another pipe. Branch on these codes, never on the message:
+ * the problem's parameters list the candidates.
  */
-export const PIPE_SELECTION_ERROR_TYPES: ReadonlySet<string> = new Set([
-  "EntryPipeNotFoundError",
-  "EntryPipeAmbiguousError",
+export const PIPE_SELECTION_CODES: ReadonlySet<string> = new Set([
+  "request.pipe_not_found",
+  "request.pipe_ambiguous",
+  "request.pipe_unspecified",
 ]);
 
 /** Request for `PipelexRunner.checkModel` — a LOCAL CLI capability only (no API route). */
@@ -143,12 +141,17 @@ export interface CheckModelRequest {
  * the *successful product* of the call (the request was well-formed, the method
  * was not), so it rides a **200** discriminated on `is_valid` — never a 4xx.
  * Only a no-verdict condition (an unknown `pipe_ref`, auth, a server fault)
- * throws. Branch on `is_valid`, never on the transport.
+ * throws. Branch on `is_valid`, never on the transport. Its faults are problem
+ * items, as the invalid arm of `/validate` lists them.
  */
 export interface CrateInvalidReport {
   is_valid: false;
-  validation_errors: ValidationErrorItem[];
-  message: string;
+  /** One problem item per fault, non-empty. */
+  errors: ProblemItem[];
+  /** Advisory findings in the same item schema. */
+  warnings?: ProblemItem[];
+  message?: string;
+  [extension: string]: unknown;
 }
 
 /**

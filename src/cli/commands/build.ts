@@ -1,7 +1,7 @@
 import * as p from "@clack/prompts";
 import { printLogo } from "./index.js";
 import { isApiRunner, isPipelexRunner, extractPassthroughArgs } from "./utils.js";
-import { formatCliError, withSuggestedFix } from "./error-output.js";
+import { formatCliError, formatItemLines, verdictSummary } from "./error-output.js";
 import { createRunner } from "../../runners/registry.js";
 import type { CrateInvalidReport, RunnerType } from "../../runners/types.js";
 import { INPUTS_TEMPLATE_FORMATS, renderInputsTemplate } from "../../protocol/inputs_template.js";
@@ -30,10 +30,9 @@ function reportIfInvalid(
 ): result is { is_valid: true } {
   if (result.is_valid) return true;
   spinner.stop("Build failed.");
-  p.log.error(result.message);
-  for (const item of result.validation_errors) {
-    const where = [item.source, item.pipe_code].filter(Boolean).join(" · ");
-    p.log.error(withSuggestedFix(where ? `${where}: ${item.message}` : item.message, item));
+  p.log.error(verdictSummary(result.message));
+  for (const item of result.errors) {
+    p.log.error(formatItemLines(item).join("\n"));
   }
   p.outro("");
   process.exit(1);

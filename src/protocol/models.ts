@@ -16,6 +16,8 @@
  * same passthrough principle as the request-side `extra`.
  */
 
+import type { ProblemItem } from "../problems/types.js";
+
 /**
  * The MTHDS Protocol version this SDK implements — the HTTP runner contract: its
  * routes and their request and response shapes. Cut by
@@ -28,7 +30,7 @@
  * is the `info.version` of `mthds-protocol.openapi.yaml` and what a runner reports
  * as `protocol_version` from `GET /version`.
  */
-export const MTHDS_PROTOCOL_VERSION = "1.0.0";
+export const MTHDS_PROTOCOL_VERSION = "2.0.0";
 
 // ── Run responses (`POST /execute` 200, `POST /start` 202) ───────────
 
@@ -141,23 +143,21 @@ export interface ValidationReport {
   /** Discriminant of the valid arm of the 200 response union. */
   is_valid: true;
   /**
+   * Whether the validated library is complete enough to run: `false` when pipe signatures remain
+   * unimplemented, a runnability fact and not an error. The protocol requires it of a runner; the
+   * local pipelex runner's minimal valid arm leaves it out, so a reader does not rely on it.
+   */
+  is_runnable?: boolean;
+  /** Refs of pipes still declared as unimplemented signatures, required as `is_runnable` is. */
+  pending_signatures?: string[];
+  /** Advisory findings, one problem item each, which never make the bundle invalid. */
+  warnings?: ProblemItem[];
+  /**
    * Implementation extension fields (e.g. `bundle_blueprint`, `graph_spec`,
-   * `validated_pipes`, `pending_signatures`, `is_runnable`) — and the standard's
-   * two recommended ones, `pipe_io_contracts` (`PipeIOContracts`) and
-   * `input_form` (`InputForm`).
+   * `validated_pipes`) — and the standard's recommended ones, `pipe_io_contracts`
+   * (`PipeIOContracts`), `input_form` (`InputForm`) and `output_form`.
    */
   [extension: string]: unknown;
-}
-
-/**
- * One structured diagnostic on an invalid verdict. The protocol fixes only the
- * neutral `category` + `message`; an implementation narrows `category` to its own
- * closed vocabulary and adds locators (see the Pipelex `ValidationErrorItem`,
- * which extends this with `source`, `pipe_code`, `field_name`, and friends).
- */
-export interface ValidationError {
-  category: string;
-  message: string;
 }
 
 /**
@@ -167,20 +167,27 @@ export interface ValidationError {
  * An invalid bundle is the *successful product* of a diagnostic call, not a
  * transport failure (the request was well-formed; the bundle was not), so it
  * rides a **200**. The structural artifacts of a valid report do not exist when
- * load/parse/wiring failed, so this arm carries only the per-error diagnostics
- * plus the runnability facts.
+ * load/parse/wiring failed, so this arm carries only the faults, the advisory
+ * warnings and the runnability facts. Each fault is a problem item with its own
+ * `code`, `detail`, `params` and `location`, and may carry `suggestions` and a
+ * `suggested_fix`; an item carries no domain, which a reader reads from its code
+ * (`itemDomain`).
  */
 export interface InvalidValidationReport {
   /** Discriminant of the invalid arm. */
   is_valid: false;
-  /** Per-error diagnostics — non-empty on every invalid verdict (even a parse-level failure yields one residual item). */
-  validation_errors: ValidationError[];
+  /** One problem item per fault — non-empty on every invalid verdict. */
+  errors: ProblemItem[];
+  /** Advisory findings in the same item schema, which do not make the verdict invalid. */
+  warnings?: ProblemItem[];
   /** Outstanding signatures (best-effort; empty when no library could be assembled). */
-  pending_signatures: string[];
+  pending_signatures?: string[];
   /** An invalid bundle is never runnable. */
   is_runnable: false;
   /** Human-readable summary of the verdict. */
-  message: string;
+  message?: string;
+  /** Implementation extension fields, such as Pipelex's `rendered_markdown`. */
+  [extension: string]: unknown;
 }
 
 /**

@@ -4,6 +4,7 @@ import { lstatSync, mkdirSync, mkdtempSync, renameSync, rmSync, writeFileSync } 
 import type { ResolvedRepo } from "../../package/manifest/types.js";
 import { treePathViolation } from "../../method-tree/tree-path.js";
 import { installedMethodFiles } from "./method-files.js";
+import { problemError } from "../../problems/errors.js";
 
 /**
  * Generate an executable CLI shim for a method in ~/.mthds/bin/.
@@ -43,7 +44,9 @@ export function generateShim(name: string, installDir: string): void {
  * name starts with a dot so no tree or library scan ever takes it in, then moved into place
  * (`replaceDirectory`), the earlier install being kept until the new one is in place.
  * Refuses any name or path that escapes targetDir or the method's directory (path traversal
- * protection), before anything of that method is written.
+ * protection), before anything of that method is written, as a `ProblemError` of
+ * `method.package_invalid` whose reason is `invalid_method_name` or `invalid_tree_path`, the fix
+ * being the method owner's. A failure of the file system is the system's error, naming its path.
  *
  * Agent-agnostic: the on-disk layout is identical regardless of which AI
  * coding agent triggered the install.
@@ -55,14 +58,28 @@ export function writeMethodFiles(repo: ResolvedRepo, targetDirInput: string): vo
   for (const method of repo.methods) {
     const installDir = resolve(join(targetDir, method.name));
     if (!installDir.startsWith(targetDir + sep)) {
-      throw new Error(`Path traversal detected: name "${method.name}" escapes target directory.`);
+      throw problemError(
+        "method.package_invalid",
+        { reason: "invalid_method_name" },
+        {
+          message: `Path traversal detected: name "${method.name}" escapes target directory.`,
+          reader: "other",
+        },
+      );
     }
     const files = installedMethodFiles(method);
     for (const file of files) {
       const violation = treePathViolation(file.path);
       const filePath = resolve(installDir, ...file.path.split("/"));
       if (violation !== null || !filePath.startsWith(installDir + sep)) {
-        throw new Error(`Path traversal detected: "${file.path}" escapes install directory.`);
+        throw problemError(
+          "method.package_invalid",
+          { reason: "invalid_tree_path", path: file.path },
+          {
+            message: `Path traversal detected: "${file.path}" escapes install directory.`,
+            reader: "other",
+          },
+        );
       }
     }
 

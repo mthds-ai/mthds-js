@@ -1,7 +1,8 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import * as p from "@clack/prompts";
 import { printLogo } from "./index.js";
-import { MethodTargetError, resolveMethodTarget } from "../../runners/method-target.js";
+import { resolveMethodTarget } from "../../runners/method-target.js";
+import { argumentInvalid } from "../../problems/errors.js";
 import { isApiRunner, isPipelexRunner, extractPassthroughArgs } from "./utils.js";
 import { formatCliError } from "./error-output.js";
 import { createRunner } from "../../runners/registry.js";
@@ -85,7 +86,9 @@ async function bundleRunOptions(
   // A named bundle runs its own `main_pipe`. Without one, the runner would start where
   // the tree's manifest or another bundle says, which is not the bundle that was named.
   if (!pipeCode && resolved.entry !== null) {
-    throw new MethodTargetError(
+    throw argumentInvalid(
+      "pipe",
+      "missing",
       `Could not determine pipe code: ${resolved.entry} declares no main_pipe. Use --pipe to specify it.`,
     );
   }

@@ -18,6 +18,7 @@ import { packageInit } from "./cli/commands/package/init.js";
 import { packageList } from "./cli/commands/package/list.js";
 import { packageValidate } from "./cli/commands/package/validate.js";
 import { listFiles } from "./cli/commands/files.js";
+import { formatCliError } from "./cli/commands/error-output.js";
 import { RUNNER_NAMES } from "./runners/types.js";
 import {
   telemetryEnable,
@@ -575,7 +576,7 @@ program.parseAsync(process.argv).catch((err: unknown) => {
 
   printLogo();
   p.intro("mthds");
-  p.log.error((err as Error).message);
+  p.log.error(formatCliError(err));
   p.outro("");
   process.exit(1);
 });

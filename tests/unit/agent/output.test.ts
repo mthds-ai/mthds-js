@@ -225,6 +225,38 @@ describe("agentError", () => {
     expect(envelope.code).toBe("client.tool_missing");
     expect(envelope).not.toHaveProperty("skipped_methods");
   });
+
+  // A member the runtime's problem holds under an extra's name is kept, and the client's extra of
+  // that name is written in neither form, so the JSON and the Markdown forms carry the same extras.
+  describe("an extra named as a member the runtime's problem holds", () => {
+    const problem = buildProblem(
+      "runtime.misconfigured",
+      {},
+      { status: 500, extra: { server_answer: "the runtime's own" } },
+    );
+    const extras = {
+      server_answer: { route: "POST /v1/validate", status: 500, excerpt: "what the client read" },
+      recovery: BINARY_RECOVERY["plxt"]!,
+    };
+
+    it("keeps the problem's member in the JSON form", () => {
+      chooseErrorFormat("json");
+      expect(() => agentError(problem, extras)).toThrow("__exit__");
+      const envelope = writtenJson();
+      expect(envelope.server_answer).toBe("the runtime's own");
+      expect(envelope).toHaveProperty("recovery");
+    });
+
+    it("renders no section of the client's extra in the Markdown form", () => {
+      chooseErrorFormat("markdown");
+      expect(() => agentError(problem, extras)).toThrow("__exit__");
+      const markdown = written();
+      expect(markdown).not.toContain("### Server answer");
+      expect(markdown).not.toContain("POST /v1/validate");
+      expect(markdown).not.toContain("what the client read");
+      expect(markdown).toContain("### Recovery");
+    });
+  });
 });
 
 describe("agentWarning", () => {

@@ -227,5 +227,17 @@ describe("mthds-agent error stream for a runner's refusal", () => {
         server_answer: "the runtime's own",
       });
     });
+
+    it("renders no Server answer section when the runtime's problem holds that member", async () => {
+      const problem = buildProblem(
+        "runtime.misconfigured",
+        { component: "inference" },
+        { status: 500, extra: { server_answer: "the runtime's own" } },
+      );
+      await validateWith(answeringRunner(500, JSON.stringify(problem)), "markdown");
+      const markdown = String(stderrSpy.mock.calls[0]![0]);
+      expect(markdown).toContain("`runtime.misconfigured`");
+      expect(markdown).not.toContain("### Server answer");
+    });
   });
 });

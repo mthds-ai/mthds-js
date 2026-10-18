@@ -1,6 +1,10 @@
 # Changelog
 
-## [Unreleased]
+## [v0.32.1] - 2026-10-19
+
+### Highlights
+
+**The problem work, on the 0.32 line.** This maintenance release is for consumers that still send a method as `mthds_contents` and are not on the method trees of `0.33.0` yet: every error the client, the runners and both CLIs raise becomes a problem document coded from the MTHDS core error registry `8.0.0`, as in `0.33.0`, while none of `0.33.0`'s tree work comes with it and `MTHDS_STANDARD_VERSION` stays `7.0.0`. It is published under the npm dist-tag `maint-0.32`, so `latest` stays on the newest release, and a range such as `^0.32.0` resolves to it.
 
 ### Added
 

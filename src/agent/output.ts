@@ -196,13 +196,23 @@ export interface AgentErrorExtras {
   server_answer?: ServerAnswer;
 }
 
-/** The problem as this CLI writes it: its `status` left out, and its extras beside its members. */
-function cliProblem(problem: Problem, extras: AgentErrorExtras | undefined): Problem {
-  const { status: _status, ...written } = problem;
+/**
+ * The extras a failure carries: every one given, but one left `undefined` and one named as a member
+ * the problem holds, which is kept, so that a runtime's own member is never replaced. Both forms
+ * of the error stream write these, the JSON form as members and the Markdown form as sections.
+ */
+function keptExtras(problem: Problem, extras: AgentErrorExtras | undefined): AgentErrorExtras {
+  const kept: Record<string, unknown> = {};
   for (const [name, value] of Object.entries(extras ?? {})) {
-    if (value !== undefined && !(name in written)) written[name] = value;
+    if (value !== undefined && !(name in problem)) kept[name] = value;
   }
-  return written;
+  return kept as AgentErrorExtras;
+}
+
+/** The problem as this CLI writes it: its `status` left out, and its kept extras beside its members. */
+function cliProblem(problem: Problem, extras: AgentErrorExtras): Problem {
+  const { status: _status, ...written } = problem;
+  return { ...written, ...extras };
 }
 
 /** The form of the error stream for the rest of this process. */
@@ -228,9 +238,9 @@ function fenced(text: string): string {
  * that installs a missing tool, the methods the resolver refused with their reasons, and what
  * mthds.sh answered for each method.
  */
-function renderExtrasMarkdown(extras: AgentErrorExtras | undefined): string {
+function renderExtrasMarkdown(extras: AgentErrorExtras): string {
   const sections: string[] = [];
-  const answer = extras?.server_answer;
+  const answer = extras.server_answer;
   if (answer !== undefined) {
     const lines = [`\`${answer.route}\` failed (${answer.status}).`];
     if (answer.excerpt !== undefined) {
@@ -238,10 +248,10 @@ function renderExtrasMarkdown(extras: AgentErrorExtras | undefined): string {
     }
     sections.push(`### Server answer\n\n${lines.join("\n")}`);
   }
-  if (extras?.recovery !== undefined) {
+  if (extras.recovery !== undefined) {
     sections.push(`### Recovery\n\nRun \`${buildInstallCommand(extras.recovery)}\`.`);
   }
-  const skipped = (extras?.skipped_methods ?? []) as Array<{ name?: unknown; errors?: unknown }>;
+  const skipped = (extras.skipped_methods ?? []) as Array<{ name?: unknown; errors?: unknown }>;
   if (skipped.length > 0) {
     const lines = skipped.map((method) => {
       const reasons = Array.isArray(method.errors) ? method.errors.map(inline).join("; ") : "";
@@ -249,7 +259,7 @@ function renderExtrasMarkdown(extras: AgentErrorExtras | undefined): string {
     });
     sections.push(`### Skipped methods\n\n${lines.join("\n")}`);
   }
-  const registrations = (extras?.registrations ?? []) as Array<Record<string, unknown>>;
+  const registrations = (extras.registrations ?? []) as Array<Record<string, unknown>>;
   if (registrations.length > 0) {
     const lines = registrations.map((registration) => {
       const said = registration.message ?? (registration.error as { message?: unknown })?.message;
@@ -263,16 +273,18 @@ function renderExtrasMarkdown(extras: AgentErrorExtras | undefined): string {
 
 /**
  * Write a failure on stderr and exit 1: the problem in the form the command line asks for
- * (`resolveErrorFormat`), noted for the command's usage statistics. The extras ride the JSON form
- * as members and the Markdown form as sections after the problem's.
+ * (`resolveErrorFormat`), noted for the command's usage statistics. The extras the problem does not
+ * already hold a member of the same name of (`keptExtras`) ride the JSON form as members and the
+ * Markdown form as sections after the problem's, so both forms carry the same ones.
  */
 export function agentError(problem: Problem, extras?: AgentErrorExtras): never {
-  const written = cliProblem(problem, extras);
+  const kept = keptExtras(problem, extras);
+  const written = cliProblem(problem, kept);
   noteProblem(written);
   const output =
     errorFormat() === "json"
       ? `${JSON.stringify(written, null, 2)}\n`
-      : renderProblemMarkdown(written) + renderExtrasMarkdown(extras);
+      : renderProblemMarkdown(written) + renderExtrasMarkdown(kept);
   process.stderr.write(output);
   process.exit(1);
 }

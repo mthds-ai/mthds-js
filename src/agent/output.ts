@@ -61,12 +61,26 @@ export function optionValue(argv: readonly string[], name: string): string | und
   return value;
 }
 
+/** Whether `arg` is one of `valued` written with its value in the same token, as Commander reads it. */
+function holdsOwnValue(arg: string, valued: readonly string[]): boolean {
+  return valued.some((name) =>
+    name.startsWith("--")
+      ? arg.startsWith(`${name}=`)
+      : name.length === 2 && arg.length > 2 && arg.startsWith(name),
+  );
+}
+
 /**
- * The arguments without an option that takes a value, written as `--name value` or `--name=value`,
- * wherever it stands before `--`. `--` and everything after it are kept as written, since they are
- * operands.
+ * The arguments without some options, wherever they stand before `--`: each of `valued`, an option
+ * taking a value, in every form Commander reads it in (`--name value`, `--name=value`, and
+ * `-Xvalue` for a short one), and each of `flags`, an option taking none. `--` and everything after
+ * it are kept as written, since they are operands.
  */
-export function withoutOption(args: readonly string[], name: string): string[] {
+export function withoutOptions(
+  args: readonly string[],
+  valued: readonly string[],
+  flags: readonly string[] = [],
+): string[] {
   const kept: string[] = [];
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index]!;
@@ -74,9 +88,9 @@ export function withoutOption(args: readonly string[], name: string): string[] {
       kept.push(...args.slice(index));
       break;
     }
-    if (arg === name) {
+    if (valued.includes(arg)) {
       index += 1;
-    } else if (!arg.startsWith(`${name}=`)) {
+    } else if (!flags.includes(arg) && !holdsOwnValue(arg, valued)) {
       kept.push(arg);
     }
   }

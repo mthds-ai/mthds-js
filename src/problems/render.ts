@@ -90,11 +90,17 @@ export function renderProblemMarkdown(problem: Problem): string {
   return `${lines.join("\n")}\n`;
 }
 
-/** A problem rendered as plain lines, for a person: what the `mthds` CLI prints. */
-export function renderProblemLines(problem: Problem): string[] {
+/**
+ * A problem rendered as plain lines, for a person: what the `mthds` CLI prints. `context` holds
+ * lines of the caller's own stating what no member of the problem holds, such as the route and the
+ * status of the answer the problem came on and what the server said, printed after the problem's
+ * sentences and before its next step.
+ */
+export function renderProblemLines(problem: Problem, context: readonly string[] = []): string[] {
   const lines = [`${problem.title}: ${problem.detail}`];
   const message = problemMessage(problem);
   if (message !== undefined) lines.push(message);
+  lines.push(...context);
   lines.push(`Next step: ${problem.next_step.detail}`);
   lines.push(...factLines(problem, (text) => text));
   for (const item of problem.errors ?? []) {

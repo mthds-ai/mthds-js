@@ -20,7 +20,7 @@ import {
   agentError,
   agentProblem,
   agentSuccess,
-  problemOfError,
+  agentErrorOf,
   unexpectedProblem,
 } from "./agent/output.js";
 import { registerApiRunnerCommands } from "./agent/commands/api-commands.js";
@@ -586,5 +586,5 @@ program.parseAsync(process.argv).catch((err: unknown) => {
     );
   }
 
-  agentError(problemOfError(err, unexpectedProblem));
+  agentErrorOf(err, unexpectedProblem);
 });

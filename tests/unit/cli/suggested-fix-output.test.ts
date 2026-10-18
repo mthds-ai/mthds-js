@@ -218,6 +218,7 @@ describe("mthds run prints a refused run's problem items", () => {
     expect(errorLines()).toEqual([
       [
         "The method does not validate: The method is invalid and was not run.",
+        "POST /v1/execute failed (422 Unprocessable Entity).",
         "Next step: Fix each fault the errors list.",
         "Code: method.invalid (domain method, retry no)",
         MODEL_LINE,
@@ -227,7 +228,7 @@ describe("mthds run prints a refused run's problem items", () => {
     ]);
   });
 
-  it("prints a refusal with no items as the problem's members alone", async () => {
+  it("prints a refusal with no items as the route that answered and the problem's members alone", async () => {
     useRunner({ type: "api", execute: vi.fn().mockRejectedValue(runRefusal(undefined)) });
 
     await expect(runPipe("demo.main", {})).rejects.toThrow("__exit__");
@@ -235,6 +236,7 @@ describe("mthds run prints a refused run's problem items", () => {
     expect(errorLines()).toEqual([
       [
         "The method does not validate: The method is invalid and was not run.",
+        "POST /v1/execute failed (422 Unprocessable Entity).",
         "Next step: Fix each fault the errors list.",
         "Code: method.invalid (domain method, retry no)",
       ].join("\n"),

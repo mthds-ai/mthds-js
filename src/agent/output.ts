@@ -19,6 +19,7 @@ import { renderProblemMarkdown } from "../problems/render.js";
 import type { CoreErrorCode, ProblemParamsByCode } from "../problems/registry.generated.js";
 import type { BuildProblemOptions } from "../problems/build.js";
 import type { Problem } from "../problems/types.js";
+import { ApiResponseError } from "../runners/api/exceptions.js";
 import { noteProblem } from "../usage-stats/outcome.js";
 
 // ── Re-export BinaryRecoveryInfo for callers ────────────────────────
@@ -134,6 +135,33 @@ export function problemOfError(err: unknown, fallback: (message: string) => Prob
   return fallback(err instanceof Error ? err.message : String(err));
 }
 
+/**
+ * What an answer of the runtime said beside its problem, which no member of the problem holds: the
+ * route that answered, its HTTP status and, when its body is no problem document, the start of the
+ * body (`ApiResponseError.answerExcerpt`), every URL in it without its query.
+ */
+export interface ServerAnswer {
+  route: string;
+  status: number;
+  excerpt?: string;
+}
+
+/** The extras of an error a command caught: what the server answered, for an `ApiResponseError`. */
+export function errorExtras(err: unknown): AgentErrorExtras {
+  if (!(err instanceof ApiResponseError)) return {};
+  const answer: ServerAnswer = { route: err.route, status: err.status };
+  if (err.answerExcerpt !== undefined) answer.excerpt = err.answerExcerpt;
+  return { server_answer: answer };
+}
+
+/**
+ * Write the failure of an error a command caught and exit 1: its problem (`problemOfError`), with
+ * what the server answered beside it when the error is an answer of the runtime (`errorExtras`).
+ */
+export function agentErrorOf(err: unknown, fallback: (message: string) => Problem): never {
+  agentError(problemOfError(err, fallback), errorExtras(err));
+}
+
 /** The catch-all problem, `runtime.unexpected`, of a failure no other code describes. */
 export function unexpectedProblem(message: string): Problem {
   return agentProblem("runtime.unexpected", {}, message);
@@ -159,6 +187,13 @@ export interface AgentErrorExtras {
    * says, method by method, why nothing was listed.
    */
   registrations?: unknown[];
+  /**
+   * What the runtime answered, on a failure read from its answer: the route, the status and the
+   * start of a body that is no problem document, so that what the server said is never lost, such
+   * as a gateway's `{"detail":"Invalid authentication token"}` read as
+   * `client.response_unreadable`. A member the runtime's problem holds under this name is kept.
+   */
+  server_answer?: ServerAnswer;
 }
 
 /** The problem as this CLI writes it: its `status` left out, and its extras beside its members. */
@@ -180,13 +215,29 @@ function inline(value: unknown): string {
   return typeof value === "string" ? value : JSON.stringify(value);
 }
 
+/** Text set in a fenced block whose fence no run of backticks in the text closes. */
+function fenced(text: string): string {
+  let fence = "```";
+  while (text.includes(fence)) fence += "`";
+  return `${fence}text\n${text}\n${fence}`;
+}
+
 /**
  * The extras of a failure rendered as Markdown sections after the problem's own, so that the
- * default error stream says what the JSON form carries: the command that installs a missing tool,
- * the methods the resolver refused with their reasons, and what mthds.sh answered for each method.
+ * default error stream says what the JSON form carries: what the runtime answered, the command
+ * that installs a missing tool, the methods the resolver refused with their reasons, and what
+ * mthds.sh answered for each method.
  */
 function renderExtrasMarkdown(extras: AgentErrorExtras | undefined): string {
   const sections: string[] = [];
+  const answer = extras?.server_answer;
+  if (answer !== undefined) {
+    const lines = [`\`${answer.route}\` failed (${answer.status}).`];
+    if (answer.excerpt !== undefined) {
+      lines.push("", "The server answered:", "", fenced(answer.excerpt));
+    }
+    sections.push(`### Server answer\n\n${lines.join("\n")}`);
+  }
   if (extras?.recovery !== undefined) {
     sections.push(`### Recovery\n\nRun \`${buildInstallCommand(extras.recovery)}\`.`);
   }

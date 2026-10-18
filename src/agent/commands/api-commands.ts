@@ -17,7 +17,7 @@ import {
   agentMarkdownError,
   chooseErrorFormat,
   errorFormat,
-  problemOfError,
+  agentErrorOf,
   unexpectedProblem,
 } from "../output.js";
 import { fileErrorReason } from "../problems.js";
@@ -392,7 +392,7 @@ export function registerApiRunnerCommands(program: Command, makeRunner: () => Ru
           const ack = await runner.start(startOptions);
           agentSuccess({ ...ack });
         } catch (err) {
-          agentError(problemOfError(err, unexpectedProblem));
+          agentErrorOf(err, unexpectedProblem);
         }
       },
     );
@@ -413,7 +413,7 @@ export function registerApiRunnerCommands(program: Command, makeRunner: () => Ru
         const result = await runner.models(category);
         agentSuccess({ ...result });
       } catch (err) {
-        agentError(problemOfError(err, unexpectedProblem));
+        agentErrorOf(err, unexpectedProblem);
       }
     });
 
@@ -497,10 +497,8 @@ function safeCreateRunner(makeRunner: () => Runner): Runner {
   try {
     return makeRunner();
   } catch (err) {
-    agentError(
-      problemOfError(err, (message) =>
-        agentProblem("client.not_configured", { setting: "runner" }, message),
-      ),
+    agentErrorOf(err, (message) =>
+      agentProblem("client.not_configured", { setting: "runner" }, message),
     );
   }
 }
@@ -647,7 +645,7 @@ async function resolveMethodOrError(
     try {
       limits = await runner.methodTreeLimits();
     } catch (err) {
-      agentError(problemOfError(err, unexpectedProblem));
+      agentErrorOf(err, unexpectedProblem);
     }
   }
   try {
@@ -673,16 +671,14 @@ async function resolveMethodOrError(
 
 /** A method the CLI could not read, `client.file_unreadable`, unless the error carries its own problem. */
 function methodUnreadable(target: string | undefined, err: unknown): never {
-  agentError(
-    problemOfError(err, (message) =>
-      agentProblem(
-        "client.file_unreadable",
-        {
-          path: target ?? "--content",
-          reason: err instanceof MethodTreeError ? err.code : fileErrorReason(err),
-        },
-        `Cannot read the method: ${message}`,
-      ),
+  agentErrorOf(err, (message) =>
+    agentProblem(
+      "client.file_unreadable",
+      {
+        path: target ?? "--content",
+        reason: err instanceof MethodTreeError ? err.code : fileErrorReason(err),
+      },
+      `Cannot read the method: ${message}`,
     ),
   );
 }
@@ -826,7 +822,7 @@ export async function emitInputsTemplate(
   try {
     result = await runner.pipeIo(request);
   } catch (err) {
-    agentError(problemOfError(err, unexpectedProblem));
+    agentErrorOf(err, unexpectedProblem);
   }
 
   if (!result.is_valid) {
@@ -841,7 +837,7 @@ export async function emitInputsTemplate(
   try {
     ({ pipeRef: resolvedRef, descriptor } = selectedInputDescriptor(result));
   } catch (err) {
-    agentError(problemOfError(err, unexpectedProblem));
+    agentErrorOf(err, unexpectedProblem);
   }
 
   let rendered: string | undefined;
@@ -1087,6 +1083,6 @@ export async function runProtocolValidate(
     // Only no-verdict conditions reach here now: a request-shape 422 (a malformed
     // body, a tree the runner refuses), auth, or a server fault. Their problem is
     // relayed whole, and never carries `is_valid`, which rides only a verdict.
-    agentError(problemOfError(err, unexpectedProblem));
+    agentErrorOf(err, unexpectedProblem);
   }
 }

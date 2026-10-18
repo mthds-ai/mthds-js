@@ -43,26 +43,57 @@ export interface ApiAnswerFacts {
   /** The answer's `X-Request-ID` header, the fallback for a problem that names no `request_id`. */
   requestIdHeader?: string;
   /**
-   * Whether the body is the problem document the error carries. When it is not, the message
-   * quotes the start of the body, which no member of the problem ever holds.
+   * Whether the body is the problem document the error carries. When it is not, the error quotes
+   * the start of the body (`answerExcerpt`), which no member of the problem ever holds.
    */
   bodyIsProblem?: boolean;
+  /**
+   * Whether no error may quote the body whatever it holds, as for the answers of
+   * `POST /blobs/missing`, which name each upload target by a URL whose query, such as a presigned
+   * signature, is the permission to write.
+   */
+  withholdBody?: boolean;
 }
 
-/** How much of a body that is no problem document an error's message quotes, as the Python twin does. */
+/** How much of a body that is no problem document an error quotes, as the Python twin does. */
 export const BODY_EXCERPT_LENGTH = 500;
 
-/** The start of a body, its whitespace collapsed, as an error's message quotes it. */
-function bodyExcerpt(body: string): string {
-  const flat = body.replace(/\s+/g, " ").trim();
+/**
+ * A URL written in a body: its scheme and `//`, the slashes written as they are or escaped as JSON
+ * may escape them (`https:\/\/`), then everything up to a space, a quote or an angle bracket.
+ */
+const URL_IN_TEXT = /\b[a-z][a-z0-9+.-]*:(?:\/\/|\\\/\\\/)[^\s"'<>`]*/gi;
+/** The scheme and `//` of a URL, then its userinfo, which ends at an `@` before the path. */
+const URL_USERINFO = /^([a-z][a-z0-9+.-]*:(?:\/\/|\\\/\\\/))[^/\\@?#]*@/i;
+
+/**
+ * A URL without anything in it that may grant access: its query and its fragment, where a
+ * presigned URL carries its signature, and its userinfo, a credential. Its scheme, host, port and
+ * path are kept, as the Python twin's `url_without_credentials` keeps them.
+ */
+function urlShown(url: string): string {
+  const end = url.search(/[?#]/);
+  const beforeQuery = end === -1 ? url : url.slice(0, end);
+  return beforeQuery.replace(URL_USERINFO, "$1");
+}
+
+/**
+ * The start of an answer's body as an error quotes it, for a person: its whitespace collapsed,
+ * every URL in it without its query, its fragment and its userinfo (`urlShown`), and cut at
+ * `BODY_EXCERPT_LENGTH` characters with an ellipsis. `undefined` when the body is empty.
+ */
+export function bodyExcerpt(body: string): string | undefined {
+  const flat = body.replace(/\s+/g, " ").trim().replace(URL_IN_TEXT, urlShown);
+  if (flat === "") return undefined;
   return flat.length > BODY_EXCERPT_LENGTH ? `${flat.slice(0, BODY_EXCERPT_LENGTH)}…` : flat;
 }
 
 /**
  * An answer of the runtime that is not the route's result, read as its problem. Its message names
  * the route and the status, then the problem's sentence, and ends with its next step. For a body
- * that is no problem document, the start of the body, which is the runtime's text and never a
- * problem member, is quoted on its own line between them, and the next step takes the last line.
+ * that is no problem document, the start of the body (`answerExcerpt`), which is the runtime's text
+ * and never a problem member, is quoted on its own line between them, and the next step takes the
+ * last line.
  */
 export class ApiResponseError extends ProblemError {
   public readonly apiUrl: string;
@@ -70,17 +101,32 @@ export class ApiResponseError extends ProblemError {
   /** The answer's HTTP status, whatever the problem's own `status` member says. */
   public readonly status: number;
   public readonly statusText: string;
+  /**
+   * The answer's body, as received. It is never quoted whole, and an answer of
+   * `POST /blobs/missing` names upload targets by presigned URLs, so treat it as a secret.
+   */
   public readonly responseBody: string;
+  /**
+   * What the server said, for a person: the start of a body that is no problem document, as
+   * `bodyExcerpt` cuts it, every URL without its query. `undefined` when the body is the problem
+   * the error carries or is empty, and for every answer of `POST /blobs/missing`, whose upload URLs
+   * are bearer capabilities. The message quotes it, and so do both CLIs.
+   */
+  public readonly answerExcerpt: string | undefined;
   private readonly requestIdHeader: string | undefined;
 
   constructor(problem: Problem, facts: ApiAnswerFacts, options?: { cause?: unknown }) {
     super(problem, options);
     this.name = "ApiResponseError";
+    this.answerExcerpt =
+      facts.bodyIsProblem === false && facts.withholdBody !== true
+        ? bodyExcerpt(facts.responseBody)
+        : undefined;
     const head = `${facts.route} failed (${facts.status}): `;
-    if (facts.bodyIsProblem === false && facts.responseBody.trim() !== "") {
+    if (this.answerExcerpt !== undefined) {
       const step = problem.next_step.detail;
       this.message =
-        `${head}${problemSentence(problem)}\nThe server answered: ${bodyExcerpt(facts.responseBody)}` +
+        `${head}${problemSentence(problem)}\nThe server answered: ${this.answerExcerpt}` +
         (step.length > 0 ? `\nNext step: ${step}` : "");
     } else {
       this.message = `${head}${this.message}`;

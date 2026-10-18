@@ -2,7 +2,7 @@
  * Agent run command — runs a method, pipe, or bundle and outputs JSON.
  */
 
-import { agentError, agentProblem, problemOfError, unexpectedProblem } from "../output.js";
+import { agentError, agentErrorOf, agentProblem, unexpectedProblem } from "../output.js";
 import { createRunner } from "../../runners/registry.js";
 import { isPipelexRunner } from "../../cli/commands/utils.js";
 import type { RunnerType } from "../../runners/types.js";
@@ -53,10 +53,8 @@ async function agentRunTarget(options: AgentRunOptions, fallbackMsg: string): Pr
   try {
     runner = createRunner("mthds-agent", options.runner, libraryDirs);
   } catch (err) {
-    agentError(
-      problemOfError(err, (message) =>
-        agentProblem("client.not_configured", { setting: "runner" }, message),
-      ),
+    agentErrorOf(err, (message) =>
+      agentProblem("client.not_configured", { setting: "runner" }, message),
     );
   }
 
@@ -64,7 +62,7 @@ async function agentRunTarget(options: AgentRunOptions, fallbackMsg: string): Pr
     try {
       await runner.runPassthrough(extractPassthroughArgs());
     } catch (err) {
-      agentError(problemOfError(err, unexpectedProblem));
+      agentErrorOf(err, unexpectedProblem);
     }
     return;
   }

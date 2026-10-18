@@ -15,12 +15,19 @@ vi.mock("../../../src/agent/commands/upgrade.js", () => ({
 
 const written = vi.hoisted(() => ({ problems: [] as Problem[] }));
 
-vi.mock("../../../src/agent/output.js", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../../../src/agent/output.js")>()),
-  agentError: vi.fn((problem: Problem) => {
-    written.problems.push(problem);
-  }),
-}));
+vi.mock("../../../src/agent/output.js", async (importOriginal) => {
+  const original = await importOriginal<typeof import("../../../src/agent/output.js")>();
+  return {
+    ...original,
+    agentError: vi.fn((problem: Problem) => {
+      written.problems.push(problem);
+    }),
+    // The last catch writes an error it caught through `agentErrorOf`, which writes its problem.
+    agentErrorOf: vi.fn((err: unknown, fallback: (message: string) => Problem) => {
+      written.problems.push(original.problemOfError(err, fallback));
+    }),
+  };
+});
 
 const ORIGINAL_ARGV = process.argv;
 

@@ -1,9 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   formatCliError,
   formatItemLines,
   verdictSummary,
 } from "../../../src/cli/commands/error-output.js";
+import { MthdsApiClient } from "../../../src/runners/api/client.js";
 // Imported through the client-safe `mthds/errors` entry, so a dropped re-export
 // of the classes or of the problem types fails here.
 import {
@@ -62,10 +63,11 @@ const CONCEPT_ITEM: ProblemItem = {
 };
 
 describe("formatCliError", () => {
-  it("prints the title and detail, the next step, the code with its verdict and the request id", () => {
+  it("prints the title and detail, the route and status, the next step, the code with its verdict and the request id", () => {
     const text = formatCliError(apiError({ ...PROBLEM, request_id: "req-123" }));
     expect(text.split("\n")).toEqual([
       "The model is not known: Model 'gpt-9' is not in the model deck.",
+      "POST /v1/execute failed (422 Unprocessable Entity).",
       "Next step: Pick a model the runner lists.",
       "Code: model.unknown (domain input, retry no)",
       "Request id: req-123",
@@ -127,6 +129,7 @@ describe("formatCliError", () => {
     );
     expect(text.split("\n")).toEqual([
       "The model is not known: Model 'gpt-9' is not in the model deck.",
+      "POST /v1/execute failed (422 Unprocessable Entity).",
       "Next step: Pick a model the runner lists.",
       "Code: model.unknown (domain input, retry no)",
       "Request id: req-7",
@@ -151,6 +154,86 @@ describe("formatCliError", () => {
   it("prints only the message for any other error", () => {
     expect(formatCliError(new Error("plain"))).toBe("plain");
     expect(formatCliError("a string")).toBe("a string");
+  });
+});
+
+// An answer that is no problem document, such as a gateway's own JSON or HTML, reads as a problem
+// the client states in the registry's words, which cannot say what the server said. The CLI prints
+// the route, the status and the start of the body beside it, so the person reads the server's own
+// words, never a URL's query, which may hold a presigned signature, and never what
+// `POST /blobs/missing` answered, whose upload URLs are the permission to write.
+describe("formatCliError for an answer that is no problem document", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  /** A client whose every request is answered with `status` and `body`. */
+  function answering(status: number, body: string, statusText: string): MthdsApiClient {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(body, { status, statusText, headers: { "Content-Type": "text/plain" } }),
+    );
+    return new MthdsApiClient({ baseUrl: "http://localhost:8081", apiKey: "test-token" });
+  }
+
+  async function printed(call: Promise<unknown>): Promise<string[]> {
+    const err = await call.then(
+      () => expect.fail("expected the call to throw"),
+      (caught: unknown) => caught,
+    );
+    expect(err).toBeInstanceOf(ApiResponseError);
+    return formatCliError(err).split("\n");
+  }
+
+  it("prints a 401 that is no problem with the route, the status and what the server said", async () => {
+    const client = answering(401, '{"detail":"Invalid authentication token"}', "Unauthorized");
+    const lines = await printed(client.execute({ pipe_code: "p" }));
+    expect(lines).toContain("POST /v1/execute failed (401 Unauthorized).");
+    expect(lines).toContain('The server answered: {"detail":"Invalid authentication token"}');
+    expect(lines).toContain("Code: client.response_unreadable (domain runtime, retry no)");
+    // What the server said comes before the next step, as in the error's own message.
+    const said = lines.indexOf('The server answered: {"detail":"Invalid authentication token"}');
+    expect(said).toBeLessThan(lines.findIndex((line) => line.startsWith("Next step: ")));
+  });
+
+  it("prints a gateway's page with the route, the status and the start of the page", async () => {
+    const page = "<html>\n<body><h1>504 Gateway Time-out</h1></body>\n</html>";
+    const client = answering(504, page, "Gateway Timeout");
+    const lines = await printed(client.execute({ pipe_code: "p" }));
+    expect(lines).toContain("POST /v1/execute failed (504 Gateway Timeout).");
+    expect(lines).toContain(
+      "The server answered: <html> <body><h1>504 Gateway Time-out</h1></body> </html>",
+    );
+    expect(lines).toContain("Code: client.outcome_unknown (domain runtime, retry outcome_unknown)");
+  });
+
+  it("cuts every URL the body names before its query, and drops its userinfo", async () => {
+    // The second URL is written with its slashes escaped, as JSON may write them.
+    const body = String.raw`{"detail":"Upload refused","target":"https://user:pass@bucket.example.com/blobs/abc?X-Amz-Signature=sig-123#frag","escaped":"https:\/\/store.example.com\/b?token=tok-456"}`;
+    const client = answering(403, body, "Forbidden");
+    const text = (await printed(client.models())).join("\n");
+    expect(text).toContain("https://bucket.example.com/blobs/abc");
+    expect(text).toContain(String.raw`https:\/\/store.example.com\/b`);
+    for (const secret of ["sig-123", "frag", "user:pass", "tok-456", "X-Amz-Signature"]) {
+      expect(text).not.toContain(secret);
+    }
+  });
+
+  it("never prints what POST /blobs/missing answered", async () => {
+    const body =
+      '{"missing":[{"upload":{"url":"https://bucket.example.com/b?X-Amz-Signature=s"}}]}';
+    const client = answering(500, body, "Internal Server Error");
+    const err = await client
+      .findMissingBlobs({ digest: `sha256:${"a".repeat(64)}`, blobs: [] })
+      .then(
+        () => expect.fail("expected the call to throw"),
+        (caught: unknown) => caught as ApiResponseError,
+      );
+    expect(err.answerExcerpt).toBeUndefined();
+    expect(err.message).not.toContain("bucket.example.com");
+    const lines = formatCliError(err).split("\n");
+    expect(lines).toContain("POST /v1/blobs/missing failed (500 Internal Server Error).");
+    expect(lines.join("\n")).not.toContain("bucket.example.com");
+    expect(lines.join("\n")).not.toContain("The server answered");
   });
 });
 

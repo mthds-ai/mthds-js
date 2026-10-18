@@ -233,7 +233,11 @@ describe("emitInputsTemplate", () => {
       ).rejects.toThrow("__exit__");
 
       const { status: _status, ...relayed } = problem;
-      expect(errorEnvelope()).toEqual({ ...relayed, request_id: "req-pipe-io" });
+      expect(errorEnvelope()).toEqual({
+        ...relayed,
+        request_id: "req-pipe-io",
+        server_answer: { route: "POST /v1/pipe-io", status: 422 },
+      });
       expect(errorEnvelope()).toMatchObject({ domain: "input" });
     });
 

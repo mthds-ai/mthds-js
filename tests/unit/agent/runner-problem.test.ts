@@ -6,6 +6,7 @@ import {
 import { chooseErrorFormat } from "../../../src/agent/output.js";
 import { buildProblem } from "../../../src/problems/build.js";
 import type { Problem, ProblemItem } from "../../../src/problems/types.js";
+import { MthdsApiClient } from "../../../src/runners/api/client.js";
 import { ApiResponseError, ApiTransportError } from "../../../src/runners/api/exceptions.js";
 import type { Runner } from "../../../src/runners/types.js";
 
@@ -71,7 +72,10 @@ describe("mthds-agent error stream for a runner's refusal", () => {
       ),
     ).rejects.toThrow("__exit__");
     const { status: _status, ...relayed } = problem;
-    expect(firstEnvelope()).toEqual(relayed);
+    expect(firstEnvelope()).toEqual({
+      ...relayed,
+      server_answer: { route: "POST /v1/validate", status: 500 },
+    });
     expect(firstEnvelope()).toMatchObject({
       code: "runtime.misconfigured",
       domain: "operator",
@@ -187,5 +191,59 @@ describe("mthds-agent error stream for a runner's refusal", () => {
     expect(markdown).toContain("`request.invalid`");
     expect(markdown).toContain("`req-md`");
     expect(markdown).toContain("`method.pipe_unresolved`");
+  });
+
+  // An answer that is no problem document reads as a problem the client states in the registry's
+  // words, which cannot say what the server said; `server_answer` carries it beside the problem,
+  // in the JSON form and as a section of the Markdown one, as the `mthds` CLI prints it.
+  describe("an answer that is no problem document", () => {
+    /** The API client as the runner, every request answered with `status` and `body`. */
+    function answeringRunner(status: number, body: string): Runner {
+      vi.spyOn(globalThis, "fetch").mockResolvedValue(
+        new Response(body, { status, headers: { "Content-Type": "text/html" } }),
+      );
+      return new MthdsApiClient({ baseUrl: "http://localhost:8081", apiKey: "test-token" });
+    }
+
+    async function validateWith(runner: Runner, format: "json" | "markdown"): Promise<void> {
+      await expect(
+        runProtocolValidate(runner, { files: { "x.mthds": "x" } }, false, undefined, format),
+      ).rejects.toThrow("__exit__");
+    }
+
+    it("carries a 401's route, status and body beside client.response_unreadable", async () => {
+      await validateWith(answeringRunner(401, '{"detail":"Invalid authentication token"}'), "json");
+      expect(firstEnvelope()).toMatchObject({
+        code: "client.response_unreadable",
+        params: { status: 401 },
+        server_answer: {
+          route: "POST /v1/validate",
+          status: 401,
+          excerpt: '{"detail":"Invalid authentication token"}',
+        },
+      });
+    });
+
+    it("renders what a gateway answered as a section of the Markdown form", async () => {
+      await validateWith(answeringRunner(502, "<html><h1>502 Bad Gateway</h1></html>"), "markdown");
+      const markdown = String(stderrSpy.mock.calls[0]![0]);
+      expect(markdown).toContain("`client.response_unreadable`");
+      expect(markdown).toContain("### Server answer");
+      expect(markdown).toContain("`POST /v1/validate` failed (502).");
+      expect(markdown).toContain("```text\n<html><h1>502 Bad Gateway</h1></html>\n```");
+    });
+
+    it("never overwrites a member the runtime's problem holds under the same name", async () => {
+      const problem = buildProblem(
+        "runtime.misconfigured",
+        { component: "inference" },
+        { status: 500, extra: { server_answer: "the runtime's own" } },
+      );
+      await validateWith(answeringRunner(500, JSON.stringify(problem)), "json");
+      expect(firstEnvelope()).toMatchObject({
+        code: "runtime.misconfigured",
+        server_answer: "the runtime's own",
+      });
+    });
   });
 });

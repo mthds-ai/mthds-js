@@ -90,6 +90,11 @@ interface Route {
   createsRun: boolean;
   /** The client's time limit for the whole exchange, the answer's body included. */
   timeoutMs: number;
+  /**
+   * Whether no error may quote what the route answers, as for `POST /blobs/missing`, whose answers
+   * name upload targets by presigned URLs.
+   */
+  withholdsBody?: boolean;
 }
 
 /** What came back from the runtime, before the client reads it. */
@@ -420,6 +425,7 @@ export class MthdsApiClient implements Runner {
       responseBody: res.body,
       requestIdHeader: requestIdHeader ? requestIdHeader : undefined,
       bodyIsProblem,
+      withholdBody: route.withholdsBody,
     };
   }
 
@@ -634,7 +640,11 @@ export class MthdsApiClient implements Runner {
    * bearer capabilities.
    */
   async findMissingBlobs(request: MissingBlobsRequest): Promise<MissingBlobsResult> {
-    const route = this.route("POST", "blobs/missing", POLL_REQUEST_TIMEOUT_MS);
+    // Its answers name each upload target by a presigned URL, so no error ever quotes them.
+    const route: Route = {
+      ...this.route("POST", "blobs/missing", POLL_REQUEST_TIMEOUT_MS),
+      withholdsBody: true,
+    };
     const res = await this.send(route, { body: request });
     if (res.status < 200 || res.status >= 300) throw this.refusal(route, res);
     const reading = parseJsonBody(res.body);

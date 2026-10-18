@@ -315,12 +315,14 @@ describe("passthrough", () => {
     );
   });
 
-  it("reports an auto-install uv ran and failed as client.tool_missing naming the tool", () => {
+  it("reports an auto-install uv ran and failed as client.tool_missing naming the binary", () => {
     mockedCheckBinaryVersion.mockReturnValue({
       status: "missing",
       installed_version: null,
       version_constraint: PX_CONSTRAINT,
     });
+    // uv names the package it installs, `pipelex`; the problem names the program that is missing,
+    // as its message and its recovery do.
     mockedUvToolInstallSync.mockImplementation(() => {
       throw new ToolInstallError("uv tool install failed: offline", "install_failed", "pipelex");
     });
@@ -333,7 +335,7 @@ describe("passthrough", () => {
       expect.objectContaining({
         code: "client.tool_missing",
         retry: "no",
-        params: { tool: "pipelex" },
+        params: { tool: "pipelex-agent" },
         message: expect.stringContaining("offline"),
       }),
       { recovery: PX_AGENT_RECOVERY },

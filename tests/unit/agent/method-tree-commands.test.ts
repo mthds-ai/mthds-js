@@ -388,7 +388,33 @@ describe("API-runner commands send the method's tree", () => {
       expect(firstStderrJson()).toMatchObject({
         code: "client.file_unreadable",
         domain: "input",
-        params: { path: missing, reason: "not_found" },
+        params: { path: missing, reason: "enoent" },
+      });
+    });
+
+    it.each([
+      [
+        "a name too long for the system",
+        () => join(dir, `${"x".repeat(300)}.mthds`),
+        "enametoolong",
+      ],
+      [
+        "a path through a loop of symbolic links",
+        () => {
+          symlinkSync(join(dir, "loop-b"), join(dir, "loop-a"));
+          symlinkSync(join(dir, "loop-a"), join(dir, "loop-b"));
+          return join(dir, "loop-a", "bundle.mthds");
+        },
+        "eloop",
+      ],
+    ])("reports a target refused for %s with the system's reason", async (_what, path, reason) => {
+      const target = path();
+      await expect(agent("validate", "bundle", target)).rejects.toThrow("__exit__");
+
+      expect(requests).toHaveLength(0);
+      expect(firstStderrJson()).toMatchObject({
+        code: "client.file_unreadable",
+        params: { path: target, reason },
       });
     });
   });
@@ -522,7 +548,7 @@ describe("API-runner commands send the method's tree", () => {
       expect(firstStderrJson()).toMatchObject({
         code: "client.file_unreadable",
         domain: "input",
-        params: { path: missing, reason: "not_found" },
+        params: { path: missing, reason: "enoent" },
       });
     });
   });

@@ -2,14 +2,8 @@ import { resolve, join, basename } from "node:path";
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import type { ResolvedRepo, ResolvedMethod, SkippedMethod } from "../../package/manifest/types.js";
 import { validateManifest } from "../../package/manifest/validate.js";
-import { MethodResolveError } from "./exceptions.js";
+import { MethodResolveError, systemErrorCode } from "./exceptions.js";
 import { readMethodTreeOrSkip } from "./method-tree-files.js";
-
-/** The system's error code of `err`, such as `ENOENT`, when it carries one. */
-function fsErrorCode(err: unknown): string | undefined {
-  const code = (err as NodeJS.ErrnoException | null)?.code;
-  return typeof code === "string" ? code : undefined;
-}
 
 /** A path the system refused to read for another reason than its absence, as a resolve failure. */
 function unreadablePath(path: string, err: unknown): MethodResolveError {
@@ -17,7 +11,7 @@ function unreadablePath(path: string, err: unknown): MethodResolveError {
   return new MethodResolveError(`Cannot read ${path}: ${reason}`, "unreadable", {
     cause: err,
     path,
-    fsCode: fsErrorCode(err),
+    fsCode: systemErrorCode(err),
   });
 }
 
@@ -37,7 +31,7 @@ export async function resolveFromLocal(dirPath: string): Promise<ResolvedRepo> {
   try {
     isDirectory = statSync(absPath).isDirectory();
   } catch (err) {
-    if (fsErrorCode(err) === "ENOENT") {
+    if (systemErrorCode(err) === "ENOENT") {
       throw new MethodResolveError(`Directory not found: ${absPath}`, "not_found", { cause: err });
     }
     throw unreadablePath(absPath, err);
@@ -53,7 +47,7 @@ export async function resolveFromLocal(dirPath: string): Promise<ResolvedRepo> {
   try {
     hasMethodsFolder = statSync(methodsDir).isDirectory();
   } catch (err) {
-    if (fsErrorCode(err) === "ENOENT") {
+    if (systemErrorCode(err) === "ENOENT") {
       throw new MethodResolveError(noMethodsFolder, "not_found", { cause: err });
     }
     throw unreadablePath(methodsDir, err);

@@ -9,7 +9,7 @@ import {
   unusableMethodProblem,
 } from "../../../src/agent/problems.js";
 import { ToolInstallError } from "../../../src/installer/runtime/exceptions.js";
-import { MethodResolveError } from "../../../src/installer/resolver/exceptions.js";
+import { MethodResolveError, systemErrorCode } from "../../../src/installer/resolver/exceptions.js";
 import type { MethodRegistration } from "../../../src/installer/registry/client.js";
 import type { ResolvedMethod, ResolvedRepo } from "../../../src/package/manifest/types.js";
 
@@ -39,6 +39,16 @@ describe("fileErrorReason", () => {
     expect(fileErrorReason(null)).toBe("unreadable");
     expect(fileErrorReason(undefined)).toBe("unreadable");
   });
+
+  // The resolver keeps the code it reads as `fsCode`, and the problem's reason is the same code in
+  // lower case, read by the one reader both share.
+  it("reads the code the resolver keeps by the same reader", () => {
+    const err = Object.assign(new Error("no"), { code: "ENAMETOOLONG" });
+    expect(systemErrorCode(err)).toBe("ENAMETOOLONG");
+    expect(fileErrorReason({ code: systemErrorCode(err) })).toBe("enametoolong");
+    expect(systemErrorCode({ code: "not a code" })).toBeUndefined();
+    expect(systemErrorCode(null)).toBeUndefined();
+  });
 });
 
 describe("errorPath", () => {
@@ -64,6 +74,15 @@ describe("toolInstallProblem", () => {
       retry: "no",
       params: { tool: "pipelex" },
       message: "Failed",
+    });
+  });
+
+  it("names the program a command runs, never the package uv installs it from", () => {
+    // `uv tool install` names its package, pipelex-tools, while the command runs plxt.
+    const err = new ToolInstallError("uv tool install failed", "install_failed", "pipelex-tools");
+    expect(toolInstallProblem(err, "plxt", "Failed")).toMatchObject({
+      code: "client.tool_missing",
+      params: { tool: "plxt" },
     });
   });
 

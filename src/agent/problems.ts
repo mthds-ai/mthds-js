@@ -12,7 +12,7 @@ import {
   skippedMethodReports,
 } from "../installer/resolver/skipped.js";
 import type { SkippedMethodReport } from "../installer/resolver/skipped.js";
-import { MethodResolveError } from "../installer/resolver/exceptions.js";
+import { MethodResolveError, systemErrorCode } from "../installer/resolver/exceptions.js";
 import { ToolInstallError } from "../installer/runtime/exceptions.js";
 import type { MethodRegistration, RegistrationAnswer } from "../installer/registry/client.js";
 import type { ResolvedRepo } from "../package/manifest/types.js";
@@ -20,13 +20,12 @@ import type { StepReader } from "../problems/build.js";
 import type { Problem, ProblemItem } from "../problems/types.js";
 
 /**
- * The reason a file could not be read or written, from the system's error code: `ENOENT` reads
- * `enoent`. An error with no such code reads as `fallback`: `unreadable` for a read, by default,
- * and `unwritable` for a write.
+ * The reason a file could not be read or written, from the system's error code (`systemErrorCode`):
+ * `ENOENT` reads `enoent`. An error with no such code reads as `fallback`: `unreadable` for a read,
+ * by default, and `unwritable` for a write.
  */
 export function fileErrorReason(err: unknown, fallback = "unreadable"): string {
-  const code = (err as { code?: unknown } | null)?.code;
-  return typeof code === "string" && /^[A-Z][A-Z0-9_]*$/.test(code) ? code.toLowerCase() : fallback;
+  return systemErrorCode(err)?.toLowerCase() ?? fallback;
 }
 
 /** The path a file system error names, else `fallback`. */
@@ -39,10 +38,12 @@ export function errorPath(err: unknown, fallback: string): string {
  * The problem of a tool `tool` that could not be installed: `client.tool_missing`, as the core
  * registry reads a tool that is missing, cannot be spawned or failed to install, naming `uv` when
  * uv itself is missing, and the tool when the install ran and failed or succeeded with the tool
- * still not on the PATH. The command's sentence in `message` says which.
+ * still not on the PATH. `tool` is the program a command runs, such as `plxt`, which the problem's
+ * message and recovery talk about, never the package uv installs it from, `pipelex-tools`. The
+ * command's sentence in `message` says which.
  */
 export function toolInstallProblem(err: unknown, tool: string, message: string): Problem {
-  const missing = err instanceof ToolInstallError ? err.tool : tool;
+  const missing = err instanceof ToolInstallError && err.reason === "uv_missing" ? err.tool : tool;
   return agentProblem("client.tool_missing", { tool: missing }, message);
 }
 

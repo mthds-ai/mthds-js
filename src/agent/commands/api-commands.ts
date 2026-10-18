@@ -612,8 +612,9 @@ function collectLibraryDir(value: string, previous: string[]): string[] {
  * belong to it (`resolveMethodTarget`), listed within the limits the runner
  * announces. A target that cannot be sent as one tree, or a tree the standard's
  * lister refuses, is a `client.argument_invalid`; a file or directory that cannot be
- * read is a `client.file_unreadable`, a target that is not there refused before the runner is
- * asked anything; a handshake that fails is relayed as its problem.
+ * read is a `client.file_unreadable` with the system's reason, a target the system cannot find or
+ * refuses being refused before the runner is asked anything; a handshake that fails is relayed as
+ * its problem.
  */
 async function resolveMethodOrError(
   runner: Runner,
@@ -626,16 +627,18 @@ async function resolveMethodOrError(
   }
   // A target that is not there is the caller's to fix, so it is refused before the runner is
   // asked anything, and an unreachable runner never hides it. The lister reads it again below.
+  // The reason is the system's own, so a path refused for another cause than its absence, such as
+  // `EACCES`, `ENAMETOOLONG` or `ELOOP`, never reads as missing.
   if (!content) {
     try {
       lstatSync(target!);
     } catch (err) {
-      const reason = err instanceof Error ? err.message : String(err);
-      methodUnreadable(
-        target,
-        new MethodTreeError("not_found", `Cannot read '${target}': ${reason}`, {
-          names: [target!],
-        }),
+      agentError(
+        agentProblem(
+          "client.file_unreadable",
+          { path: target!, reason: fileErrorReason(err) },
+          `Cannot read the method: ${err instanceof Error ? err.message : String(err)}`,
+        ),
       );
     }
   }

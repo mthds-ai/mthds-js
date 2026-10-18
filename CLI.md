@@ -1034,7 +1034,7 @@ The JSON output is `{ "success": true, "pipe_ref": "<domain.pipe_code>", "inputs
 
 Failures print the problem on stderr and exit 1:
 
-- on the API runner, a target that is neither a `.mthds` file nor a directory, a tree holding no `.mthds` file, a tree the standard refuses, and an `-L` directory that would add a second tree are each a `client.argument_invalid`, and an unreadable file, target directory or `-L` directory is a `client.file_unreadable`, all before the runner is called;
+- on the API runner, a target that is neither a `.mthds` file nor a directory, a tree holding no `.mthds` file, a tree the standard refuses, and an `-L` directory that would add a second tree are each a `client.argument_invalid`, and an unreadable file, target directory or `-L` directory is a `client.file_unreadable` whose `reason` is the system's own code in lower case, such as `enoent` for a target that is not there or `eacces` for one the system refuses, all before the runner is called;
 - a `--pipe` the method does not declare, or no `--pipe` when the method declares no entry pipe or several, is the runner's `request.pipe_not_found`, `request.pipe_ambiguous` or `request.pipe_unspecified`, whose parameters list the candidates;
 - an invalid method is `method.invalid` carrying `is_valid: false` and the verdict's items in `errors`, as on `validate`;
 - any other refusal is the runner's problem, and a runner that cannot be reached is `client.unreachable`.

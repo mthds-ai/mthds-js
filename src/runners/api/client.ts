@@ -14,12 +14,13 @@ import type { ApiAnswerFacts } from "./exceptions.js";
 import { argumentInvalid, problemError } from "../../problems/errors.js";
 import { buildProblem } from "../../problems/build.js";
 import {
+  isObject,
   isProblemItem,
-  parseJsonBody,
   readAnswer,
   retryAfterSeconds,
   unreadableAnswer,
 } from "../../problems/read.js";
+import type { JsonReading } from "../../problems/read.js";
 import type { Problem } from "../../problems/types.js";
 import { networkErrorCode, provesNothingSent } from "./transport.js";
 import { isValidBaseUrl } from "../../config/config.js";
@@ -361,7 +362,7 @@ export class MthdsApiClient implements Runner {
       const { problem, fromBody } = readAnswer(res, { createsRun: route.createsRun });
       throw new ApiResponseError(problem, this.answerFacts(route, res, fromBody));
     }
-    const reading = parseJsonBody(res.body);
+    const reading = parseResultBody(res.body);
     if (!reading.ok || !isResult(reading.value)) {
       const problem = route.createsRun
         ? outcomeUnknown(reading.ok ? runIdOf(reading.value) : undefined)
@@ -378,7 +379,7 @@ export class MthdsApiClient implements Runner {
    * unknown (`client.outcome_unknown`).
    */
   private acceptedAsynchronously(route: Route, res: RawResponse): ApiResponseError {
-    const reading = parseJsonBody(res.body);
+    const reading = parseResultBody(res.body);
     const runId = reading.ok ? runIdOf(reading.value) : undefined;
     const facts = this.answerFacts(route, res);
     if (runId === undefined) {
@@ -616,8 +617,18 @@ export class MthdsApiClient implements Runner {
 
 // ── Module helpers ────────────────────────────────────────────────────
 
-function isObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
+/**
+ * A route's result read as JSON, as `res.json()` reads it: a number too large for a double reads
+ * as `Infinity`, and no depth of nesting is refused. A result holds whatever a run produced, so a
+ * successful run, which may have been paid for, is never read as a failure for the numbers or the
+ * nesting of its output. The guards of `parseJsonBody` are for the problems an answer carries.
+ */
+function parseResultBody(text: string): JsonReading {
+  try {
+    return { ok: true, value: JSON.parse(text) as unknown };
+  } catch {
+    return { ok: false };
+  }
 }
 
 /** The base of `POST /execute`'s result: the run's id and its output. */

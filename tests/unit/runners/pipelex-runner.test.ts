@@ -828,6 +828,51 @@ describe("PipelexRunner", () => {
       const err = await problemOf(runner.health());
       expect(err.problem.params).toEqual({ seconds: 10 });
     });
+
+    it("lets doctor print a full report, far past execFile's default of one MiB", async () => {
+      execFileAsync.mockResolvedValue({ stdout: "", stderr: "" });
+      await runner.health();
+      const options = execFileAsync.mock.calls[0]![2] as { maxBuffer?: number };
+      expect(options.maxBuffer).toBeGreaterThanOrEqual(16 * 1024 * 1024);
+    });
+
+    // execFile kills a child printing past maxBuffer, as it kills one out of time, so the kill
+    // alone does not say which: the error's code does.
+    it.each([
+      ["as Node raises it", {}],
+      ["even when the error says the child was killed", { killed: true, signal: "SIGTERM" }],
+    ])("reads doctor printing past the limit as runtime.unexpected, %s", async (_topic, extra) => {
+      execFileAsync.mockRejectedValue(
+        Object.assign(new Error("stdout maxBuffer length exceeded"), {
+          code: "ERR_CHILD_PROCESS_STDIO_MAXBUFFER",
+          stdout: "check ".repeat(1000),
+          ...extra,
+        }),
+      );
+      const err = await problemOf(runner.health());
+      expect(err.problem.code).toBe("runtime.unexpected");
+      expect(err.message).toContain("pipelex doctor printed more than");
+      expect(err.message).toContain("stdout maxBuffer length exceeded");
+      expect(err.message).not.toContain("check check");
+    });
+
+    // `component` is operator-only: the problem leaves it out of its params, and carries the step
+    // of a reader other than the operator, the one step that names it, so the caller reads no
+    // component and learns what to correct from what doctor printed.
+    it("names no component on doctor finding issues, its message quoting what doctor printed", async () => {
+      execFileAsync.mockRejectedValue(
+        Object.assign(new Error("Command failed"), { code: 1, stderr: "Missing API key" }),
+      );
+      const err = await problemOf(runner.health());
+      expect(err.problem.code).toBe("runtime.misconfigured");
+      expect(err.problem.params).toEqual({});
+      expect(err.problem.next_step).toEqual({
+        kind: "report",
+        detail: "Report this to whoever runs the runtime.",
+      });
+      expect(JSON.stringify(err.problem)).not.toContain("'pipelex'");
+      expect(err.problem.message).toBe("pipelex doctor found issues:\nMissing API key");
+    });
   });
 
   describe("pipelex-agent failures", () => {

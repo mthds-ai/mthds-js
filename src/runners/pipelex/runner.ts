@@ -27,6 +27,14 @@ const execFileAsync = promisify(execFile);
 
 /** How long the health check waits for `pipelex doctor`, in seconds. */
 const HEALTH_TIMEOUT_SECONDS = 10;
+/**
+ * How much `pipelex doctor` may print on stdout or on stderr, in bytes, before `execFile` kills
+ * it: far more than a full report, which lists every check with its fix, so that a long report
+ * is never cut short. `execFile` allows one MiB by default.
+ */
+const HEALTH_MAX_BUFFER_BYTES = 16 * 1024 * 1024;
+/** The code of the error `execFile` raises when it killed a child for printing past `maxBuffer`. */
+const MAX_BUFFER_EXCEEDED = "ERR_CHILD_PROCESS_STDIO_MAXBUFFER";
 /** The exit status of a program that handled Ctrl-C itself, as pipelex does. */
 const EXIT_INTERRUPTED = 130;
 
@@ -260,10 +268,16 @@ export class PipelexRunner implements Runner {
   // ── Health & version ────────────────────────────────────────────
 
   /**
-   * Check pipelex with `pipelex doctor`, given `HEALTH_TIMEOUT_SECONDS` to answer. A failure is a
-   * `ProblemError`: `client.tool_missing` when pipelex is not on the PATH, `client.timeout` when
-   * doctor did not answer in time, `runtime.misconfigured` when it exited 1, having found issues,
-   * else `runtime.unexpected`.
+   * Check pipelex with `pipelex doctor`, given `HEALTH_TIMEOUT_SECONDS` to answer and
+   * `HEALTH_MAX_BUFFER_BYTES` to print. A failure is a `ProblemError`: `client.tool_missing` when
+   * pipelex is not on the PATH, `client.timeout` when doctor did not answer in time,
+   * `runtime.misconfigured` when it exited 1, having found issues, else `runtime.unexpected`. A
+   * doctor `execFile` killed for printing past the limit is `runtime.unexpected` saying so, never a
+   * timeout, though it was killed too: it is told apart by its code, and its output, as long as the
+   * limit, is not quoted. `runtime.misconfigured` declares its `component` operator-only: it is
+   * given, as every build site gives each parameter either reader's step names, but the problem
+   * leaves it out of its `params` and carries the step of a reader other than the operator, which
+   * names no component, so the caller reads what to correct in the message, what doctor printed.
    */
   async health(): Promise<Record<string, unknown>> {
     try {
@@ -271,6 +285,7 @@ export class PipelexRunner implements Runner {
         encoding: "utf-8",
         env: this.env,
         timeout: HEALTH_TIMEOUT_SECONDS * 1000,
+        maxBuffer: HEALTH_MAX_BUFFER_BYTES,
       });
       return { status: "ok" };
     } catch (cause) {
@@ -280,6 +295,16 @@ export class PipelexRunner implements Runner {
           "client.tool_missing",
           { tool: "pipelex" },
           { message: "pipelex CLI is not installed or not in PATH", cause },
+        );
+      }
+      if (failure.code === MAX_BUFFER_EXCEEDED) {
+        throw problemError(
+          "runtime.unexpected",
+          {},
+          {
+            message: `pipelex doctor printed more than ${HEALTH_MAX_BUFFER_BYTES} bytes on one stream (${failure.message ?? MAX_BUFFER_EXCEEDED}), so it was stopped before its report could be read.`,
+            cause,
+          },
         );
       }
       if (failure.killed === true) {

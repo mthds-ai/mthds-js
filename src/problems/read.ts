@@ -71,8 +71,9 @@ function refuseNonFinite(_key: string, value: unknown): unknown {
 /**
  * Parse a body as JSON, refusing one nested deeper than `MAX_BODY_NESTING`. JSON defines no `NaN`
  * or `Infinity`, which `JSON.parse` refuses too, and a number too large for a double, such as
- * `1e999`, which `JSON.parse` would read as `Infinity`, is refused as well. Every body the client
- * reads, a route's result as much as a problem, is parsed here.
+ * `1e999`, which `JSON.parse` would read as `Infinity`, is refused as well. Every body read as a
+ * problem is parsed here; the client reads a route's result as `JSON.parse` reads it, so that a
+ * run's output is never refused for its shape.
  */
 export function parseJsonBody(text: string): JsonReading {
   if (nestsDeeperThan(text, MAX_BODY_NESTING)) return { ok: false };
@@ -87,7 +88,8 @@ export function parseJsonBody(text: string): JsonReading {
 
 type Json = Record<string, unknown>;
 
-function isObject(value: unknown): value is Json {
+/** Whether a value is a JSON object: neither `null` nor an array. */
+export function isObject(value: unknown): value is Json {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 

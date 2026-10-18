@@ -32,6 +32,7 @@ import { argumentInvalid, problemError } from "../../problems/errors.js";
 import type { ProblemError } from "../../problems/errors.js";
 import { buildProblem } from "../../problems/build.js";
 import {
+  isObject,
   isProblemItem,
   parseJsonBody,
   readAnswer,
@@ -39,6 +40,7 @@ import {
   retryAfterSeconds,
   unreadableAnswer,
 } from "../../problems/read.js";
+import type { JsonReading } from "../../problems/read.js";
 import type { Problem } from "../../problems/types.js";
 import { networkErrorCode, provesNothingSent } from "./transport.js";
 import { isValidBaseUrl } from "../../config/config.js";
@@ -216,7 +218,7 @@ function outcomeUnknown(runId: string | undefined): Problem {
  *
  * Every failure of every route, `health` included, is a `ProblemError` carrying a problem with a
  * registered code (see `exceptions.ts` and docs/errors.md): an answer that is not the route's
- * result is an `ApiResponseError`, a call that got no answer an `ApiTransportError`. Two failures
+ * result is an `ApiResponseError`, a call that got no answer an `ApiTransportError`. These failures
  * of sending a tree by hash carry no problem yet: a failed upload of a blob to the target a runner
  * named, a `BlobUploadError`, and a `/blobs/missing` answer naming a blob the tree does not hold,
  * a `PipelineRequestError`. The client never repeats a request whose outcome it does not know, so a problem whose `retry` is
@@ -438,7 +440,7 @@ export class MthdsApiClient implements Runner {
    */
   private readResult<T>(route: Route, res: RawResponse, isResult: (value: unknown) => boolean): T {
     if (res.status < 200 || res.status >= 300) throw this.refusal(route, res);
-    const reading = parseJsonBody(res.body);
+    const reading = parseResultBody(res.body);
     if (!reading.ok || !isResult(reading.value)) {
       const problem = route.createsRun
         ? outcomeUnknown(reading.ok ? runIdOf(reading.value) : undefined)
@@ -461,7 +463,7 @@ export class MthdsApiClient implements Runner {
    * unknown (`client.outcome_unknown`).
    */
   private acceptedAsynchronously(route: Route, res: RawResponse): ApiResponseError {
-    const reading = parseJsonBody(res.body);
+    const reading = parseResultBody(res.body);
     const runId = reading.ok ? runIdOf(reading.value) : undefined;
     const facts = this.answerFacts(route, res);
     if (runId === undefined) {
@@ -647,7 +649,7 @@ export class MthdsApiClient implements Runner {
     };
     const res = await this.send(route, { body: request });
     if (res.status < 200 || res.status >= 300) throw this.refusal(route, res);
-    const reading = parseJsonBody(res.body);
+    const reading = parseResultBody(res.body);
     if (!reading.ok) {
       throw new MalformedBlobsAnswerError(
         "POST /v1/blobs/missing answered a body that is not JSON.",
@@ -972,8 +974,18 @@ export class MthdsApiClient implements Runner {
 
 // ── Module helpers ────────────────────────────────────────────────────
 
-function isObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
+/**
+ * A route's result read as JSON, as `res.json()` reads it: a number too large for a double reads
+ * as `Infinity`, and no depth of nesting is refused. A result holds whatever a run produced, so a
+ * successful run, which may have been paid for, is never read as a failure for the numbers or the
+ * nesting of its output. The guards of `parseJsonBody` are for the problems an answer carries.
+ */
+function parseResultBody(text: string): JsonReading {
+  try {
+    return { ok: true, value: JSON.parse(text) as unknown };
+  } catch {
+    return { ok: false };
+  }
 }
 
 /** The base of `POST /execute`'s result: the run's id and its output. */

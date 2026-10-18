@@ -11,6 +11,7 @@ import {
   RunStillRunningError,
 } from "../../../src/runners/api/exceptions.js";
 import { buildProblem } from "../../../src/problems/build.js";
+import { MAX_BODY_NESTING } from "../../../src/problems/read.js";
 import { PIPE_SELECTION_CODES } from "../../../src/runners/types.js";
 import { MTHDS_JS_VERSION } from "../../../src/version.js";
 import { EMPTY_METHOD_TREE_MESSAGE } from "../../../src/protocol/options.js";
@@ -454,24 +455,47 @@ describe("MthdsApiClient redirects", () => {
 });
 
 describe("MthdsApiClient answers that are no problem document", () => {
-  it("reads a success body holding a number no double holds as client.response_unreadable", async () => {
+  // A result holds whatever a run produced, so it is read as JSON reads it: the guards that keep a
+  // problem document's parsing bounded never turn a successful, possibly paid, run into a failure.
+  it("reads a success holding a number no double holds as the result, as JSON reads it", async () => {
     const client = makeClient();
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
       textResponse(200, '{"models":[{"score":1e999}]}'),
     );
-    const err = await rejection(client.models());
-    expect(err).toBeInstanceOf(ApiResponseError);
-    expect((err as ApiResponseError).problem.code).toBe("client.response_unreadable");
+    await expect(client.models()).resolves.toEqual({ models: [{ score: Infinity }] });
   });
 
-  it("reads such a body on execute as client.outcome_unknown, since the run may exist", async () => {
+  it("reads an execute whose output holds such a number as its result", async () => {
     const client = makeClient();
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
       textResponse(200, '{"pipeline_run_id":"r","pipe_output":{"score":1e999}}'),
     );
-    const err = await rejection(client.execute({ pipe_code: "p" }));
-    expect(err).toBeInstanceOf(ApiResponseError);
-    expect((err as ApiResponseError).problem).toEqual(buildProblem("client.outcome_unknown", {}));
+    await expect(client.execute({ pipe_code: "p" })).resolves.toEqual({
+      pipeline_run_id: "r",
+      pipe_output: { score: Infinity },
+    });
+  });
+
+  it("reads an execute whose output nests deeper than MAX_BODY_NESTING as its result", async () => {
+    const client = makeClient();
+    const depth = MAX_BODY_NESTING + 10;
+    const nested = "[".repeat(depth) + "]".repeat(depth);
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      textResponse(200, `{"pipeline_run_id":"r","pipe_output":{"tree":${nested}}}`),
+    );
+    const result = await client.execute({ pipe_code: "p" });
+    expect(result.pipeline_run_id).toBe("r");
+  });
+
+  it("still refuses a problem body holding a number no double holds", async () => {
+    const client = makeClient();
+    const body = JSON.stringify(buildProblem("runtime.unavailable", {})).replace(
+      /}$/,
+      ',"retry_after":1e999}',
+    );
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(textResponse(422, body));
+    const err = await rejection(client.models());
+    expect((err as ApiResponseError).problem.code).toBe("client.response_unreadable");
   });
 
   it("reads an overlong Retry-After as no delay, without throwing", async () => {

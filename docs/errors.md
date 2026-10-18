@@ -70,7 +70,7 @@ flowchart TD
     PRE --> BUE
 ```
 
-Every error the client and the runners raise is a `ProblemError`, so `catch (err) { if (err instanceof ProblemError) … }` reaches the problem of any of them, but for two failures of sending a tree by hash that the registry has no code for yet: a `BlobUploadError`, and a `422` `request.blobs_missing` naming a blob the request did not carry, which only a runner at fault answers. Both are a `PipelineRequestError`, which a catch-all on that class reaches too.
+Every error the client and the runners raise is a `ProblemError`, so `catch (err) { if (err instanceof ProblemError) … }` reaches the problem of any of them, but for the failures of sending a tree by hash that the registry has no code for yet: a `BlobUploadError`, and a `POST /v1/blobs/missing` answer naming a blob the tree being sent does not hold, which only a runner at fault answers and which nothing is uploaded after. Each is a `PipelineRequestError`, which a catch-all on that class reaches too. A `422` `request.blobs_missing` naming a blob the request did not carry is no such failure: the client does not answer it, so it reaches the caller as an `ApiResponseError` carrying that problem.
 
 ### `ProblemError`
 
@@ -123,7 +123,7 @@ Two refusals of a request carrying a method's tree are answered by the client it
 
 `src/runners/api/transport.ts` decides whether a failure proves the request never left; only such a failure counts as one that created nothing.
 
-Every body is decoded by the same rules, a route's result as much as a problem (`parseJsonBody`): JSON nested no deeper than `MAX_BODY_NESTING`, with no `NaN` or `Infinity` and no number too large for a double, such as `1e999`, which would otherwise read as `Infinity`; a body breaking any of them is no JSON. A `Retry-After` header is read as delta-seconds written in ASCII digits or as an HTTP date (`retryAfterSeconds`), in exactly the forms RFC 9110 has a recipient accept (`parseHttpDate`): the IMF-fixdate `Sun, 06 Nov 1994 08:49:37 GMT`, the obsolete RFC 850 form `Sunday, 06-Nov-94 08:49:37 GMT`, whose two-digit year reads as the year ending in those digits from 49 years before now to 50 years after, and the asctime form `Sun Nov  6 08:49:37 1994`. Day and month names are case-sensitive, the zone is the literal `GMT`, the day name is not checked against the date, a date that does not exist, such as the 31st of February or the hour 24, is unreadable, and a second of 60 counts as the next minute, unless it carries the date past the year 9999. Any other value, a number too large to hold exactly included, gives no delay, and reading it never throws.
+A body read as a problem is decoded by `parseJsonBody`: JSON nested no deeper than `MAX_BODY_NESTING`, with no `NaN` or `Infinity` and no number too large for a double, such as `1e999`, which would otherwise read as `Infinity`; a body breaking any of them is no problem document. A route's result is read as `JSON.parse` reads it, as `res.json()` did, so a number too large for a double reads as `Infinity` and no nesting is refused: a successful run, which may have been paid for, is never read as a failure for the shape of its output. A `Retry-After` header is read as delta-seconds written in ASCII digits or as an HTTP date (`retryAfterSeconds`), in exactly the forms RFC 9110 has a recipient accept (`parseHttpDate`): the IMF-fixdate `Sun, 06 Nov 1994 08:49:37 GMT`, the obsolete RFC 850 form `Sunday, 06-Nov-94 08:49:37 GMT`, whose two-digit year reads as the year ending in those digits from 49 years before now to 50 years after, and the asctime form `Sun Nov  6 08:49:37 1994`. Day and month names are case-sensitive, the zone is the literal `GMT`, the day name is not checked against the date, a date that does not exist, such as the 31st of February or the hour 24, is unreadable, and a second of 60 counts as the next minute, unless it carries the date past the year 9999. Any other value, a number too large to hold exactly included, gives no delay, and reading it never throws.
 
 ## The codes the client raises itself
 
@@ -188,7 +188,7 @@ A problem with several faults, a run route refusing an invalid method for one, l
 }
 ```
 
-A `SuggestedFix` has two readers. A person or an agent reads its `description`. A program applying it reads its `ops`, semantic patches over the `.mthds` document addressed by TOML table path, and applies it only when `isApplicableFix(fix)` holds, without asking only when `fixSafety(fix)` is `safe`. `fix_code` names the rule that produced the fix, and `file`, when present, is the only file the operations may touch.
+A `SuggestedFix` is read by a person or an agent, who reads its `description`, and by a program applying it, which reads its `ops`, semantic patches over the `.mthds` document addressed by TOML table path, and applies it only when `isApplicableFix(fix)` holds, without asking only when `fixSafety(fix)` is `safe`. `fix_code` names the rule that produced the fix, and `file`, when present, is the only file the operations may touch.
 
 ## What the CLIs print
 

@@ -244,6 +244,50 @@ describe("the JSON reader", () => {
     expect(isProblemItem(item)).toBe(true);
     expect(isProblemItem({ ...item, location: { line: "3" } })).toBe(false);
   });
+
+  // An operation of a kind the protocol lists must carry every member its variant requires, of its
+  // type, while an operation of any other kind is an `UnknownFixOp` and still reads.
+  it.each([
+    ["delete_key without its table_path", { kind: "delete_key", key: "draft" }],
+    ["delete_key without its key", { kind: "delete_key", table_path: ["pipe"] }],
+    ["delete_key with a table_path of numbers", { kind: "delete_key", table_path: [1], key: "k" }],
+    ["set_key without its value", { kind: "set_key", table_path: [], key: "k" }],
+    [
+      "set_key with a nested table",
+      { kind: "set_key", table_path: [], key: "k", value: { a: {} } },
+    ],
+    ["ensure_table naming the root", { kind: "ensure_table", table_path: [] }],
+    ["delete_table naming the root", { kind: "delete_table", table_path: [] }],
+    [
+      "rename_table_key without its new_key",
+      { kind: "rename_table_key", table_path: [], key: "k" },
+    ],
+    [
+      "move_key without its new_table_path",
+      { kind: "move_key", table_path: [], key: "k", new_key: "n" },
+    ],
+    [
+      "remap_value with an empty mapping",
+      { kind: "remap_value", table_path: [], key: "k", mapping: {} },
+    ],
+  ])("refuses an item whose fix holds %s", (_what, op) => {
+    const item = {
+      code: "method.invalid",
+      detail: "Broken.",
+      suggested_fix: { ...FIX, ops: [op] },
+    };
+    expect(isProblemItem(item)).toBe(false);
+  });
+
+  it("reads an item whose fix holds an operation of a kind the protocol does not list", () => {
+    const op = { kind: "rewrite_reference", from: "a", to: "b" };
+    const item = {
+      code: "method.invalid",
+      detail: "Broken.",
+      suggested_fix: { ...FIX, ops: [op] },
+    };
+    expect(isProblemItem(item)).toBe(true);
+  });
 });
 
 describe("reading Retry-After", () => {

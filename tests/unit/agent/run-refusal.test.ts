@@ -96,8 +96,13 @@ describe("mthds-agent run start envelope for a refused invalid method", () => {
     };
     await expect(runStart(problemResponse(422, problem))).rejects.toThrow("__exit__");
 
+    // Beside it rides what the runtime answered: the route and the status, which the problem's
+    // JSON form leaves out, and no excerpt, since the body is the problem itself.
     const { status: _status, ...relayed } = problem;
-    expect(envelope()).toEqual(relayed);
+    expect(envelope()).toEqual({
+      ...relayed,
+      server_answer: { route: "POST /v1/start", status: 422 },
+    });
     expect(envelope()).toMatchObject({
       code: "method.invalid",
       domain: "method",

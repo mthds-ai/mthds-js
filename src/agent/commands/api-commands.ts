@@ -17,7 +17,7 @@ import {
   agentMarkdownError,
   chooseErrorFormat,
   errorFormat,
-  problemOfError,
+  agentErrorOf,
   unexpectedProblem,
 } from "../output.js";
 import { fileErrorReason } from "../problems.js";
@@ -383,7 +383,7 @@ export function registerApiRunnerCommands(program: Command, makeRunner: () => Ru
           const ack = await runner.start(startOptions);
           agentSuccess({ ...ack });
         } catch (err) {
-          agentError(problemOfError(err, unexpectedProblem));
+          agentErrorOf(err, unexpectedProblem);
         }
       },
     );
@@ -404,7 +404,7 @@ export function registerApiRunnerCommands(program: Command, makeRunner: () => Ru
         const result = await runner.models(category);
         agentSuccess({ ...result });
       } catch (err) {
-        agentError(problemOfError(err, unexpectedProblem));
+        agentErrorOf(err, unexpectedProblem);
       }
     });
 
@@ -488,10 +488,8 @@ function safeCreateRunner(makeRunner: () => Runner): Runner {
   try {
     return makeRunner();
   } catch (err) {
-    agentError(
-      problemOfError(err, (message) =>
-        agentProblem("client.not_configured", { setting: "runner" }, message),
-      ),
+    agentErrorOf(err, (message) =>
+      agentProblem("client.not_configured", { setting: "runner" }, message),
     );
   }
 }
@@ -550,13 +548,11 @@ function resolveClosureOrError(
     return resolveBundleClosure(content ? { content } : { path: target! }, libraryDirs);
   } catch (err) {
     if (err instanceof BundleTargetError) agentError(err.problem);
-    agentError(
-      problemOfError(err, (message) =>
-        agentProblem(
-          "client.file_unreadable",
-          { path: target ?? "--content", reason: fileErrorReason(err) },
-          `Cannot read file: ${message}`,
-        ),
+    agentErrorOf(err, (message) =>
+      agentProblem(
+        "client.file_unreadable",
+        { path: target ?? "--content", reason: fileErrorReason(err) },
+        `Cannot read file: ${message}`,
       ),
     );
   }
@@ -769,7 +765,7 @@ export async function emitInputsTemplate(
   try {
     result = await runner.pipeIo(request);
   } catch (err) {
-    agentError(problemOfError(err, unexpectedProblem));
+    agentErrorOf(err, unexpectedProblem);
   }
 
   if (!result.is_valid) {
@@ -784,7 +780,7 @@ export async function emitInputsTemplate(
   try {
     ({ pipeRef: resolvedRef, descriptor } = selectedInputDescriptor(result));
   } catch (err) {
-    agentError(problemOfError(err, unexpectedProblem));
+    agentErrorOf(err, unexpectedProblem);
   }
 
   let rendered: string | undefined;
@@ -1025,6 +1021,6 @@ export async function runProtocolValidate(
     // Only no-verdict conditions reach here now: a request-shape 422 (malformed
     // body / mthds_sources mismatch), auth, or a server fault. Their problem is
     // relayed whole, and never carries `is_valid`, which rides only a verdict.
-    agentError(problemOfError(err, unexpectedProblem));
+    agentErrorOf(err, unexpectedProblem);
   }
 }

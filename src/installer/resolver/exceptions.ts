@@ -41,6 +41,16 @@ export class MethodResolveError extends Error {
   }
 }
 
+/**
+ * The system's error code of `err`, such as `ENOENT` or `EACCES`, when it carries one written as
+ * such a code, else `undefined`. The one reader of a file system error's code, which a resolver
+ * keeps as `fsCode` and `fileErrorReason` turns into a problem's reason.
+ */
+export function systemErrorCode(err: unknown): string | undefined {
+  const code = (err as { code?: unknown } | null)?.code;
+  return typeof code === "string" && /^[A-Z][A-Z0-9_]*$/.test(code) ? code : undefined;
+}
+
 /** Whether `err` is a resolve failure for `reason`. */
 export function isResolveFailure(err: unknown, reason: ResolveFailureReason): boolean {
   return err instanceof MethodResolveError && err.reason === reason;

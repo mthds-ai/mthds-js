@@ -127,12 +127,14 @@ export interface PipelexRunnerOptions {
  * The numbers `pipelex --version` reports, one `<label> <version>` line each since pipelex 0.57.0:
  * `pipelex <version>`, `mthds-protocol <version>` and `mthds-standard <version>`. The protocol
  * version is the one the installed pipelex speaks, which need not be the one this package follows,
- * so it is read from pipelex rather than restated. A pipelex that prints no protocol line is older
- * than the handshake and cannot say which protocol it speaks, so its version is refused.
+ * so it is read from pipelex rather than restated; a pipelex older than 0.57.0 prints no protocol
+ * line, so its `protocolVersion` is `undefined`. Its own version is the `pipelex` line's, else the
+ * last word of the first line, the version alone before pipelex named itself on it, and an empty
+ * string when it prints nothing.
  */
 export function parsePipelexVersionReport(stdout: string): {
   pipelexVersion: string;
-  protocolVersion: string;
+  protocolVersion: string | undefined;
 } {
   const lines = stdout
     .split(/\r?\n/)
@@ -145,19 +147,8 @@ export function parsePipelexVersionReport(stdout: string): {
     }
     return undefined;
   };
-  // The first line was the version alone before pipelex named itself on it.
   const pipelexVersion = labelled("pipelex") ?? lines[0]?.split(/\s+/).pop() ?? "";
-  const protocolVersion = labelled("mthds-protocol");
-  if (protocolVersion === undefined) {
-    throw problemError(
-      "client.tool_outdated",
-      { tool: "pipelex", version: pipelexVersion || "unknown" },
-      {
-        message: `pipelex ${pipelexVersion} does not report the MTHDS Protocol version it speaks; upgrade pipelex to 0.57.0 or later.`,
-      },
-    );
-  }
-  return { pipelexVersion, protocolVersion };
+  return { pipelexVersion, protocolVersion: labelled("mthds-protocol") };
 }
 
 export class PipelexRunner implements Runner {
@@ -289,6 +280,17 @@ export class PipelexRunner implements Runner {
       throw execFailureError(err, "pipelex", "pipelex --version failed");
     }
     const { pipelexVersion, protocolVersion } = parsePipelexVersionReport(stdout);
+    // A pipelex that prints no protocol line is older than the handshake and cannot say which
+    // protocol it speaks, so its version is refused.
+    if (protocolVersion === undefined) {
+      throw problemError(
+        "client.tool_outdated",
+        { tool: "pipelex", version: pipelexVersion || "unknown" },
+        {
+          message: `pipelex ${pipelexVersion} does not report the MTHDS Protocol version it speaks; upgrade pipelex to 0.57.0 or later.`,
+        },
+      );
+    }
     return {
       protocol_version: protocolVersion,
       runner_version: pipelexVersion,
@@ -516,11 +518,15 @@ export class PipelexRunner implements Runner {
     }
   }
 
-  /** The version pipelex reports, for a refusal naming it, or `unknown` when it reports none. */
+  /**
+   * The version pipelex reports (`parsePipelexVersionReport`), for a refusal naming it, or
+   * `unknown` when it reports none. A pipelex old enough to be refused may print no protocol line,
+   * which leaves its own version readable.
+   */
   private async versionForRefusal(): Promise<string> {
     try {
       const { stdout } = await this.exec(["--version"]);
-      return stdout.match(/\d+\.\d+\.\d+\S*/)?.[0] ?? "unknown";
+      return parsePipelexVersionReport(stdout).pipelexVersion || "unknown";
     } catch {
       return "unknown";
     }

@@ -472,6 +472,21 @@ describe("PipelexRunner", () => {
       expect(unknown.problem.params).toEqual({ tool: "pipelex", version: "unknown" });
     });
 
+    it("names the version on the report's pipelex line, as version() reads it", async () => {
+      mockSpawnExit(0);
+      mockedExistsSync.mockReturnValue(true);
+      mockedReadFileSync.mockReturnValue(
+        JSON.stringify({ root: { main_stuff: { concept: { code: "X" } } }, aliases: {} }),
+      );
+      // The one parser of the report reads pipelex's own line, whatever line comes first.
+      execFileAsync.mockResolvedValue({
+        stdout: "mthds-protocol 2.0.0\npipelex 0.80.1\nmthds-standard 7.0.0\n",
+        stderr: "",
+      });
+      const err = await problemOf(runner.execute({ mthds_contents: ["bundle content"] }));
+      expect(err.problem.params).toEqual({ tool: "pipelex", version: "0.80.1" });
+    });
+
     it("rejects bundle_b64 — the local runner has no zip decoder", async () => {
       const err = await runner.execute({ bundle_b64: "UEsDBBQ=" }).catch((e: unknown) => e);
       expect((err as Error).message).toMatch(/bundle_b64|zip/i);

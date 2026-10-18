@@ -105,6 +105,30 @@ describe("resolveFromGitHub failures", () => {
     expect(fetchStub).not.toHaveBeenCalled();
   });
 
+  /** A resolve through `gh api`, which `gh auth status` lets it use, failing with `stderr`. */
+  function ghFailing(stderr: string): void {
+    vi.mocked(execFileSync).mockImplementationOnce(() => "");
+    vi.mocked(execFile).mockImplementation(((...args: unknown[]) => {
+      const callback = args[args.length - 1] as (err: Error) => void;
+      callback(Object.assign(new Error("exit 1"), { stderr }));
+    }) as unknown as typeof execFile);
+  }
+
+  it("reads a 404 the gh CLI reports as not_found", async () => {
+    ghFailing("gh: Not Found (HTTP 404)\n");
+    expect((await failure()).reason).toBe("not_found");
+  });
+
+  it("reads a gh failure quoting a path or a SHA holding 404 or 403 by its own status", async () => {
+    // A server error whose message quotes the path asked for: neither the directory `error_404`
+    // nor the SHA holding `403` is GitHub's status, so the failure is worth a retry, and the
+    // method is never skipped as missing.
+    ghFailing(
+      "gh: HTTP 502: Bad Gateway (https://api.github.com/repos/acme/tools/contents/methods/error_404?ref=4031ab)\n",
+    );
+    expect((await failure()).reason).toBe("fetch_failed");
+  });
+
   it("reads a missing methods/ folder as not_found, and a failure listing it as fetch_failed", async () => {
     route([
       ["repos/acme/tools", () => json(200, { private: false })],

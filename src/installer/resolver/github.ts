@@ -61,6 +61,8 @@ async function githubFetch(auth: AuthMethod, apiPath: string): Promise<unknown> 
       }));
     } catch (err) {
       const stderr = (err as { stderr?: string })?.stderr ?? "";
+      // `gh` names GitHub's status as `(HTTP 404)`, so the status is read there alone: a bare
+      // `404` or `403` may stand in a path or a SHA that a message about another failure quotes.
       if (stderr.includes("HTTP 401") || stderr.includes("Bad credentials")) {
         throw new MethodResolveError(
           `GitHub refused the gh CLI's credentials (401) for ${apiPath}. Run gh auth login, or set GITHUB_TOKEN.`,
@@ -68,10 +70,10 @@ async function githubFetch(auth: AuthMethod, apiPath: string): Promise<unknown> 
           { setting: "GITHUB_TOKEN", cause: err },
         );
       }
-      if (stderr.includes("404") || stderr.includes("Not Found")) {
+      if (/\bHTTP 404\b/.test(stderr)) {
         throw new MethodResolveError(`Not found: ${apiPath}.`, "not_found", { cause: err });
       }
-      if (stderr.includes("403") || stderr.includes("rate limit")) {
+      if (/\bHTTP (403|429)\b/.test(stderr) || stderr.includes("rate limit")) {
         throw new MethodResolveError(
           `GitHub API rate limit or permission error for ${apiPath}. Try setting GITHUB_TOKEN.`,
           "fetch_failed",

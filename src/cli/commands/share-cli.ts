@@ -32,7 +32,7 @@ export async function shareMethod(options: {
   if (dir) {
     s.message(`Resolving methods from ${dir}...`);
     try {
-      resolved = resolveFromLocal(dir);
+      resolved = await resolveFromLocal(dir);
     } catch (err) {
       s.stop("Failed to resolve local methods.");
       p.log.error((err as Error).message);

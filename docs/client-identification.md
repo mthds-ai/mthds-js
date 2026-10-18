@@ -24,6 +24,8 @@ mthds-js/0.26.0 node/22.4.0 (darwin; arm64)
 
 The header is computed once, when the client is constructed, and every request helper in the client builds its headers through one private method, so no request path — protocol routes, `pipeIo` or `health` — can miss it.
 
+A blob upload is the one request that can leave the runner: when a method's tree travels by hash, `POST /v1/blobs/missing` gives each missing blob an upload target, often a signed URL on a storage service. The client sends exactly the headers the runner gave for it, and adds its `User-Agent` only when the target shares the runner's origin, so a storage service elsewhere sees its own client's default rather than a header it did not sign for.
+
 Requests `mthds-js` sends to third parties keep their own `User-Agent`: the GitHub resolver used by `mthds install` still sends `mthds-cli` to GitHub, and the npm-registry version check is untouched.
 
 ## `appInfo`: naming your program

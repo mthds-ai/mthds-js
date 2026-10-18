@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import type { Problem } from "../../../src/problems/types.js";
 
 // ── Mocks ────────────────────────────────────────────────────────────
 
@@ -28,28 +29,20 @@ vi.mock("../../../src/installer/registry/client.js", async (importOriginal) => {
 
 class AgentErrorThrow extends Error {
   constructor(
-    public errorType: string,
+    public problem: Problem,
     public extras?: Record<string, unknown>,
   ) {
-    super(errorType);
+    super(problem.code);
   }
 }
 
-vi.mock("../../../src/agent/output.js", () => ({
+// The problems are the real ones, built from the registry; only their writing is captured.
+vi.mock("../../../src/agent/output.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../../src/agent/output.js")>()),
   agentSuccess: vi.fn(),
-  agentError: vi.fn((message: string, errorType: string, extras?: Record<string, unknown>) => {
-    throw new AgentErrorThrow(errorType, { message, ...extras });
+  agentError: vi.fn((problem: Problem, extras?: Record<string, unknown>) => {
+    throw new AgentErrorThrow(problem, extras);
   }),
-  AGENT_ERROR_DOMAINS: {
-    ARGUMENT: "argument",
-    CONFIG: "config",
-    RUNNER: "runner",
-    PIPELINE: "pipeline",
-    VALIDATION: "validation",
-    INSTALL: "install",
-    IO: "io",
-    BINARY: "binary",
-  },
 }));
 
 import { parseAddress } from "../../../src/installer/resolver/address.js";
@@ -160,9 +153,11 @@ describe("agentPublish", () => {
     );
 
     expect(mockedAgentError).toHaveBeenCalledWith(
-      expect.stringContaining("Cannot use both"),
-      "ArgumentError",
-      expect.any(Object),
+      expect.objectContaining({
+        code: "client.argument_invalid",
+        params: { argument: "--local", reason: "conflicts_with_address" },
+        message: expect.stringContaining("Cannot use both"),
+      }),
     );
   });
 
@@ -170,9 +165,11 @@ describe("agentPublish", () => {
     await expect(agentPublish(undefined, {})).rejects.toThrow(AgentErrorThrow);
 
     expect(mockedAgentError).toHaveBeenCalledWith(
-      expect.stringContaining("Provide an address"),
-      "ArgumentError",
-      expect.any(Object),
+      expect.objectContaining({
+        code: "client.argument_invalid",
+        params: { argument: "address", reason: "missing" },
+        message: expect.stringContaining("Provide an address"),
+      }),
     );
   });
 
@@ -209,17 +206,20 @@ describe("agentPublish", () => {
 
     await expect(agentPublish("mthds-ai/contract-analysis", {})).rejects.toThrow(AgentErrorThrow);
 
-    const [message, errorType, extras] = mockedAgentError.mock.calls[0]!;
-    expect(errorType).toBe("PublishError");
-    expect(message).toMatch(/^Nothing was published/);
-    expect(message).toContain("manifest_invalid");
-    expect(message).toContain("[package.version] is required");
+    const [problem, extras] = mockedAgentError.mock.calls[0]!;
+    // Every method refused for its manifest: the package breaks a rule of mthds.sh.
+    expect(problem).toMatchObject({
+      code: "method.package_invalid",
+      params: { reason: "manifest_invalid" },
+      retry: "no",
+    });
+    expect(problem.message).toMatch(/^Nothing was published/);
+    expect(problem.message).toContain("manifest_invalid");
+    expect(problem.message).toContain("[package.version] is required");
     expect(extras).toMatchObject({
-      error_domain: "install",
       skipped_methods: [],
       registrations: [{ name: "contract-analysis", ...refusedAnswer }],
     });
-    expect(extras).not.toHaveProperty("retryable", true);
     expect(mockedTrackPublish).not.toHaveBeenCalled();
     expect(mockedAgentSuccess).not.toHaveBeenCalled();
   });
@@ -230,7 +230,10 @@ describe("agentPublish", () => {
 
     await expect(agentPublish("mthds-ai/contract-analysis", {})).rejects.toThrow(AgentErrorThrow);
 
-    expect(mockedAgentError.mock.calls[0]![2]).toMatchObject({ retryable: true });
+    expect(mockedAgentError.mock.calls[0]![0]).toMatchObject({
+      code: "runtime.unavailable",
+      retry: "yes",
+    });
   });
 
   it("names only the methods the route listed when some were refused", async () => {
@@ -271,8 +274,12 @@ describe("agentPublish", () => {
 
     await expect(agentPublish("mthds-ai/contract-analysis", {})).rejects.toThrow(AgentErrorThrow);
 
-    const [message, , extras] = mockedAgentError.mock.calls[0]!;
-    expect(message).toContain("is a private repository");
+    const [problem, extras] = mockedAgentError.mock.calls[0]!;
+    expect(problem).toMatchObject({
+      code: "client.argument_invalid",
+      params: { argument: "address", reason: "private_repository" },
+    });
+    expect(problem.message).toContain("is a private repository");
     expect(extras).toMatchObject({ skipped_methods: [] });
     expect(mockedRegisterMethods).not.toHaveBeenCalled();
     expect(mockedTrackPublish).not.toHaveBeenCalled();
@@ -283,9 +290,13 @@ describe("agentPublish", () => {
 
     await expect(agentPublish("mthds-ai/tools/sub/dir", {})).rejects.toThrow(AgentErrorThrow);
 
-    const [message, , extras] = mockedAgentError.mock.calls[0]!;
-    expect(message).toContain("names a subdirectory");
-    expect(extras).not.toHaveProperty("skipped_methods");
+    const [problem, extras] = mockedAgentError.mock.calls[0]!;
+    expect(problem).toMatchObject({
+      code: "client.argument_invalid",
+      params: { argument: "address", reason: "subdirectory" },
+    });
+    expect(problem.message).toContain("names a subdirectory");
+    expect(extras ?? {}).not.toHaveProperty("skipped_methods");
     expect(mockedResolveFromGitHub).not.toHaveBeenCalled();
   });
 
@@ -298,12 +309,16 @@ describe("agentPublish", () => {
 
     await expect(agentPublish("mthds-ai/contract-analysis", {})).rejects.toThrow(AgentErrorThrow);
 
-    expect(mockedAgentError.mock.calls[0]![2]).toMatchObject({ error_domain: "config" });
+    expect(mockedAgentError.mock.calls[0]![0]).toMatchObject({
+      code: "client.not_configured",
+      params: { setting: "MTHDS_HUB_URL" },
+      message: "MTHDS_HUB_URL is set to something else.",
+    });
     expect(mockedRegisterMethods).not.toHaveBeenCalled();
   });
 
   it("registers nothing from a local directory, and says so", async () => {
-    mockedResolveFromLocal.mockReturnValue({ ...fakeResolved, source: "local", isPublic: false });
+    mockedResolveFromLocal.mockResolvedValue({ ...fakeResolved, source: "local", isPublic: false });
 
     await agentPublish(undefined, { local: "/some/path" });
 
@@ -377,9 +392,12 @@ describe("agentPublish", () => {
     ).rejects.toThrow(AgentErrorThrow);
 
     expect(mockedAgentError).toHaveBeenCalledWith(
-      expect.stringContaining('Method "nonexistent" not found'),
-      "PublishError",
-      expect.any(Object),
+      expect.objectContaining({
+        code: "method.not_found",
+        params: { method_ref: "nonexistent" },
+        message: expect.stringContaining('Method "nonexistent" not found'),
+      }),
+      expect.objectContaining({ skipped_methods: [] }),
     );
   });
 
@@ -415,7 +433,7 @@ const partiallyResolved: ResolvedRepo = {
 
 describe("agentPublish and the refused methods", () => {
   it("reports the refused methods beside the published ones", async () => {
-    mockedResolveFromLocal.mockReturnValue({ ...partiallyResolved, source: "local" });
+    mockedResolveFromLocal.mockResolvedValue({ ...partiallyResolved, source: "local" });
 
     await agentPublish(undefined, { local: "/some/path" });
 
@@ -429,7 +447,7 @@ describe("agentPublish and the refused methods", () => {
   });
 
   it("carries the field as an empty array when nothing was refused", async () => {
-    mockedResolveFromLocal.mockReturnValue({ ...fakeResolved, source: "local" });
+    mockedResolveFromLocal.mockResolvedValue({ ...fakeResolved, source: "local" });
 
     await agentPublish(undefined, { local: "/some/path" });
 
@@ -438,7 +456,7 @@ describe("agentPublish and the refused methods", () => {
   });
 
   it("reports the refusals even under --method, since a skip is the repo's property", async () => {
-    mockedResolveFromLocal.mockReturnValue({ ...partiallyResolved, source: "local" });
+    mockedResolveFromLocal.mockResolvedValue({ ...partiallyResolved, source: "local" });
 
     await agentPublish(undefined, { local: "/some/path", method: "contract-analysis" });
 
@@ -451,23 +469,29 @@ describe("agentPublish and the refused methods", () => {
   });
 
   it("gives the filter the refusal reason instead of calling the method missing", async () => {
-    mockedResolveFromLocal.mockReturnValue({ ...partiallyResolved, source: "local" });
+    mockedResolveFromLocal.mockResolvedValue({ ...partiallyResolved, source: "local" });
 
     await expect(
       agentPublish(undefined, { local: "/some/path", method: "legacy_tool" }),
     ).rejects.toThrow(AgentErrorThrow);
 
-    const [message, , extras] = mockedAgentError.mock.calls[0]!;
-    expect(message).toContain('Method "legacy_tool" was found but skipped');
-    expect(message).toContain(INCOMPATIBLE);
-    expect(message).not.toContain("not found");
+    const [problem, extras] = mockedAgentError.mock.calls[0]!;
+    // The publisher is the method's author: the step is theirs to take.
+    expect(problem).toMatchObject({
+      code: "method.invalid",
+      next_step: { kind: "change_method" },
+      errors: [{ code: "method.package_invalid", detail: `Method 'legacy_tool': ${INCOMPATIBLE}` }],
+    });
+    expect(problem.message).toContain('Method "legacy_tool" was found but skipped');
+    expect(problem.message).toContain(INCOMPATIBLE);
+    expect(problem.message).not.toContain("not found");
     expect(extras).toMatchObject({
       skipped_methods: [{ name: "legacy_tool", errors: [INCOMPATIBLE] }],
     });
   });
 
   it("says why when nothing survived, rather than only that nothing did", async () => {
-    mockedResolveFromLocal.mockReturnValue({
+    mockedResolveFromLocal.mockResolvedValue({
       ...partiallyResolved,
       source: "local",
       methods: [],
@@ -475,8 +499,13 @@ describe("agentPublish and the refused methods", () => {
 
     await expect(agentPublish(undefined, { local: "/some/path" })).rejects.toThrow(AgentErrorThrow);
 
-    const [message, , extras] = mockedAgentError.mock.calls[0]!;
-    expect(message).toBe("No valid methods to publish.");
+    const [problem, extras] = mockedAgentError.mock.calls[0]!;
+    expect(problem).toMatchObject({
+      code: "method.invalid",
+      next_step: { kind: "change_method" },
+      message: "No valid methods to publish.",
+      errors: [{ code: "method.package_invalid", detail: `Method 'legacy_tool': ${INCOMPATIBLE}` }],
+    });
     expect(extras).toMatchObject({
       skipped_methods: [{ name: "legacy_tool", errors: [INCOMPATIBLE] }],
     });

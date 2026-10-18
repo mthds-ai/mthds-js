@@ -49,7 +49,7 @@ The CLI will:
 3. If `--method <name>` is provided, install only that method (errors if name not found)
 4. Ask where to install — **local** (current project) or **global** (your machine)
 5. Optionally install a [runner](#runners)
-6. Copy all `.mthds` files to `.mthds/methods/<name>/`
+6. Copy each method's whole tree to `.mthds/methods/<name>/`: its `METHODS.toml`, its `.mthds` files and every other file the MTHDS standard counts as part of the method, such as its Python, templates and images, each with its exact bytes. Hidden files and folders, `__pycache__`, `node_modules`, virtual environments, nested repositories and packages, a run's inputs file named `inputs.json` or `inputs.toml`, and whatever a `.gitignore` or the manifest's `exclude` ignores stay behind. The tree is validated whole before it is installed, and a reinstall replaces the method's directory.
 
 You can also install from a local directory:
 
@@ -89,7 +89,8 @@ org/repo-name (or user-name/repo-name)
 2. The repository must contain a `methods/` folder at its root
 3. Inside `methods/`, each subfolder is a **method package**
 4. Each method package folder must contain a `METHODS.toml` file that follows the [manifest specification](https://mthds.ai/latest/packages/manifest/)
-5. Each method package folder should contain one or more `.mthds` files (the actual method definitions)
+5. Each method package folder should contain one or more `.mthds` files (the actual method definitions), and may hold any other file its pipes use, such as Python, templates and images, which are installed with it
+6. A method package folder holding a symbolic link is skipped, since a method's tree cannot hold one
 
 ### METHODS.toml
 
@@ -253,24 +254,52 @@ The client implements the MTHDS Protocol plus the Pipelex API's pipe I/O extensi
 |--------|-------|-------------|
 | `execute(options)` | `POST /v1/execute` | Execute a method and wait for the result — returns a `RunResultExecute` (throws `RunStillRunningError` on the protocol's optional 202 degrade) |
 | `start(options)` | `POST /v1/start` | Start a method asynchronously — returns a `RunResultStart` with the authoritative `pipeline_run_id` |
-| `validate(mthdsContents, allowSignatures?, mthdsSources?)` | `POST /v1/validate` | Parse, validate, and dry-run a bundle — returns the protocol's `ValidationResult` discriminated on `is_valid`; an invalid bundle is a produced verdict (`is_valid: false` with `validation_errors`), not a throw. Only a no-verdict non-2xx (malformed request, auth, server fault) throws `ApiResponseError`. `mthdsSources` (optional, parallel to `mthdsContents`) names each submitted file so cross-file diagnostics resolve the owning file |
+| `validate(source, allowSignatures?, render?)` | `POST /v1/validate` | Parse, validate, and dry-run a method's tree, given as `{ files }` or `{ tree }` — returns the protocol's `ValidationResult` discriminated on `is_valid`; an invalid method is a produced verdict (`is_valid: false` with its faults in `errors`, each a problem item naming its file by tree path in `location.file`), not a throw. Only a no-verdict non-2xx (malformed request, auth, server fault) throws `ApiResponseError` |
 | `models(category?)` | `GET /v1/models` | The model deck the runner routes to |
-| `pipeIo(request)` | `POST /v1/pipe-io` | A method's pipe I/O contracts, input form and output form in one call, with no dry run (a Pipelex API extension) — returns a `PipeIOResponse` discriminated on `is_valid`. The closure is `files`, a `method_ref` address or a hosted `method_id`; a refused pipe selection is a `422` whose `errorType` is one of `PIPE_SELECTION_ERROR_TYPES`. See [docs/pipe-io.md](docs/pipe-io.md) |
+| `pipeIo(request)` | `POST /v1/pipe-io` | A method's pipe I/O contracts, input form and output form in one call, with no dry run (a Pipelex API extension) — returns a `PipeIOResponse` discriminated on `is_valid`. The method is its tree, given as `{ tree }` or `{ files }` and sent as `validate` sends it, a `method_ref` address or a hosted `method_id`; a refused pipe selection is a `422` whose problem's code is one of `PIPE_SELECTION_CODES`. See [docs/pipe-io.md](docs/pipe-io.md) |
 | `version()` | `GET /v1/version` | Protocol + implementation versions (the feature-detection handshake) |
+| `findMissingBlobs(request)` | `POST /v1/blobs/missing` | Which blobs of a tree the runner's blob store lacks, each with its upload target — the step before sending a tree by hash, which `execute`, `start`, `validate` and `pipeIo` take themselves when given a `tree` |
+| `uploadBlob(blob, bytes)` | the target the runner gave | Upload one missing blob with exactly the headers the runner named; throws `BlobUploadError`, which never carries the target's URL |
+
+`findMissingBlobs` raises `MalformedBlobsAnswerError`, a `ProblemError` of `client.response_unreadable` naming the faulty entry, when the runner's answer is not shaped as the protocol says. The client keeps the runner's handshake for `HANDSHAKE_TTL_MS`, and asks it again sooner when a refusal shows it to be stale.
+
+### Errors
+
+Every failure is a `ProblemError` carrying `problem`, the MTHDS Protocol's error document coded from the core error registry, which this package vendors and types. Branch on `err.problem.code`, and on `domain`, `retry` and `next_step.kind` when several codes are handled alike:
+
+```typescript
+import { ProblemError } from "mthds/errors";
+
+try {
+  await client.execute({ pipe_code: "summarize", inputs });
+} catch (err) {
+  if (!(err instanceof ProblemError)) throw err;
+  if (err.code === "client.outcome_unknown") {
+    // The run may have started: look at the run history before starting it again.
+  } else if (err.retry === "yes") {
+    // Repeat after err.retryAfter seconds, when given.
+  } else {
+    console.error(err.message); // the problem's sentence, then its next step
+  }
+}
+```
+
+An answer of the runtime is read as the problem it carries (`ApiResponseError`), or, when its body is none, as the one core code of its status or `client.response_unreadable`; a `202` on `execute` is `client.follow_failed` (`RunStillRunningError`); no answer at all is `client.unreachable`, `client.timeout` or, after a request that creates a run left, `client.outcome_unknown` (`ApiTransportError`). See [docs/errors.md](docs/errors.md).
 
 ### Run options
 
 | Option | Type | Description |
 |--------|------|-------------|
 | `pipe_code` | `string` | Pipe code to execute |
-| `mthds_contents` | `string[]` | Raw bundle contents (alternative to `pipe_code`) |
+| `files` | `MethodFiles` | The method's tree, as a map from tree path to file entry: a text, `{ base64 }` or `{ sha256, size }` |
+| `tree` | `MethodTreeSource` | The method's tree to send, such as the `MethodTree` that `listMethodTree` returns; the client sends it inline or by hash, as the runner allows. Exclusive with `files` |
 | `inputs` | `Record<string, string \| string[] \| object>` | Method input variables |
 | `output_name` | `string` | Name of the output to return |
 | `output_multiplicity` | `boolean \| number` | Expected output multiplicity |
 | `dynamic_output_concept_ref` | `string` | Dynamic output concept reference |
 | `extra` | `Record<string, unknown>` | Server-specific extension args, forwarded verbatim into the request body (e.g. a stored-method id) |
 
-Either `pipe_code` or `mthds_contents` must be provided (or a server-specific extension arg via `extra`). Anything beyond the protocol's basic args is server-specific and rides the generic `extra` option, merged into the request body — the server you call defines and handles its own extension args (a client-supplied run id, where a server supports one, is such an extension; the request side never names it).
+Either `pipe_code` or the method's tree (`files` or `tree`) must be provided (or a server-specific extension arg via `extra`). A tree holds at least one file, so an empty `files` map or tree is refused, and `extra` may carry neither a protocol field nor the client-side `tree` and `bundleMain`. A tree of 256 KiB or less, measured as the JSON of its inline map, travels inline; a larger one travels by hash when the runner keeps a blob store, uploading only the blobs it lacks (see [docs/api-runner.md](docs/api-runner.md#sending-a-methods-tree)). Anything beyond the protocol's basic args is server-specific and rides the generic `extra` option, merged into the request body — the server you call defines and handles its own extension args (a client-supplied run id, where a server supports one, is such an extension; the request side never names it).
 
 ## Usage statistics
 

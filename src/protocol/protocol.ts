@@ -1,4 +1,4 @@
-import type { RunOptions, StartOptions } from "./options.js";
+import type { RunOptions, StartOptions, ValidateSource } from "./options.js";
 import type {
   ModelCategory,
   ModelDeck,
@@ -13,8 +13,10 @@ import type {
  * mirror of `mthds/protocol/protocol.py` (`MTHDSProtocol`, generic in the
  * pipe-output type).
  *
- * Mirrors the standard's five routes (`mthds-protocol.openapi.yaml`):
- * `execute`, `start`, `validate`, `models`, `version`. A runner is just a
+ * Mirrors the standard's required routes (`mthds-protocol.openapi.yaml`):
+ * `execute`, `start`, `validate`, `models`, `version`. The optional blob
+ * routes are a sender's concern, not a runner's interface: `MthdsApiClient`
+ * calls them while it sends a tree by hash. A runner is just a
  * runner: it executes and validates methods, and reports its model deck and
  * version. Run polling is NOT part of the protocol — it is a hosted-API
  * extension that now lives in the Pipelex runtime SDK (`@pipelex/sdk` /
@@ -44,11 +46,13 @@ export interface MTHDSProtocol<PipeOutputT = unknown> {
   start(options: StartOptions): Promise<RunResultStart>;
 
   /**
-   * Parse, validate, and dry-run an MTHDS bundle.
+   * Parse, validate, and dry-run a method, sent as its whole tree: the `files`
+   * map as given, or a `tree` the client sends inline or by hash. The runner
+   * judges every bundle and every file a bundle names.
    *
    * `/validate` is a diagnostic endpoint: it returns a {@link ValidationResult}
    * discriminated on `is_valid` — the structural artifacts of a VALID bundle, or
-   * the `validation_errors[]` of an INVALID one. An invalid bundle is a produced
+   * the `errors[]` items of an INVALID one, each coded from the core registry. An invalid bundle is a produced
    * verdict (a 200 on API runners), NOT a thrown error; only a *no-verdict*
    * condition (a malformed request, auth, a server fault) throws. `allowSignatures`
    * tolerates unimplemented pipe signatures (strict by default) — they surface as
@@ -58,7 +62,7 @@ export interface MTHDSProtocol<PipeOutputT = unknown> {
    * materialize the invalid arm — the union is the wire shape, not a guarantee
    * that every runtime returns both arms.)
    */
-  validate(mthdsContents: string[], allowSignatures?: boolean): Promise<ValidationResult>;
+  validate(source: ValidateSource, allowSignatures?: boolean): Promise<ValidationResult>;
 
   /** The model deck this runner can route to, optionally filtered by category. */
   models(category?: ModelCategory): Promise<ModelDeck>;

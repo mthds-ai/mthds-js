@@ -1,237 +1,271 @@
 /**
- * API-runner exceptions — transport errors raised by `MthdsApiClient`. All
- * derive from the protocol-level `PipelineRequestError`
- * (`protocol/exceptions.ts`), except `ClientAuthenticationError`. Mirrors
- * `mthds/runners/api/exceptions.py`.
+ * The errors `MthdsApiClient` raises. Every one but `BlobUploadError` is a `ProblemError` carrying
+ * a problem with a registered code (docs/errors.md), so a caller branches on `err.problem.code`,
+ * and on `domain`, `retry` and `nextStep` when it handles several codes alike:
  *
- * The durable run-lifecycle errors (`RunFailedError`, `RunTimeoutError`,
- * `RunLifecycleUnavailableError`) are gone — the durable run API now lives in
- * `@pipelex/sdk`.
+ * - `ApiResponseError`: the runtime answered, and the answer is not the route's result: its
+ *   problem document read as received, or the problem the client read the answer as when its body
+ *   is not one (`client.response_unreadable`, or the one core code of its status);
+ * - `RunStillRunningError`: a blocking execute was accepted asynchronously (`202`), so the run
+ *   started and the client does not follow it (`client.follow_failed`);
+ * - `ApiTransportError`: no answer came back: the runtime could not be reached
+ *   (`client.unreachable`), the call ran out of time (`client.timeout`), or a request that creates
+ *   a run left and its outcome is unknown (`client.outcome_unknown`);
+ * - `MalformedBlobsAnswerError`: `POST /blobs/missing` answered a success whose body is not
+ *   shaped as the protocol says (`client.response_unreadable`), quoting none of it, since its
+ *   upload URLs are bearer capabilities.
+ *
+ * An argument the client refuses before any request leaves is a `ProblemError` of
+ * `client.argument_invalid` or `client.not_configured`. A failed upload of a blob to the target
+ * `POST /blobs/missing` named is a `BlobUploadError`, which carries no problem yet. Mirrors
+ * `mthds/runners/api/exceptions.py`.
  */
 
 import { PipelineRequestError } from "../../protocol/exceptions.js";
-import type { ValidationErrorItem } from "./models.js";
+import { ProblemError, problemSentence } from "../../problems/errors.js";
+import { buildProblem } from "../../problems/build.js";
+import type { Problem } from "../../problems/types.js";
 
-export { PipelineRequestError };
+export { PipelineRequestError } from "../../protocol/exceptions.js";
+export { ProblemError };
 
-export class ClientAuthenticationError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "ClientAuthenticationError";
-  }
+/** What an `ApiResponseError` knows of the answer beside its problem. */
+export interface ApiAnswerFacts {
+  /** The base URL the client is configured with. */
+  apiUrl: string;
+  /** The route that answered, as `POST /v1/execute`. */
+  route: string;
+  /** The answer's HTTP status. */
+  status: number;
+  statusText: string;
+  /** The answer's body, as received. */
+  responseBody: string;
+  /** The answer's `X-Request-ID` header, the fallback for a problem that names no `request_id`. */
+  requestIdHeader?: string;
+  /**
+   * Whether the body is the problem document the error carries. When it is not, the error quotes
+   * the start of the body (`answerExcerpt`), which no member of the problem ever holds.
+   */
+  bodyIsProblem?: boolean;
+  /**
+   * Whether no error may quote the body whatever it holds, as for the answers of
+   * `POST /blobs/missing`, which name each upload target by a URL whose query, such as a presigned
+   * signature, is the permission to write.
+   */
+  withholdBody?: boolean;
+}
+
+/** How much of a body that is no problem document an error quotes, as the Python twin does. */
+export const BODY_EXCERPT_LENGTH = 500;
+
+/**
+ * A URL written in a body: its scheme and `//`, the slashes written as they are or escaped as JSON
+ * may escape them (`https:\/\/`), then everything up to a space, a quote or an angle bracket.
+ */
+const URL_IN_TEXT = /\b[a-z][a-z0-9+.-]*:(?:\/\/|\\\/\\\/)[^\s"'<>`]*/gi;
+/** The scheme and `//` of a URL, then its userinfo, which ends at an `@` before the path. */
+const URL_USERINFO = /^([a-z][a-z0-9+.-]*:(?:\/\/|\\\/\\\/))[^/\\@?#]*@/i;
+
+/**
+ * A URL without anything in it that may grant access: its query and its fragment, where a
+ * presigned URL carries its signature, and its userinfo, a credential. Its scheme, host, port and
+ * path are kept, as the Python twin's `url_without_credentials` keeps them.
+ */
+function urlShown(url: string): string {
+  const end = url.search(/[?#]/);
+  const beforeQuery = end === -1 ? url : url.slice(0, end);
+  return beforeQuery.replace(URL_USERINFO, "$1");
 }
 
 /**
- * Thrown when the Pipelex API host cannot be reached at all (DNS failure,
- * connection refused, TLS handshake failure, request timeout). The HTTP
- * exchange never produced a response — distinguish from `ApiResponseError`,
- * which represents a non-2xx response that did come back.
- *
- * `code` is the underlying network error code when available
- * (`ECONNREFUSED`, `ENOTFOUND`, `ETIMEDOUT`, `EAI_AGAIN`, `ABORT_TIMEOUT`).
+ * The start of an answer's body as an error quotes it, for a person: its whitespace collapsed,
+ * every URL in it without its query, its fragment and its userinfo (`urlShown`), and cut at
+ * `BODY_EXCERPT_LENGTH` characters with an ellipsis. `undefined` when the body is empty.
  */
-export class ApiUnreachableError extends PipelineRequestError {
+export function bodyExcerpt(body: string): string | undefined {
+  const flat = body.replace(/\s+/g, " ").trim().replace(URL_IN_TEXT, urlShown);
+  if (flat === "") return undefined;
+  return flat.length > BODY_EXCERPT_LENGTH ? `${flat.slice(0, BODY_EXCERPT_LENGTH)}…` : flat;
+}
+
+/**
+ * An answer of the runtime that is not the route's result, read as its problem. Its message names
+ * the route and the status, then the problem's sentence, and ends with its next step. For a body
+ * that is no problem document, the start of the body (`answerExcerpt`), which is the runtime's text
+ * and never a problem member, is quoted on its own line between them, and the next step takes the
+ * last line.
+ */
+export class ApiResponseError extends ProblemError {
   public readonly apiUrl: string;
-  public readonly code: string | undefined;
-
-  constructor(
-    message: string,
-    apiUrl: string,
-    code: string | undefined,
-    options?: { cause?: unknown },
-  ) {
-    super(message, options);
-    this.name = "ApiUnreachableError";
-    this.apiUrl = apiUrl;
-    this.code = code;
-  }
-}
-
-/**
- * Thrown when the blocking `execute` (`POST /v1/execute`) is killed by the
- * hosted gateway's ~30s synchronous-request limit. The blocking path cannot
- * run methods longer than 30s behind the hosted gateway — use the durable run
- * API (now provided by `@pipelex/sdk`) to start the run and
- * poll its result by id instead.
- */
-export class PipelineExecuteTimeoutError extends PipelineRequestError {
-  public readonly elapsedMs: number;
-
-  constructor(elapsedMs: number, options?: { cause?: unknown }) {
-    const seconds = Math.round(elapsedMs / 1000);
-    super(
-      `The Pipelex Hosted API times out synchronous requests after ~30s — this run took ${seconds}s. ` +
-        "The blocking execute path can't run methods longer than 30s behind the gateway. " +
-        "Start the run and poll for its result by id instead, using the durable run API " +
-        "(now provided by `@pipelex/sdk`).",
-      options,
-    );
-    this.name = "PipelineExecuteTimeoutError";
-    this.elapsedMs = elapsedMs;
-  }
-}
-
-/**
- * Thrown when `execute()` receives a 202 instead of a final result.
- *
- * The MTHDS Protocol permits an implementation to degrade a synchronous
- * `/execute` into an accepted-async response (202 with a `Location` header)
- * when it cannot hold the connection open. The run keeps executing
- * server-side — resume by `runId` using the durable run API (now provided by
- * `@pipelex/sdk`, or the `location` status resource when
- * provided).
- */
-export class RunStillRunningError extends PipelineRequestError {
-  public readonly runId: string;
-  public readonly retryAfterSeconds: number | null;
-  public readonly location: string | null;
-
-  constructor(
-    message: string,
-    runId: string,
-    retryAfterSeconds: number | null = null,
-    location: string | null = null,
-    options?: { cause?: unknown },
-  ) {
-    super(message, options);
-    this.name = "RunStillRunningError";
-    this.runId = runId;
-    this.retryAfterSeconds = retryAfterSeconds;
-    this.location = location;
-  }
-}
-
-/**
- * What the runner says the caller should do next — the problem document's
- * `user_action` member. `kind` is the runner's coarse category of advice (the
- * reference runner emits `wait_and_retry`, `check_billing`, `check_credentials`,
- * `change_input`, `change_model`, `contact_support` or `unknown`; the set is the
- * runner's, so it is typed open), and `detail` is the advice itself, in words.
- */
-export interface UserAction {
-  kind: string;
-  detail: string;
-}
-
-/**
- * The members of an RFC 9457 problem document that `ApiResponseError` exposes
- * beyond its message: the standard's own `type`, `title` and `instance`, and the
- * extension members a runner adds to classify the failure. Every member is
- * optional — a runner sends what it knows, and a body that is not a problem
- * document carries none of them.
- */
-export interface ProblemDetails {
-  /** RFC 9457 `type` — the stable URI of the error class. */
-  type?: string;
-  /** RFC 9457 `title` — the short human label of the error class. */
-  title?: string;
-  /** RFC 9457 `instance` — the occurrence (a request path or a request URN). */
-  instance?: string;
-  /** The request's correlation id: the body's `request_id`, else the `X-Request-ID` response header. */
-  requestId?: string;
-  /** The body's `error_domain` — `input`, `config` or `runtime` (see `ApiResponseError.errorDomain`). */
-  errorDomain?: string;
-  /** The body's `retryable` — whether retrying the same request can plausibly succeed. */
-  retryable?: boolean;
-  /** The body's `user_action` — what the caller should do next. */
-  userAction?: UserAction;
-}
-
-/** The last constructor argument of `ApiResponseError`: the error's `cause`, and the parsed problem members. */
-export interface ApiResponseErrorOptions {
-  cause?: unknown;
-  problem?: ProblemDetails;
-}
-
-/**
- * A non-2xx HTTP response that DID come back from the runner. Carries the raw
- * body, the message parsed out of it, and the typed members of its RFC 9457
- * problem document: the class (`type`, `title`, `errorType`), who can fix it
- * (`errorDomain`), whether a retry helps (`retryable`), what to do next
- * (`userAction`) and the id to hand to support (`requestId`). A member the
- * response did not carry is `undefined`.
- */
-export class ApiResponseError extends PipelineRequestError {
-  public readonly apiUrl: string;
+  public readonly route: string;
+  /** The answer's HTTP status, whatever the problem's own `status` member says. */
   public readonly status: number;
   public readonly statusText: string;
+  /**
+   * The answer's body, as received. It is never quoted whole, and an answer of
+   * `POST /blobs/missing` names upload targets by presigned URLs, so treat it as a secret.
+   */
   public readonly responseBody: string;
-  public readonly errorType: string | undefined;
-  public readonly serverMessage: string | undefined;
   /**
-   * RFC 9457 `type`: the stable URI naming the error class. With `errorDomain`,
-   * the field a machine consumer branches on — the same class carries the same
-   * URI on every occurrence.
+   * What the server said, for a person: the start of a body that is no problem document, as
+   * `bodyExcerpt` cuts it, every URL without its query. `undefined` when the body is the problem
+   * the error carries or is empty, and for every answer of `POST /blobs/missing`, whose upload URLs
+   * are bearer capabilities. The message quotes it, and so do both CLIs.
    */
-  public readonly type: string | undefined;
-  /** RFC 9457 `title`: the short human label of the error class. */
-  public readonly title: string | undefined;
-  /** RFC 9457 `instance`: the occurrence — the request path, or a request URN. */
-  public readonly instance: string | undefined;
-  /**
-   * The request's correlation id — the body's `request_id`, or the
-   * `X-Request-ID` response header when the body carries none. The id to hand
-   * to support: it finds the server's log lines for this request.
-   */
-  public readonly requestId: string | undefined;
-  /**
-   * The body's `error_domain`: who can fix the failure. `input` — the caller
-   * (a malformed bundle, a bad argument, a missing input); `config` — the
-   * runner's operator (a missing secret, a misconfigured backend); `runtime` —
-   * nobody beforehand (a provider outage during execution). Typed open, as the
-   * runner owns the vocabulary; `undefined` when the runner did not classify it.
-   */
-  public readonly errorDomain: string | undefined;
-  /**
-   * The body's `retryable`: whether retrying the same request can plausibly
-   * succeed. `undefined` means unknown, which is not the same as `false`.
-   */
-  public readonly retryable: boolean | undefined;
-  /** The body's `user_action`: what the caller should do next, when the runner can say. */
-  public readonly userAction: UserAction | undefined;
-  /**
-   * Structured per-error diagnostics on a problem body that carries a top-level
-   * `validation_errors[]` — the **run routes** (`POST /v1/execute`, `POST /v1/start`)
-   * when a runner refuses to run an invalid method with a 422 instead of spending
-   * anything on it.
-   *
-   * `POST /v1/validate` and `POST /v1/pipe-io` do not route content errors here: an
-   * invalid bundle is a produced verdict (a **200** invalid arm whose
-   * `validation_errors[]` the caller reads off the returned value), not an
-   * `ApiResponseError`. This field is `undefined` for any error that carries no
-   * per-error list (auth, transport, a request-shape 422). A consumer must NOT
-   * assume a given `error_type` implies a populated list — fall back to
-   * `serverMessage` when this is empty.
-   */
-  public readonly validationErrors: ValidationErrorItem[] | undefined;
+  public readonly answerExcerpt: string | undefined;
+  private readonly requestIdHeader: string | undefined;
+
+  constructor(problem: Problem, facts: ApiAnswerFacts, options?: { cause?: unknown }) {
+    super(problem, options);
+    this.name = "ApiResponseError";
+    this.answerExcerpt =
+      facts.bodyIsProblem === false && facts.withholdBody !== true
+        ? bodyExcerpt(facts.responseBody)
+        : undefined;
+    const head = `${facts.route} failed (${facts.status}): `;
+    if (this.answerExcerpt !== undefined) {
+      const step = problem.next_step.detail;
+      this.message =
+        `${head}${problemSentence(problem)}\nThe server answered: ${this.answerExcerpt}` +
+        (step.length > 0 ? `\nNext step: ${step}` : "");
+    } else {
+      this.message = `${head}${this.message}`;
+    }
+    this.apiUrl = facts.apiUrl;
+    this.route = facts.route;
+    this.status = facts.status;
+    this.statusText = facts.statusText;
+    this.responseBody = facts.responseBody;
+    this.requestIdHeader = facts.requestIdHeader;
+  }
+
+  /** The request's id: the problem's `request_id`, else the answer's `X-Request-ID` header. */
+  override get requestId(): string | undefined {
+    return super.requestId ?? this.requestIdHeader;
+  }
+}
+
+/**
+ * What an answer of the runtime said beside its problem, which no member of the problem holds: the
+ * route that answered, its status, and the start of its body when the body is no problem document.
+ */
+export interface ServerAnswer {
+  /** The route that answered, as `POST /v1/execute`. */
+  route: string;
+  /** The answer's HTTP status. */
+  status: number;
+  /** The answer's status text, empty when the transport gives none. */
+  statusText: string;
+  /** The start of a body that is no problem document (`ApiResponseError.answerExcerpt`). */
+  excerpt?: string;
+}
+
+/**
+ * What the server answered beside an error's problem, for an `ApiResponseError`, and `undefined`
+ * for any other error. The one reading both CLIs format, each in its own form.
+ */
+export function serverAnswerOf(err: unknown): ServerAnswer | undefined {
+  if (!(err instanceof ApiResponseError)) return undefined;
+  const answer: ServerAnswer = { route: err.route, status: err.status, statusText: err.statusText };
+  if (err.answerExcerpt !== undefined) answer.excerpt = err.answerExcerpt;
+  return answer;
+}
+
+/**
+ * A blocking execute that the runtime accepted asynchronously: the protocol lets a runner answer
+ * `/execute` with `202` and the run's id when it cannot hold the connection open. The run keeps
+ * going, and this client does not follow it: read it by `runId`, with the durable run API of the
+ * runtime's own SDK, or at `location` when the answer gives one.
+ */
+export class RunStillRunningError extends ApiResponseError {
+  public readonly runId: string;
+  /** The answer's `Retry-After`, in seconds, when it gives one. */
+  public readonly retryAfterSeconds: number | undefined;
+  /** The answer's `Location` header, the run's status resource, when it gives one. */
+  public readonly location: string | undefined;
+
+  constructor(
+    problem: Problem,
+    facts: ApiAnswerFacts & { runId: string; retryAfterSeconds?: number; location?: string },
+  ) {
+    super(problem, facts);
+    this.name = "RunStillRunningError";
+    this.runId = facts.runId;
+    this.retryAfterSeconds = facts.retryAfterSeconds;
+    this.location = facts.location;
+  }
+}
+
+/**
+ * A call that got no answer: the runtime could not be reached, the call ran out of time, or the
+ * connection was lost. `cause` is what fetch threw.
+ */
+export class ApiTransportError extends ProblemError {
+  public readonly apiUrl: string;
+  /** The network code of the failure, such as `ECONNREFUSED`, when it carries one. */
+  public readonly networkCode: string | undefined;
+
+  constructor(
+    problem: Problem,
+    facts: { apiUrl: string; networkCode?: string },
+    options?: { cause?: unknown },
+  ) {
+    super(problem, options);
+    this.name = "ApiTransportError";
+    this.apiUrl = facts.apiUrl;
+    this.networkCode = facts.networkCode;
+  }
+}
+
+/**
+ * Thrown when uploading a blob to the target `POST /blobs/missing` named fails: the
+ * target answered neither a success nor a `412` (the bytes are already held), or it
+ * could not be reached. The target URL is a bearer capability, so neither the message
+ * nor any member carries it; `host` names where the upload went. The target may be
+ * another server than the runtime, such as an object store behind a signed URL, whose
+ * answer is no problem document, so this error carries no problem.
+ */
+export class BlobUploadError extends PipelineRequestError {
+  /** The SHA-256 of the blob, in lowercase hexadecimal. */
+  public readonly sha256: string;
+  /** The status the target answered, or `undefined` when it could not be reached. */
+  public readonly status: number | undefined;
+  /** The host of the upload target. */
+  public readonly host: string;
 
   constructor(
     message: string,
-    apiUrl: string,
-    status: number,
-    statusText: string,
-    responseBody: string,
-    errorType: string | undefined,
-    serverMessage: string | undefined,
-    validationErrors: ValidationErrorItem[] | undefined,
-    options?: ApiResponseErrorOptions,
+    sha256: string,
+    status: number | undefined,
+    host: string,
+    options?: { cause?: unknown },
   ) {
-    super(message, options?.cause === undefined ? undefined : { cause: options.cause });
-    this.name = "ApiResponseError";
-    this.apiUrl = apiUrl;
+    super(message, options);
+    this.name = "BlobUploadError";
+    this.sha256 = sha256;
     this.status = status;
-    this.statusText = statusText;
-    this.responseBody = responseBody;
-    this.errorType = errorType;
-    this.serverMessage = serverMessage;
-    this.validationErrors = validationErrors;
-    const problem = options?.problem;
-    this.type = problem?.type;
-    this.title = problem?.title;
-    this.instance = problem?.instance;
-    this.requestId = problem?.requestId;
-    this.errorDomain = problem?.errorDomain;
-    this.retryable = problem?.retryable;
-    this.userAction = problem?.userAction;
+    this.host = host;
+  }
+}
+
+/**
+ * Thrown when a runner's success answer to `POST /blobs/missing` is not shaped as the protocol
+ * says: a body that is not JSON, no `missing` list, or an entry that is not a missing blob with a
+ * well-formed upload target. It reads as `client.response_unreadable`, naming the answer's status,
+ * as any success that is not its route's result does. No upload was started and no request
+ * carrying the tree was sent. An entry's upload URL is a bearer capability, so neither the message
+ * nor any member quotes the body.
+ */
+export class MalformedBlobsAnswerError extends ProblemError {
+  /** The position of the faulty entry in `missing`, or `undefined` when the answer as a whole is malformed. */
+  public readonly index: number | undefined;
+  /** The faulty entry's SHA-256 when it carries a well-formed one, else `undefined`. */
+  public readonly sha256: string | undefined;
+
+  constructor(message: string, status: number, index?: number, sha256?: string) {
+    super(buildProblem("client.response_unreadable", { status }, { extra: { message } }));
+    this.name = "MalformedBlobsAnswerError";
+    this.index = index;
+    this.sha256 = sha256;
   }
 }

@@ -397,10 +397,27 @@ describe.skipIf(process.platform === "win32")("mthds-agent usage statistics (e2e
   });
 
   it("keeps a JSON error stream one JSON document, and sends the failure", async () => {
+    const result = await run(
+      MTHDS_AGENT,
+      ["config", "get", "no-such-key", "--error-format", "json"],
+      { CI: "true" },
+    );
+    expect(result.status).not.toBe(0);
+    expectNoNotice(result);
+    expect(JSON.parse(result.stderr)).toMatchObject({ code: "client.argument_invalid" });
+    expect(sentEvent().properties).toMatchObject({
+      command: "config get",
+      outcome: "failed",
+      error_domain: "input",
+    });
+  });
+
+  it("keeps the default Markdown error stream free of the notice, and sends the failure", async () => {
     const result = await run(MTHDS_AGENT, ["config", "get", "no-such-key"], { CI: "true" });
     expect(result.status).not.toBe(0);
     expectNoNotice(result);
-    expect(JSON.parse(result.stderr)).toMatchObject({ error: true });
+    expect(result.stderr).toMatch(/^## An argument was refused before sending\n/);
+    expect(result.stderr).toContain("- Code: `client.argument_invalid`");
     expect(sentEvent().properties).toMatchObject({ command: "config get", outcome: "failed" });
   });
 
@@ -460,10 +477,16 @@ describe.skipIf(process.platform === "win32")("mthds-agent usage statistics (e2e
     "sends an invalid bundle's verdict as the caller's to fix under %s errors",
     async (errorFormat) => {
       writeFileSync(join(work, "bundle.mthds"), 'domain = "demo"\n');
-      // The loopback server stands in for the API runner too, answering its validate with an
-      // invalid verdict and its server-rendered Markdown.
-      server.respond((request) =>
-        request.path.endsWith("/validate")
+      // The loopback server stands in for the API runner too, answering its handshake with no
+      // blob store, so the tree travels inline, and its validate with an invalid verdict and its
+      // server-rendered Markdown.
+      const runnerPath = (path: string): boolean =>
+        path.endsWith("/validate") || path.endsWith("/version");
+      server.respond((request) => {
+        if (request.path.endsWith("/version")) {
+          return { status: 200, body: { protocol_version: "1.0.0" } };
+        }
+        return request.path.endsWith("/validate")
           ? {
               status: 200,
               body: {
@@ -471,12 +494,12 @@ describe.skipIf(process.platform === "win32")("mthds-agent usage statistics (e2e
                 message: "Bundle is invalid",
                 pending_signatures: [],
                 is_runnable: false,
-                validation_errors: [{ category: "blueprint_validation", message: "boom" }],
+                errors: [{ code: "method.syntax", detail: "boom" }],
                 rendered_markdown: "# Validation failed\n\nboom",
               },
             }
-          : { status: 200, body: { status: "Ok" } },
-      );
+          : { status: 200, body: { status: "Ok" } };
+      });
       const result = await run(
         MTHDS_AGENT,
         ["--runner", "api", "validate", "pipe", "bundle.mthds", "--error-format", errorFormat],
@@ -484,7 +507,7 @@ describe.skipIf(process.platform === "win32")("mthds-agent usage statistics (e2e
       );
       expect(result.status).toBe(1);
       expect(result.stderr.startsWith("# Validation failed")).toBe(errorFormat === "markdown");
-      const captures = server.requests.filter((request) => !request.path.endsWith("/validate"));
+      const captures = server.requests.filter((request) => !runnerPath(request.path));
       expect(captures).toHaveLength(1);
       const [event] = (captures[0]!.body as { batch: DebugEvent[] }).batch;
       expect(gateProblems(event as unknown as Record<string, unknown>, "mthds")).toEqual([]);
@@ -503,14 +526,23 @@ describe.skipIf(process.platform === "win32")("mthds-agent usage statistics (e2e
   ])(
     "never prints or records the notice beside %s, and sends it",
     async (_case, version, status) => {
-      const result = await run(MTHDS_AGENT, ["--runner", "pipelex", "run", "pipe", "x.mthds"], {
-        ...stubPipelexAgent(version),
-        CI: "true",
-      });
+      const result = await run(
+        MTHDS_AGENT,
+        ["--runner", "pipelex", "run", "pipe", "x.mthds", "--error-format", "json"],
+        {
+          ...stubPipelexAgent(version),
+          CI: "true",
+        },
+      );
       expect(result.status).toBe(status);
       expectNoNotice(result);
       expect(JSON.parse(result.stderr.trim())).toMatchObject(
-        status === 0 ? { warning: true } : { error: true, error_type: "InstallError" },
+        status === 0
+          ? { warning: true }
+          : {
+              code: "client.tool_outdated",
+              params: { tool: "pipelex-agent", version: "0.0.1" },
+            },
       );
       expect(sentEvent().properties).toMatchObject({ command: "run pipe" });
     },

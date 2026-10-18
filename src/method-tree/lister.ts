@@ -36,6 +36,7 @@ import {
   isDefaultExcludedDirectory,
   isDotSegment,
   isMarkerRule,
+  isRunInputsFile,
   isValidExcludePattern,
   MANIFEST_NAME,
   MARKER_RULES,
@@ -313,6 +314,10 @@ async function walk(listing: Listing, directory: WalkedDirectory): Promise<void>
       rule = "dot_segment";
     } else if (isDirectory && isDefaultExcludedDirectory(entry.rawName)) {
       rule = "pycache_or_node_modules";
+    } else if (isRunInputsFile(entry.rawName, entry.kind)) {
+      // A run's inputs file, at any depth, a link among them, never followed; a default outranks
+      // the patterns, so the rule is named whatever a `.gitignore` file says of the file.
+      rule = "run_inputs";
     } else {
       // The patterns are decided first, so a directory they exclude is pruned without having to be
       // listed. A marker inside it still names the rule, which outranks the patterns, when the

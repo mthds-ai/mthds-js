@@ -49,6 +49,12 @@ export type {
 export { locateFunction } from "./function-names.js";
 export type { FunctionLocation, FunctionNameRefusalCode } from "./function-names.js";
 export {
+  defineFileEntry,
+  encodeBase64,
+  inlineFileEntry,
+  utf8TextOf,
+} from "./file-entry-encoding.js";
+export {
   EMPTY_BLOB_STORE,
   decodeCanonicalBase64,
   readFileEntryMap,
@@ -62,6 +68,7 @@ export {
   DEFAULT_EXCLUDED_DIRECTORY_NAMES,
   GIT_ENTRY_NAME,
   MANIFEST_NAME,
+  RUN_INPUTS_NAMES,
   VENV_MARKER_NAME,
   isExcludedName,
   isValidExcludePattern,

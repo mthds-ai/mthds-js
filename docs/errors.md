@@ -1,231 +1,186 @@
-# Error taxonomy — `mthds/errors`
+# Errors — problems coded from the core registry
 
-Every error the SDK raises is one of a small, closed set of classes. They are published two ways: from the top-level `mthds` barrel (the full SDK, server-side) and from the **`mthds/errors`** subpath — a client-safe entry point that exports *only* the exception classes, with no Node-only dependency in its import graph. Client code (a browser bundle, a Next.js client component) imports the classes from `mthds/errors` to `instanceof`-check an error without dragging `node:fs` into the bundler graph. The two sets are identical — both re-export from the same source modules, so they cannot drift.
+Every failure this package reports is one **problem document**: the MTHDS Protocol's error document (mthds `docs/spec/protocol.md`, "Errors"), whose `code` is a code of the MTHDS core error registry or of a registered extension prefix. A runtime's answer is read as the problem it carries, a failure the client detects itself is built as the problem of a client code, and `mthds-agent` writes the same document on its error stream. A caller branches on `code`, and on `domain`, `retry` and `next_step.kind` when it handles several codes alike, never on a message, an HTTP status or an exit code.
 
-For *why* the separate entry point exists (the bundler/`node:fs` problem it solves), see [architecture.md → "Why `mthds/errors` exists"](./architecture.md#why-mthdserrors-exists). This page is the reference for the classes themselves and how to classify them.
+The registry is vendored from the standard and generated into a typed module (see [The vendored registry](#the-vendored-registry)), so every code, its parameters and its templates are known at compile time.
 
-## The hierarchy
+## Entry points
+
+The problem module (`src/problems/`) imports nothing but itself and the protocol's base error, and no Node built-in, which `.dependency-cruiser.cjs` enforces, so every entry point can export it:
+
+| Export | `mthds` | `mthds/errors` | `mthds/protocol` |
+|---|---|---|---|
+| `PipelineRequestError`, `ProblemError` and the problem module (types, registry, readers, builders, renderers) | yes | yes | yes |
+| `ApiResponseError`, `RunStillRunningError`, `ApiTransportError`, `BlobUploadError`, `MalformedBlobsAnswerError` | yes | yes | no (runner layer) |
+
+`mthds/errors` carries the whole taxonomy and nothing that reaches `node:fs`, so a module bundled for a browser imports from it. For why the entry point exists, see [architecture.md → "Why `mthds/errors` exists"](./architecture.md#why-mthdserrors-exists).
+
+> An **invalid method is not an error.** `POST /v1/validate` and `POST /v1/pipe-io` answer an invalid method with a produced verdict, a `200` whose `is_valid` is `false` and whose `errors` list its faults as items. Exceptions are reserved for *no-verdict* conditions. See [architecture.md → "`/validate` is a 200-diagnostic surface"](./architecture.md#validate-is-a-200-diagnostic-surface).
+
+## The problem document
+
+| Member | Meaning |
+|---|---|
+| `type`, `title` | The code's URI (`https://mthds.ai/errors/<code>` for a core code, the prefix's base URL for an extension code) and its short label. |
+| `status` | The HTTP status of the answer the problem came on. A problem the client builds for a client code has none, and neither does the JSON a CLI writes. |
+| `detail` | This occurrence in one sentence, the registry's template filled with `params`. |
+| `code` | The code a program branches on, such as `input.missing` or `client.unreachable`. |
+| `domain` | Who must act: `input` (the caller), `method` (the method's author), `account` (the account's owner), `operator` (whoever runs the runtime) or `runtime` (nobody beforehand). |
+| `retry` | Whether repeating can succeed: `no`, `yes` (after `retry_after` seconds when given) or `outcome_unknown`, the operation may already have taken effect, so a client never repeats it by itself. |
+| `next_step` | `{ kind, detail }`: what to do, as one kind of a closed list (`retry`, `wait`, `read_run`, `change_input`, `change_method`, `fix_configuration`, `upgrade`, `report` and the others of the protocol's table) and a sentence. |
+| `params` | The code's parameters, present whenever the code declares any; an operator-only parameter is never sent, so `params` can be `{}`. |
+| `location`, `errors`, `pipeline_run_id` | Where the fault happened, the items of a problem with several faults, and the run when one exists. |
+| any other member | The implementation's own, kept at the top level as received, such as a runtime's `request_id` or a CLI's `message`. |
+
+The types are `Problem`, `ProblemItem`, `ProblemLocation`, `NextStep`, `SuggestedFix` and the `FixOp` variants, exported from every entry point. `ProblemParamsByCode` types each core code's parameters, and `ERROR_CODES` holds every core code as a constant (`ERROR_CODES.CLIENT_UNREACHABLE` is `"client.unreachable"`).
+
+### Reading a value this reader does not know
+
+A reader widens `domain`, `retry`, `next_step.kind` and a fix's `safety` to any string, so a newer runtime's value never makes a problem unreadable. The readers in `src/problems/reading.ts` turn each into a value of the closed list:
+
+| Reader | A value it does not know reads as |
+|---|---|
+| `problemDomain(problem)` | the domain every known code of the code's family shares, else `runtime` |
+| `problemRetry(problem)` | `no`: an unknown verdict never invites a repeat |
+| `problemStepKind(problem)` | the step kind every known code of the family shares, else `report` |
+| `itemDomain(item)` | an item has no domain: its code's, else the family's, else `runtime` |
+| `fixSafety(fix)` | `unsafe` |
+| `isApplicableFix(fix)` | `false` when any operation is of a kind the protocol does not list (`UnknownFixOp`) |
+
+A code the registry does not declare is read as received: its own `detail` and `next_step` are the ones to show.
+
+## The classes
 
 ```mermaid
 flowchart TD
     Err["Error — JS built-in"]
     PRE["PipelineRequestError<br/>protocol base"]
-    CAE["ClientAuthenticationError"]
-    ARE["ApiResponseError"]
-    AUE["ApiUnreachableError"]
-    PET["PipelineExecuteTimeoutError"]
-    RSR["RunStillRunningError"]
+    PE["ProblemError<br/>carries problem"]
+    ARE["ApiResponseError<br/>an answer that is not the result"]
+    RSR["RunStillRunningError<br/>202 on execute"]
+    ATE["ApiTransportError<br/>no answer"]
+    MBA["MalformedBlobsAnswerError<br/>a /blobs/missing answer not shaped as the protocol says"]
+    BUE["BlobUploadError<br/>an upload of a blob failed"]
     Err --> PRE
-    Err --> CAE
-    PRE --> ARE
-    PRE --> AUE
-    PRE --> PET
-    PRE --> RSR
+    PRE --> PE
+    PE --> ARE
+    ARE --> RSR
+    PE --> ATE
+    PE --> MBA
+    PRE --> BUE
 ```
 
-Arrows point from a class to its subclasses (the `extends` tree). `PipelineRequestError` is the base every API-runner error derives from — so `catch (e) { if (e instanceof PipelineRequestError) … }` catches all of them at once. The one exception is **`ClientAuthenticationError`**, which extends `Error` directly and is therefore *not* a `PipelineRequestError`. A catch-all that means to cover authentication too must check `instanceof Error` (or test `ClientAuthenticationError` separately).
+Every error the client and the runners raise is a `ProblemError`, so `catch (err) { if (err instanceof ProblemError) … }` reaches the problem of any of them, but for the failures of sending a tree by hash that the registry has no code for yet: a `BlobUploadError`, and a `POST /v1/blobs/missing` answer naming a blob the tree being sent does not hold, which only a runner at fault answers and which nothing is uploaded after. Each is a `PipelineRequestError`, which a catch-all on that class reaches too. A `422` `request.blobs_missing` naming a blob the request did not carry is no such failure: the client does not answer it, so it reaches the caller as an `ApiResponseError` carrying that problem.
 
-> An **invalid bundle is not an error.** `POST /v1/validate` returns a produced verdict — the `200` invalid arm of `ValidationResult` whose `validation_errors[]` you read off the returned value. Exceptions here are reserved for *no-verdict* conditions: the request never produced a usable answer (transport failure, a non-2xx response, a synchronous timeout, a 202 degrade). See [architecture.md → "`/validate` is a 200-diagnostic surface"](./architecture.md#validate-is-a-200-diagnostic-surface).
+### `ProblemError`
 
-## What each entry point exports
-
-| Class | `mthds` | `mthds/errors` | `mthds/protocol` |
-|---|---|---|---|
-| `PipelineRequestError` | ✅ | ✅ | ✅ (it is the protocol base) |
-| `ApiResponseError` | ✅ | ✅ | ❌ (runner-layer) |
-| `ApiUnreachableError` | ✅ | ✅ | ❌ |
-| `ClientAuthenticationError` | ✅ | ✅ | ❌ |
-| `PipelineExecuteTimeoutError` | ✅ | ✅ | ❌ |
-| `RunStillRunningError` | ✅ | ✅ | ❌ |
-
-`mthds/errors` carries the **whole taxonomy** and nothing else — pick it whenever the importing module might end up in a client bundle. `mthds/protocol` carries only the protocol base (its graph can't reach the runner-layer errors); use it when you only need `PipelineRequestError` alongside the rest of the pure protocol surface.
-
-## Reference
-
-### `PipelineRequestError`
-
-The protocol-level base (`src/protocol/exceptions.ts`, mirrors `mthds/protocol/exceptions.py`). Carries only a `message` (and an optional `{ cause }`). You rarely construct it directly — its value is as the supertype for the API-runner errors below, so a single `instanceof PipelineRequestError` classifies "the pipeline request failed" regardless of *how*.
+Carries `problem`, as received or as the client built it. Its `message` is the problem's `message` member when it has one, the caller's own sentence for a refusal it built, else its `detail`, followed by the next step's sentence (`problemErrorMessage`), so that a message read alone still says what to do. Its getters read the problem: `code`, `domain`, `retry` and `nextStep` (read into the closed lists as above), `retryAfter` and `requestId`. `problemError(code, params, { message, cause, reader })` builds one for a core code, and `argumentInvalid(argument, reason, message)` the refusal of an argument before any request left.
 
 ### `ApiResponseError`
 
-A non-2xx HTTP response **came back** from the runner. Raised by `MthdsApiClient` (`src/runners/api/client.ts`). This is the class to inspect when the server answered but rejected the call (a `4xx`/`5xx`, including auth `401`/`403`).
-
-| Field | Type | Meaning |
-|---|---|---|
-| `apiUrl` | `string` | The base URL the request went to. |
-| `status` | `number` | HTTP status code (e.g. `401`, `422`, `500`). |
-| `statusText` | `string` | HTTP status text. |
-| `responseBody` | `string` | Raw response body, verbatim. |
-| `errorType` | `string \| undefined` | Parsed `error_type` from an RFC 7807 problem body, when present. |
-| `serverMessage` | `string \| undefined` | Parsed human message from the problem body. Prefer this for display. |
-| `validationErrors` | `ValidationErrorItem[] \| undefined` | Structured per-error list — **only** on a **run route's** `422` (`POST /v1/execute`, `POST /v1/start`) when the runner refuses to run an invalid method. `undefined` everywhere else. |
-| `type` | `string \| undefined` | The RFC 9457 `type`: the stable URI of the error class. |
-| `title` | `string \| undefined` | The RFC 9457 `title`: the short human label of the error class. |
-| `instance` | `string \| undefined` | The RFC 9457 `instance`: the occurrence, a request path or a request URN. |
-| `errorDomain` | `string \| undefined` | The body's `error_domain`, saying who can fix the failure: `input` (the caller — a malformed bundle, a bad argument, a missing input), `config` (the runner's operator — a missing secret, a misconfigured backend) or `runtime` (nobody beforehand — a provider outage during the run). |
-| `retryable` | `boolean \| undefined` | The body's `retryable`: whether retrying the same request can plausibly succeed. |
-| `userAction` | `UserAction \| undefined` | The body's `user_action`: what the caller should do next, as `{ kind, detail }`. `detail` is the advice in words; `kind` is the runner's category of advice (the reference runner emits `wait_and_retry`, `check_billing`, `check_credentials`, `change_input`, `change_model`, `contact_support` and `unknown`). |
-| `requestId` | `string \| undefined` | The request's correlation id: the body's `request_id`, or the `X-Request-ID` response header when the body carries none. It is the id to hand to support, because it finds the server's log lines for this request. |
-
-Notes:
-- **Branch on `errorDomain` and `type`, not on the status or the message.** `errorDomain` tells the caller's own mistake (`input`) from a fault it cannot fix, and `type` names the error class with a URI that stays the same on every occurrence. `errorType` is the runner's own class name, finer and open-ended.
-- **Every problem member is optional.** A runner sends what it knows, so each field is `undefined` when the response did not carry it, and a member of the wrong type (a numeric `type`, a `retryable` of `"no"`, a `user_action` without a `detail`) reads as absent rather than as a wrong value. `retryable: undefined` means unknown, which is not the same as `false`. A body that is not a problem document still yields `serverMessage` or the raw `responseBody`, and a gateway error page still yields the `requestId` from its header.
-- **Members specific to one runner stay in `responseBody`.** The standard's client types the members any runner can send under a neutral name. Members a particular runner adds — the Pipelex platform's `code` and field-level `errors[]`, the inference `error_category`, `model` and `provider` — are left untyped here; `@pipelex/sdk` types them for the Pipelex API.
-- **`validationErrors` rides a refusal, never a verdict.** A run route refuses an invalid method with a `422` carrying it. `POST /v1/validate` and `pipe-io` do not route content errors here — an invalid bundle is their `200` invalid-arm verdict (`ValidationResult`, `CrateInvalidReport`), not an `ApiResponseError`. A `pipe-io` `422` whose `errorType` is one of `PIPE_SELECTION_ERROR_TYPES` is a refused pipe selection, not a malformed request (see [pipe-io.md](./pipe-io.md#the-verdict-rides-is_valid)). Do **not** assume a given `errorType` implies a populated `validationErrors`; fall back to `serverMessage` when it is empty.
-- `ValidationErrorItem` (from `mthds` / `src/runners/api/models.ts`) carries `category`, `message`, and per-category optionals (`error_type`, `pipe_code`, `concept_code`, `domain_code`, `source`, `field_path`, `field_name`, `variable_names`, `missing_concept_code`, `missing_pipe_code`, `declared_concepts`, the unknown-model locators `model_reference`, `model_type` and `suggestions`, and `suggested_fix`). Only `category` and `message` are always present. See [A validation item's next step](#a-validation-items-next-step).
-
-### `ApiUnreachableError`
-
-The HTTP exchange **never produced a response** — DNS failure, connection refused, TLS handshake failure, or a request timeout. This is the counterpart to `ApiResponseError`: there, a response came back; here, none did.
-
-| Field | Type | Meaning |
-|---|---|---|
-| `apiUrl` | `string` | The base URL that could not be reached. |
-| `code` | `string \| undefined` | Underlying network error code when available — `ECONNREFUSED`, `ENOTFOUND`, `ETIMEDOUT`, `EAI_AGAIN`, `ABORT_TIMEOUT`. |
-
-### `PipelineExecuteTimeoutError`
-
-The blocking `execute` (`POST /v1/execute`) was killed by the hosted gateway's ~30s synchronous-request limit. The blocking path cannot run methods longer than ~30s behind the hosted gateway.
-
-| Field | Type | Meaning |
-|---|---|---|
-| `elapsedMs` | `number` | How long the request ran before the timeout fired. |
-
-The message tells the caller to start the run and poll its result by id instead, using the durable run API now provided by [`@pipelex/sdk`](./run-lifecycle.md). Against a **self-hosted** runner there is no gateway cap — a long run is bounded only by your own reverse proxy's idle timeout (see [api-runner.md](./api-runner.md)).
+The runtime answered, and the answer is not the route's result. Beside `problem` it keeps the answer's facts: `apiUrl`, `route` (`POST /v1/execute`), `status` (the answer's, whatever the problem says), `statusText` and `responseBody`. Its `requestId` falls back to the answer's `X-Request-ID` header when the problem names no `request_id`, and `reportedProblem(err)` gives the problem with that request id added, which is what both CLIs print. Its message opens with the route and the status, then gives the problem's sentence, and ends with its next step, as every client error's message does. When the body is no problem document, `answerExcerpt` holds the start of the body, its whitespace collapsed, every URL in it cut before its query and its fragment and stripped of its userinfo, since a presigned query is the permission to write, and cut at `BODY_EXCERPT_LENGTH` characters with an ellipsis; the message quotes it on its own line (`The server answered: …`), and the next step takes the last line (`Next step: …`). An answer of `POST /v1/blobs/missing` is never quoted, whatever its status, since it names upload targets by presigned URLs, and `responseBody`, which keeps the body whole, holds those URLs too, so treat it as a secret. The runtime's raw text appears in the excerpt only: no member of a problem the client builds ever holds it.
 
 ### `RunStillRunningError`
 
-`execute()` received a `202` (accepted-async) instead of a final result. The MTHDS Protocol lets an implementation degrade a synchronous `/execute` into an async-accepted response when it can't hold the connection open. The run keeps executing server-side — resume by `runId`.
+A blocking `execute` the runtime accepted asynchronously, a `202` with the run's id, read as `client.follow_failed`: the run keeps going and this client does not follow it. It adds `runId`, `retryAfterSeconds` (the `Retry-After` header) and `location` (the `Location` header). Read the run by its id with the durable run API of [`@pipelex/sdk`](./run-lifecycle.md) rather than start it again.
 
-| Field | Type | Meaning |
-|---|---|---|
-| `runId` | `string` | The authoritative run id to resume by. |
-| `retryAfterSeconds` | `number \| null` | From the `Retry-After` header, when the server sent one. |
-| `location` | `string \| null` | From the `Location` header — the status resource, when provided. |
+### `MalformedBlobsAnswerError`
 
-### `ClientAuthenticationError`
+A runner's success answer to `POST /v1/blobs/missing` is not shaped as the protocol says: its body is not JSON, it has no `missing` list, or an entry of that list is not a missing blob (a `sha256` of 64 lowercase hexadecimal digits, a non-negative integer `size`, and an `upload` object with a method, a URL and string headers). It is a `ProblemError` of `client.response_unreadable` naming the answer's status, as any success that is not its route's result is. Nothing was uploaded and no request carrying the tree was sent. Raised by `MthdsApiClient` (`src/runners/api/client.ts`) when it sends a tree by hash, and by its `findMissingBlobs`. It adds `index`, the position of the faulty entry in `missing` (`undefined` when the answer as a whole is malformed), and `sha256`, the faulty entry's SHA-256 when it carries a well-formed one. Its message names the entry and what is wrong with it, never its upload URL.
 
-The taxonomy slot for a **client-side** authentication failure (a missing or rejected credential surfaced by a wrapper — e.g. the VS Code extension's SecretStorage). It carries only a `message`.
+### `BlobUploadError`
 
-Two things to know:
-- **It extends `Error` directly, not `PipelineRequestError`.** It is the one class in this module that an `instanceof PipelineRequestError` check will miss.
-- **`MthdsApiClient` does not throw it.** A `401`/`403` *from the API* arrives as an `ApiResponseError` with that `status`. The class is exported so wrapping code and downstream consumers share one auth-error type to throw and catch.
+Uploading a blob of a method's tree failed: `POST /v1/blobs/missing` named the blob as missing and gave a target to upload it to, and the target answered neither a success nor a `412` (which means the store already holds the bytes), or could not be reached. No request carrying the tree was sent. Raised by `MthdsApiClient` when it sends a tree by hash, and by its `uploadBlob`. It is a `PipelineRequestError` that carries no problem yet, since its target may be a store outside the runtime, which the registry has no code for. It adds `sha256`, the blob's SHA-256; `status`, the status the target answered, `undefined` when it could not be reached; and `host`, the host of the upload target. An upload target is a signed URL, which grants whoever holds it the right to write, so neither the message, a member nor a `cause` carries it: only its host is kept, with no credentials, path, query or fragment. The first failed upload of a tree stops the others: none starts after it, those in flight are aborted, and the first failure is the one raised.
+
+### `ApiTransportError`
+
+No answer came back. It adds `apiUrl` and `networkCode`, the transport's own code such as `ECONNREFUSED` when it gives one; `cause` is what fetch threw.
+
+## How the client reads an answer
+
+`MthdsApiClient` reads every answer of every route (`execute`, `start`, `validate`, `models`, `version`, `pipeIo`, `health`) by the same rules, which the shared reading cases pin (`tests/fixtures/problem-reading-cases.json`, a byte-for-byte copy of the Python client's file, run by `tests/unit/problems/reading-cases.test.ts`):
+
+| The answer | Reads as |
+|---|---|
+| A body that is a problem document: JSON, nested no deeper than `MAX_BODY_NESTING`, valid against the protocol's schema (a mistyped core member, such as a `status` of `"422"`, makes it no problem) | The problem as received, its extra members kept. A missing `status` is filled from the answer when the answer's is an HTTP status, from 100 to 599, and a missing `retry_after` from `Retry-After` beside a `retry` of `yes`. |
+| A server error (`5xx`) whose body is no problem document, on a route that creates a run (`execute`, `start`) | `client.outcome_unknown`: something in front of the runtime may have answered, such as a gateway's `504` after its own time limit or a proxy's `502`, and the run may have started behind it. |
+| Any other non-`2xx` body that is no problem document, on a status exactly one core code is raised with and that code needs no fact only the runtime knows | That code with the answer's status, such as `request.method_not_allowed` for a bare `405` and `runtime.unavailable` (with `retry_after` from the header) for an empty `503`. On a route that creates a run (`execute`, `start`), a code whose `retry` is `yes` is not inferred, since an answer that is no problem never invites a repeat of a run. |
+| Any other non-`2xx` body that is no problem document, such as a proxy's HTML page or a bare `404` | `client.response_unreadable` with `{ status }`. |
+| A redirect (`3xx`) on a route that creates a run | `client.response_unreadable` with its status: the client never follows it, since following it would send the request a second time. A redirect on any other route is followed. |
+| A `2xx` whose body is not the route's result | `client.response_unreadable` with that status, except on a route that creates a run (`execute`, `start`), where the runtime accepted the request and the run may exist: `client.outcome_unknown`, naming the run in its parameters and as the problem's `pipeline_run_id` whenever the body names one as a non-empty string. A `start` whose `pipeline_run_id` is empty is no result either, since it names no run to read. |
+| A `202` on `execute` | `client.follow_failed` with the run's id (`RunStillRunningError`), in its parameters and as the problem's `pipeline_run_id`, since the run exists, or `client.outcome_unknown` when the answer names no run, its `pipeline_run_id` missing or not a non-empty string, the error then quoting the start of that body (`answerExcerpt`), which is no problem document. |
+
+A failure to get an answer:
+
+| The failure | Reads as |
+|---|---|
+| The connection could not be set up (a name lookup, a refused connection, the connect time limit, a refused certificate) | `client.unreachable` with `{ base_url }`. |
+| The client's time limit on a call that creates nothing | `client.timeout` with `{ seconds }`. |
+| The connection lost, or the time limit, after a request that creates a run left | `client.outcome_unknown`: the run may have started, so read the run history before starting it again. |
+| The connection lost on a call that creates nothing | `client.unreachable`. |
+
+Two refusals of a request carrying a method's tree are answered by the client itself before they reach the caller, each once (see [api-runner.md](./api-runner.md#sending-a-methods-tree)). A `422` `request.blobs_missing` lists in its `missing_blobs` parameter the blobs the runner's store no longer holds: the client uploads them and sends the request once more, and a second refusal reaches the caller as an `ApiResponseError` carrying that problem. A `422` refusing a tree the client prepared as past one of the runner's limits, a `method.package_invalid` problem naming the `limit` it reached (or the hosted platform's `method_tree_too_large` code, or pipelex-api's `MethodTreeTooLarge` error type), makes the client ask the handshake again and send the tree once more as the fresh limits say.
+
+`src/runners/api/transport.ts` decides whether a failure proves the request never left; only such a failure counts as one that created nothing.
+
+A body read as a problem is decoded by `parseJsonBody`: JSON nested no deeper than `MAX_BODY_NESTING`, with no `NaN` or `Infinity` and no number too large for a double, such as `1e999`, which would otherwise read as `Infinity`; a body breaking any of them is no problem document. A route's result is read as `JSON.parse` reads it, as `res.json()` did, so a number too large for a double reads as `Infinity` and no nesting is refused: a successful run, which may have been paid for, is never read as a failure for the shape of its output. A `Retry-After` header is read as delta-seconds written in ASCII digits or as an HTTP date (`retryAfterSeconds`), in exactly the forms RFC 9110 has a recipient accept (`parseHttpDate`): the IMF-fixdate `Sun, 06 Nov 1994 08:49:37 GMT`, the obsolete RFC 850 form `Sunday, 06-Nov-94 08:49:37 GMT`, whose two-digit year reads as the year ending in those digits from 49 years before now to 50 years after, and the asctime form `Sun Nov  6 08:49:37 1994`. Day and month names are case-sensitive, the zone is the literal `GMT`, the day name is not checked against the date, a date that does not exist, such as the 31st of February or the hour 24, is unreadable, and a second of 60 counts as the next minute, unless it carries the date past the year 9999. Any other value, a number too large to hold exactly included, gives no delay, and reading it never throws.
+
+## The codes the client raises itself
+
+| Code | When |
+|---|---|
+| `client.not_configured` `{ setting }` | The base URL is not host-only, the API key holds a character the `Authorization` header cannot carry as written, anything but visible ASCII, such as a line break or a space at its end, a NUL or a letter past ASCII (`api_key`, refused when the client is constructed, the key never quoted), or no runner is configured for a command. |
+| `client.argument_invalid` `{ argument, reason }` | An argument refused before any request left: `files` and `tree` together, an empty tree, a tree past the inline limit a runner with no blob store announces, a command line naming a method that is not one tree, an argument passed through `extra` that the client reserves, method files that are not an array of file entries, a body that does not serialize as JSON, a CLI option's value. |
+| `client.file_unreadable`, `client.write_failed`, `client.target_exists` | A local file the CLIs cannot read, cannot write, or would overwrite. A `reason` the system gave is its error code in lower case, such as `enoent`, `eacces`, `enametoolong` or `eloop`, so a path refused for another cause than its absence never reads as missing (`fileErrorReason`, over `systemErrorCode`, the one reader of a system error's code). An install that fails is `client.write_failed` only when the system names the path it refused, never naming the install location `local` or `global` as a path: a method whose name or file would land outside its install directory is `method.package_invalid` (reason `invalid_method_name` or `invalid_tree_path`), its owner's to fix, and any other failure, such as one of the install's telemetry, `runtime.unexpected` (`installFailureProblem`). |
+| `client.tool_missing`, `client.tool_outdated` | A program a CLI runs (`pipelex`, `pipelex-agent`, `plxt`, `uv`, `codex`) is missing or older than the CLI needs. An install `mthds-agent` attempts (`install`, `runner setup pipelex`, `--auto-install`) without `uv` is `client.tool_missing` naming `uv`, and one `uv` ran and failed is `client.tool_missing` naming the program the CLI runs, such as `plxt`, never the package `uv` installs it from, such as `pipelex-tools` (`toolInstallProblem`). |
+| `method.not_found`, `method.fetch_failed` `{ method_ref }` | `mthds-agent install`, `publish` and `share` found no method at the address or directory given (`method.not_found`), or could not read it from GitHub, which was unreachable, rate limited, refusing with a `403` or failing with a `5xx` (`method.fetch_failed`, worth a retry). Through the `gh` CLI, GitHub's status is read where `gh` names it, as `HTTP 404`, never as a bare number a quoted path or SHA may hold. A token GitHub refuses, from `GITHUB_TOKEN` or the `gh` CLI, is `client.not_configured` naming `GITHUB_TOKEN`, and a local directory the system refuses to read is `client.file_unreadable`. |
+| `security.input_path_refused` `{ rule }` | A file a bundle names lands outside the bundle's root, or a tree path the pipelex runner would write a method's file to escapes the method's directory. |
+| `runtime.unsupported` `{ capability }` | The runner cannot do what was asked, such as `check_model` on the API runner. |
+| `runtime.unexpected` | A failure no other code describes. |
+
+`PipelexRunner` raises a `ProblemError` too. A program it runs that is not on the PATH is `client.tool_missing`; a failure `pipelex-agent` printed as a problem on stderr is that problem, relayed; a `pipelex run` the person interrupted is `client.aborted`; a health check `pipelex doctor` did not answer in time is `client.timeout`, one where it found issues `runtime.misconfigured`, whose message quotes what doctor printed and which names no component to its caller, that parameter being operator-only and named only in the operator's own step, and one where doctor printed more than the check reads (`HEALTH_MAX_BUFFER_BYTES`, far past a full report), which `execFile` kills as it kills one out of time, `runtime.unexpected` saying so; a working memory written by a pipelex too old for the standard is `client.tool_outdated` naming its version; any other failure is `runtime.unexpected`, its message holding what the program printed, since the bare `pipelex` prints human text, never a problem.
+
+A problem the client builds carries the step of its own caller for an `input` or `runtime` problem (the caller acts, or waits and retries), and someone else's for a `method`, `account` or `operator` one, unless the builder names the reader.
 
 ## How to classify an error in client code
 
-The point of `mthds/errors` is that the importing module stays free of `node:fs`, so it can live in a browser/client bundle. Import the classes from there (never from `mthds`, which statically pulls `MthdsApiClient → config/ → node:fs`), then branch most-specific-first.
+Import from `mthds/errors` in a module that may end up in a browser bundle, then branch on the code:
 
-### Prerequisites
+```typescript
+import { ProblemError, ERROR_CODES } from "mthds/errors";
 
-- Code that runs in (or is bundled for) a client/browser context — e.g. a Next.js client component, or any module a client bundler (Webpack, Turbopack, Vite, esbuild) processes.
-- An error value caught from an SDK call (or forwarded from one).
-
-### Steps
-
-1. **Import the classes from `mthds/errors`**, not the top-level barrel:
-
-   ```typescript
-   import {
-     PipelineRequestError,
-     ApiResponseError,
-     ApiUnreachableError,
-     ClientAuthenticationError,
-   } from "mthds/errors";
-   ```
-
-2. **Branch most-specific subclass first**, base last, so the catch-all doesn't shadow a specific case:
-
-   ```typescript
-   export function toUserMessage(err: unknown): string {
-     if (err instanceof ClientAuthenticationError) {
-       // NOT a PipelineRequestError — handle before the base check
-       return "Your API key is missing or invalid.";
-     }
-     if (err instanceof ApiUnreachableError) {
-       return `Can't reach the runner (${err.code ?? "network error"}).`;
-     }
-     if (err instanceof ApiResponseError) {
-       const reason = err.serverMessage ?? `Runner error ${err.status}.`;
-       const nextStep = err.userAction ? ` ${err.userAction.detail}` : "";
-       // `input` is the caller's to fix; anything else is not, so give support the id.
-       const support =
-         err.errorDomain !== "input" && err.requestId ? ` (request id ${err.requestId})` : "";
-       return `${reason}${nextStep}${support}`;
-     }
-     if (err instanceof PipelineRequestError) {
-       // catch-all for any other pipeline-request failure
-       return err.message;
-     }
-     return "Unexpected error.";
-   }
-   ```
-
-### Verification
-
-Build the client bundle. It should compile without a `node:fs` resolution error:
-
-```bash
-npm run build      # or: next build / vite build
+export function toUserMessage(err: unknown): string {
+  if (!(err instanceof ProblemError)) return "Unexpected error.";
+  switch (err.code) {
+    case ERROR_CODES.CLIENT_UNREACHABLE:
+      return "Cannot reach the runtime. Check that it is running.";
+    case ERROR_CODES.CLIENT_OUTCOME_UNKNOWN:
+      return "The run may have started: look at the run history before starting it again.";
+    default:
+      // `input` is the caller's to fix; anything else is not, so give support the request id.
+      return err.domain === "input" || err.requestId === undefined
+        ? `${err.problem.detail} ${err.nextStep.detail}`
+        : `${err.problem.detail} (request id ${err.requestId})`;
+  }
+}
 ```
 
-If the importing module is server-only, you can import the same classes from `mthds` instead — they are the identical constructors, so `instanceof` works across both entry points within one runtime.
+`instanceof` fails across a Next.js Server Action boundary, which serializes the error. Return `err.problem`, a plain JSON document, and classify it by its `code` on the other side.
 
-### Troubleshooting
+## Items and suggested fixes
 
-- **`Module not found: Can't resolve 'fs'` (or `node:fs`) in a client build.** You imported an error class from `mthds` instead of `mthds/errors`. The top-level barrel re-exports `MthdsApiClient`, whose graph reaches `node:fs`; switch the import to `mthds/errors`.
-- **A `ClientAuthenticationError` slips past my `instanceof PipelineRequestError` catch.** Expected — it extends `Error` directly. Check it explicitly, or widen the catch-all to `instanceof Error`.
-- **`err.validationErrors` is `undefined` on a validation failure.** Validation failures from `POST /v1/validate` are not errors — read the `200` invalid arm's `validation_errors[]` off the returned value. `ApiResponseError.validationErrors` is populated only on a run route's `422` refusing an invalid method; an invalid bundle sent to `pipe-io` is its `200` verdict too.
-- **`instanceof` fails across a Next.js Server Action boundary.** Errors thrown in a Server Action are serialized to the client and lose their class identity in production (Next.js replaces them with a generic `Error` + digest). Classify those by a stable field you propagate yourself (e.g. an error code in the message or a returned discriminant), not by `instanceof`. `mthds/errors` still earns its keep there: it lets the client module *import the types* for annotations and same-runtime checks without the bundler choking on `node:fs`.
-
-## What the CLIs print for a runner's refusal
-
-Both CLIs carry an `ApiResponseError`'s problem members to the reader, so a person or an agent can tell their own mistake from a fault they cannot fix, knows whether to retry, and has an id to hand to support. A member the runner did not send prints nothing.
-
-Both read the members off an `ApiResponseError`, which every route of `MthdsApiClient` raises on a non-2xx: the protocol routes (`execute`, `start`, `validate`, `models`, `version`), `pipeIo` and `health`.
-
-**`mthds`** prints the error's message, then one line per member the runner sent (`src/cli/commands/error-output.ts`), on `run`, `validate`, `build` and the validation step of `install`:
-
-```text
-API POST /v1/execute failed (422): Model 'gpt-9' is not in the model deck.
-Error domain: input (the request must change)
-Next step: Pick a model listed by `mthds-agent models`.
-Retryable: no
-Request id: 9f2c1ab3 (quote it to support)
-```
-
-A refusal that lists validation items, a run route refusing an invalid method for one, prints each item between the message and the members, as [A validation item's next step](#a-validation-items-next-step) shows.
-
-**`mthds-agent`** reads the problem document into its JSON error envelope the way the local `pipelex-agent` reads a report (`runnerProblemExtras` in `src/agent/output.ts`), on every command that calls the API runner:
-
-| Envelope field | From the problem document | When the runner did not send it |
-|---|---|---|
-| `error_domain` | `error_domain`, when it is `input`, `config` or `runtime` | the command's own domain (`runner`, or `validation` on a `validate` 422) |
-| `hint` | `user_action.detail` | the command's static hint for its `error_type` |
-| `retryable` | `true` when the runner said a retry can succeed | absent — the envelope only ever says `true`, as in `pipelex-agent` |
-| `request_id` | `requestId` (the body's `request_id`, else the `X-Request-ID` header) | absent |
-| `validation_errors` | `validationErrors`, each item whole, when the refusal lists any (a run route refusing an invalid method with a `422`) | absent |
-
-`error_type` and `message` keep each command's own choice. So a software consumer that treats `config` and `runtime` as an environment issue and `input` as the caller's (a validation hook, for instance) reads a runner's refusal correctly, where it used to see `runner` for every one of them.
-
-## A validation item's next step
-
-When a runner refuses a bundle, each `ValidationErrorItem` says what is wrong and where, and, when the runner can derive one deterministic correction, what to do about it: its `suggested_fix`. The worked example is an unknown model. A pipe naming `model = "gpt-5.1"`, which the model deck does not define, comes back as an item with `error_type: "unknown_model"`, the pipe, the source file and the field, the reference as the author wrote it (`model_reference`), the kind of model the field takes (`model_type`) and the deck's close matches (`suggestions`). When there is exactly one close match, the item also carries the fix, marked `unsafe` because a close match by name can still be a different model, with its own provider, cost and behaviour, so it is applied deliberately rather than on its own:
+A problem with several faults, a run route refusing an invalid method for one, lists them in `errors`, and an invalid verdict of `validate` or `pipe-io` lists its faults the same way. Each item carries its own `code`, its `detail`, its `params`, where it happened (`location`) and, when the runner can derive one deterministic correction, a `suggested_fix`:
 
 ```json
 {
-  "category": "pipe_validation",
-  "error_type": "unknown_model",
-  "message": "Model handle 'gpt-5.1' was not found in the model deck. Did you mean: gpt-5?",
-  "pipe_code": "summarize",
-  "field_name": "model",
-  "model_reference": "gpt-5.1",
-  "model_type": "llm",
-  "suggestions": ["gpt-5"],
+  "code": "model.unknown",
+  "detail": "The model 'gpt-5.1' is not in the model deck.",
+  "params": { "model": "gpt-5.1", "model_type": "llm", "suggestions": ["gpt-5"] },
+  "location": { "pipe": "summarize", "field": "model", "file": "demo.mthds" },
   "suggested_fix": {
     "fix_code": "rename-model",
     "description": "Replace model 'gpt-5.1' of pipe 'summarize' with 'gpt-5', its one close match in the model deck",
     "safety": "unsafe",
-    "source": "demo.mthds",
     "ops": [
       { "kind": "remap_value", "table_path": ["pipe", "summarize"], "key": "model", "mapping": { "gpt-5.1": "gpt-5" } }
     ]
@@ -233,36 +188,45 @@ When a runner refuses a bundle, each `ValidationErrorItem` says what is wrong an
 }
 ```
 
-A `SuggestedFix` has two readers. A person or an agent reads its `description`, a sentence they can act on. A program applying the fix reads its `ops`, semantic patches over the `.mthds` document addressed by TOML table path (`FixOp`, discriminated on `kind`), so an applier keeps the author's formatting. `fix_code` names the rule that produced the fix, `safety` says whether it is `safe` to apply without asking, and `source`, when present, is the only file the ops may touch. An item with no fix has no `suggested_fix` key, and a refused reference that names a pipe the bundle does not declare carries in `missing_pipe_code` the fully qualified ref the runner attempted (`demo.summarise`), not the bare spelling the author typed, while the item's `pipe_code`, the referencing pipe, stays bare.
+A `SuggestedFix` is read by a person or an agent, who reads its `description`, and by a program applying it, which reads its `ops`, semantic patches over the `.mthds` document addressed by TOML table path, and applies it only when `isApplicableFix(fix)` holds, without asking only when `fixSafety(fix)` is `safe`. `fix_code` names the rule that produced the fix, and `file`, when present, is the only file the operations may touch.
 
-The items reach a caller the same way wherever they ride: on the `200` invalid verdict of `pipe-io` (`CrateInvalidReport.validation_errors`), on a refusal's problem document (`ApiResponseError.validationErrors`), and on the `200` invalid verdict of `validate`, whose neutral `ValidationError` type exposes only `category` and `message` but whose items keep every field at runtime, so a caller narrows them with `as ValidationErrorItem[]`.
+## What the CLIs print
 
-**`mthds-agent`** carries each item whole in its `ValidateBundleError` envelope (`validate` and `inputs` on the API runner), and in the envelope of a runner's refusal that lists them — `run start` against a runner that refuses to run an invalid method, for one — so the agent reads the `suggested_fix` next to the error. With the default Markdown format, `validate` prints the runner's own rendering, which has a `Suggested fix:` line under each item that has one. The Codex hook (`mthds-agent codex hook`) builds its blocking reason from `pipelex-agent`'s envelope and prints the same line, with the missing pipe or concept among the item's locators:
-
-```text
-- [pipe_validation] Model handle 'gpt-5.1' was not found in the model deck. (pipe: summarize, field: model, source: demo.mthds)
-  Suggested fix: Replace model 'gpt-5.1' of pipe 'summarize' with 'gpt-5', its one close match in the model deck
-```
-
-**`mthds`** prints the same line for a person, under each item that has a fix, when the runner refuses a bundle on `validate`, `build` or the validation step of `install`. The line is built in one place (`withSuggestedFix` in `src/cli/commands/error-output.ts`), which the Codex hook uses too, and it sits two spaces past the item it belongs to:
+**`mthds`** prints a failure as plain lines (`renderProblemLines`, through `formatCliError` in `src/cli/commands/error-output.ts`), on `run`, `validate`, `build` and the validation step of `install`, and prints an invalid verdict's items the same way (`formatItemLines`). For an `ApiResponseError`, the route and the status come before the next step, followed by what the server said (`answerExcerpt`) when the body is no problem document, so that a gateway's `{"detail":"Invalid authentication token"}` read as `client.response_unreadable` still reaches the person:
 
 ```text
-demo.mthds: [pipe_validation] Model handle 'gpt-5.1' was not found in the model deck.
-  Suggested fix: Replace model 'gpt-5.1' of pipe 'summarize' with 'gpt-5', its one close match in the model deck
+The method does not validate: The method does not validate.
+POST /v1/execute failed (422 Unprocessable Entity).
+Next step: Fix each fault the problem's errors list, then validate the method again.
+Code: method.invalid (domain method, retry no)
+Request id: req_9f2c1ab3
+- model.unknown: The model 'gpt-5.1' is not in the model deck. (pipe 'summarize', field 'model', file 'demo.mthds')
+  Suggested fix (unsafe, rename-model): Replace model 'gpt-5.1' of pipe 'summarize' with 'gpt-5', its one close match in the model deck
 ```
 
-When the runner refuses to run an invalid method, `mthds run` prints the refusal's items under its message, each with its locators and its fix, in the Codex hook's list form (`formatValidationItem`, in the same file), then the problem members:
+**`mthds-agent`** writes every failure on stderr as one problem and exits `1` (`src/agent/output.ts`), as the CLI I/O contract asks (mthds `docs/spec/cli-io-contract.md`, "Error Propagation"). Every command accepts `--error-format markdown|json`, on the command or before it, and when it is given more than once the last one written wins, as for any option, whichever command runs and whenever it fails; without it the error stream takes `--format` when that names `json`, and is Markdown otherwise:
 
-```text
-API POST /v1/execute failed (422): The method is invalid and was not run.
-- [pipe_validation] Model handle 'gpt-5.1' was not found in the model deck. (pipe: summarize, field: model, source: demo.mthds)
-  Suggested fix: Replace model 'gpt-5.1' of pipe 'summarize' with 'gpt-5', its one close match in the model deck
-- [pipe_validation] Pipe 'demo.main' refers to 'summarise', which no bundle declares. (pipe: main, missing pipe: demo.summarise, source: demo.mthds)
-Error domain: input (the request must change)
-```
+- **Markdown**, the default, for the agent reading it: the title, the detail, the command's own sentence, the next step, the code with its domain and retry verdict, the request id and the run when the problem names them, every item with its suggested fix, then sections for the extras below.
+- **JSON** (`--error-format json`), for a program: the problem document without `status`, with the command's own sentence in `message` and these extras beside the core members: `server_answer` (on a failure read from an answer of the runtime, the `route` that answered, its `status` and, when the body is no problem document, its `excerpt`, as `answerExcerpt` cuts it), `recovery` (how to install a missing tool), `is_valid: false` (on an invalid verdict, beside its `errors`), `skipped_methods` (the methods the resolver refused, on every failure raised once a repository was read) and `registrations` (what mthds.sh answered for each method of a failed publish). An extra never replaces a member the runtime's problem holds under the same name: the problem's member is kept, and the extra is written in neither form, the Markdown form rendering no section for it, so both forms carry the same extras.
+
+On the pipelex runner, a command forwarded to `pipelex-agent` has its failure written by `pipelex-agent` itself (`src/agent/commands/pipelex-passthrough.ts`): `pipelex-agent` accepts `--error-format` after a command only, so `mthds-agent` moves the option there wherever it was given, by the same last-one-wins rule, and drops it for `inputs`, which takes none and whose failures `pipelex-agent` always writes as JSON. `plxt fmt` and `plxt lint` never forward it to `plxt`, which takes no such option, wherever it stands before `--`, nor any other option the program declares (`--runner`, `--log-level`, `--auto-install`, `-L`/`--library-dir`), in any form the command line's parser reads it in, while everything from `--` on is forwarded as written, a `--` written between `plxt` and its command being given back after the command (`src/agent/commands/plxt.ts`). A runner's problem is relayed whole, its code and items included, and an invalid verdict of `validate` or `inputs` is the `method.invalid` problem holding the verdict's items. With the Markdown format, `validate` on the API runner prints the runner's own rendering of the invalid verdict when it sends one. A warning a command writes on stderr takes the error stream's form (`agentWarning`).
+
+The Codex hook (`mthds-agent codex hook`) runs `pipelex-agent validate bundle --format json --error-format json` and reads its stderr as a problem: a failure of the environment (domain `account`, `operator` or `runtime`, or one of the client codes of the machine's set-up, `client.not_configured`, `client.tool_missing` and `client.tool_outdated`) is passed to the agent as context, any other blocks the edit with each item and its suggested fix. A problem whose domain the hook does not know reads as the codes of its family the hook knows: it warns only when every one of them would. A problem of a family it knows nothing of, such as an extension code like `pipelex.validation.foo` or a core family newer than the vendored registry, blocks the edit: the protocol reads it as `runtime` for display, as every other reader of this CLI does, but a gate fails closed rather than pass a fault of the file off as the environment's. It also reads the envelope a `pipelex-agent` that predates problem documents writes (`error_domain`, `validation_errors`), until this CLI's pipelex floor writes problems.
+
+## The vendored registry
+
+The registry's JSON snapshot is vendored byte for byte at `scripts/registry/mthds-error-registry.json`, with where it came from in `scripts/registry/mthds-error-registry.source.json` (the mthds commit, the version and the snapshot's SHA-256). `scripts/gen-error-registry.mjs` generates `src/problems/registry.generated.ts` from it: the version, the base URL, the extension prefixes and families, a constant per code, the typed parameters of every code, and every entry's title, domain, retry verdict, status, templates and steps. It refuses a template holding a lone `{` or `}`, or naming a parameter its code does not declare, and `renderTemplate` throws on a lone brace too, and on a placeholder naming a parameter the occurrence does not give, since a template names only parameters every occurrence of its code gives. Never edit either by hand.
+
+To move to another registry:
+
+1. Vendor it, which regenerates the module: `make vendor-error-registry REF=<tag or commit>` reads it from the mthds checkout beside this repository (`MTHDS=<checkout>` names another), and `make vendor-error-registry RELEASE=<version>` downloads the asset of a standard's release.
+2. Move `MTHDS_ERROR_REGISTRY_TARGET_VERSION` in `src/problems/registry-target.ts` to its version.
+3. Run `make test`. `tests/unit/problems/registry.test.ts` checks the snapshot against its source record, the version against the target, the module against the generator (`node scripts/gen-error-registry.mjs --check`), every entry against the protocol's closed lists, and, when `../mthds` holds the recorded commit, the snapshot against the registry at that commit.
+
+`make error-registry` regenerates the module alone, after a change to the generator.
 
 ## See also
 
-- [architecture.md](./architecture.md) — the SDK's `protocol/ ⊥ runners/` split, the entry-point table, and the rationale for `mthds/errors`.
-- [api-runner.md](./api-runner.md) — pointing the client at a hosted vs. self-hosted runner, and how the ~30s synchronous cap drives `PipelineExecuteTimeoutError`.
-- [run-lifecycle.md](./run-lifecycle.md) — `execute` vs. `start`, and the durable poll-by-id that supersedes the blocking path on a timeout or a `202`.
+- [architecture.md](./architecture.md) — the `protocol/ ⊥ runners/` split, the entry-point table and the rationale for `mthds/errors`.
+- [api-runner.md](./api-runner.md) — pointing the client at a hosted or a self-hosted runner.
+- [run-lifecycle.md](./run-lifecycle.md) — `execute` and `start`, and reading a run by its id after `client.follow_failed` or `client.outcome_unknown`.

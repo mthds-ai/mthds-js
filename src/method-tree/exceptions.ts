@@ -15,6 +15,7 @@ export type ExclusionRule =
   | "virtual_environment"
   | "nested_repository"
   | "nested_package"
+  | "run_inputs"
   | "gitignore"
   | "package_exclude";
 

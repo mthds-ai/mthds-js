@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { runProtocolValidate } from "../../../src/agent/commands/api-commands.js";
+import { chooseErrorFormat } from "../../../src/agent/output.js";
 import type { Runner } from "../../../src/runners/types.js";
 import type { ValidationResult } from "../../../src/protocol/models.js";
 import { outcomeNotes, resetOutcomeNotes } from "../../../src/usage-stats/outcome.js";
@@ -23,12 +24,13 @@ const VALID_WITH_MD: ValidationResult = {
   rendered_markdown: "# Validation passed\n\nall good",
 } as ValidationResult;
 const VALID_NO_MD: ValidationResult = { is_valid: true };
+const SOURCE = { files: { "x.mthds": "x" } };
 const INVALID_WITH_MD: ValidationResult = {
   is_valid: false,
   message: "Bundle is invalid",
   pending_signatures: [],
   is_runnable: false,
-  validation_errors: [{ category: "blueprint_validation", message: "boom" } as never],
+  errors: [{ code: "method.syntax", detail: "The method does not parse (boom)." }],
   rendered_markdown: "# Validation failed\n\nboom",
 } as ValidationResult;
 
@@ -47,24 +49,25 @@ describe("runProtocolValidate — --format handling", () => {
   });
 
   afterEach(() => {
+    chooseErrorFormat(undefined);
     vi.restoreAllMocks();
   });
 
   it("requests render=['markdown'] when the format is markdown (the default)", async () => {
     const { runner, validate } = makeRunner(VALID_WITH_MD);
-    await runProtocolValidate(runner, ["x"], false);
-    expect(validate).toHaveBeenCalledWith(["x"], false, undefined, ["markdown"]);
+    await runProtocolValidate(runner, SOURCE, false);
+    expect(validate).toHaveBeenCalledWith(SOURCE, false, ["markdown"]);
   });
 
   it("does NOT request render when the format is json", async () => {
     const { runner, validate } = makeRunner(VALID_NO_MD);
-    await runProtocolValidate(runner, ["x"], false, undefined, "json");
-    expect(validate).toHaveBeenCalledWith(["x"], false, undefined, undefined);
+    await runProtocolValidate(runner, SOURCE, false, "json");
+    expect(validate).toHaveBeenCalledWith(SOURCE, false, undefined);
   });
 
   it("emits rendered_markdown verbatim to stdout on a valid bundle (markdown)", async () => {
     const { runner } = makeRunner(VALID_WITH_MD);
-    await runProtocolValidate(runner, ["x"], false);
+    await runProtocolValidate(runner, SOURCE, false);
     const written = stdoutSpy.mock.calls.map((c: unknown[]) => String(c[0])).join("");
     expect(written).toContain("# Validation passed");
     // It is the verbatim Markdown, not a JSON envelope.
@@ -74,7 +77,7 @@ describe("runProtocolValidate — --format handling", () => {
 
   it("emits rendered_markdown to stderr and exits 1 on an invalid bundle (markdown)", async () => {
     const { runner } = makeRunner(INVALID_WITH_MD);
-    await expect(runProtocolValidate(runner, ["x"], false)).rejects.toThrow("__exit__");
+    await expect(runProtocolValidate(runner, SOURCE, false)).rejects.toThrow("__exit__");
     const written = String(stderrSpy.mock.calls[0]![0]);
     expect(written).toContain("# Validation failed");
     expect(exitSpy).toHaveBeenCalledWith(1);
@@ -91,17 +94,24 @@ describe("runProtocolValidate — --format handling", () => {
       }) as never);
       const { runner } = makeRunner(INVALID_WITH_MD);
       await expect(
-        runProtocolValidate(runner, ["x"], false, undefined, undefined, errorFormat),
+        runProtocolValidate(runner, SOURCE, false, undefined, errorFormat),
       ).rejects.toThrow("__exit__");
       const written = String(stderrSpy.mock.calls[0]![0]);
       expect(written.startsWith("{")).toBe(errorFormat === "json");
+      if (errorFormat === "json") {
+        expect(JSON.parse(written)).toMatchObject({
+          code: "method.invalid",
+          is_valid: false,
+          errors: [{ code: "method.syntax" }],
+        });
+      }
       expect(domainsAtExit[0]).toBe("input");
     },
   );
 
   it("emits the JSON success envelope under --format json", async () => {
     const { runner } = makeRunner(VALID_NO_MD);
-    await runProtocolValidate(runner, ["x"], false, undefined, "json");
+    await runProtocolValidate(runner, SOURCE, false, "json");
     const written = stdoutSpy.mock.calls.map((c: unknown[]) => String(c[0])).join("");
     const payload = JSON.parse(written) as { success: boolean; is_valid: boolean };
     expect(payload.success).toBe(true);
@@ -110,7 +120,7 @@ describe("runProtocolValidate — --format handling", () => {
 
   it("falls back to the JSON envelope when the server omits rendered_markdown (markdown requested)", async () => {
     const { runner } = makeRunner(VALID_NO_MD);
-    await runProtocolValidate(runner, ["x"], false);
+    await runProtocolValidate(runner, SOURCE, false);
     const written = stdoutSpy.mock.calls.map((c: unknown[]) => String(c[0])).join("");
     // No rendered_markdown on the report → never empty: the JSON envelope is emitted.
     const payload = JSON.parse(written) as { success: boolean };

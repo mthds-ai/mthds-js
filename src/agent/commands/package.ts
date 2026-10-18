@@ -4,7 +4,8 @@
 
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { agentSuccess, agentError, AGENT_ERROR_DOMAINS } from "../output.js";
+import { agentSuccess, agentError, agentProblem } from "../output.js";
+import { fileErrorReason } from "../problems.js";
 import { parseMethodsToml, serializeManifestToToml } from "../../package/manifest/parser.js";
 import {
   isValidAddress,
@@ -21,10 +22,13 @@ import type { ParsedManifest } from "../../package/manifest/schema.js";
 
 function readManifest(manifestPath: string, notFoundMessage: string): ParsedManifest {
   if (!existsSync(manifestPath)) {
-    agentError(notFoundMessage, "PackageError", {
-      error_domain: AGENT_ERROR_DOMAINS.PACKAGE,
-      hint: "Run 'mthds-agent package init' to create a METHODS.toml, or use -C to specify the correct directory.",
-    });
+    agentError(
+      agentProblem(
+        "client.file_unreadable",
+        { path: manifestPath, reason: "enoent" },
+        `${notFoundMessage} Run 'mthds-agent package init' to create a METHODS.toml, or use -C to specify the correct directory.`,
+      ),
+    );
   }
 
   try {
@@ -32,16 +36,24 @@ function readManifest(manifestPath: string, notFoundMessage: string): ParsedMani
     return parseMethodsToml(content);
   } catch (err) {
     if (err instanceof ManifestParseError) {
-      agentError(`TOML syntax error: ${err.message}`, "PackageError", {
-        error_domain: AGENT_ERROR_DOMAINS.PACKAGE,
-        hint: "Fix the TOML syntax in METHODS.toml and try again.",
-      });
+      agentError(
+        agentProblem(
+          "method.package_invalid",
+          { reason: "manifest_syntax" },
+          `TOML syntax error: ${err.message}. Fix the TOML syntax in METHODS.toml and try again.`,
+          { reader: "actor" },
+        ),
+      );
     }
     if (err instanceof ManifestValidationError) {
-      agentError(`Validation error: ${err.message}`, "PackageError", {
-        error_domain: AGENT_ERROR_DOMAINS.PACKAGE,
-        hint: "Fix the validation errors in METHODS.toml and try again.",
-      });
+      agentError(
+        agentProblem(
+          "method.package_invalid",
+          { reason: "manifest_invalid" },
+          `Validation error: ${err.message}. Fix the validation errors in METHODS.toml and try again.`,
+          { reader: "actor" },
+        ),
+      );
     }
     throw err;
   }
@@ -88,83 +100,83 @@ export async function agentPackageInit(options: AgentPackageInitOptions): Promis
 
   if (!isValidAddress(options.address)) {
     agentError(
-      `Invalid package address '${options.address}'. Must follow hostname/path pattern (e.g. 'github.com/org/repo').`,
-      "PackageError",
-      {
-        error_domain: AGENT_ERROR_DOMAINS.PACKAGE,
-        hint: "Provide a valid address in hostname/path format (e.g. 'github.com/org/repo').",
-      },
+      agentProblem(
+        "client.argument_invalid",
+        { argument: "--address", reason: "invalid_address" },
+        `Invalid package address '${options.address}'. Must follow hostname/path pattern (e.g. 'github.com/org/repo').`,
+      ),
     );
   }
 
   if (!isValidSemver(options.version)) {
     agentError(
-      `Invalid version '${options.version}'. Must be valid semver (e.g. '1.0.0').`,
-      "PackageError",
-      {
-        error_domain: AGENT_ERROR_DOMAINS.PACKAGE,
-        hint: "Provide a valid semver version (e.g. '1.0.0', '0.1.0-beta.1').",
-      },
+      agentProblem(
+        "client.argument_invalid",
+        { argument: "--version", reason: "invalid_semver" },
+        `Invalid version '${options.version}'. Must be valid semver (e.g. '1.0.0'). Provide a valid semver version (e.g. '1.0.0', '0.1.0-beta.1').`,
+      ),
     );
   }
 
   if (!options.description.trim()) {
-    agentError("Description is required and must be a non-empty string.", "PackageError", {
-      error_domain: AGENT_ERROR_DOMAINS.PACKAGE,
-      hint: "Provide a non-empty --description value.",
-    });
+    agentError(
+      agentProblem(
+        "client.argument_invalid",
+        { argument: "--description", reason: "empty" },
+        "Description is required and must be a non-empty string. Provide a non-empty --description value.",
+      ),
+    );
   }
 
   if (options.name !== undefined && !isValidMethodName(options.name)) {
     agentError(
-      `Invalid method name '${options.name}'. Must be 2-25 lowercase snake_case chars (letters, digits, underscores), starting with a letter.`,
-      "PackageError",
-      {
-        error_domain: AGENT_ERROR_DOMAINS.PACKAGE,
-        hint: "Provide a valid --name: 2-25 lowercase snake_case chars, starting with a letter (e.g. 'my_tool').",
-      },
+      agentProblem(
+        "client.argument_invalid",
+        { argument: "--name", reason: "invalid_name" },
+        `Invalid method name '${options.name}'. Must be 2-25 lowercase snake_case chars (letters, digits, underscores), starting with a letter. Provide a valid --name: 2-25 lowercase snake_case chars, starting with a letter (e.g. 'my_tool').`,
+      ),
     );
   }
 
   if (options.displayName !== undefined) {
     const dn = options.displayName.trim();
     if (!dn) {
-      agentError("Display name must not be empty or whitespace when provided.", "PackageError", {
-        error_domain: AGENT_ERROR_DOMAINS.PACKAGE,
-        hint: "Provide a non-empty --display-name value, or omit the flag.",
-      });
+      agentError(
+        agentProblem(
+          "client.argument_invalid",
+          { argument: "--display-name", reason: "empty" },
+          "Display name must not be empty or whitespace when provided. Provide a non-empty --display-name value, or omit the flag.",
+        ),
+      );
     }
     if (dn.length > 128) {
       agentError(
-        `Display name must not exceed 128 characters (got ${dn.length}).`,
-        "PackageError",
-        {
-          error_domain: AGENT_ERROR_DOMAINS.PACKAGE,
-          hint: "Shorten the --display-name to 128 characters or fewer.",
-        },
+        agentProblem(
+          "client.argument_invalid",
+          { argument: "--display-name", reason: "too_long" },
+          `Display name must not exceed 128 characters (got ${dn.length}). Shorten the --display-name to 128 characters or fewer.`,
+        ),
       );
     }
   }
 
   if (options.mainPipe !== undefined && !isPipeCodeValid(options.mainPipe)) {
     agentError(
-      `Invalid main_pipe '${options.mainPipe}'. Must be a valid snake_case pipe code.`,
-      "PackageError",
-      {
-        error_domain: AGENT_ERROR_DOMAINS.PACKAGE,
-        hint: "Provide a valid --main-pipe in snake_case (e.g. 'extract_data').",
-      },
+      agentProblem(
+        "client.argument_invalid",
+        { argument: "--main-pipe", reason: "invalid_pipe_code" },
+        `Invalid main_pipe '${options.mainPipe}'. Must be a valid snake_case pipe code. Provide a valid --main-pipe in snake_case (e.g. 'extract_data').`,
+      ),
     );
   }
 
   if (existsSync(manifestPath) && !options.force) {
     agentError(
-      `${MANIFEST_FILENAME} already exists at ${manifestPath}. Use --force to overwrite.`,
-      "PackageError",
-      {
-        error_domain: AGENT_ERROR_DOMAINS.PACKAGE,
-        hint: "Add --force to overwrite the existing METHODS.toml.",
-      },
+      agentProblem(
+        "client.target_exists",
+        { path: manifestPath },
+        `${MANIFEST_FILENAME} already exists at ${manifestPath}. Use --force to overwrite.`,
+      ),
     );
   }
 
@@ -192,9 +204,13 @@ export async function agentPackageInit(options: AgentPackageInitOptions): Promis
   try {
     writeFileSync(manifestPath, tomlContent, "utf-8");
   } catch (err) {
-    agentError(`Failed to write ${MANIFEST_FILENAME}: ${(err as Error).message}`, "PackageError", {
-      error_domain: AGENT_ERROR_DOMAINS.IO,
-    });
+    agentError(
+      agentProblem(
+        "client.write_failed",
+        { path: manifestPath, reason: fileErrorReason(err, "unwritable") },
+        `Failed to write ${MANIFEST_FILENAME}: ${(err as Error).message}`,
+      ),
+    );
   }
 
   agentSuccess({

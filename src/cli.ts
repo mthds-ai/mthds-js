@@ -18,6 +18,7 @@ import { packageInit } from "./cli/commands/package/init.js";
 import { packageList } from "./cli/commands/package/list.js";
 import { packageValidate } from "./cli/commands/package/validate.js";
 import { listFiles } from "./cli/commands/files.js";
+import { formatCliError } from "./cli/commands/error-output.js";
 import { RUNNER_NAMES } from "./runners/types.js";
 import {
   telemetryEnable,
@@ -192,7 +193,7 @@ buildInputsCmd
   .argument("<name>", "Name of the installed method")
   .option(
     "--pipe <ref>",
-    "Qualified pipe ref (domain.pipe_code). Defaults to the closure's main_pipe.",
+    "Qualified pipe ref (domain.pipe_code). Defaults to the method's entry pipe.",
   )
   .description("Generate inputs for an installed method")
   .allowUnknownOption()
@@ -208,10 +209,10 @@ buildInputsCmd
 
 buildInputsCmd
   .command("pipe")
-  .argument("<target>", "Bundle file path")
+  .argument("<target>", "Bundle file (.mthds) or method directory")
   .option(
     "--pipe <ref>",
-    "Qualified pipe ref (domain.pipe_code). Defaults to the closure's main_pipe.",
+    "Qualified pipe ref (domain.pipe_code). Defaults to the bundle's main_pipe, or a directory's entry pipe.",
   )
   .option("--format <format>", "Template format (json, toml)", "json")
   .option("--explicit", "Emit the ceremonial {concept, content} envelope per input")
@@ -575,7 +576,7 @@ program.parseAsync(process.argv).catch((err: unknown) => {
 
   printLogo();
   p.intro("mthds");
-  p.log.error((err as Error).message);
+  p.log.error(formatCliError(err));
   p.outro("");
   process.exit(1);
 });

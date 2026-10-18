@@ -64,7 +64,7 @@ The agent CLI answers on stdout:
 
 - `published_methods` names only the methods the route listed, for a publish by address; for `--local`, see below.
 - `registrations` carries each method's answer whole, with its `name`, so an agent can tell a refusal from a publish method by method.
-- When no method was listed, it fails with a `PublishError` (domain `install`) whose message gives each method's answer, with `registrations` and `skipped_methods` on the error envelope, and `retryable: true` when every failure was one a retry can fix.
+- When no method was listed, it fails with one problem whose `message` gives each method's answer, with `registrations` and `skipped_methods` beside it (`src/agent/problems.ts`, `registrationsProblem`): the problem every answer reads as when they agree, `method.not_found` naming the repository when every method is missing, `runtime.unavailable`, worth a retry, when every failure is one a retry can fix even if they differ, and `runtime.unexpected` otherwise.
 - When some were listed and others not, it succeeds, and the others' answers are in `registrations`.
 
 `mthds-agent publish --local <dir>` keeps its shipped contract for now: it registers nothing, answers `success: true` with `published_methods` naming the selected methods, `registrations: []`, and a `message` saying that nothing was registered and that the methods must be pushed and published by their GitHub address. So `published_methods` alone does not say that a method was listed: an empty `registrations` with that `message` is how a caller tells that nothing was registered.

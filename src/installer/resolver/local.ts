@@ -1,69 +1,68 @@
 import { resolve, join, basename } from "node:path";
 import { readFileSync, readdirSync, statSync } from "node:fs";
-import type {
-  ResolvedRepo,
-  ResolvedMethod,
-  SkippedMethod,
-  MethodsFile,
-} from "../../package/manifest/types.js";
+import type { ResolvedRepo, ResolvedMethod, SkippedMethod } from "../../package/manifest/types.js";
 import { validateManifest } from "../../package/manifest/validate.js";
+import { MethodResolveError, systemErrorCode } from "./exceptions.js";
+import { readMethodTreeOrSkip } from "./method-tree-files.js";
 
-function collectMthdFiles(dirPath: string): MethodsFile[] {
-  const entries = readdirSync(dirPath, { recursive: true, encoding: "utf-8" });
-  const files: MethodsFile[] = [];
-
-  for (const entry of entries) {
-    if (typeof entry === "string" && entry.endsWith(".mthds")) {
-      const fullPath = resolve(dirPath, entry);
-      try {
-        const stat = statSync(fullPath);
-        if (stat.isFile()) {
-          files.push({
-            relativePath: entry,
-            content: readFileSync(fullPath, "utf-8"),
-          });
-        }
-      } catch {
-        // Skip files that can't be read
-      }
-    }
-  }
-
-  return files;
+/** A path the system refused to read for another reason than its absence, as a resolve failure. */
+function unreadablePath(path: string, err: unknown): MethodResolveError {
+  const reason = err instanceof Error ? err.message : String(err);
+  return new MethodResolveError(`Cannot read ${path}: ${reason}`, "unreadable", {
+    cause: err,
+    path,
+    fsCode: systemErrorCode(err),
+  });
 }
 
-export function resolveFromLocal(dirPath: string): ResolvedRepo {
+/**
+ * Resolve the methods of a local repository: each directory under its `methods/` holding a valid
+ * `METHODS.toml` whose `[package].name` is the directory's name, with every file of its tree as the
+ * standard's lister defines it. A method whose manifest or tree is refused is skipped with the
+ * reason. Throws a `MethodResolveError`: `not_found` when the directory or its `methods/` folder
+ * is missing or holds no method, and `unreadable` when the system refuses to read one of them for
+ * another reason, such as `EACCES`.
+ */
+export async function resolveFromLocal(dirPath: string): Promise<ResolvedRepo> {
   const absPath = resolve(dirPath);
 
   // Check directory exists
+  let isDirectory: boolean;
   try {
-    const stat = statSync(absPath);
-    if (!stat.isDirectory()) {
-      throw new Error(`"${absPath}" is not a directory.`);
-    }
+    isDirectory = statSync(absPath).isDirectory();
   } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === "ENOENT") {
-      throw new Error(`Directory not found: ${absPath}`);
+    if (systemErrorCode(err) === "ENOENT") {
+      throw new MethodResolveError(`Directory not found: ${absPath}`, "not_found", { cause: err });
     }
-    throw err;
+    throw unreadablePath(absPath, err);
+  }
+  if (!isDirectory) {
+    throw new MethodResolveError(`"${absPath}" is not a directory.`, "not_found");
   }
 
   // Look for methods/ folder
   const methodsDir = join(absPath, "methods");
+  const noMethodsFolder = `No methods/ folder found in ${absPath}. Expected a "methods/" directory.`;
+  let hasMethodsFolder: boolean;
   try {
-    const stat = statSync(methodsDir);
-    if (!stat.isDirectory()) {
-      throw new Error(`No methods/ folder found in ${absPath}. Expected a "methods/" directory.`);
-    }
+    hasMethodsFolder = statSync(methodsDir).isDirectory();
   } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === "ENOENT") {
-      throw new Error(`No methods/ folder found in ${absPath}. Expected a "methods/" directory.`);
+    if (systemErrorCode(err) === "ENOENT") {
+      throw new MethodResolveError(noMethodsFolder, "not_found", { cause: err });
     }
-    throw err;
+    throw unreadablePath(methodsDir, err);
+  }
+  if (!hasMethodsFolder) {
+    throw new MethodResolveError(noMethodsFolder, "not_found");
   }
 
   // List subdirectories in methods/
-  const entries = readdirSync(methodsDir, { encoding: "utf-8" });
+  let entries: string[];
+  try {
+    entries = readdirSync(methodsDir, { encoding: "utf-8" });
+  } catch (err) {
+    throw unreadablePath(methodsDir, err);
+  }
   const methodDirs: string[] = [];
 
   for (const entry of entries) {
@@ -78,7 +77,7 @@ export function resolveFromLocal(dirPath: string): ResolvedRepo {
   }
 
   if (methodDirs.length === 0) {
-    throw new Error(`No methods found in methods/ of ${absPath}.`);
+    throw new MethodResolveError(`No methods found in methods/ of ${absPath}.`, "not_found");
   }
 
   const methods: ResolvedMethod[] = [];
@@ -124,14 +123,18 @@ export function resolveFromLocal(dirPath: string): ResolvedRepo {
       }
     }
 
-    // Collect .mthds files
-    const files = collectMthdFiles(dirPath);
+    // The method's whole tree, its Python, templates and other files beside its bundles.
+    const tree = await readMethodTreeOrSkip(dirPath);
+    if ("error" in tree) {
+      skipped.push({ dirName, errors: [tree.error] });
+      continue;
+    }
 
     methods.push({
       name: result.manifest.package.name,
       manifest: result.manifest,
       rawManifest: rawToml,
-      files,
+      files: tree.files,
     });
   }
 

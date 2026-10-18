@@ -1,7 +1,10 @@
 import { join, resolve, dirname, sep } from "node:path";
 import { homedir } from "node:os";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { lstatSync, mkdirSync, mkdtempSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import type { ResolvedRepo } from "../../package/manifest/types.js";
+import { treePathViolation } from "../../method-tree/tree-path.js";
+import { installedMethodFiles } from "./method-files.js";
+import { problemError } from "../../problems/errors.js";
 
 /**
  * Generate an executable CLI shim for a method in ~/.mthds/bin/.
@@ -34,9 +37,16 @@ export function generateShim(name: string, installDir: string): void {
 }
 
 /**
- * Write all method files from a ResolvedRepo into targetDir/<method-name>/,
- * generating a CLI shim for each. Refuses any path that escapes targetDir or
- * the per-method install dir (path traversal protection).
+ * Install each method of a ResolvedRepo into targetDir/<method-name>/: every file of its tree,
+ * with its exact bytes, under its tree path, and a CLI shim for each. A method's directory is
+ * replaced as a whole, so a file an earlier install left there that the method no longer holds
+ * does not linger in its tree: the tree is written into a scratch directory beside it, whose
+ * name starts with a dot so no tree or library scan ever takes it in, then moved into place
+ * (`replaceDirectory`), the earlier install being kept until the new one is in place.
+ * Refuses any name or path that escapes targetDir or the method's directory (path traversal
+ * protection), before anything of that method is written, as a `ProblemError` of
+ * `method.package_invalid` whose reason is `invalid_method_name` or `invalid_tree_path`, the fix
+ * being the method owner's. A failure of the file system is the system's error, naming its path.
  *
  * Agent-agnostic: the on-disk layout is identical regardless of which AI
  * coding agent triggered the install.
@@ -48,23 +58,71 @@ export function writeMethodFiles(repo: ResolvedRepo, targetDirInput: string): vo
   for (const method of repo.methods) {
     const installDir = resolve(join(targetDir, method.name));
     if (!installDir.startsWith(targetDir + sep)) {
-      throw new Error(`Path traversal detected: name "${method.name}" escapes target directory.`);
+      throw problemError(
+        "method.package_invalid",
+        { reason: "invalid_method_name" },
+        {
+          message: `Path traversal detected: name "${method.name}" escapes target directory.`,
+          reader: "other",
+        },
+      );
     }
-    mkdirSync(installDir, { recursive: true });
-
-    writeFileSync(join(installDir, "METHODS.toml"), method.rawManifest, "utf-8");
-
-    for (const file of method.files) {
-      const filePath = resolve(join(installDir, file.relativePath));
-      if (!filePath.startsWith(installDir + sep)) {
-        throw new Error(
-          `Path traversal detected: "${file.relativePath}" escapes install directory.`,
+    const files = installedMethodFiles(method);
+    for (const file of files) {
+      const violation = treePathViolation(file.path);
+      const filePath = resolve(installDir, ...file.path.split("/"));
+      if (violation !== null || !filePath.startsWith(installDir + sep)) {
+        throw problemError(
+          "method.package_invalid",
+          { reason: "invalid_tree_path", path: file.path },
+          {
+            message: `Path traversal detected: "${file.path}" escapes install directory.`,
+            reader: "other",
+          },
         );
       }
-      mkdirSync(dirname(filePath), { recursive: true });
-      writeFileSync(filePath, file.content, "utf-8");
+    }
+
+    const staging = mkdtempSync(join(targetDir, ".installing-"));
+    try {
+      for (const file of files) {
+        const filePath = join(staging, ...file.path.split("/"));
+        mkdirSync(dirname(filePath), { recursive: true });
+        writeFileSync(filePath, file.bytes);
+      }
+      replaceDirectory(installDir, staging, `${staging}-previous`);
+    } finally {
+      rmSync(staging, { recursive: true, force: true });
     }
 
     generateShim(method.name, installDir);
   }
+}
+
+/** Whether anything, a link included, lies at `path`. */
+function entryExists(path: string): boolean {
+  try {
+    lstatSync(path);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Put the directory `staging` in place of `target`, so that at every moment one of the two
+ * installs is there: an existing `target` is first renamed to `backup`, `staging` is renamed into
+ * place, and only then is the backup deleted. When that rename fails, the backup is renamed back
+ * before the failure is raised, so a failed install leaves the earlier one as it was.
+ */
+export function replaceDirectory(target: string, staging: string, backup: string): void {
+  const hadTarget = entryExists(target);
+  if (hadTarget) renameSync(target, backup);
+  try {
+    renameSync(staging, target);
+  } catch (err) {
+    if (hadTarget) renameSync(backup, target);
+    throw err;
+  }
+  if (hadTarget) rmSync(backup, { recursive: true, force: true });
 }

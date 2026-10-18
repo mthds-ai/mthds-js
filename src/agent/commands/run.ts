@@ -2,7 +2,7 @@
  * Agent run command — runs a method, pipe, or bundle and outputs JSON.
  */
 
-import { agentError, AGENT_ERROR_DOMAINS } from "../output.js";
+import { agentError, agentErrorOf, agentProblem, unexpectedProblem } from "../output.js";
 import { createRunner } from "../../runners/registry.js";
 import { isPipelexRunner } from "../../cli/commands/utils.js";
 import type { RunnerType } from "../../runners/types.js";
@@ -53,25 +53,27 @@ async function agentRunTarget(options: AgentRunOptions, fallbackMsg: string): Pr
   try {
     runner = createRunner("mthds-agent", options.runner, libraryDirs);
   } catch (err) {
-    agentError((err as Error).message, "RunnerError", {
-      error_domain: AGENT_ERROR_DOMAINS.RUNNER,
-    });
+    agentErrorOf(err, (message) =>
+      agentProblem("client.not_configured", { setting: "runner" }, message),
+    );
   }
 
   if (isPipelexRunner(runner)) {
     try {
       await runner.runPassthrough(extractPassthroughArgs());
     } catch (err) {
-      agentError((err as Error).message, "RunError", {
-        error_domain: AGENT_ERROR_DOMAINS.RUNNER,
-      });
+      agentErrorOf(err, unexpectedProblem);
     }
     return;
   }
 
-  agentError(fallbackMsg, "ArgumentError", {
-    error_domain: AGENT_ERROR_DOMAINS.ARGUMENT,
-  });
+  agentError(
+    agentProblem(
+      "client.argument_invalid",
+      { argument: "target", reason: "unsupported" },
+      fallbackMsg,
+    ),
+  );
 }
 
 export async function agentRunMethod(_name: string, options: AgentRunOptions): Promise<void> {

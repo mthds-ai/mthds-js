@@ -18,6 +18,10 @@
 - **The Codex hook reads `pipelex-agent`'s problem documents**: `mthds-agent codex hook` blocks an edit on a problem whose fix is in the file, listing each item with its suggested fix, and passes a problem of the account, the operator, the runtime or the machine's set-up to the agent as context; a problem whose domain it does not know reads as the codes of its family it knows, and blocks when the hook knows nothing of its family, such as an extension code, rather than taking the protocol's `runtime` reading, which would only warn. The envelope of a `pipelex-agent` older than problem documents is still read.
 - **`health()` is bounded and read like every route**: it calls `GET /health` with a time limit of thirty seconds and reads its answer by the same rules as the protocol routes.
 
+### Fixed
+
+- **`mthds-agent plxt fmt` and `plxt lint` forward only what `plxt` reads**: an option of `mthds-agent`'s own written after the command, `--runner`, `--log-level`, `--auto-install` or `-L`/`--library-dir` in any form the command line's parser reads it in, is no longer forwarded to `plxt`, which refused it, and a `--` written before any operand, between `plxt` and its command included, is no longer lost but given back after the command, so that what follows it reaches `plxt` as operands.
+
 ### Removed
 
 - **`ApiUnreachableError`, `PipelineExecuteTimeoutError`, `ClientAuthenticationError` and the agent's error tables (Breaking)**: an unreachable runtime is an `ApiTransportError` of `client.unreachable`; a run cut short behind the hosted gateway reads as the gateway's answer or as `client.outcome_unknown`, the client no longer guessing a timeout from a `502` or `504`; `ValidationErrorItem`, `ValidationError`, `UserAction`, `ProblemDetails`, `AGENT_ERROR_DOMAINS`, `RUNNER_ERROR_DOMAINS` and `AGENT_ERROR_HINTS` go with them.

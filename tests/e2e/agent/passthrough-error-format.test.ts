@@ -113,6 +113,45 @@ describe.skipIf(process.platform === "win32")(
       expect(forwarded.at(-1)).toBe("file.mthds");
     });
 
+    // Every option of mthds-agent's own sets how mthds-agent runs, and plxt takes none of them, so
+    // none is forwarded, in any form Commander reads it in, wherever it stands before `--`.
+    it.each([
+      ["--auto-install", ["--auto-install"]],
+      ["--runner", ["--runner", "api"]],
+      ["--runner, in its = form", ["--runner=api"]],
+      ["--log-level", ["--log-level", "DEBUG"]],
+      ["--log-level, in its = form", ["--log-level=DEBUG"]],
+      ["-L", ["-L", "./lib"]],
+      ["-L, its value attached", ["-L./lib"]],
+      ["--library-dir", ["--library-dir", "./lib"]],
+      ["--library-dir, in its = form", ["--library-dir=./lib"]],
+    ])("drops mthds-agent's %s given after the file", (_option, option) => {
+      expect(forwardedArgs("plxt", "fmt", "file.mthds", ...option)).toEqual(["fmt", "file.mthds"]);
+      expect(forwardedArgs("plxt", "lint", ...option, "file.mthds")).toEqual([
+        "lint",
+        "file.mthds",
+      ]);
+    });
+
+    it("keeps plxt's own options while dropping mthds-agent's", () => {
+      expect(
+        forwardedArgs("plxt", "fmt", "--check", "--auto-install", "file.mthds", "-L", "./lib"),
+      ).toEqual(["fmt", "--check", "file.mthds"]);
+    });
+
+    it("forwards everything after a -- written between plxt and its command as operands", () => {
+      // The command line's parser consumes that `--`; it is given back after the command, so
+      // what follows it reaches plxt as operands, mthds-agent's own options included.
+      expect(
+        forwardedArgs("plxt", "--", "fmt", "file.mthds", "--error-format", "json", "-L", "x"),
+      ).toEqual(["fmt", "--", "file.mthds", "--error-format", "json", "-L", "x"]);
+      expect(forwardedArgs("plxt", "--error-format", "json", "--", "lint", "--runner")).toEqual([
+        "lint",
+        "--",
+        "--runner",
+      ]);
+    });
+
     it("forwards everything from -- on as written, the marker included", () => {
       expect(forwardedArgs("plxt", "fmt", "file.mthds", "--", "--error-format", "json")).toEqual([
         "fmt",

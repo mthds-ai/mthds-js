@@ -8,6 +8,7 @@ import {
   problemOfError,
   resolveErrorFormat,
   unexpectedProblem,
+  withoutOptions,
 } from "../../../src/agent/output.js";
 import { BINARY_RECOVERY, buildInstallCommand } from "../../../src/agent/binaries.js";
 import { buildProblem } from "../../../src/problems/build.js";
@@ -67,6 +68,46 @@ describe("resolveErrorFormat", () => {
     expect(resolveErrorFormat(["node", "x", "--error-format", "yaml", "--format", "json"])).toBe(
       "json",
     );
+  });
+});
+
+describe("withoutOptions", () => {
+  const valued = ["--error-format", "--runner", "-L", "--library-dir"];
+  const flags = ["--auto-install"];
+
+  it("drops each option in every form Commander reads it in, and keeps the rest", () => {
+    expect(
+      withoutOptions(
+        [
+          "--check",
+          "--error-format",
+          "json",
+          "--runner=api",
+          "-L",
+          "lib",
+          "-Llib",
+          "--library-dir=lib",
+          "--auto-install",
+          "file.mthds",
+        ],
+        valued,
+        flags,
+      ),
+    ).toEqual(["--check", "file.mthds"]);
+  });
+
+  it("keeps an option sharing only the start of a name, and a lone short option's look-alike", () => {
+    expect(withoutOptions(["--runners", "--auto-installed", "-q"], valued, flags)).toEqual([
+      "--runners",
+      "--auto-installed",
+      "-q",
+    ]);
+  });
+
+  it("keeps -- and everything after it as written", () => {
+    expect(
+      withoutOptions(["a", "--", "--runner", "api", "--auto-install", "-Lx"], valued, flags),
+    ).toEqual(["a", "--", "--runner", "api", "--auto-install", "-Lx"]);
   });
 });
 

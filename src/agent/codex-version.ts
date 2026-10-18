@@ -48,6 +48,8 @@ export const CODEX_HOOKS_UNAVAILABLE = "CODEX_HOOKS_UNAVAILABLE";
 export interface CodexVersionFinding {
   code: typeof CODEX_VERSION_TOO_OLD | typeof CODEX_HOOKS_UNAVAILABLE;
   severity: "warning" | "error";
+  /** The Codex version detected. */
+  version: string;
   message: string;
 }
 
@@ -95,12 +97,14 @@ export function assessCodexVersion(): CodexVersionFinding | null {
     return {
       code: CODEX_HOOKS_UNAVAILABLE,
       severity: "error",
+      version: detected,
       message: `Codex ${detected} cannot load plugin-bundled hooks: they were gated behind the plugin_hooks opt-in flag (default-off before Codex ${CODEX_PLUGIN_HOOKS_MIN}), which was removed in 0.134 and can no longer be written — the mthds validation hook will not load. Upgrade Codex to ${MIN_CODEX_VERSION} or newer, then re-run \`mthds-agent codex apply-config\`.`,
     };
   }
   return {
     code: CODEX_VERSION_TOO_OLD,
     severity: "warning",
+    version: detected,
     message: `Codex ${detected} is older than ${MIN_CODEX_VERSION}, the minimum version the mthds plugin supports — the bundled validation hook may not load. Upgrade Codex to ${MIN_CODEX_VERSION} or newer.`,
   };
 }

@@ -3,10 +3,11 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-// When the runner refuses a bundle, the `mthds` CLI prints each validation item, and
-// an item that carries a suggested fix is followed by `Suggested fix: <description>`,
-// so the person sees what to do as well as what is wrong — on `validate`, `build`,
-// the validation step of `install`, and `run` when the runner refuses to run.
+// When the runner refuses a bundle, the `mthds` CLI prints each problem item, and an
+// item that carries a suggested fix is followed by `Suggested fix (<safety>, <rule>):
+// <description>`, so the person sees what to do as well as what is wrong — on
+// `validate`, `build`, the validation step of `install`, and `run` when the runner
+// refuses to run.
 
 // ── Mocks ────────────────────────────────────────────────────────────
 
@@ -42,20 +43,17 @@ import { buildInputsPipe } from "../../../src/cli/commands/build.js";
 import { installMethod } from "../../../src/cli/commands/install.js";
 import { runPipe } from "../../../src/cli/commands/run.js";
 import { ApiResponseError } from "../../../src/runners/api/exceptions.js";
-import type { ValidationErrorItem } from "../../../src/runners/api/models.js";
+import type { Problem, ProblemItem } from "../../../src/problems/types.js";
 import type { ResolvedRepo } from "../../../src/package/manifest/types.js";
 import type { Runner } from "../../../src/runners/types.js";
 
 const FIX_DESCRIPTION =
   "Replace model 'gpt-5.1' of pipe 'summarize' with 'gpt-5', its one close match in the model deck";
 
-const UNKNOWN_MODEL_ITEM: ValidationErrorItem = {
-  category: "pipe_validation",
-  error_type: "unknown_model",
-  message: "Model handle 'gpt-5.1' was not found in the model deck.",
-  pipe_code: "summarize",
-  source: "demo.mthds",
-  field_name: "model",
+const UNKNOWN_MODEL_ITEM: ProblemItem = {
+  code: "model.unknown",
+  detail: "Model handle 'gpt-5.1' was not found in the model deck.",
+  location: { pipe: "summarize", field: "model", file: "demo.mthds" },
   suggested_fix: {
     fix_code: "rename-model",
     description: FIX_DESCRIPTION,
@@ -71,18 +69,20 @@ const UNKNOWN_MODEL_ITEM: ValidationErrorItem = {
   },
 };
 
-const NO_FIX_ITEM: ValidationErrorItem = {
-  category: "pipe_validation",
-  message: "Pipe 'demo.main' refers to 'summarise', which no bundle declares.",
-  pipe_code: "main",
-  source: "demo.mthds",
-  missing_pipe_code: "demo.summarise",
+const NO_FIX_ITEM: ProblemItem = {
+  code: "method.pipe_unresolved",
+  detail: "Pipe 'demo.main' refers to 'summarise', which no bundle declares.",
+  params: { pipe_ref: "demo.summarise" },
+  location: { pipe: "main" },
 };
+
+const FIX_LINE = `Suggested fix (unsafe, rename-model): ${FIX_DESCRIPTION}`;
+const MODEL_LINE = `- model.unknown: ${UNKNOWN_MODEL_ITEM.detail} (pipe 'summarize', field 'model', file 'demo.mthds')`;
 
 const INVALID = {
   is_valid: false as const,
   message: "MTHDS validation found errors",
-  validation_errors: [UNKNOWN_MODEL_ITEM, NO_FIX_ITEM],
+  errors: [UNKNOWN_MODEL_ITEM, NO_FIX_ITEM],
 };
 
 const workDir = mkdtempSync(join(tmpdir(), "mthds-suggested-fix-"));
@@ -123,10 +123,12 @@ describe("mthds CLI prints a validation item's suggested fix", () => {
 
     await expect(validatePipe(bundlePath, {})).rejects.toThrow("__exit__");
 
+    expect(errorLines()).toContain("MTHDS validation found errors");
+    expect(errorLines()).toContain(`${MODEL_LINE}\n  ${FIX_LINE}`);
+    // An item the runner located in no file names the bundle the person passed.
     expect(errorLines()).toContain(
-      `demo.mthds: [pipe_validation] ${UNKNOWN_MODEL_ITEM.message}\n  Suggested fix: ${FIX_DESCRIPTION}`,
+      `- method.pipe_unresolved: ${NO_FIX_ITEM.detail} (pipe 'main', file '${bundlePath}')`,
     );
-    expect(errorLines()).toContain(`demo.mthds: [pipe_validation] ${NO_FIX_ITEM.message}`);
   });
 
   it("build prints the fix under the item that has one", async () => {
@@ -134,10 +136,8 @@ describe("mthds CLI prints a validation item's suggested fix", () => {
 
     await expect(buildInputsPipe(bundlePath, {})).rejects.toThrow("__exit__");
 
-    expect(errorLines()).toContain(
-      `demo.mthds · summarize: ${UNKNOWN_MODEL_ITEM.message}\n  Suggested fix: ${FIX_DESCRIPTION}`,
-    );
-    expect(errorLines()).toContain(`demo.mthds · main: ${NO_FIX_ITEM.message}`);
+    expect(errorLines()).toContain(`${MODEL_LINE}\n  ${FIX_LINE}`);
+    expect(errorLines()).toContain(`- method.pipe_unresolved: ${NO_FIX_ITEM.detail} (pipe 'main')`);
   });
 
   it("install's validation step prints the fix under the item that has one", async () => {
@@ -166,31 +166,39 @@ describe("mthds CLI prints a validation item's suggested fix", () => {
 
     await expect(installMethod({ dir: workDir })).rejects.toThrow("__exit__");
 
+    expect(errorLines()).toContain("demo: MTHDS validation found errors");
+    expect(errorLines()).toContain(`  ${MODEL_LINE}\n    ${FIX_LINE}`);
     expect(errorLines()).toContain(
-      `  [pipe_validation] ${UNKNOWN_MODEL_ITEM.message}\n    Suggested fix: ${FIX_DESCRIPTION}`,
+      `  - method.pipe_unresolved: ${NO_FIX_ITEM.detail} (pipe 'main')`,
     );
-    expect(errorLines()).toContain(`  [pipe_validation] ${NO_FIX_ITEM.message}`);
   });
 });
 
 // A run route refuses an invalid method with a 422 problem document listing its items,
-// which the API runner raises as an `ApiResponseError` carrying `validationErrors`.
-function runRefusal(validationErrors: ValidationErrorItem[] | undefined): ApiResponseError {
-  return new ApiResponseError(
-    "API POST /v1/execute failed (422): The method is invalid and was not run.",
-    "http://localhost:8081",
-    422,
-    "Unprocessable Entity",
-    "{}",
-    "ValidateBundleError",
-    "The method is invalid and was not run.",
-    validationErrors,
-    { problem: { errorDomain: "input" } },
-  );
+// which the API runner raises as an `ApiResponseError` carrying the problem whole.
+function runRefusal(errors: ProblemItem[] | undefined): ApiResponseError {
+  const problem: Problem = {
+    type: "https://mthds.ai/errors/method.invalid",
+    title: "The method does not validate",
+    status: 422,
+    detail: "The method is invalid and was not run.",
+    code: "method.invalid",
+    domain: "method",
+    retry: "no",
+    next_step: { kind: "change_method", detail: "Fix each fault the errors list." },
+    ...(errors === undefined ? {} : { errors }),
+  };
+  return new ApiResponseError(problem, {
+    apiUrl: "http://localhost:8081",
+    route: "POST /v1/execute",
+    status: 422,
+    statusText: "Unprocessable Entity",
+    responseBody: "{}",
+  });
 }
 
-describe("mthds run prints a refused run's validation items", () => {
-  it("prints each item with its locators, and the fix under the item that has one", async () => {
+describe("mthds run prints a refused run's problem items", () => {
+  it("prints each item with its location, and the fix under the item that has one", async () => {
     useRunner({
       type: "api",
       execute: vi.fn().mockRejectedValue(runRefusal([UNKNOWN_MODEL_ITEM, NO_FIX_ITEM])),
@@ -204,24 +212,28 @@ describe("mthds run prints a refused run's validation items", () => {
     expect(spinner.stop).not.toHaveBeenCalled();
     expect(errorLines()).toEqual([
       [
-        "API POST /v1/execute failed (422): The method is invalid and was not run.",
-        `- [pipe_validation] ${UNKNOWN_MODEL_ITEM.message} (pipe: summarize, field: model, source: demo.mthds)`,
-        `  Suggested fix: ${FIX_DESCRIPTION}`,
-        `- [pipe_validation] ${NO_FIX_ITEM.message} (pipe: main, missing pipe: demo.summarise, source: demo.mthds)`,
-        "Error domain: input (the request must change)",
+        "The method does not validate: The method is invalid and was not run.",
+        "POST /v1/execute failed (422 Unprocessable Entity).",
+        "Next step: Fix each fault the errors list.",
+        "Code: method.invalid (domain method, retry no)",
+        MODEL_LINE,
+        `  ${FIX_LINE}`,
+        `- method.pipe_unresolved: ${NO_FIX_ITEM.detail} (pipe 'main')`,
       ].join("\n"),
     ]);
   });
 
-  it("prints a refusal with no items as the message and the problem members alone", async () => {
+  it("prints a refusal with no items as the route that answered and the problem's members alone", async () => {
     useRunner({ type: "api", execute: vi.fn().mockRejectedValue(runRefusal(undefined)) });
 
     await expect(runPipe("demo.main", {})).rejects.toThrow("__exit__");
 
     expect(errorLines()).toEqual([
       [
-        "API POST /v1/execute failed (422): The method is invalid and was not run.",
-        "Error domain: input (the request must change)",
+        "The method does not validate: The method is invalid and was not run.",
+        "POST /v1/execute failed (422 Unprocessable Entity).",
+        "Next step: Fix each fault the errors list.",
+        "Code: method.invalid (domain method, retry no)",
       ].join("\n"),
     ]);
   });

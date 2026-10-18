@@ -2,6 +2,9 @@ import { readFileSync } from "node:fs";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { emitInputsTemplate, methodSelector } from "../../../src/agent/commands/api-commands.js";
 import type { InputsRendering } from "../../../src/agent/commands/api-commands.js";
+import { chooseErrorFormat } from "../../../src/agent/output.js";
+import { buildProblem } from "../../../src/problems/build.js";
+import type { Problem } from "../../../src/problems/types.js";
 import { ApiResponseError } from "../../../src/runners/api/exceptions.js";
 import type { InputForm } from "../../../src/protocol/input_form.js";
 import type { PipeIOResponse, PipeIOValidReport, Runner } from "../../../src/runners/types.js";
@@ -9,7 +12,7 @@ import type { PipeIOResponse, PipeIOValidReport, Runner } from "../../../src/run
 // `mthds-agent inputs` on the API runner reads a pipe's input form from
 // `POST /v1/pipe-io` and projects the fill-in template itself. These tests pin the
 // request it sends, the two rendering axes against the shared projection corpus, and
-// the envelope of each way the call can fail.
+// the problem of each way the call can fail.
 
 const CORPUS_URL = new URL("../../fixtures/protocol/", import.meta.url);
 const INPUT_FORM = JSON.parse(
@@ -45,17 +48,17 @@ function apiRunner(pipeIo: ReturnType<typeof vi.fn>): Runner {
   return { type: "api", pipeIo } as unknown as Runner;
 }
 
-function refusal(status: number, errorType: string, detail: string): ApiResponseError {
+/** A `/v1/pipe-io` refusal: the runner's problem of `code`, as the client raises it. */
+function refusal(problem: Problem): ApiResponseError {
   return new ApiResponseError(
-    `API POST /v1/pipe-io failed (${status}): ${detail}`,
-    "http://localhost:8081",
-    status,
-    "",
-    "{}",
-    errorType,
-    detail,
-    undefined,
-    { problem: { errorDomain: "input", requestId: "req-pipe-io" } },
+    { ...problem, request_id: "req-pipe-io" },
+    {
+      apiUrl: "http://localhost:8081",
+      route: "POST /v1/pipe-io",
+      status: problem.status ?? 422,
+      statusText: "",
+      responseBody: JSON.stringify(problem),
+    },
   );
 }
 
@@ -68,6 +71,7 @@ describe("emitInputsTemplate", () => {
   let exitSpy: ReturnType<typeof vi.spyOn>;
 
   beforeEach(() => {
+    chooseErrorFormat("json");
     stdoutSpy = vi.spyOn(process.stdout, "write").mockReturnValue(true);
     stderrSpy = vi.spyOn(process.stderr, "write").mockReturnValue(true);
     // agentError ends in process.exit(1); throw a sentinel so the test can catch it.
@@ -77,6 +81,7 @@ describe("emitInputsTemplate", () => {
   });
 
   afterEach(() => {
+    chooseErrorFormat(undefined);
     vi.restoreAllMocks();
   });
 
@@ -185,12 +190,13 @@ describe("emitInputsTemplate", () => {
 
   describe("the failures", () => {
     // An invalid closure is a PRODUCED verdict (a 200 `is_valid: false` body), not a
-    // request/transport failure: the `ValidateBundleError` envelope `validate` emits.
-    it("emits a ValidateBundleError envelope carrying the verdict fields", async () => {
+    // request/transport failure: the `method.invalid` problem `validate` writes.
+    it("writes the method.invalid problem carrying the verdict's items", async () => {
+      const item = { code: "method.syntax", detail: "The method does not parse (boom)." };
       const pipeIo = vi.fn().mockResolvedValue({
         is_valid: false,
         message: "Bundle is invalid",
-        validation_errors: [{ category: "blueprint_validation", message: "boom" } as never],
+        errors: [item],
       } satisfies PipeIOResponse);
 
       await expect(
@@ -199,49 +205,61 @@ describe("emitInputsTemplate", () => {
 
       expect(exitSpy).toHaveBeenCalledWith(1);
       const envelope = errorEnvelope();
-      expect(envelope.error_type).toBe("ValidateBundleError");
-      expect(envelope.error_domain).toBe("validation");
+      expect(envelope.code).toBe("method.invalid");
+      expect(envelope.domain).toBe("method");
       expect(envelope.is_valid).toBe(false);
-      expect(envelope.validation_errors).toEqual([
-        { category: "blueprint_validation", message: "boom" },
-      ]);
+      expect(envelope.message).toBe("Bundle is invalid");
+      expect(envelope.errors).toEqual([item]);
     });
 
-    // A refused selection is the caller's argument at fault, and the runner's own
-    // sentence is where it names the candidates, so it is printed alone.
-    it.each(["EntryPipeNotFoundError", "EntryPipeAmbiguousError"])(
-      "turns a 422 typed %s into an ArgumentError carrying the runner's detail",
-      async (errorType) => {
-        const detail = "Pipe 'x.nope' not found in the submitted closure.";
-        const pipeIo = vi.fn().mockRejectedValue(refusal(422, errorType, detail));
+    // A refused selection is the caller's argument at fault, and the problem's
+    // parameters are where the runner lists the candidates, so it is relayed whole.
+    it.each([
+      buildProblem(
+        "request.pipe_not_found",
+        { pipe: "x.nope", suggestions: ["x.main"] },
+        { status: 422 },
+      ),
+      buildProblem(
+        "request.pipe_ambiguous",
+        { pipe: "nope", candidates: ["x.nope", "y.nope"] },
+        { status: 422 },
+      ),
+    ])("relays the runner's refusal of a selection, $code, whole", async (problem) => {
+      const pipeIo = vi.fn().mockRejectedValue(refusal(problem));
 
-        await expect(
-          emitInputsTemplate(apiRunner(pipeIo), FILES, "x.nope", JSON_COMPACT),
-        ).rejects.toThrow("__exit__");
+      await expect(
+        emitInputsTemplate(apiRunner(pipeIo), FILES, "x.nope", JSON_COMPACT),
+      ).rejects.toThrow("__exit__");
 
-        expect(errorEnvelope()).toMatchObject({
-          error_type: "ArgumentError",
-          message: detail,
-          error_domain: "input",
-          request_id: "req-pipe-io",
-        });
-      },
-    );
+      const { status: _status, ...relayed } = problem;
+      expect(errorEnvelope()).toEqual({
+        ...relayed,
+        request_id: "req-pipe-io",
+        server_answer: { route: "POST /v1/pipe-io", status: 422 },
+      });
+      expect(errorEnvelope()).toMatchObject({ domain: "input" });
+    });
 
-    // Any other 422 is a malformed request, not a selection — classified by the
-    // error_type, never by what the message says.
-    it("keeps any other 422 a RunnerError quoting the runner", async () => {
-      const err = refusal(422, "ValidationError", "Pipe 'x.nope' not found");
-      const pipeIo = vi.fn().mockRejectedValue(err);
+    // Any other 422 is a malformed request, not a selection — relayed with its own code,
+    // never reclassified by what its sentence says.
+    it("relays any other 422 with its own code", async () => {
+      const problem = buildProblem(
+        "request.invalid",
+        { field: "pipe_ref" },
+        { status: 422, extra: { message: "Pipe 'x.nope' not found" } },
+      );
+      const pipeIo = vi.fn().mockRejectedValue(refusal(problem));
 
       await expect(
         emitInputsTemplate(apiRunner(pipeIo), FILES, "x.nope", JSON_COMPACT),
       ).rejects.toThrow("__exit__");
 
       expect(errorEnvelope()).toMatchObject({
-        error_type: "RunnerError",
-        message: err.message,
-        error_domain: "input",
+        code: "request.invalid",
+        domain: "input",
+        params: { field: "pipe_ref" },
+        request_id: "req-pipe-io",
       });
     });
 
@@ -255,7 +273,10 @@ describe("emitInputsTemplate", () => {
       ).rejects.toThrow("__exit__");
 
       const envelope = errorEnvelope();
-      expect(envelope.error_type).toBe("RunnerError");
+      expect(envelope).toMatchObject({
+        code: "client.response_unreadable",
+        params: { status: 200 },
+      });
       expect(envelope.message).toContain(`'${PIPE_REF}'`);
       expect(envelope.message).toContain("other.pipe");
     });
@@ -288,7 +309,7 @@ describe("emitInputsTemplate", () => {
       ).rejects.toThrow("__exit__");
 
       const envelope = errorEnvelope();
-      expect(envelope.error_type).toBe("RunnerError");
+      expect(envelope.code).toBe("runtime.unexpected");
       expect(envelope.message).toContain(`Cannot render the inputs template of '${PIPE_REF}'`);
       expect(stdout()).toBe("");
     });
@@ -297,6 +318,7 @@ describe("emitInputsTemplate", () => {
 
 describe("methodSelector", () => {
   beforeEach(() => {
+    chooseErrorFormat("json");
     vi.spyOn(process.stderr, "write").mockReturnValue(true);
     vi.spyOn(process, "exit").mockImplementation((() => {
       throw new Error("__exit__");
@@ -304,6 +326,7 @@ describe("methodSelector", () => {
   });
 
   afterEach(() => {
+    chooseErrorFormat(undefined);
     vi.restoreAllMocks();
   });
 
@@ -317,12 +340,15 @@ describe("methodSelector", () => {
     });
   });
 
-  it("refuses a bare installed-method name with an ArgumentError", () => {
+  it("refuses a bare installed-method name as an argument", () => {
     expect(() => methodSelector("my-method")).toThrow("__exit__");
     const envelope = JSON.parse(
       vi.mocked(process.stderr.write).mock.calls[0]![0] as string,
     ) as Record<string, unknown>;
-    expect(envelope.error_type).toBe("ArgumentError");
+    expect(envelope).toMatchObject({
+      code: "client.argument_invalid",
+      params: { argument: "target", reason: "not_a_method_address" },
+    });
     expect(envelope.message).toContain("--runner pipelex");
   });
 
@@ -334,12 +360,15 @@ describe("methodSelector", () => {
     "/abs/path",
     "~/methods/x",
     "dir/bundle.mthds",
-  ])("refuses the local path %s with an ArgumentError pointing at inputs bundle", (target) => {
+  ])("refuses the local path %s as an argument, pointing at inputs bundle", (target) => {
     expect(() => methodSelector(target)).toThrow("__exit__");
     const envelope = JSON.parse(
       vi.mocked(process.stderr.write).mock.calls[0]![0] as string,
     ) as Record<string, unknown>;
-    expect(envelope.error_type).toBe("ArgumentError");
+    expect(envelope).toMatchObject({
+      code: "client.argument_invalid",
+      params: { argument: "target", reason: "local_path" },
+    });
     expect(envelope.message).toContain("is a local path");
     expect(envelope.message).toContain("inputs bundle");
   });

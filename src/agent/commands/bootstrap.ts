@@ -18,7 +18,7 @@ import { checkBinaryVersion } from "../../installer/runtime/version-check.js";
 import type { VersionCheckResult } from "../../installer/runtime/version-check.js";
 import { BINARY_RECOVERY } from "../binaries.js";
 import type { BinaryRecoveryInfo } from "../binaries.js";
-import { agentError, AGENT_ERROR_DOMAINS } from "../output.js";
+import { agentError, agentProblem } from "../output.js";
 import { clearCache, writeUpgradeMarker } from "../update-cache.js";
 import { clearSnooze } from "../snooze.js";
 import { loadConfig } from "../../config/config.js";
@@ -64,18 +64,22 @@ export async function agentBootstrap(options: BootstrapOptions = {}): Promise<vo
       installUv();
     } catch (err) {
       agentError(
-        `Could not auto-install uv: ${errorMsg(err)}. Install manually: https://docs.astral.sh/uv/getting-started/installation/`,
-        "InstallError",
-        { error_domain: AGENT_ERROR_DOMAINS.INSTALL },
+        agentProblem(
+          "client.tool_missing",
+          { tool: "uv" },
+          `Could not auto-install uv: ${errorMsg(err)}. Install manually: https://docs.astral.sh/uv/getting-started/installation/`,
+        ),
       );
       return;
     }
 
     if (!isUvInstalled()) {
       agentError(
-        `uv was installed but is not reachable in PATH. Restart your shell or add the uv bin directory to PATH.`,
-        "InstallError",
-        { error_domain: AGENT_ERROR_DOMAINS.INSTALL },
+        agentProblem(
+          "client.tool_missing",
+          { tool: "uv" },
+          "uv was installed but is not reachable in PATH. Restart your shell or add the uv bin directory to PATH.",
+        ),
       );
       return;
     }

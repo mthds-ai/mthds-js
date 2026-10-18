@@ -73,4 +73,53 @@ describe("extractArgsForPipelexAgent", () => {
     setArgv(["models", "pipelex", "DEBUG"]);
     expect(extractArgsForPipelexAgent()).toEqual(["models", "pipelex", "DEBUG"]);
   });
+
+  it.each([
+    ["before the command", ["--error-format", "json", "run", "bundle", "x.mthds"]],
+    ["before the command, in its = form", ["--error-format=json", "run", "bundle", "x.mthds"]],
+    ["on the command", ["run", "bundle", "x.mthds", "--error-format", "json"]],
+    ["on the command, in its = form", ["run", "bundle", "--error-format=json", "x.mthds"]],
+  ])("moves --error-format given %s after the command", (_where, args) => {
+    setArgv(args);
+    expect(extractArgsForPipelexAgent()).toEqual([
+      "run",
+      "bundle",
+      "x.mthds",
+      "--error-format",
+      "json",
+    ]);
+  });
+
+  it("keeps the last --error-format written", () => {
+    setArgv(["--error-format", "markdown", "validate", "bundle", "x.mthds", "--error-format=json"]);
+    expect(extractArgsForPipelexAgent()).toEqual([
+      "validate",
+      "bundle",
+      "x.mthds",
+      "--error-format",
+      "json",
+    ]);
+  });
+
+  it("drops --error-format for a command pipelex-agent does not give it", () => {
+    setArgv(["--error-format", "json", "inputs", "bundle", "x.mthds", "--error-format=json"]);
+    expect(extractArgsForPipelexAgent({ forwardErrorFormat: false })).toEqual([
+      "inputs",
+      "bundle",
+      "x.mthds",
+    ]);
+  });
+
+  it("forwards the operands after -- verbatim, after the options", () => {
+    setArgv(["--error-format", "json", "run", "bundle", "--", "--error-format", "x.mthds"]);
+    expect(extractArgsForPipelexAgent()).toEqual([
+      "run",
+      "bundle",
+      "--error-format",
+      "json",
+      "--",
+      "--error-format",
+      "x.mthds",
+    ]);
+  });
 });

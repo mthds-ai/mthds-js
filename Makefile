@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help install check c test t clean build rebuild run dev pack all depcruise vendor-tree-corpus case-folding
+.PHONY: help install check c test t clean build rebuild run dev pack all depcruise vendor-tree-corpus case-folding vendor-error-registry error-registry
 
 # Colors
 BLUE := \033[0;34m
@@ -36,6 +36,9 @@ make depcruise  - Check architectural boundaries
 
 make vendor-tree-corpus - Copy the method-tree corpus from ../conformance (or CONFORMANCE=<checkout>)
 make case-folding       - Regenerate the case folding table from scripts/unicode/
+make vendor-error-registry REF=<commit> [MTHDS=<checkout>] - Vendor the core error registry at a commit of ../mthds (or MTHDS=<checkout>)
+make vendor-error-registry RELEASE=<version>                - Vendor the core error registry of an mthds release
+make error-registry     - Regenerate src/problems/registry.generated.ts from the vendored registry
 
 make pack       - Create tarball for local npx testing
 
@@ -75,6 +78,21 @@ vendor-tree-corpus:
 case-folding:
 	$(call PRINT_TITLE,"Generating the case folding table")
 	@node scripts/gen-case-folding.mjs
+
+vendor-error-registry:
+	$(call PRINT_TITLE,"Vendoring the core error registry")
+	@if [ -n "$(RELEASE)" ]; then \
+		node scripts/vendor-error-registry.mjs --release $(RELEASE); \
+	elif [ -n "$(REF)" ]; then \
+		node scripts/vendor-error-registry.mjs $(REF) $(MTHDS); \
+	else \
+		echo "$(RED)Give REF=<commit> (with MTHDS=<checkout> when it is not ../mthds) or RELEASE=<version>$(NC)"; \
+		exit 1; \
+	fi
+
+error-registry:
+	$(call PRINT_TITLE,"Generating the error registry module")
+	@node scripts/gen-error-registry.mjs
 
 check:
 	@npm run check

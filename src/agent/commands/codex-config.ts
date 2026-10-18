@@ -48,7 +48,8 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "
 import { dirname, join } from "node:path";
 import { homedir } from "node:os";
 import { parse as parseToml } from "smol-toml";
-import { agentError, agentSuccess, AGENT_ERROR_DOMAINS } from "../output.js";
+import { agentError, agentProblem, agentSuccess } from "../output.js";
+import { fileErrorReason } from "../problems.js";
 import { assessCodexVersion } from "../codex-version.js";
 import { inspectLegacyCodexHook, removeLegacyCodexHook } from "./codex.js";
 
@@ -379,9 +380,13 @@ export async function agentCodexApplyConfig(options: ApplyConfigOptions = {}): P
     try {
       raw = readFileSync(file, "utf8");
     } catch (err) {
-      agentError(`Failed to read ${file}: ${(err as Error).message}`, "IOError", {
-        error_domain: AGENT_ERROR_DOMAINS.IO,
-      });
+      agentError(
+        agentProblem(
+          "client.file_unreadable",
+          { path: file, reason: fileErrorReason(err) },
+          `Failed to read ${file}: ${(err as Error).message}`,
+        ),
+      );
       return;
     }
   }
@@ -391,17 +396,23 @@ export async function agentCodexApplyConfig(options: ApplyConfigOptions = {}): P
     parsed = parseTomlOrEmpty(raw);
   } catch (err) {
     agentError(
-      `Invalid TOML in ${file}: ${(err as Error).message}. Fix the file by hand or delete it and re-run.`,
-      "ConfigError",
-      { error_domain: AGENT_ERROR_DOMAINS.CONFIG },
+      agentProblem(
+        "client.not_configured",
+        { setting: "codex_config" },
+        `Invalid TOML in ${file}: ${(err as Error).message}. Fix the file by hand or delete it and re-run.`,
+      ),
     );
     return;
   }
 
   if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
-    agentError(`${file} does not contain a TOML table at the top level.`, "ConfigError", {
-      error_domain: AGENT_ERROR_DOMAINS.CONFIG,
-    });
+    agentError(
+      agentProblem(
+        "client.not_configured",
+        { setting: "codex_config" },
+        `${file} does not contain a TOML table at the top level.`,
+      ),
+    );
     return;
   }
 
@@ -422,9 +433,11 @@ export async function agentCodexApplyConfig(options: ApplyConfigOptions = {}): P
         `  [${conflict.table}] ${conflict.key} = ${conflict.current} (the mthds plugin needs ${conflict.required})`,
     );
     agentError(
-      `~/.codex/config.toml has settings that conflict with the mthds plugin:\n${lines.join("\n")}\nChange them by hand, then re-run \`mthds-agent codex apply-config\`.`,
-      "ConfigError",
-      { error_domain: AGENT_ERROR_DOMAINS.CONFIG },
+      agentProblem(
+        "client.not_configured",
+        { setting: "codex_config" },
+        `~/.codex/config.toml has settings that conflict with the mthds plugin:\n${lines.join("\n")}\nChange them by hand, then re-run \`mthds-agent codex apply-config\`.`,
+      ),
     );
     return;
   }
@@ -434,9 +447,13 @@ export async function agentCodexApplyConfig(options: ApplyConfigOptions = {}): P
   // could write to fix it, so reporting APPLIED/ALREADY_OK would present a
   // setup as complete while the mthds hook can never load.
   if (versionFinding?.severity === "error") {
-    agentError(versionFinding.message, "ConfigError", {
-      error_domain: AGENT_ERROR_DOMAINS.CONFIG,
-    });
+    agentError(
+      agentProblem(
+        "client.tool_outdated",
+        { tool: "codex", version: versionFinding.version },
+        versionFinding.message,
+      ),
+    );
     return;
   }
 
@@ -450,9 +467,11 @@ export async function agentCodexApplyConfig(options: ApplyConfigOptions = {}): P
       legacy.parse_error !== undefined;
     if (needsAttention) {
       agentError(
-        `Codex config needs attention. Run 'mthds-agent codex apply-config' (and review warnings).`,
-        "ConfigError",
-        { error_domain: AGENT_ERROR_DOMAINS.CONFIG },
+        agentProblem(
+          "client.not_configured",
+          { setting: "codex_config" },
+          `Codex config needs attention. Run 'mthds-agent codex apply-config' (and review warnings).`,
+        ),
       );
       return;
     }
@@ -477,9 +496,13 @@ export async function agentCodexApplyConfig(options: ApplyConfigOptions = {}): P
       // intermediate state throws here too — caught the same way.
       parseToml(nextRaw);
     } catch (err) {
-      agentError(`Generated config would not re-parse: ${(err as Error).message}`, "ConfigError", {
-        error_domain: AGENT_ERROR_DOMAINS.CONFIG,
-      });
+      agentError(
+        agentProblem(
+          "runtime.unexpected",
+          {},
+          `Generated config would not re-parse: ${(err as Error).message}`,
+        ),
+      );
       return;
     }
   }
@@ -517,9 +540,13 @@ export async function agentCodexApplyConfig(options: ApplyConfigOptions = {}): P
     try {
       writeAtomic(file, nextRaw);
     } catch (err) {
-      agentError(`Failed to write ${file}: ${(err as Error).message}`, "IOError", {
-        error_domain: AGENT_ERROR_DOMAINS.IO,
-      });
+      agentError(
+        agentProblem(
+          "client.write_failed",
+          { path: file, reason: fileErrorReason(err, "unwritable") },
+          `Failed to write ${file}: ${(err as Error).message}`,
+        ),
+      );
       return;
     }
   }
@@ -534,9 +561,11 @@ export async function agentCodexApplyConfig(options: ApplyConfigOptions = {}): P
   // re-running converges the config and only this hand-fixable issue remains.
   if (removal.status === "error") {
     agentError(
-      legacyHookWarning(removal.error ?? `Failed to update ${removal.hooks_file}`).message,
-      "ConfigError",
-      { error_domain: AGENT_ERROR_DOMAINS.CONFIG },
+      agentProblem(
+        "client.not_configured",
+        { setting: "codex_hooks" },
+        legacyHookWarning(removal.error ?? `Failed to update ${removal.hooks_file}`).message,
+      ),
     );
     return;
   }

@@ -1,3 +1,4 @@
+import { problemError } from "../problems/errors.js";
 import { loadConfig } from "../config/config.js";
 import { Runners } from "./types.js";
 import type { Runner, RunnerType } from "./types.js";
@@ -45,6 +46,10 @@ export function createRunner(caller: CliCaller, type?: RunnerType, libraryDirs?:
         caller === "mthds-agent" ? { env: mthdsAgentChildEnv() } : {},
       );
     default:
-      throw new Error(`Unknown runner type: ${runnerType as string}`);
+      throw problemError(
+        "client.not_configured",
+        { setting: "runner" },
+        { message: `Unknown runner type: ${runnerType as string}` },
+      );
   }
 }

@@ -6,7 +6,8 @@ import { tmpdir } from "node:os";
 import { Runners } from "../types.js";
 import { materializeBundleFiles } from "../bundle.js";
 import { assertExclusiveRunSources } from "../../protocol/options.js";
-import { PipelineRequestError } from "../../protocol/exceptions.js";
+import { argumentInvalid, problemError, ProblemError } from "../../problems/errors.js";
+import { readProblemBody } from "../../problems/read.js";
 import type { Runner, RunnerType, CheckModelRequest, CheckModelResponse } from "../types.js";
 import type { RunOptions, StartOptions } from "../../protocol/options.js";
 import type {
@@ -21,6 +22,61 @@ import type { DictPipeOutput, DictRunResultExecute } from "../api/models.js";
 
 const execFileAsync = promisify(execFile);
 
+/** How long the health check waits for `pipelex doctor`, in seconds. */
+const HEALTH_TIMEOUT_SECONDS = 10;
+/**
+ * How much `pipelex doctor` may print on stdout or on stderr, in bytes, before `execFile` kills
+ * it: far more than a full report, which lists every check with its fix, so that a long report
+ * is never cut short. `execFile` allows one MiB by default.
+ */
+const HEALTH_MAX_BUFFER_BYTES = 16 * 1024 * 1024;
+/** The code of the error `execFile` raises when it killed a child for printing past `maxBuffer`. */
+const MAX_BUFFER_EXCEEDED = "ERR_CHILD_PROCESS_STDIO_MAXBUFFER";
+/** The exit status of a program that handled Ctrl-C itself, as pipelex does. */
+const EXIT_INTERRUPTED = 130;
+
+/** What a failed `execFile` call carries: the exit status or the system's code, and the output. */
+interface ExecFailure {
+  code?: number | string | null;
+  killed?: boolean;
+  signal?: NodeJS.Signals | null;
+  stderr?: string;
+  stdout?: string;
+  message?: string;
+}
+
+/** What a failed call printed, stderr first, else its own message. */
+function execFailureDetail(err: unknown): string {
+  const failure = (err ?? {}) as ExecFailure;
+  return failure.stderr?.trim() || failure.stdout?.trim() || failure.message || String(err);
+}
+
+/**
+ * The problem-carrying error of a `pipelex` or `pipelex-agent` call that failed after it was
+ * started or could not start: `client.tool_missing` when the program is not on the PATH, the
+ * problem it printed on stderr when it printed one (`pipelex-agent` with `--format json` writes
+ * its failure as a problem document), else `runtime.unexpected` with `message` and what it printed.
+ */
+function execFailureError(err: unknown, tool: string, message: string): ProblemError {
+  const failure = (err ?? {}) as ExecFailure;
+  if (failure.code === "ENOENT") {
+    return problemError(
+      "client.tool_missing",
+      { tool },
+      { message: `${tool} not found: ${failure.message ?? String(err)}`, cause: err },
+    );
+  }
+  const printed = failure.stderr?.trim() ? readProblemBody(failure.stderr.trim()) : undefined;
+  if (printed !== undefined) {
+    return new ProblemError(printed, { cause: err });
+  }
+  return problemError(
+    "runtime.unexpected",
+    {},
+    { message: `${message}:\n${execFailureDetail(err)}`, cause: err },
+  );
+}
+
 function makeTmpDir(): string {
   return mkdtempSync(join(tmpdir(), "mthds-"));
 }
@@ -34,7 +90,7 @@ function makeTmpDir(): string {
  */
 function writeMthdsContents(tmp: string, contents: string[]): string {
   if (contents.length === 0) {
-    throw new Error("At least one MTHDS file is required.");
+    throw argumentInvalid("mthds_contents", "empty", "At least one MTHDS file is required.");
   }
   contents.forEach((content, index) => {
     const name = index === 0 ? "bundle.mthds" : `extra_${index}.mthds`;
@@ -79,12 +135,14 @@ export interface PipelexRunnerOptions {
  * The numbers `pipelex --version` reports, one `<label> <version>` line each since pipelex 0.57.0:
  * `pipelex <version>`, `mthds-protocol <version>` and `mthds-standard <version>`. The protocol
  * version is the one the installed pipelex speaks, which need not be the one this package follows,
- * so it is read from pipelex rather than restated. A pipelex that prints no protocol line is older
- * than the handshake and cannot say which protocol it speaks, so its version is refused.
+ * so it is read from pipelex rather than restated; a pipelex older than 0.57.0 prints no protocol
+ * line, so its `protocolVersion` is `undefined`. Its own version is the `pipelex` line's, else the
+ * last word of the first line, the version alone before pipelex named itself on it, and an empty
+ * string when it prints nothing.
  */
 export function parsePipelexVersionReport(stdout: string): {
   pipelexVersion: string;
-  protocolVersion: string;
+  protocolVersion: string | undefined;
 } {
   const lines = stdout
     .split(/\r?\n/)
@@ -97,15 +155,8 @@ export function parsePipelexVersionReport(stdout: string): {
     }
     return undefined;
   };
-  // The first line was the version alone before pipelex named itself on it.
   const pipelexVersion = labelled("pipelex") ?? lines[0]?.split(/\s+/).pop() ?? "";
-  const protocolVersion = labelled("mthds-protocol");
-  if (protocolVersion === undefined) {
-    throw new Error(
-      `pipelex ${pipelexVersion} does not report the MTHDS Protocol version it speaks; upgrade pipelex to 0.57.0 or later.`,
-    );
-  }
-  return { pipelexVersion, protocolVersion };
+  return { pipelexVersion, protocolVersion: labelled("mthds-protocol") };
 }
 
 export class PipelexRunner implements Runner {
@@ -131,7 +182,10 @@ export class PipelexRunner implements Runner {
 
   /**
    * Run pipelex with stdout and stderr inherited (streamed to the terminal).
-   * Use this for long-running or interactive commands.
+   * Use this for long-running or interactive commands. A failure is a `ProblemError`: pipelex
+   * printed its own account on the terminal, in human text with no problem to reuse, so a non-zero
+   * exit is `runtime.unexpected`, and one the person caused with Ctrl-C (the interrupt killed
+   * pipelex, or pipelex handled it and exited 130) is `client.aborted`.
    */
   private async execStreaming(args: string[], inheritStdin = false): Promise<void> {
     return new Promise<void>((resolve, reject) => {
@@ -139,12 +193,24 @@ export class PipelexRunner implements Runner {
         stdio: [inheritStdin ? "inherit" : "ignore", "inherit", "inherit"],
         env: this.env,
       });
-      child.on("error", (err) => reject(new Error(`pipelex not found: ${err.message}`)));
-      child.on("close", (code) => {
+      child.on("error", (err) =>
+        reject(
+          problemError(
+            "client.tool_missing",
+            { tool: "pipelex" },
+            { message: `pipelex not found: ${err.message}`, cause: err },
+          ),
+        ),
+      );
+      child.on("close", (code: number | null, signal: NodeJS.Signals | null) => {
         if (code === 0) {
           resolve();
+        } else if (signal === "SIGINT" || code === EXIT_INTERRUPTED) {
+          reject(problemError("client.aborted", {}, { message: "pipelex was interrupted." }));
         } else {
-          reject(new Error(`pipelex exited with code ${code}`));
+          const how =
+            code === null ? `was stopped by the signal ${signal}` : `exited with code ${code}`;
+          reject(problemError("runtime.unexpected", {}, { message: `pipelex ${how}` }));
         }
       });
     });
@@ -166,21 +232,90 @@ export class PipelexRunner implements Runner {
 
   // ── Health & version ────────────────────────────────────────────
 
+  /**
+   * Check pipelex with `pipelex doctor`, given `HEALTH_TIMEOUT_SECONDS` to answer and
+   * `HEALTH_MAX_BUFFER_BYTES` to print. A failure is a `ProblemError`: `client.tool_missing` when
+   * pipelex is not on the PATH, `client.timeout` when doctor did not answer in time,
+   * `runtime.misconfigured` when it exited 1, having found issues, else `runtime.unexpected`. A
+   * doctor `execFile` killed for printing past the limit is `runtime.unexpected` saying so, never a
+   * timeout, though it was killed too: it is told apart by its code, and its output, as long as the
+   * limit, is not quoted. `runtime.misconfigured` declares its `component` operator-only: it is
+   * given, as every build site gives each parameter either reader's step names, but the problem
+   * leaves it out of its `params` and carries the step of a reader other than the operator, which
+   * names no component, so the caller reads what to correct in the message, what doctor printed.
+   */
   async health(): Promise<Record<string, unknown>> {
     try {
-      const timeout = new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error("pipelex health check timed out after 10s")), 10_000),
-      );
-      await Promise.race([this.exec(["doctor", "-g"]), timeout]);
+      await execFileAsync("pipelex", ["doctor", "-g", ...this.libraryArgs()], {
+        encoding: "utf-8",
+        env: this.env,
+        timeout: HEALTH_TIMEOUT_SECONDS * 1000,
+        maxBuffer: HEALTH_MAX_BUFFER_BYTES,
+      });
       return { status: "ok" };
-    } catch {
-      throw new Error("pipelex CLI is not installed or not in PATH");
+    } catch (cause) {
+      const failure = (cause ?? {}) as ExecFailure;
+      if (failure.code === "ENOENT") {
+        throw problemError(
+          "client.tool_missing",
+          { tool: "pipelex" },
+          { message: "pipelex CLI is not installed or not in PATH", cause },
+        );
+      }
+      if (failure.code === MAX_BUFFER_EXCEEDED) {
+        throw problemError(
+          "runtime.unexpected",
+          {},
+          {
+            message: `pipelex doctor printed more than ${HEALTH_MAX_BUFFER_BYTES} bytes on one stream (${failure.message ?? MAX_BUFFER_EXCEEDED}), so it was stopped before its report could be read.`,
+            cause,
+          },
+        );
+      }
+      if (failure.killed === true) {
+        throw problemError(
+          "client.timeout",
+          { seconds: HEALTH_TIMEOUT_SECONDS },
+          {
+            message: `pipelex health check timed out after ${HEALTH_TIMEOUT_SECONDS}s`,
+            cause,
+          },
+        );
+      }
+      if (failure.code === 1) {
+        throw problemError(
+          "runtime.misconfigured",
+          { component: "pipelex" },
+          { message: `pipelex doctor found issues:\n${execFailureDetail(cause)}`, cause },
+        );
+      }
+      throw problemError(
+        "runtime.unexpected",
+        {},
+        { message: `pipelex health check failed:\n${execFailureDetail(cause)}`, cause },
+      );
     }
   }
 
   async version(): Promise<VersionInfo> {
-    const { stdout } = await this.exec(["--version"]);
+    let stdout: string;
+    try {
+      ({ stdout } = await this.exec(["--version"]));
+    } catch (err) {
+      throw execFailureError(err, "pipelex", "pipelex --version failed");
+    }
     const { pipelexVersion, protocolVersion } = parsePipelexVersionReport(stdout);
+    // A pipelex that prints no protocol line is older than the handshake and cannot say which
+    // protocol it speaks, so its version is refused.
+    if (protocolVersion === undefined) {
+      throw problemError(
+        "client.tool_outdated",
+        { tool: "pipelex", version: pipelexVersion || "unknown" },
+        {
+          message: `pipelex ${pipelexVersion} does not report the MTHDS Protocol version it speaks; upgrade pipelex to 0.57.0 or later.`,
+        },
+      );
+    }
     return {
       protocol_version: protocolVersion,
       runner_version: pipelexVersion,
@@ -201,12 +336,18 @@ export class PipelexRunner implements Runner {
   // default), so we guard here for SDK consumers that bypass the agent CLI's parser.
   async checkModel(request: CheckModelRequest): Promise<CheckModelResponse> {
     if (!request.type) {
-      throw new Error(`checkModel requires \`type\` (one of: ${MODEL_CATEGORIES.join(", ")})`);
+      throw argumentInvalid(
+        "type",
+        "missing",
+        `checkModel requires \`type\` (one of: ${MODEL_CATEGORIES.join(", ")})`,
+      );
     }
     const args = ["check-model", request.reference, "--type", request.type, "--format", "json"];
     const { stdout } = await execFileAsync("pipelex-agent", args, {
       encoding: "utf-8",
       env: this.env,
+    }).catch((err: unknown) => {
+      throw execFailureError(err, "pipelex-agent", "pipelex-agent check-model failed");
     });
     return JSON.parse(stdout) as CheckModelResponse;
   }
@@ -221,6 +362,8 @@ export class PipelexRunner implements Runner {
     const { stdout } = await execFileAsync("pipelex-agent", args, {
       encoding: "utf-8",
       env: this.env,
+    }).catch((err: unknown) => {
+      throw execFailureError(err, "pipelex-agent", "pipelex-agent models failed");
     });
     return toModelDeck(JSON.parse(stdout));
   }
@@ -241,8 +384,13 @@ export class PipelexRunner implements Runner {
     // the `bundle_b64` transport form is API-runner-only. Reject it explicitly
     // rather than dispatching `run` with no target (which fails cryptically).
     if (options.bundle_b64 != null) {
-      throw new PipelineRequestError(
-        "The local pipelex runner does not support the bundle_b64 (zip) transport; pass the bundle as `files`, or use the API runner.",
+      throw problemError(
+        "runtime.unsupported",
+        { capability: "bundle_b64" },
+        {
+          message:
+            "The local pipelex runner does not support the bundle_b64 (zip) transport; pass the bundle as `files`, or use the API runner.",
+        },
       );
     }
     const tmp = makeTmpDir();
@@ -319,9 +467,14 @@ export class PipelexRunner implements Runner {
           typeof stuff === "object" && stuff !== null ? (stuff as Record<string, unknown>) : {};
         const concept = fields["concept"];
         if (typeof concept !== "string") {
-          throw new Error(
-            `pipelex wrote the stuff "${stuffName}" whose "concept" is ${describeNonRefConcept(concept)}, ` +
-              `where the MTHDS standard puts the concept's ref string; upgrade pipelex.`,
+          throw problemError(
+            "client.tool_outdated",
+            { tool: "pipelex", version: await this.versionForRefusal() },
+            {
+              message:
+                `pipelex wrote the stuff "${stuffName}" whose "concept" is ${describeNonRefConcept(concept)}, ` +
+                `where the MTHDS standard puts the concept's ref string; upgrade pipelex.`,
+            },
           );
         }
         reducedRoot[stuffName] = { concept, content: fields["content"] };
@@ -356,29 +509,29 @@ export class PipelexRunner implements Runner {
       try {
         await this.exec(args);
       } catch (err) {
-        const execError = err as Error & {
-          code?: number | string;
-          stderr?: string;
-          stdout?: string;
-        };
-        const detail = execError.stderr?.trim() || execError.stdout?.trim() || execError.message;
+        const execError = err as Error & ExecFailure;
+        const detail = execFailureDetail(err);
         // The bare `pipelex validate` follows the 0/1/2 exit policy: exit 1 is a
         // produced negative verdict (the bundle is invalid), exit 2+ (or a spawn
         // failure, whose `code` is a string like "ENOENT") is a *no-verdict*
         // condition (setup / bad args / internal). A negative verdict is a result,
         // not a transport failure → return the minimal invalid arm (mirroring the
         // minimal valid arm below — the CLI emits human text, not structured
-        // diagnostics, so validation_errors is empty). Re-raise everything else.
+        // diagnostics, so the one item the protocol asks of an invalid verdict is the
+        // method not validating, stated by what the CLI printed rather than by the
+        // registry's detail, which the verdict's own problem already states). Everything
+        // else is a failure carrying its problem: pipelex missing is `client.tool_missing`,
+        // any other no-verdict `runtime.unexpected`.
         if (execError.code === 1) {
           return {
             is_valid: false,
-            validation_errors: [],
+            errors: [{ code: "method.invalid", detail }],
             pending_signatures: [],
             is_runnable: false,
-            message: `Bundle validation failed:\n${detail}`,
+            message: "Bundle validation failed.",
           };
         }
-        throw new Error(`Bundle validation failed:\n${detail}`);
+        throw execFailureError(err, "pipelex", "Bundle validation failed");
       }
       // Exit 0 — a valid verdict. The CLI emits human-readable output, not the
       // structural artifacts, so return the minimal valid arm (the `is_valid: true`
@@ -390,13 +543,31 @@ export class PipelexRunner implements Runner {
     }
   }
 
+  /**
+   * The version pipelex reports (`parsePipelexVersionReport`), for a refusal naming it, or
+   * `unknown` when it reports none. A pipelex old enough to be refused may print no protocol line,
+   * which leaves its own version readable.
+   */
+  private async versionForRefusal(): Promise<string> {
+    try {
+      const { stdout } = await this.exec(["--version"]);
+      return parsePipelexVersionReport(stdout).pipelexVersion || "unknown";
+    } catch {
+      return "unknown";
+    }
+  }
+
   // ── Async start (protocol primitive, unsupported locally) ──────────
   // The local pipelex CLI runs methods in-process and blocking via `execute`;
   // there is no durable run to start and poll by id, so the protocol's async
   // `start` primitive belongs to the Pipelex Hosted API (use --runner api).
 
   async start(_options: StartOptions): Promise<never> {
-    throw new Error(ASYNC_START_UNSUPPORTED);
+    throw problemError(
+      "runtime.unsupported",
+      { capability: "start" },
+      { message: ASYNC_START_UNSUPPORTED },
+    );
   }
 }
 

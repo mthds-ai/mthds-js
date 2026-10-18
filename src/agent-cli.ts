@@ -16,7 +16,13 @@
 import { Command, CommanderError, Option } from "commander";
 import { createRequire } from "node:module";
 import { resolve } from "node:path";
-import { agentError, agentSuccess, AGENT_ERROR_DOMAINS } from "./agent/output.js";
+import {
+  agentError,
+  agentProblem,
+  agentSuccess,
+  agentErrorOf,
+  unexpectedProblem,
+} from "./agent/output.js";
 import { registerApiRunnerCommands } from "./agent/commands/api-commands.js";
 import { registerPipelexRunnerCommands } from "./agent/commands/pipelex-commands.js";
 import { registerPlxtCommands } from "./agent/commands/plxt.js";
@@ -30,6 +36,7 @@ import { agentConfigGet, agentConfigList, agentConfigSet } from "./agent/command
 import { agentInstall } from "./agent/commands/install.js";
 import { agentPublish } from "./agent/commands/publish.js";
 import { agentShare } from "./agent/commands/share.js";
+import { toolInstallProblem } from "./agent/problems.js";
 import { checkBinaryVersion } from "./installer/runtime/version-check.js";
 import { uvToolInstallSync } from "./installer/runtime/installer.js";
 import { BINARY_RECOVERY, buildInstallCommand } from "./agent/binaries.js";
@@ -83,11 +90,12 @@ function resolveRunnerTypeFromArgv(): RunnerType {
   if (!raw) return Runners.PIPELEX;
   if (RUNNER_NAMES.includes(raw as RunnerType)) return raw as RunnerType;
   agentError(
-    `Unknown runner: "${raw}". Valid values: ${RUNNER_NAMES.join(", ")}`,
-    "ArgumentError",
-    { error_domain: AGENT_ERROR_DOMAINS.ARGUMENT },
+    agentProblem(
+      "client.argument_invalid",
+      { argument: "--runner", reason: "unknown_value" },
+      `Unknown runner: "${raw}". Valid values: ${RUNNER_NAMES.join(", ")}`,
+    ),
   );
-  throw new Error("unreachable");
 }
 
 const activeRunnerType = resolveRunnerTypeFromArgv();
@@ -105,6 +113,39 @@ function getAutoInstall(cmd: Cmd): boolean {
   return (cmd.optsWithGlobals().autoInstall as boolean) ?? false;
 }
 
+const ERROR_FORMAT_FLAGS = "--error-format <format>";
+const ERROR_FORMAT_HELP = "Error output format on stderr: markdown (default) or json";
+
+/**
+ * Accept `--error-format` on every command, as the CLI I/O contract requires of a CLI that runs a
+ * method: on the program, before the command, and on each command that does not declare it
+ * itself. The error stream reads its value from the command line (`resolveErrorFormat`), so the
+ * option is declared for Commander to accept it, wherever it stands.
+ */
+function acceptErrorFormatEverywhere(command: Cmd): void {
+  for (const sub of command.commands) {
+    if (!sub.options.some((option) => option.long === "--error-format")) {
+      sub.option(ERROR_FORMAT_FLAGS, ERROR_FORMAT_HELP);
+    }
+    acceptErrorFormatEverywhere(sub);
+  }
+}
+
+/**
+ * The command-line token a Commander refusal names, such as `--foo` in "unknown option '--foo'",
+ * without the placeholder of an option's declaration: `--format <fmt>` reads `--format`.
+ */
+function refusedToken(message: string): string {
+  const quoted = /'([^']+)'/.exec(message)?.[1];
+  return quoted?.split(" ")[0] || "command_line";
+}
+
+/** A Commander refusal's code as a reason: `commander.unknownOption` reads `unknown_option`. */
+function refusalReason(code: string): string {
+  const name = code.replace(/^commander\./, "");
+  return name.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`) || "invalid";
+}
+
 const program = new Command();
 
 program
@@ -120,6 +161,7 @@ program
   .option("--log-level <level>", `Log level (${LOG_LEVELS.join(", ")})`)
   .option("--auto-install", "Automatically install missing binaries before running")
   .option("--runner <type>", "Runner to use (api, pipelex)")
+  .option(ERROR_FORMAT_FLAGS, ERROR_FORMAT_HELP)
   .enablePositionalOptions()
   .exitOverride()
   .configureOutput({
@@ -332,10 +374,14 @@ runnerSetup
       uvToolInstallSync(recovery.uv_package, recovery.version_constraint);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      agentError(`Failed to ${action} pipelex: ${msg}`, "InstallError", {
-        error_domain: AGENT_ERROR_DOMAINS.INSTALL,
-        hint: `${action === "upgrade" ? "Upgrade" : "Install"} manually: ${buildInstallCommand(recovery)}`,
-      });
+      agentError(
+        toolInstallProblem(
+          err,
+          "pipelex",
+          `Failed to ${action} pipelex: ${msg}. ${action === "upgrade" ? "Upgrade" : "Install"} manually: ${buildInstallCommand(recovery)}`,
+        ),
+        { recovery },
+      );
     }
 
     const postCheck = checkBinaryVersion(recovery);
@@ -348,10 +394,16 @@ runnerSetup
         postCheck.status === "missing"
           ? "Restart your shell or add the install directory to your PATH."
           : `${action === "upgrade" ? "Upgrade" : "Install"} manually: ${buildInstallCommand(recovery)}`;
-      agentError(detail, "InstallError", {
-        error_domain: AGENT_ERROR_DOMAINS.INSTALL,
-        hint,
-      });
+      agentError(
+        postCheck.status === "missing"
+          ? agentProblem("client.tool_missing", { tool: "pipelex" }, `${detail} ${hint}`)
+          : agentProblem(
+              "client.tool_outdated",
+              { tool: "pipelex", version: postCheck.installed_version ?? "unknown" },
+              `${detail} ${hint}`,
+            ),
+        { recovery },
+      );
     }
     agentSuccess({
       success: true,
@@ -480,10 +532,16 @@ if (isApiRunner) {
 // Default action — no command at all. An unknown command never reaches it: it is
 // refused below, before Commander parses.
 program.action(() => {
-  agentError("No command specified. Run mthds-agent --help for usage.", "ArgumentError", {
-    error_domain: AGENT_ERROR_DOMAINS.ARGUMENT,
-  });
+  agentError(
+    agentProblem(
+      "client.argument_invalid",
+      { argument: "command", reason: "missing" },
+      "No command specified. Run mthds-agent --help for usage.",
+    ),
+  );
 });
+
+acceptErrorFormatEverywhere(program);
 
 const usageStats = installUsageStats(program, {
   surface: "mthds-agent",
@@ -501,9 +559,11 @@ const usageStats = installUsageStats(program, {
 const unknownCommand = findUnknownSubcommand(program, process.argv.slice(2));
 if (unknownCommand !== undefined) {
   agentError(
-    `Unknown command: ${unknownCommand}. Run mthds-agent --help for usage.`,
-    "ArgumentError",
-    { error_domain: AGENT_ERROR_DOMAINS.ARGUMENT },
+    agentProblem(
+      "client.argument_invalid",
+      { argument: "command", reason: "unknown_command" },
+      `Unknown command: ${unknownCommand}. Run mthds-agent --help for usage.`,
+    ),
   );
 }
 
@@ -517,10 +577,14 @@ program.parseAsync(process.argv).catch((err: unknown) => {
       process.exit(0);
     }
     const message = err.message.replace(/^error: /, "").replace(/^Error: /, "");
-    agentError(message, "ArgumentError", {
-      error_domain: AGENT_ERROR_DOMAINS.ARGUMENT,
-    });
+    agentError(
+      agentProblem(
+        "client.argument_invalid",
+        { argument: refusedToken(message), reason: refusalReason(err.code) },
+        message,
+      ),
+    );
   }
 
-  agentError((err as Error).message, "UnknownError");
+  agentErrorOf(err, unexpectedProblem);
 });

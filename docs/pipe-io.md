@@ -17,7 +17,7 @@ const result = await client.pipeIo({
 
 - **The closure is exactly one of three selectors.** `files` (inline `.mthds` files, each `{ content, source? }`) or `method_ref` (a published method's address, `github.com/<owner>/<repo>[/<selector>][@<tag>]`, which the server fetches), the envelope the crate-family routes share; or `method_id`, a stored method's catalog id (`mt_…`). Only a hosted API resolves a `method_id`: its platform looks the id up in the caller's organization and forwards the stored files as `files` before the runner sees the request, so a bare runner refuses a request whose only selector is a `method_id`. The client posts the request as given and leaves the exclusivity to the server, which refuses neither or several with a `422`.
 - **`method_ref` has two forms.** The address form is fetched by the server at its tag: the package inside the repository is located by its manifest identity, and its `.mthds` files become the closure with their real relative paths as per-file `source` labels. Any other reference is the registry form, which stays reserved and answers `501` until a method registry exists.
-- **`source` is a provenance label**, not a path the server reads. The server threads it onto the diagnostics it can attribute to that file, so an invalid verdict points at the file that caused it. The attribution is best-effort: graph-level `dry_run` and `pipe_factory` items have no single owning file, which is why `ValidationErrorItem.source` is optional.
+- **`source` is a provenance label**, not a path the server reads. The server threads it onto the diagnostics it can attribute to that file, so an invalid verdict points at the file that caused it. The server names that file in each item's `location.file`. The attribution is best-effort: a graph-level fault has no single owning file, which is why `location.file` is optional.
 - **`pipe_ref`** is the qualified `domain.pipe_code` of the pipe to describe. Omit it and the server's selection chain decides: a fetched package's manifest `main_pipe`, else the closure's single `main_pipe` declaration.
 - **`all_pipes: true`** describes every pipe the closure loads instead of the selected one, and never refuses for want of an entry pipe.
 - **`include_files: true`** echoes the resolved closure's `.mthds` files on the valid arm as `files`, in the request's own shape.
@@ -30,36 +30,36 @@ A produced verdict is a **200** discriminated on `is_valid`:
 
 ```typescript
 if (!result.is_valid) {
-  for (const err of result.validation_errors) console.error(err.message);
+  for (const item of result.errors) console.error(`${item.code}: ${item.detail}`);
   return;
 }
 const descriptor = result.input_form[result.pipe_ref!];
 ```
 
 - **The valid arm** carries `pipe_ref` (the qualified ref the selection resolved, never the request's spelling; `null` only under `all_pipes` when nothing resolves), the three maps `pipe_io_contracts`, `input_form` and `output_form` sharing one key set (the resolved `pipe_ref` alone by default, every pipe under `all_pipes`), `default_pipe_ref` (the method's own entry pipe, not `validate`'s run default), `pending_signatures`, `is_runnable`, and `files` when asked. `is_valid: true` means the closure parsed, loaded and passed static validation; no dry run backs it.
-- **The invalid arm** is `CrateInvalidReport`: `is_valid: false`, `validation_errors[]` and `message`, with no artifact and no selection.
+- **The invalid arm** is `CrateInvalidReport`: `is_valid: false` and `errors[]`, one problem item per fault (`ProblemItem`: `code`, `detail`, `params`, `location`, `suggested_fix`), with no artifact and no selection. The client refuses an invalid arm whose items are not of that shape as `client.response_unreadable`.
 
-A throw means no verdict could be produced. Over HTTP it is an `ApiResponseError` (see [errors.md](./errors.md#apiresponseerror)):
+A throw means no verdict could be produced. Over HTTP it is an `ApiResponseError` carrying the runner's problem (see [errors.md](./errors.md#apiresponseerror)):
 
 - a `422` for a malformed body, a wrong number of selectors, an over-limit file, or a **refused pipe selection**;
 - the `method_ref` fetch outcomes: `404` when no package at the address matches, `422` for a reference that does not parse or a fetch the server cannot accept, `501` for a registry-form reference;
 - a `500` when an artifact cannot be derived for a pipe;
 - `401`, `403` and `413` as on every route.
 
-An unreachable server is an `ApiUnreachableError`.
+An unreachable server is an `ApiTransportError` of `client.unreachable`.
 
-**A refused pipe selection is told apart by `errorType`, never by the message.** The runner types it `EntryPipeNotFoundError` (a `pipe_ref` that names no pipe, a manifest `main_pipe` the closure lacks, or no `pipe_ref` and no `main_pipe`) or `EntryPipeAmbiguousError` (a bare code matching pipes in several domains, or no `pipe_ref` and several `main_pipe` declarations), while a malformed request keeps `ValidationError`. The two strings are exported as `PIPE_SELECTION_ERROR_TYPES`. The candidates a caller could choose from appear only in the message. `pipelex-api` v0.33.0 still types a selection refusal `ValidationError`; the typed refusals ship from v0.33.1.
+**A refused pipe selection is told apart by its code, never by the message.** It is `request.pipe_not_found` (a `pipe_ref` that names no pipe, or a manifest `main_pipe` the closure lacks; its `suggestions` parameter lists the likeliest pipes), `request.pipe_ambiguous` (a bare code matching pipes in several domains, or several `main_pipe` declarations; its `candidates` parameter lists them) or `request.pipe_unspecified` (no `pipe_ref` and no `main_pipe`; its `candidates` parameter lists the pipes to choose from). These codes are exported as `PIPE_SELECTION_CODES`.
 
 ## `mthds-agent inputs` reads it
 
 On the API runner, `mthds-agent inputs bundle|pipe|method` reads the pipe's input form from this route and projects the fill-in template locally with `projectInputsTemplate` and `renderInputsTemplate` from `mthds/protocol` (see [architecture.md](./architecture.md#the-inputs-template-is-projected-from-the-descriptor-not-fetched)). Both rendering axes are therefore the client's own: `--format json|toml` and `--explicit` are honoured on the API runner as `pipelex-agent` honours them on the pipelex runner, and the template is the one in the projection corpus `mthds-python` shares: `--format toml` prints its bytes exactly, and the JSON envelope carries it as a value, where a decimal placeholder prints as `0` because JSON has one number type. `mthds build inputs pipe` on the API runner reads it the same way.
 
 - `inputs bundle` and `inputs pipe` send the bundle's closure as `files`: the named file, or a directory's entry file, first, then every other `.mthds` file of the directory and of each `-L` directory (`resolveBundleClosure` in `src/runners/bundle.ts`). When the closure holds several files and `--pipe` is omitted, they send the entry's own `main_pipe` as `pipe_ref` (`closureEntryPipeRef`), because the route's selection chain refuses a closure declaring a `main_pipe` in several domains. `mthds build inputs pipe` sends its bundle file and its `-L` directories the same way.
-- `inputs method <target>` sends a `method_id` when the target is a catalog id (`mt_…`) and a `method_ref` when it is an address (it contains a `/`). A local path (one starting with `.`, `/` or `~`, ending in `.mthds`, or existing on disk) and a bare name are refused with an `ArgumentError`: the first belongs to `inputs bundle`, and the second names an installed method, which only the pipelex runner can read.
+- `inputs method <target>` sends a `method_id` when the target is a catalog id (`mt_…`) and a `method_ref` when it is an address (it contains a `/`). A local path (one starting with `.`, `/` or `~`, ending in `.mthds`, or existing on disk) and a bare name are refused as `client.argument_invalid`: the first belongs to `inputs bundle`, and the second names an installed method, which only the pipelex runner can read.
 
-A refused selection comes back as an `ArgumentError` whose message is the runner's own sentence, against a runner that types it (v0.33.1 or later; an older one's refusal is a `RunnerError`); any other refusal is a `RunnerError`, and an invalid closure is the `ValidateBundleError` verdict, as on `validate`. The command reference is in [CLI.md](../CLI.md#mthds-agent-inputs-bundlepipemethod).
+A refusal, a refused selection included, is the runner's problem relayed whole, its code and parameters kept, and an invalid closure is the `method.invalid` problem holding the verdict's items, as on `validate`. The command reference is in [CLI.md](../CLI.md#mthds-agent-inputs-bundlepipemethod).
 
 ## See also
 
 - [architecture.md](./architecture.md) — the protocol/runner split, and the inputs-template projection.
-- [errors.md](./errors.md) — `ApiResponseError` and its problem members.
+- [errors.md](./errors.md) — the problem document, `ApiResponseError`, and how an answer is read.

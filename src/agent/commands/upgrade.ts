@@ -20,7 +20,7 @@ import { checkBinaryVersion } from "../../installer/runtime/version-check.js";
 import type { VersionCheckResult } from "../../installer/runtime/version-check.js";
 import { BINARY_RECOVERY } from "../binaries.js";
 import type { BinaryRecoveryInfo } from "../binaries.js";
-import { agentError, AGENT_ERROR_DOMAINS } from "../output.js";
+import { agentError, agentProblem } from "../output.js";
 import { clearCache, writeUpgradeMarker } from "../update-cache.js";
 import { clearSnooze } from "../snooze.js";
 import { loadConfig } from "../../config/config.js";
@@ -46,9 +46,7 @@ export async function agentUpgrade(): Promise<void> {
   try {
     requireUv();
   } catch (err) {
-    agentError(errorMsg(err), "InstallError", {
-      error_domain: AGENT_ERROR_DOMAINS.INSTALL,
-    });
+    agentError(agentProblem("client.tool_missing", { tool: "uv" }, errorMsg(err)));
     return; // unreachable — agentError calls process.exit, but explicit for TypeScript
   }
 

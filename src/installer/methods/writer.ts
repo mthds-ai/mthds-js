@@ -2,6 +2,7 @@ import { join, resolve, dirname, sep } from "node:path";
 import { homedir } from "node:os";
 import { mkdirSync, writeFileSync } from "node:fs";
 import type { ResolvedRepo } from "../../package/manifest/types.js";
+import { problemError } from "../../problems/errors.js";
 
 /**
  * Generate an executable CLI shim for a method in ~/.mthds/bin/.
@@ -36,7 +37,9 @@ export function generateShim(name: string, installDir: string): void {
 /**
  * Write all method files from a ResolvedRepo into targetDir/<method-name>/,
  * generating a CLI shim for each. Refuses any path that escapes targetDir or
- * the per-method install dir (path traversal protection).
+ * the per-method install dir (path traversal protection), as a `ProblemError` of
+ * `method.package_invalid` whose reason is `invalid_method_name` or `invalid_tree_path`, the fix
+ * being the method owner's. A failure of the file system is the system's error, naming its path.
  *
  * Agent-agnostic: the on-disk layout is identical regardless of which AI
  * coding agent triggered the install.
@@ -48,7 +51,14 @@ export function writeMethodFiles(repo: ResolvedRepo, targetDirInput: string): vo
   for (const method of repo.methods) {
     const installDir = resolve(join(targetDir, method.name));
     if (!installDir.startsWith(targetDir + sep)) {
-      throw new Error(`Path traversal detected: name "${method.name}" escapes target directory.`);
+      throw problemError(
+        "method.package_invalid",
+        { reason: "invalid_method_name" },
+        {
+          message: `Path traversal detected: name "${method.name}" escapes target directory.`,
+          reader: "other",
+        },
+      );
     }
     mkdirSync(installDir, { recursive: true });
 
@@ -57,8 +67,13 @@ export function writeMethodFiles(repo: ResolvedRepo, targetDirInput: string): vo
     for (const file of method.files) {
       const filePath = resolve(join(installDir, file.relativePath));
       if (!filePath.startsWith(installDir + sep)) {
-        throw new Error(
-          `Path traversal detected: "${file.relativePath}" escapes install directory.`,
+        throw problemError(
+          "method.package_invalid",
+          { reason: "invalid_tree_path", path: file.relativePath },
+          {
+            message: `Path traversal detected: "${file.relativePath}" escapes install directory.`,
+            reader: "other",
+          },
         );
       }
       mkdirSync(dirname(filePath), { recursive: true });

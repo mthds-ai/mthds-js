@@ -14,6 +14,14 @@ function runAgent(...args: string[]): { stdout: string; stderr: string; status: 
   return { stdout: result.stdout, stderr: result.stderr, status: result.status };
 }
 
+/** The problem document of a refused command line, as `--error-format json` writes it. */
+interface RefusalProblem {
+  code?: string;
+  params?: Record<string, unknown>;
+  message?: string;
+  status?: number;
+}
+
 // A path naming a command `mthds-agent` does not register on the active runner is
 // refused by name, on both runners, whether it is run or asked for its help. Left to
 // Commander, `--help` on a deleted command printed the root help and exited 0 as if it
@@ -34,20 +42,25 @@ describe("mthds-agent on a path naming no command (e2e)", () => {
     ["api", ["inputs", "upload"], "upload"],
     ["pipelex", ["inputs", "upload"], "upload"],
   ])("refuses `--help` on `%s` runner path %j by name", (runner, path, unknownWord) => {
-    const { stdout, stderr, status } = runAgent("--runner", runner, ...path, "--help");
+    const { stdout, stderr, status } = runAgent(
+      "--runner",
+      runner,
+      ...path,
+      "--help",
+      "--error-format",
+      "json",
+    );
 
     expect(status).toBe(1);
     expect(stdout).toBe("");
-    const payload = JSON.parse(stderr) as {
-      error?: boolean;
-      error_type?: string;
-      message?: string;
-    };
-    expect(payload.error).toBe(true);
-    expect(payload.error_type).toBe("ArgumentError");
+    const payload = JSON.parse(stderr) as RefusalProblem;
+    expect(payload.code).toBe("client.argument_invalid");
+    expect(payload.params).toEqual({ argument: "command", reason: "unknown_command" });
     expect(payload.message).toBe(
       `Unknown command: ${unknownWord}. Run mthds-agent --help for usage.`,
     );
+    // A CLI writes the problem without the HTTP status member.
+    expect(payload).not.toHaveProperty("status");
   });
 
   // Commander alone refused these as an unknown option or an excess argument, which
@@ -60,24 +73,40 @@ describe("mthds-agent on a path naming no command (e2e)", () => {
     ["pipelex", ["-L", "lib", "nonexistent", "arg"], "nonexistent"],
     ["api", ["inputs", "upload", "./synthetic.png"], "upload"],
   ])("refuses a run of `%s` runner path %j by name", (runner, path, unknownWord) => {
+    // The error stream's default form: the problem rendered as Markdown, for the agent.
     const { stdout, stderr, status } = runAgent("--runner", runner, ...path);
 
     expect(status).toBe(1);
     expect(stdout).toBe("");
-    const payload = JSON.parse(stderr) as { error_type?: string; message?: string };
-    expect(payload.error_type).toBe("ArgumentError");
-    expect(payload.message).toBe(
-      `Unknown command: ${unknownWord}. Run mthds-agent --help for usage.`,
-    );
+    expect(stderr).toMatch(/^## An argument was refused before sending\n/);
+    expect(stderr).toContain(`Unknown command: ${unknownWord}. Run mthds-agent --help for usage.`);
+    expect(stderr).toContain("- Code: `client.argument_invalid`");
   });
 
   it("still answers no command at all with its own refusal", () => {
-    const { stderr, status } = runAgent("--runner", "pipelex");
+    const { stderr, status } = runAgent("--runner", "pipelex", "--error-format", "json");
 
     expect(status).toBe(1);
-    expect((JSON.parse(stderr) as { message?: string }).message).toBe(
-      "No command specified. Run mthds-agent --help for usage.",
-    );
+    const payload = JSON.parse(stderr) as RefusalProblem;
+    expect(payload.code).toBe("client.argument_invalid");
+    expect(payload.params).toEqual({ argument: "command", reason: "missing" });
+    expect(payload.message).toBe("No command specified. Run mthds-agent --help for usage.");
+  });
+
+  it("reads --error-format given before the command, as a program option", () => {
+    const { stderr, status } = runAgent("--error-format", "json", "--runner", "api", "concept");
+
+    expect(status).toBe(1);
+    const payload = JSON.parse(stderr) as RefusalProblem;
+    expect(payload.code).toBe("client.argument_invalid");
+    expect(payload.message).toBe("Unknown command: concept. Run mthds-agent --help for usage.");
+  });
+
+  it("writes the error stream in JSON when --format json asks for the success stream in JSON", () => {
+    const { stderr, status } = runAgent("--runner", "api", "concept", "--format", "json");
+
+    expect(status).toBe(1);
+    expect((JSON.parse(stderr) as RefusalProblem).code).toBe("client.argument_invalid");
   });
 
   it.each([

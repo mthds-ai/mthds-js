@@ -1,11 +1,13 @@
-# For PRs from a release/vX.Y.Z branch into main, requires that CHANGELOG.md
-# contains a matching `## [vX.Y.Z]` entry. Non-release PRs are skipped.
+# For PRs from a release/vX.Y.Z branch into main, or into a maintenance branch
+# maint/vX.Y, requires that CHANGELOG.md contains a matching `## [vX.Y.Z]` entry.
+# Non-release PRs are skipped.
 name: Changelog Version Check
 
 on:
   pull_request:
     branches:
       - main
+      - 'maint/v[0-9]+.[0-9]+'
     types: [opened, synchronize, reopened]
 
 permissions:
@@ -32,7 +34,7 @@ jobs:
               echo "❌ Error: No changelog entry found for version v$VERSION"
               echo "The following versions are in the changelog:"
               grep -E "^## \[v[0-9]+\.[0-9]+\.[0-9]+\]" CHANGELOG.md
-              echo "Please add a changelog entry for v$VERSION before merging this release to main"
+              echo "Please add a changelog entry for v$VERSION before merging this release"
               exit 1
             else
               echo "✅ Changelog entry found for version v$VERSION"

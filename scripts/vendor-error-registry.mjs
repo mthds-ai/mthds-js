@@ -5,7 +5,7 @@
 // asset of the release (mthds/docs/spec/error-registry.md), so it is vendored from either:
 //
 //   node scripts/vendor-error-registry.mjs <ref> [<mthds checkout>]
-//       reads docs/spec/openapi/mthds-error-registry.json at <ref> (a tag such as v7.1.0, a branch
+//       reads docs/spec/openapi/mthds-error-registry.json at <ref> (a tag such as v8.0.0, a branch
 //       or a commit) in the mthds checkout, ../mthds beside this repository by default;
 //   node scripts/vendor-error-registry.mjs --release <version>
 //       downloads the asset of the standard's release v<version> from GitHub, the one networked path.

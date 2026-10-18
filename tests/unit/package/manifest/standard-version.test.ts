@@ -21,33 +21,34 @@ import {
 
 describe("MTHDS_STANDARD_VERSION", () => {
   it("is the standard's cut this package implements", () => {
-    expect(MTHDS_STANDARD_VERSION).toBe("7.0.0");
+    expect(MTHDS_STANDARD_VERSION).toBe("8.0.0");
     expect(isValidSemver(MTHDS_STANDARD_VERSION)).toBe(true);
   });
 
   const CONSTRAINTS: [topic: string, constraint: string, satisfied: boolean][] = [
     ["the constraint every manifest written before the 2.0.0 cut carries", ">=1.0.0", true],
-    ["an exact pin on the current standard", "7.0.0", true],
+    ["an exact pin on the current standard", "8.0.0", true],
     ["a package needing the crate-key wire form", ">=2.1.0", true],
     ["a package needing the verdict natives", ">=3.0.0", true],
     ["a package needing the binding step", ">=4.0.0", true],
     ["a package needing the evidence-prompt PipeJudge", ">=5.0.0", true],
     ["a package needing plain stored names", ">=6.0.0", true],
     ["a package needing method trees", ">=7.0.0", true],
-    ["a caret range over the current major", "^7.0.0", true],
-    ["a tilde range over the current minor", "~7.0.0", true],
-    ["a wildcard over the current major", "7.*", true],
+    ["a package needing problem documents coded from the core error registry", ">=8.0.0", true],
+    ["a caret range over the current major", "^8.0.0", true],
+    ["a tilde range over the current minor", "~8.0.0", true],
+    ["a wildcard over the current major", "8.*", true],
     ["any standard version at all", "*", true],
-    ["a compound range, as the manifest format documents it", ">=7.0.0, <8.0.0", true],
-    ["the same compound range spelled without a space", ">=7.0.0,<8.0.0", true],
-    ["a caret range over the superseded major", "^6.0.0", false],
-    ["a caret range over the major this package implemented before", "^4.0.0", false],
-    ["an exact pin on a superseded cut", "6.0.0", false],
-    ["a tilde range over a superseded minor", "~6.0.0", false],
-    ["a wildcard over the superseded major", "6.*", false],
-    ["a package that predates the cut and says so", "<7.0.0", false],
-    ["a package needing a standard that does not exist yet", ">=8.0.0", false],
-    ["a compound range closing below the current standard", ">=6.0.0, <7.0.0", false],
+    ["a compound range, as the manifest format documents it", ">=8.0.0, <9.0.0", true],
+    ["the same compound range spelled without a space", ">=8.0.0,<9.0.0", true],
+    ["a caret range over the superseded major", "^7.0.0", false],
+    ["a caret range over an older major this package implemented", "^4.0.0", false],
+    ["an exact pin on a superseded cut", "7.0.0", false],
+    ["a tilde range over a superseded minor", "~7.0.0", false],
+    ["a wildcard over the superseded major", "7.*", false],
+    ["a package that predates the cut and says so", "<8.0.0", false],
+    ["a package needing a standard that does not exist yet", ">=9.0.0", false],
+    ["a compound range closing below the current standard", ">=7.0.0, <8.0.0", false],
   ];
 
   for (const [topic, constraint, satisfied] of CONSTRAINTS) {

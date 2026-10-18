@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
-  errorPath,
   fileErrorReason,
+  installFailureProblem,
   noUsableMethodProblem,
   registrationsProblem,
   resolveFailureProblem,
@@ -9,6 +9,7 @@ import {
   unusableMethodProblem,
 } from "../../../src/agent/problems.js";
 import { ToolInstallError } from "../../../src/installer/runtime/exceptions.js";
+import { problemError } from "../../../src/problems/errors.js";
 import { MethodResolveError, systemErrorCode } from "../../../src/installer/resolver/exceptions.js";
 import type { MethodRegistration } from "../../../src/installer/registry/client.js";
 import type { ResolvedMethod, ResolvedRepo } from "../../../src/package/manifest/types.js";
@@ -51,18 +52,33 @@ describe("fileErrorReason", () => {
   });
 });
 
-describe("errorPath", () => {
-  it("reads the path a file system error names", () => {
-    expect(errorPath(Object.assign(new Error("no"), { path: "/tmp/x" }), "fallback")).toBe(
-      "/tmp/x",
-    );
+describe("installFailureProblem", () => {
+  it("reads a file system failure naming its path as client.write_failed on that path", () => {
+    const err = Object.assign(new Error("no"), { code: "EROFS", path: "/ro/.mthds/methods" });
+    expect(installFailureProblem(err, "Install failed: no")).toMatchObject({
+      code: "client.write_failed",
+      params: { path: "/ro/.mthds/methods", reason: "erofs" },
+      message: "Install failed: no",
+    });
   });
 
-  it("falls back when the error names no path", () => {
-    expect(errorPath(new Error("no"), "fallback")).toBe("fallback");
-    expect(errorPath({ path: "" }, "fallback")).toBe("fallback");
-    expect(errorPath({ path: 7 }, "fallback")).toBe("fallback");
-    expect(errorPath(null, "fallback")).toBe("fallback");
+  it("reads any failure naming no path, or no system code, as runtime.unexpected", () => {
+    for (const err of [
+      new Error("telemetry failed"),
+      Object.assign(new Error("no"), { code: "ENOSPC" }),
+      Object.assign(new Error("no"), { code: "ENOSPC", path: "" }),
+      Object.assign(new Error("no"), { path: "/x" }),
+      null,
+    ]) {
+      const problem = installFailureProblem(err, "Install failed");
+      expect(problem).toMatchObject({ code: "runtime.unexpected", message: "Install failed" });
+      expect(problem).not.toHaveProperty("params");
+    }
+  });
+
+  it("keeps the problem an error carries", () => {
+    const err = problemError("method.package_invalid", { reason: "invalid_method_name" });
+    expect(installFailureProblem(err, "Install failed")).toEqual(err.problem);
   });
 });
 

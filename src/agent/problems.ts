@@ -6,6 +6,7 @@
  */
 
 import { agentProblem } from "./output.js";
+import { ProblemError, reportedProblem } from "../problems/errors.js";
 import {
   describeUnusableMethod,
   findSkippedMethod,
@@ -28,10 +29,23 @@ export function fileErrorReason(err: unknown, fallback = "unreadable"): string {
   return systemErrorCode(err)?.toLowerCase() ?? fallback;
 }
 
-/** The path a file system error names, else `fallback`. */
-export function errorPath(err: unknown, fallback: string): string {
+/**
+ * The problem of an install the install flow could not finish (`runInstallFlow`): the problem the
+ * error carries when it carries one, such as `method.package_invalid` for a method whose name or
+ * file would land outside its install directory; `client.write_failed` for a file system failure
+ * naming the path the system refused, its reason the system's code in lower case; else the
+ * catch-all `runtime.unexpected`, the error's sentence in `message`. A failure that names no path,
+ * such as one of the install's telemetry, is never `client.write_failed`, and the install location
+ * (`local`, `global`) is never written as a path.
+ */
+export function installFailureProblem(err: unknown, message: string): Problem {
+  if (err instanceof ProblemError) return reportedProblem(err);
+  const code = systemErrorCode(err);
   const path = (err as { path?: unknown } | null)?.path;
-  return typeof path === "string" && path !== "" ? path : fallback;
+  if (code !== undefined && typeof path === "string" && path !== "") {
+    return agentProblem("client.write_failed", { path, reason: code.toLowerCase() }, message);
+  }
+  return agentProblem("runtime.unexpected", {}, message);
 }
 
 /**

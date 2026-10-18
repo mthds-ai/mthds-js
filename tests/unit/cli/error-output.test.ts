@@ -217,6 +217,14 @@ describe("formatCliError for an answer that is no problem document", () => {
       expect(text).not.toContain(secret);
     }
   });
+
+  it("prints what a 202 to /execute naming no run said, the outcome being unknown", async () => {
+    const client = answering(202, '{"state":"queued"}', "Accepted");
+    const lines = await printed(client.execute({ pipe_code: "p" }));
+    expect(lines).toContain("POST /v1/execute failed (202 Accepted).");
+    expect(lines).toContain('The server answered: {"state":"queued"}');
+    expect(lines).toContain("Code: client.outcome_unknown (domain runtime, retry outcome_unknown)");
+  });
 });
 
 describe("verdictSummary", () => {

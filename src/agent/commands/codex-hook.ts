@@ -209,15 +209,21 @@ function knownCodeDomain(entry: RegistryEntry): string {
  * problem's own `domain` when the hook knows it. A problem whose domain the hook does not know is
  * read as the codes of its family the hook knows (protocol.md, "A reader falls back on the
  * family"): their domain when they share one, or, when they disagree, `environment` if every one
- * of them would warn and `""` otherwise, which blocks. A problem of a family the hook knows
- * nothing of reads as `runtime`, as the protocol says.
+ * of them would warn and `""` otherwise, which blocks.
+ *
+ * A problem of a family the hook knows nothing of, such as an extension code
+ * (`pipelex.validation.foo`) or a core family newer than the registry this CLI vendors, reads as
+ * `""` and blocks. The protocol reads such a problem as `runtime` (`problemDomain` in
+ * `problems/reading.ts`, which every other reader of this CLI keeps), a reading made to show a
+ * problem, not to gate an edit: here it would warn, letting a fault of the file through as the
+ * environment's. The hook is a gate, so it fails closed: the agent reads the problem and decides.
  */
 function problemEnvelopeDomain(code: string, domain: string): string {
   if (ENVIRONMENT_CODES.has(code)) return "environment";
   if ((PROBLEM_DOMAINS as readonly string[]).includes(domain)) return domain;
   const readings = familyEntries(codeFamily(code)).map(knownCodeDomain);
   const first = readings[0];
-  if (first === undefined) return "runtime";
+  if (first === undefined) return "";
   if (readings.every((reading) => reading === first)) return first;
   return readings.every((reading) => ENVIRONMENT_DOMAINS.has(reading)) ? "environment" : "";
 }
@@ -313,7 +319,8 @@ export type Stage3Outcome =
  * - a domain of the environment     → warn (additionalContext, environment issue): a
  *   problem's `account`, `operator` or `runtime`, the legacy envelope's `config` or `runtime`
  * - anything else (input, method, unknown, no-verdict) → block (default-to-block safety),
- *   reason built from the envelope's message and its items
+ *   reason built from the envelope's message and its items; a problem of a code family the hook
+ *   knows nothing of is unknown here, never read as `runtime` (`problemEnvelopeDomain`)
  * - unparseable / empty stderr      → block with a generic reason
  */
 export function classifyStage3Result(file: string, result: PipelexValidateResult): Stage3Outcome {

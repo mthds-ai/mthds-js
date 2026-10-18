@@ -890,20 +890,47 @@ describe("classifyStage3Result — problem documents", () => {
     expect(out.context).toContain("The inference gateway is down.");
   });
 
-  it("reads an unknown code of an unknown family with no domain as runtime, and warns", () => {
+  // The protocol reads a problem of a family a reader knows nothing of as `runtime`, which the
+  // hook would read as the environment's and only warn on. A gate fails closed instead: such a
+  // problem, of an unknown core family or an extension code, blocks, whatever its domain says
+  // when the hook does not know that domain either.
+  it.each([
+    ["an unknown core family", "quorum.lost", undefined],
+    ["an extension code", "pipelex.validation.foo", undefined],
+    [
+      "an extension code with a domain the hook does not know",
+      "pipelex.validation.foo",
+      "pipeline",
+    ],
+  ])("blocks on a problem of %s", (_topic, code, domain) => {
     const stderr = JSON.stringify({
-      type: "https://example.com/errors/quorum.lost",
-      title: "Quorum lost",
+      type: `https://example.com/errors/${code}`,
+      title: "Something the hook does not know",
       detail: "The cluster lost its quorum.",
-      code: "quorum.lost",
+      code,
+      ...(domain === undefined ? {} : { domain }),
       retry: "later",
       next_step: { kind: "retry", detail: "Try again later." },
     });
     const out = classifyStage3Result("a.mthds", { exitCode: 1, stderr });
+    expect(out.kind).toBe("block");
+    if (out.kind !== "block") return;
+    expect(out.reason).toContain("Validation failed for a.mthds");
+    expect(out.reason).toContain("The cluster lost its quorum.");
+  });
+
+  it("still reads an extension code by the domain it declares when the hook knows that domain", () => {
+    const stderr = JSON.stringify({
+      type: "https://example.com/errors/pipelex.inference.down",
+      title: "Inference down",
+      detail: "The inference gateway is down.",
+      code: "pipelex.inference.down",
+      domain: "runtime",
+      retry: "yes",
+      next_step: { kind: "retry", detail: "Try again later." },
+    });
+    const out = classifyStage3Result("a.mthds", { exitCode: 1, stderr });
     expect(out.kind).toBe("warn");
-    if (out.kind !== "warn") return;
-    expect(out.domain).toBe("runtime");
-    expect(out.context).toContain("The cluster lost its quorum.");
   });
 
   it("reads an unknown code with no domain as the codes of its family it knows", () => {

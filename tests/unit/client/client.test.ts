@@ -879,16 +879,28 @@ describe("MthdsApiClient.execute 202 degrade (eng-review 3B)", () => {
       const err = await rejection(client.execute({ pipe_code: "p" }));
       expect(err).not.toBeInstanceOf(RunStillRunningError);
       expect((err as ApiResponseError).problem).toEqual(buildProblem("client.outcome_unknown", {}));
+      // The body is no problem document, so the error quotes what the server said.
+      expect((err as ApiResponseError).answerExcerpt).toBe(JSON.stringify({ pipeline_run_id: id }));
     },
   );
 
-  it("reads a 202 that names no run as client.outcome_unknown", async () => {
+  it("reads a 202 that names no run as client.outcome_unknown, quoting what it said", async () => {
     const client = makeClient();
     vi.spyOn(globalThis, "fetch").mockResolvedValue(textResponse(202, "accepted"));
     const err = await rejection(client.execute({ pipe_code: "p" }));
     expect(err).toBeInstanceOf(ApiResponseError);
     expect(err).not.toBeInstanceOf(RunStillRunningError);
     expect((err as ApiResponseError).problem).toEqual(buildProblem("client.outcome_unknown", {}));
+    expect((err as ApiResponseError).answerExcerpt).toBe("accepted");
+    expect((err as ApiResponseError).message).toContain("The server answered: accepted");
+  });
+
+  it("quotes nothing of a 202 naming its run, the problem naming the run itself", async () => {
+    const client = makeClient();
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(jsonResponse(202, { pipeline_run_id: "r" }));
+    const err = await rejection(client.execute({ pipe_code: "p" }));
+    expect(err).toBeInstanceOf(RunStillRunningError);
+    expect((err as RunStillRunningError).answerExcerpt).toBeUndefined();
   });
 });
 

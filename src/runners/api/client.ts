@@ -460,15 +460,16 @@ export class MthdsApiClient implements Runner {
    * The protocol's optional `202` degrade of a blocking execute: the runner accepted the run and
    * will not hold the connection, so the client stops following a run that has started
    * (`client.follow_failed`, naming it). A `202` that does not name its run leaves the outcome
-   * unknown (`client.outcome_unknown`).
+   * unknown (`client.outcome_unknown`); its body is no problem document, so the error quotes its
+   * start (`answerExcerpt`), as `readResult` quotes a success that is not the route's result.
    */
   private acceptedAsynchronously(route: Route, res: RawResponse): ApiResponseError {
     const reading = parseResultBody(res.body);
     const runId = reading.ok ? runIdOf(reading.value) : undefined;
-    const facts = this.answerFacts(route, res);
     if (runId === undefined) {
-      return new ApiResponseError(outcomeUnknown(undefined), facts);
+      return new ApiResponseError(outcomeUnknown(undefined), this.answerFacts(route, res, false));
     }
+    const facts = this.answerFacts(route, res);
     // The run exists, so the problem names it as its `pipeline_run_id` member as well.
     return new RunStillRunningError(
       buildProblem("client.follow_failed", { pipeline_run_id: runId }, { pipeline_run_id: runId }),

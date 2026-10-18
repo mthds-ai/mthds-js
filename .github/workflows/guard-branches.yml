@@ -1,6 +1,7 @@
-# Enforces the branch flow: work-branch → dev → release/vX.Y.Z → main.
+# Enforces the branch flow: work-branch → dev → release/vX.Y.Z → main, and, for a
+# maintenance release, release/vX.Y.Z → maint/vX.Y.
 # Catches wrong-target PRs from maintainers. Convention enforcement, not security
-# (real protection comes from the branch-protection ruleset on main).
+# (real protection comes from the branch-protection rulesets on main and maint/v*).
 name: Guard branch flow
 
 on:
@@ -11,26 +12,39 @@ permissions: {}
 
 jobs:
   # ─────────────────────────────────────────────────────────────
-  # main  ←  release/vX.Y.Z   (release promotion)
+  # main        ←  release/vX.Y.Z   (release promotion)
+  # maint/vX.Y  ←  release/vX.Y.Z   (maintenance release of the X.Y line)
   # ─────────────────────────────────────────────────────────────
   gate-main:
-    if: github.event.pull_request.base.ref == 'main'
+    if: github.event.pull_request.base.ref == 'main' || startsWith(github.event.pull_request.base.ref, 'maint/')
     runs-on: ubuntu-latest
     steps:
-      - name: Only release/vX.Y.Z from this repo may target main
+      - name: Only release/vX.Y.Z from this repo may target main, and only release/vX.Y.Z of the X.Y line may target maint/vX.Y
         env:
           HEAD: ${{ github.event.pull_request.head.ref }}
+          BASE: ${{ github.event.pull_request.base.ref }}
           HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
           REPO: ${{ github.repository }}
         run: |
-          echo "PR → main from $HEAD ($HEAD_REPO)"
+          echo "PR → $BASE from $HEAD ($HEAD_REPO)"
           if [[ "$HEAD_REPO" != "$REPO" ]]; then
-            echo "::error::PRs to main must come from a release/vX.Y.Z branch in this repository, not a fork."
+            echo "::error::PRs to $BASE must come from a release/vX.Y.Z branch in this repository, not a fork."
             exit 1
           fi
-          if [[ ! "$HEAD" =~ ^release/v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "::error::Only release/vX.Y.Z branches may merge into main."
+          if [[ ! "$HEAD" =~ ^release/v([0-9]+\.[0-9]+)\.[0-9]+$ ]]; then
+            echo "::error::Only release/vX.Y.Z branches may merge into $BASE."
             exit 1
+          fi
+          RELEASE_LINE="${BASH_REMATCH[1]}"
+          if [[ "$BASE" != "main" ]]; then
+            if [[ ! "$BASE" =~ ^maint/v([0-9]+\.[0-9]+)$ ]]; then
+              echo "::error::Maintenance branches must follow the maint/vX.Y pattern."
+              exit 1
+            fi
+            if [[ "${BASH_REMATCH[1]}" != "$RELEASE_LINE" ]]; then
+              echo "::error::$HEAD is not a release of the ${BASH_REMATCH[1]} line that $BASE maintains."
+              exit 1
+            fi
           fi
 
   # ─────────────────────────────────────────────────────────────

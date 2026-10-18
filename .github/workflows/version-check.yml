@@ -1,5 +1,7 @@
 # Validates package.json version against the branch flow:
 #   - PR → main:           PR version must be strictly greater than main's.
+#   - PR → maint/vX.Y:     PR version must be strictly greater than that branch's,
+#                          and of its X.Y line (a maintenance release of X.Y).
 #   - PR → release/vX.Y.Z: package.json version must equal X.Y.Z.
 #   - PR from release/vX.Y.Z: package.json version must equal X.Y.Z.
 # All PR refs go through env: (never interpolated into shell) to prevent
@@ -10,6 +12,7 @@ on:
   pull_request:
     branches:
       - main
+      - 'maint/v[0-9]+.[0-9]+'
       - 'release/v[0-9]+.[0-9]+.[0-9]+'
 
 permissions:
@@ -43,6 +46,12 @@ jobs:
           else
             echo "is_release_target=false" >> "$GITHUB_OUTPUT"
           fi
+          if [[ "$BASE_BRANCH" =~ ^maint/v([0-9]+\.[0-9]+)$ ]]; then
+            echo "is_maint_target=true" >> "$GITHUB_OUTPUT"
+            echo "maint_line=${BASH_REMATCH[1]}" >> "$GITHUB_OUTPUT"
+          else
+            echo "is_maint_target=false" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Validate source branch
         id: source
@@ -54,13 +63,13 @@ jobs:
             echo "is_release_source=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Check version bump (PR → main)
-        if: env.BASE_BRANCH == 'main'
+      - name: Check version bump (PR → main or maint/vX.Y)
+        if: env.BASE_BRANCH == 'main' || steps.base.outputs.is_maint_target == 'true'
         env:
           PR_VERSION: ${{ steps.pr_version.outputs.version }}
         run: |
           MAIN_VERSION=$(git show "origin/${BASE_BRANCH}:package.json" | node -p "JSON.parse(require('fs').readFileSync(0,'utf-8')).version")
-          echo "Main version: $MAIN_VERSION"
+          echo "$BASE_BRANCH version: $MAIN_VERSION"
           echo "PR version:   $PR_VERSION"
 
           compare_versions() {
@@ -75,10 +84,22 @@ jobs:
           }
 
           if ! compare_versions "$PR_VERSION" "$MAIN_VERSION"; then
-            echo "::error::PR version ($PR_VERSION) must be greater than main version ($MAIN_VERSION)."
+            echo "::error::PR version ($PR_VERSION) must be greater than $BASE_BRANCH version ($MAIN_VERSION)."
             exit 1
           fi
           echo "Version properly bumped: $MAIN_VERSION → $PR_VERSION"
+
+      - name: Check version is of the maintenance line (PR → maint/vX.Y)
+        if: steps.base.outputs.is_maint_target == 'true'
+        env:
+          PR_VERSION: ${{ steps.pr_version.outputs.version }}
+          MAINT_LINE: ${{ steps.base.outputs.maint_line }}
+        run: |
+          if [[ "$PR_VERSION" != "$MAINT_LINE".* ]]; then
+            echo "::error::package.json version ($PR_VERSION) is not of the $MAINT_LINE line that $BASE_BRANCH maintains."
+            exit 1
+          fi
+          echo "Version $PR_VERSION is of the $MAINT_LINE line."
 
       - name: Check version matches target release branch
         if: steps.base.outputs.is_release_target == 'true'

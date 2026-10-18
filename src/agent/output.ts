@@ -19,7 +19,8 @@ import { renderProblemMarkdown } from "../problems/render.js";
 import type { CoreErrorCode, ProblemParamsByCode } from "../problems/registry.generated.js";
 import type { BuildProblemOptions } from "../problems/build.js";
 import type { Problem } from "../problems/types.js";
-import { ApiResponseError } from "../runners/api/exceptions.js";
+import { serverAnswerOf } from "../runners/api/exceptions.js";
+import type { ServerAnswer } from "../runners/api/exceptions.js";
 import { noteProblem } from "../usage-stats/outcome.js";
 
 // ── Re-export BinaryRecoveryInfo for callers ────────────────────────
@@ -150,22 +151,19 @@ export function problemOfError(err: unknown, fallback: (message: string) => Prob
 }
 
 /**
- * What an answer of the runtime said beside its problem, which no member of the problem holds: the
- * route that answered, its HTTP status and, when its body is no problem document, the start of the
- * body (`ApiResponseError.answerExcerpt`), every URL in it without its query.
+ * What an answer of the runtime said beside its problem, as this CLI writes it: the route that
+ * answered, its HTTP status and, when its body is no problem document, the start of the body
+ * (`ApiResponseError.answerExcerpt`), every URL in it without its query. The status text is left
+ * out, the status naming the answer.
  */
-export interface ServerAnswer {
-  route: string;
-  status: number;
-  excerpt?: string;
-}
+export type AgentServerAnswer = Omit<ServerAnswer, "statusText">;
 
-/** The extras of an error a command caught: what the server answered, for an `ApiResponseError`. */
+/** The extras of an error a command caught: what the server answered (`serverAnswerOf`), for an `ApiResponseError`. */
 export function errorExtras(err: unknown): AgentErrorExtras {
-  if (!(err instanceof ApiResponseError)) return {};
-  const answer: ServerAnswer = { route: err.route, status: err.status };
-  if (err.answerExcerpt !== undefined) answer.excerpt = err.answerExcerpt;
-  return { server_answer: answer };
+  const answer = serverAnswerOf(err);
+  if (answer === undefined) return {};
+  const { statusText: _statusText, ...written } = answer;
+  return { server_answer: written };
 }
 
 /**
@@ -207,7 +205,7 @@ export interface AgentErrorExtras {
    * as a gateway's `{"detail":"Invalid authentication token"}` read as
    * `client.response_unreadable`. A member the runtime's problem holds under this name is kept.
    */
-  server_answer?: ServerAnswer;
+  server_answer?: AgentServerAnswer;
 }
 
 /**

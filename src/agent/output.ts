@@ -61,6 +61,28 @@ export function optionValue(argv: readonly string[], name: string): string | und
 }
 
 /**
+ * The arguments without an option that takes a value, written as `--name value` or `--name=value`,
+ * wherever it stands before `--`. `--` and everything after it are kept as written, since they are
+ * operands.
+ */
+export function withoutOption(args: readonly string[], name: string): string[] {
+  const kept: string[] = [];
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index]!;
+    if (arg === "--") {
+      kept.push(...args.slice(index));
+      break;
+    }
+    if (arg === name) {
+      index += 1;
+    } else if (!arg.startsWith(`${name}=`)) {
+      kept.push(arg);
+    }
+  }
+  return kept;
+}
+
+/**
  * The form of the error stream a command line asks for: its last `--error-format`, else its last
  * `--format` when it names `json`, the error stream inheriting the success stream's form as the
  * workspace's output rule says, else Markdown. Read from the command line itself rather than

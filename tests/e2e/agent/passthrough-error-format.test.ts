@@ -26,6 +26,16 @@ writeFileSync(
   ].join("\n"),
 );
 chmodSync(join(bin, "pipelex-agent"), 0o755);
+writeFileSync(
+  join(bin, "plxt"),
+  [
+    "#!/bin/sh",
+    'if [ "$1" = "--version" ]; then echo "plxt 99.0.0"; exit 0; fi',
+    'printf "%s\\n" "$@"',
+    "",
+  ].join("\n"),
+);
+chmodSync(join(bin, "plxt"), 0o755);
 
 afterAll(() => {
   rmSync(home, { recursive: true, force: true });
@@ -77,6 +87,44 @@ describe.skipIf(process.platform === "win32")(
         "pipe",
         "x.mthds",
       ]);
+    });
+  },
+);
+
+describe.skipIf(process.platform === "win32")(
+  "mthds-agent's --error-format on plxt fmt and plxt lint (e2e)",
+  () => {
+    // plxt takes no --error-format and refuses it, so the option, mthds-agent's own, is never
+    // forwarded, wherever it stands before `--`; from `--` on, everything is forwarded as written.
+    it.each([
+      ["after the file", ["plxt", "fmt", "file.mthds", "--error-format", "json"]],
+      ["after the file, in its = form", ["plxt", "lint", "file.mthds", "--error-format=json"]],
+      ["before the file", ["plxt", "fmt", "--error-format", "json", "file.mthds"]],
+      [
+        "after an option of plxt's",
+        ["plxt", "fmt", "--check", "--error-format", "json", "file.mthds"],
+      ],
+      ["before the command", ["--error-format", "json", "plxt", "lint", "file.mthds"]],
+    ])("drops --error-format given %s", (_where, args) => {
+      const forwarded = forwardedArgs(...args);
+      expect(forwarded).not.toContain("--error-format");
+      expect(forwarded).not.toContain("--error-format=json");
+      expect(forwarded).not.toContain("json");
+      expect(forwarded.at(-1)).toBe("file.mthds");
+    });
+
+    it("forwards everything from -- on as written, the marker included", () => {
+      expect(forwardedArgs("plxt", "fmt", "file.mthds", "--", "--error-format", "json")).toEqual([
+        "fmt",
+        "file.mthds",
+        "--",
+        "--error-format",
+        "json",
+      ]);
+      // A `--` before any operand is consumed by the command line's parser, and given back.
+      expect(
+        forwardedArgs("plxt", "lint", "--error-format", "json", "--", "--error-format"),
+      ).toEqual(["lint", "--", "--error-format"]);
     });
   },
 );

@@ -16,9 +16,9 @@ function scratchDir(): string {
   return dir;
 }
 
-function failure(path: string): MethodResolveError {
+async function failure(path: string): Promise<MethodResolveError> {
   try {
-    resolveFromLocal(path);
+    await resolveFromLocal(path);
   } catch (err) {
     expect(err).toBeInstanceOf(MethodResolveError);
     return err as MethodResolveError;
@@ -34,34 +34,34 @@ afterEach(() => {
 });
 
 describe("resolveFromLocal failures", () => {
-  it("reads a missing directory as not_found", () => {
-    const err = failure(join(scratchDir(), "absent"));
+  it("reads a missing directory as not_found", async () => {
+    const err = await failure(join(scratchDir(), "absent"));
     expect(err.reason).toBe("not_found");
     expect(err.message).toContain("Directory not found");
   });
 
-  it("reads a file given as the directory as not_found", () => {
+  it("reads a file given as the directory as not_found", async () => {
     const file = join(scratchDir(), "a-file");
     writeFileSync(file, "");
-    expect(failure(file).reason).toBe("not_found");
+    expect((await failure(file)).reason).toBe("not_found");
   });
 
-  it("reads a directory with no methods/ folder, or an empty one, as not_found", () => {
+  it("reads a directory with no methods/ folder, or an empty one, as not_found", async () => {
     const dir = scratchDir();
-    expect(failure(dir).reason).toBe("not_found");
+    expect((await failure(dir)).reason).toBe("not_found");
     mkdirSync(join(dir, "methods"));
-    expect(failure(dir).message).toContain("No methods found");
+    expect((await failure(dir)).message).toContain("No methods found");
   });
 
   it.skipIf(process.platform === "win32" || process.getuid?.() === 0)(
     "reads a methods/ folder the system refuses to list as unreadable, naming its path",
-    () => {
+    async () => {
       const dir = scratchDir();
       const methods = join(dir, "methods");
       mkdirSync(methods);
       chmodSync(methods, 0o000);
       try {
-        const err = failure(dir);
+        const err = await failure(dir);
         expect(err.reason).toBe("unreadable");
         expect(err.path).toBe(methods);
         expect(err.fsCode).toBe("EACCES");

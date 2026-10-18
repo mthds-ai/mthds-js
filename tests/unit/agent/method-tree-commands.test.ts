@@ -4,6 +4,7 @@ import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { Command } from "commander";
 import { registerApiRunnerCommands } from "../../../src/agent/commands/api-commands.js";
+import { chooseErrorFormat } from "../../../src/agent/output.js";
 import { MthdsApiClient } from "../../../src/runners/api/client.js";
 
 // On the API runner, `validate`, `run start` and `inputs` send the method's tree as the standard's
@@ -28,6 +29,8 @@ const VALIDATE_ANSWER = {
   pending_signatures: [],
   is_runnable: true,
 };
+
+const START_ANSWER = { pipeline_run_id: "run-1", state: "STARTED" };
 
 /** A valid `/v1/pipe-io` answer for the pipe the request named, else `demo.main`, with one text input. */
 function pipeIoAnswer(body: Record<string, unknown>): Record<string, unknown> {
@@ -76,6 +79,7 @@ describe("API-runner commands send the method's tree", () => {
     writeFileSync(join(method, "child.mthds"), CHILD);
     writeFileSync(join(shared, "shared.mthds"), SHARED);
 
+    chooseErrorFormat("json");
     stdoutSpy = vi.spyOn(process.stdout, "write").mockReturnValue(true);
     stderrSpy = vi.spyOn(process.stderr, "write").mockReturnValue(true);
     // agentError ends in process.exit(1); throw a sentinel so the test can catch it.
@@ -95,15 +99,22 @@ describe("API-runner commands send the method's tree", () => {
       }
       const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
       requests.push({ url, body });
-      const answer = url.endsWith("/pipe-io") ? pipeIoAnswer(body) : VALIDATE_ANSWER;
+      // A started run is a 202 naming the run; every other route answers a 200 verdict.
+      const started = url.endsWith("/start");
+      const answer = url.endsWith("/pipe-io")
+        ? pipeIoAnswer(body)
+        : started
+          ? START_ANSWER
+          : VALIDATE_ANSWER;
       return new Response(JSON.stringify(answer), {
-        status: 200,
+        status: started ? 202 : 200,
         headers: { "Content-Type": "application/json" },
       });
     });
   });
 
   afterEach(() => {
+    chooseErrorFormat(undefined);
     vi.restoreAllMocks();
     rmSync(dir, { recursive: true, force: true });
   });
@@ -181,7 +192,10 @@ describe("API-runner commands send the method's tree", () => {
         expect(start).not.toHaveBeenCalled();
         expect(requests).toHaveLength(0);
         const error = firstStderrJson();
-        expect(error.error_type).toBe("ArgumentError");
+        expect(error).toMatchObject({
+          code: "client.argument_invalid",
+          params: { argument: "inputs", reason: "not_a_regular_file" },
+        });
         expect(String(error.message)).toContain(`'${candidate}'`);
         expect(String(error.message)).toContain(`it is ${described}`);
         expect(String(error.message)).toContain("--inputs <path>");
@@ -263,8 +277,9 @@ describe("API-runner commands send the method's tree", () => {
 
       expect(requests).toHaveLength(0);
       expect(firstStderrJson()).toMatchObject({
-        error_type: "ArgumentError",
-        error_domain: "argument",
+        code: "client.argument_invalid",
+        domain: "input",
+        params: { argument: "target", reason: "library_dir_outside_tree" },
       });
       expect(String(firstStderrJson().message)).toContain("outside that tree");
     });
@@ -309,15 +324,22 @@ describe("API-runner commands send the method's tree", () => {
 
     it("adds no warning to an invalid verdict's error envelope", async () => {
       vi.mocked(globalThis.fetch).mockImplementation(
-        async () =>
+        async (input) =>
           new Response(
-            JSON.stringify({
-              is_valid: false,
-              message: "bad bundle",
-              validation_errors: [{ category: "concept", message: "undeclared" }],
-              pending_signatures: [],
-              is_runnable: false,
-            }),
+            JSON.stringify(
+              // The handshake still reads a version; only the validation answers an invalid verdict.
+              String(input).endsWith("/version")
+                ? { protocol_version: "1.0.0" }
+                : {
+                    is_valid: false,
+                    message: "bad bundle",
+                    errors: [
+                      { code: "method.concept_unresolved", detail: "The concept is undeclared." },
+                    ],
+                    pending_signatures: [],
+                    is_runnable: false,
+                  },
+            ),
             { status: 200, headers: { "Content-Type": "application/json" } },
           ),
       );
@@ -327,7 +349,12 @@ describe("API-runner commands send the method's tree", () => {
       ).rejects.toThrow("__exit__");
 
       // The stubbed exit throws, so later writes are the stub's echo; the first is the envelope.
-      expect(firstStderrJson()).toMatchObject({ error: true, error_type: "ValidateBundleError" });
+      expect(firstStderrJson()).toMatchObject({
+        code: "method.invalid",
+        is_valid: false,
+        message: "bad bundle",
+        errors: [{ code: "method.concept_unresolved", detail: "The concept is undeclared." }],
+      });
       for (const [written] of stderrSpy.mock.calls) {
         expect(String(written)).not.toContain('"warning"');
       }
@@ -347,18 +374,22 @@ describe("API-runner commands send the method's tree", () => {
 
       expect(requests).toHaveLength(0);
       expect(firstStderrJson()).toMatchObject({
-        error_type: "ArgumentError",
-        error_domain: "argument",
+        code: "client.argument_invalid",
+        domain: "input",
+        params: { argument: "target", reason: "not_a_bundle_file" },
       });
     });
 
-    it("reports a missing target as an IOError", async () => {
-      await expect(agent("validate", "bundle", join(dir, "missing.mthds"))).rejects.toThrow(
-        "__exit__",
-      );
+    it("reports a missing target as a file it cannot read", async () => {
+      const missing = join(dir, "missing.mthds");
+      await expect(agent("validate", "bundle", missing)).rejects.toThrow("__exit__");
 
       expect(requests).toHaveLength(0);
-      expect(firstStderrJson()).toMatchObject({ error_type: "IOError", error_domain: "io" });
+      expect(firstStderrJson()).toMatchObject({
+        code: "client.file_unreadable",
+        domain: "input",
+        params: { path: missing, reason: "not_found" },
+      });
     });
   });
 
@@ -476,19 +507,23 @@ describe("API-runner commands send the method's tree", () => {
 
       expect(requests).toHaveLength(0);
       expect(firstStderrJson()).toMatchObject({
-        error_type: "ArgumentError",
-        error_domain: "argument",
+        code: "client.argument_invalid",
+        domain: "input",
+        params: { argument: "target", reason: "library_dir_outside_tree" },
       });
       expect(String(firstStderrJson().message)).toContain("outside that tree");
     });
 
-    it("reports a missing target as an IOError, sending nothing", async () => {
-      await expect(agent("inputs", "bundle", join(dir, "missing.mthds"))).rejects.toThrow(
-        "__exit__",
-      );
+    it("reports a missing target as a file it cannot read, sending nothing", async () => {
+      const missing = join(dir, "missing.mthds");
+      await expect(agent("inputs", "bundle", missing)).rejects.toThrow("__exit__");
 
       expect(requests).toHaveLength(0);
-      expect(firstStderrJson()).toMatchObject({ error_type: "IOError", error_domain: "io" });
+      expect(firstStderrJson()).toMatchObject({
+        code: "client.file_unreadable",
+        domain: "input",
+        params: { path: missing, reason: "not_found" },
+      });
     });
   });
 

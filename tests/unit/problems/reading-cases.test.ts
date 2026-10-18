@@ -70,11 +70,11 @@ const CASE_FILE = JSON.parse(
 function callRoute(client: MthdsApiClient, route: string): Promise<unknown> {
   switch (route) {
     case "POST /execute":
-      return client.execute({ pipe_code: "summarize", mthds_contents: ['domain = "demo"'] });
+      return client.execute({ pipe_code: "summarize", files: { "demo.mthds": 'domain = "demo"' } });
     case "POST /start":
-      return client.start({ pipe_code: "summarize", mthds_contents: ['domain = "demo"'] });
+      return client.start({ pipe_code: "summarize", files: { "demo.mthds": 'domain = "demo"' } });
     case "POST /validate":
-      return client.validate(['domain = "demo"']);
+      return client.validate({ files: { "demo.mthds": 'domain = "demo"' } });
     case "GET /models":
       return client.models();
     case "GET /version":

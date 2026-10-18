@@ -34,6 +34,33 @@ function route(routes: Array<[string, () => Response | Promise<Response>]>): voi
   });
 }
 
+/** The `methods/demo` directory as the contents route lists it, its git tree `t1`. */
+const DEMO_DIR = { type: "dir", name: "demo", path: "methods/demo", sha: "t1" };
+
+const MANIFEST = [
+  "[package]",
+  'name = "demo"',
+  'address = "github.com/acme/tools"',
+  'version = "1.0.0"',
+  'description = "Demo."',
+  "",
+  "[exports.default]",
+  'pipes = ["main"]',
+].join("\n");
+
+const MANIFEST_ENTRY = { path: "METHODS.toml", mode: "100644", type: "blob", sha: "m1" };
+const MAIN_ENTRY = { path: "main.mthds", mode: "100644", type: "blob", sha: "b1" };
+
+/** A recursive git tree as `GET /repos/{owner}/{repo}/git/trees/{sha}?recursive=1` gives it. */
+function gitTree(entries: readonly object[]): unknown {
+  return { tree: entries, truncated: false };
+}
+
+/** A blob as `GET /repos/{owner}/{repo}/git/blobs/{sha}` gives it. */
+function blob(text: string): unknown {
+  return { content: Buffer.from(text).toString("base64"), encoding: "base64" };
+}
+
 async function failure(): Promise<MethodResolveError> {
   const err = await resolveFromGitHub(PARSED).then(
     () => expect.fail("expected the resolve to fail"),
@@ -118,11 +145,28 @@ describe("resolveFromGitHub failures", () => {
     expect((await failure()).reason).toBe("fetch_failed");
   });
 
-  it("fails the resolve when GitHub fails on a METHODS.toml, rather than skipping the method", async () => {
+  it.each([
+    ["the method's git tree", "git/trees/t1?recursive=1"],
+    ["its METHODS.toml", "git/blobs/m1"],
+  ])(
+    "fails the resolve when GitHub fails on %s, rather than skipping the method",
+    async (_what, failing) => {
+      route([
+        [failing, () => json(500, { message: "boom" })],
+        ["repos/acme/tools", () => json(200, { private: false })],
+        ["contents/methods", () => json(200, [DEMO_DIR])],
+        ["git/trees/t1?recursive=1", () => json(200, gitTree([MANIFEST_ENTRY]))],
+        ["git/blobs/m1", () => json(200, blob(MANIFEST))],
+      ]);
+      expect((await failure()).reason).toBe("fetch_failed");
+    },
+  );
+
+  it("fails the resolve as fetch_failed when GitHub no longer serves the method's git tree", async () => {
     route([
       ["repos/acme/tools", () => json(200, { private: false })],
-      ["contents/methods", () => json(200, [{ type: "dir", name: "demo", path: "methods/demo" }])],
-      ["contents/methods/demo/METHODS.toml", () => json(500, { message: "boom" })],
+      ["contents/methods", () => json(200, [DEMO_DIR])],
+      ["git/trees/t1?recursive=1", () => json(404, { message: "Not Found" })],
     ]);
     expect((await failure()).reason).toBe("fetch_failed");
   });
@@ -130,8 +174,8 @@ describe("resolveFromGitHub failures", () => {
   it("skips a method whose METHODS.toml is absent", async () => {
     route([
       ["repos/acme/tools", () => json(200, { private: false })],
-      ["contents/methods", () => json(200, [{ type: "dir", name: "demo", path: "methods/demo" }])],
-      ["contents/methods/demo/METHODS.toml", () => json(404, { message: "Not Found" })],
+      ["contents/methods", () => json(200, [DEMO_DIR])],
+      ["git/trees/t1?recursive=1", () => json(200, gitTree([MAIN_ENTRY]))],
     ]);
     const resolved = await resolveFromGitHub(PARSED);
     expect(resolved.methods).toEqual([]);
@@ -141,16 +185,13 @@ describe("resolveFromGitHub failures", () => {
   });
 
   it.each([
-    [
-      "a directory",
-      () => json(200, [{ type: "file", name: "x", path: "methods/demo/METHODS.toml/x" }]),
-    ],
-    ["a submodule", () => json(200, { type: "submodule", download_url: null })],
-  ])("skips a method whose METHODS.toml is %s rather than a file", async (_what, answer) => {
+    ["a directory", { path: "METHODS.toml", mode: "040000", type: "tree", sha: "d1" }],
+    ["a submodule", { path: "METHODS.toml", mode: "160000", type: "commit", sha: "c1" }],
+  ])("skips a method whose METHODS.toml is %s rather than a file", async (_what, entry) => {
     route([
       ["repos/acme/tools", () => json(200, { private: false })],
-      ["contents/methods", () => json(200, [{ type: "dir", name: "demo", path: "methods/demo" }])],
-      ["contents/methods/demo/METHODS.toml", answer],
+      ["contents/methods", () => json(200, [DEMO_DIR])],
+      ["git/trees/t1?recursive=1", () => json(200, gitTree([entry, MAIN_ENTRY]))],
     ]);
     const resolved = await resolveFromGitHub(PARSED);
     expect(resolved.methods).toEqual([]);
@@ -160,52 +201,18 @@ describe("resolveFromGitHub failures", () => {
   });
 
   it.each([
-    [
-      "its download is not found",
-      () => json(200, { type: "file", download_url: "http://127.0.0.1:9/raw/main.mthds" }),
-    ],
-    [
-      "GitHub names no file at its path",
-      () => json(200, { type: "submodule", download_url: null }),
-    ],
-  ])(
-    "fails the resolve as fetch_failed when a listed .mthds file is gone: %s",
-    async (_what, answer) => {
-      const manifest = [
-        "[package]",
-        'name = "demo"',
-        'address = "github.com/acme/tools"',
-        'version = "1.0.0"',
-        'description = "Demo."',
-        "",
-        "[exports.default]",
-        'pipes = ["main"]',
-      ].join("\n");
-      route([
-        ["repos/acme/tools", () => json(200, { private: false })],
-        [
-          "contents/methods",
-          () => json(200, [{ type: "dir", name: "demo", path: "methods/demo" }]),
-        ],
-        [
-          "contents/methods/demo/METHODS.toml",
-          () =>
-            json(200, {
-              type: "file",
-              content: Buffer.from(manifest).toString("base64"),
-              encoding: "base64",
-            }),
-        ],
-        [
-          "contents/methods/demo",
-          () => json(200, [{ type: "file", name: "main.mthds", path: "methods/demo/main.mthds" }]),
-        ],
-        ["contents/methods/demo/main.mthds", answer],
-        ["raw/main.mthds", () => new Response("Not Found", { status: 404 })],
-      ]);
-      const err = await failure();
-      expect(err.reason).toBe("fetch_failed");
-      expect(err.message).toContain("main.mthds");
-    },
-  );
+    ["GitHub no longer serves its blob", () => json(404, { message: "Not Found" })],
+    ["GitHub answers its blob without content", () => json(200, { sha: "b1" })],
+  ])("fails the resolve as fetch_failed when a listed file is gone: %s", async (_what, answer) => {
+    route([
+      ["repos/acme/tools", () => json(200, { private: false })],
+      ["contents/methods", () => json(200, [DEMO_DIR])],
+      ["git/trees/t1?recursive=1", () => json(200, gitTree([MANIFEST_ENTRY, MAIN_ENTRY]))],
+      ["git/blobs/m1", () => json(200, blob(MANIFEST))],
+      ["git/blobs/b1", answer],
+    ]);
+    const err = await failure();
+    expect(err.reason).toBe("fetch_failed");
+    expect(err.message).toContain("b1");
+  });
 });

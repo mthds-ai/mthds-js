@@ -131,7 +131,9 @@ describe("mthds-agent invalid-verdict envelope keeps each item's next step", () 
       validate: vi.fn().mockResolvedValue(report),
     } as unknown as Runner;
 
-    await expect(runProtocolValidate(runner, ["x"], false)).rejects.toThrow("__exit__");
+    await expect(runProtocolValidate(runner, { files: { "x.mthds": "x" } }, false)).rejects.toThrow(
+      "__exit__",
+    );
 
     expect(String(stderrSpy.mock.calls[0]![0])).toBe(
       "# Invalid bundle\n\nThe runner's own words.\n",

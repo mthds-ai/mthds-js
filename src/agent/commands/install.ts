@@ -5,8 +5,7 @@
 
 import { agentSuccess, agentError, agentProblem } from "../output.js";
 import {
-  errorPath,
-  fileErrorReason,
+  installFailureProblem,
   noUsableMethodProblem,
   resolveFailureProblem,
   toolInstallProblem,
@@ -174,14 +173,10 @@ export async function agentInstall(
   try {
     result = runInstallFlow({ resolved, location: selectedLocation, orgRepo });
   } catch (err) {
-    agentError(
-      agentProblem(
-        "client.write_failed",
-        { path: errorPath(err, selectedLocation), reason: fileErrorReason(err, "unwritable") },
-        `Install failed: ${(err as Error).message}`,
-      ),
-      { skipped_methods: skippedMethodReports(resolved) },
-    );
+    const reason = err instanceof Error ? err.message : String(err);
+    agentError(installFailureProblem(err, `Install failed: ${reason}`), {
+      skipped_methods: skippedMethodReports(resolved),
+    });
   }
 
   await shutdown();

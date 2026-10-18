@@ -13,7 +13,7 @@ import { ProblemError, reportedProblem } from "../../problems/errors.js";
 import { formatItem, formatSuggestedFix, renderProblemLines } from "../../problems/render.js";
 import { CORE_REGISTRY } from "../../problems/registry.generated.js";
 import type { ProblemItem } from "../../problems/types.js";
-import { ApiResponseError } from "../../runners/api/exceptions.js";
+import { serverAnswerOf } from "../../runners/api/exceptions.js";
 
 /** The text the `mthds` CLI prints for a failed command. */
 export function formatCliError(err: unknown): string {
@@ -24,15 +24,16 @@ export function formatCliError(err: unknown): string {
 }
 
 /**
- * What an answer of the runtime says beside its problem: the route that answered and its status,
- * then the start of its body when the body is no problem document (`answerExcerpt`), as the error's
+ * What an answer of the runtime says beside its problem (`serverAnswerOf`): the route that answered
+ * and its status, then the start of its body when the body is no problem document, as the error's
  * own message quotes it. Nothing for an error that is no answer.
  */
 function answerLines(err: ProblemError): string[] {
-  if (!(err instanceof ApiResponseError)) return [];
-  const status = err.statusText ? `${err.status} ${err.statusText}` : `${err.status}`;
-  const lines = [`${err.route} failed (${status}).`];
-  if (err.answerExcerpt !== undefined) lines.push(`The server answered: ${err.answerExcerpt}`);
+  const answer = serverAnswerOf(err);
+  if (answer === undefined) return [];
+  const status = answer.statusText ? `${answer.status} ${answer.statusText}` : `${answer.status}`;
+  const lines = [`${answer.route} failed (${status}).`];
+  if (answer.excerpt !== undefined) lines.push(`The server answered: ${answer.excerpt}`);
   return lines;
 }
 

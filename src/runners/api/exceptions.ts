@@ -146,6 +146,32 @@ export class ApiResponseError extends ProblemError {
 }
 
 /**
+ * What an answer of the runtime said beside its problem, which no member of the problem holds: the
+ * route that answered, its status, and the start of its body when the body is no problem document.
+ */
+export interface ServerAnswer {
+  /** The route that answered, as `POST /v1/execute`. */
+  route: string;
+  /** The answer's HTTP status. */
+  status: number;
+  /** The answer's status text, empty when the transport gives none. */
+  statusText: string;
+  /** The start of a body that is no problem document (`ApiResponseError.answerExcerpt`). */
+  excerpt?: string;
+}
+
+/**
+ * What the server answered beside an error's problem, for an `ApiResponseError`, and `undefined`
+ * for any other error. The one reading both CLIs format, each in its own form.
+ */
+export function serverAnswerOf(err: unknown): ServerAnswer | undefined {
+  if (!(err instanceof ApiResponseError)) return undefined;
+  const answer: ServerAnswer = { route: err.route, status: err.status, statusText: err.statusText };
+  if (err.answerExcerpt !== undefined) answer.excerpt = err.answerExcerpt;
+  return answer;
+}
+
+/**
  * A blocking execute that the runtime accepted asynchronously: the protocol lets a runner answer
  * `/execute` with `202` and the run's id when it cannot hold the connection open. The run keeps
  * going, and this client does not follow it: read it by `runId`, with the durable run API of the

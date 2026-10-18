@@ -314,10 +314,10 @@ export class MthdsApiClient implements Runner {
   // ── Transport ──────────────────────────────────────────────────────
 
   /**
-   * The ONE place request headers are built, so no request path can miss the
-   * `User-Agent` (spec: client-identification, "Client obligations").
+   * The request's headers, the API key among them, which the constructor checked. This is the one
+   * place request headers are built, so no request path can miss the `User-Agent` (spec:
+   * client-identification, "Client obligations").
    */
-  /** The request's headers, the API key among them, which the constructor checked. */
   private buildHeaders(hasBody: boolean): Record<string, string> {
     const headers: Record<string, string> = { Accept: "application/json" };
     if (this.userAgent !== undefined) {

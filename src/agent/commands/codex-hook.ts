@@ -20,10 +20,10 @@
 import { accessSync, constants as fsConstants, existsSync, readFileSync, statSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { posix as path } from "node:path";
+import { formatItemLines } from "../../cli/commands/error-output.js";
 import { isProblemItem } from "../../problems/read.js";
 import { codeFamily, familyEntries } from "../../problems/registry.js";
-import { formatItem, formatSuggestedFix } from "../../problems/render.js";
-import type { ProblemItem, RegistryEntry } from "../../problems/types.js";
+import type { RegistryEntry } from "../../problems/types.js";
 import { PROBLEM_DOMAINS } from "../../problems/vocabulary.js";
 import { passthroughEnv } from "../passthrough.js";
 
@@ -262,14 +262,6 @@ function formatLegacyItem(item: LegacyValidationItem): string {
   return description ? `${line}\n  Suggested fix: ${description}` : line;
 }
 
-/** A problem's item as list lines: `- <code>: <detail> (<location>)`, then its suggested fix. */
-function formatProblemItem(item: ProblemItem): string {
-  const line = `- ${formatItem(item)}`;
-  return item.suggested_fix === undefined
-    ? line
-    : `${line}\n  ${formatSuggestedFix(item.suggested_fix)}`;
-}
-
 /**
  * Build an agent-facing reason from the structured envelope: the message plus a compact
  * error list. An item carrying a suggested fix gets a `Suggested fix` line under it, the
@@ -291,7 +283,7 @@ export function formatValidationReason(
   const rawItems = problem ? envelope.errors : envelope.validation_errors;
   const items: unknown[] = Array.isArray(rawItems) ? rawItems : [];
   const lines = problem
-    ? items.filter(isProblemItem).map(formatProblemItem)
+    ? items.filter(isProblemItem).map((item) => formatItemLines(item).join("\n"))
     : items
         .filter((item): item is LegacyValidationItem => typeof item === "object" && item !== null)
         .map(formatLegacyItem);

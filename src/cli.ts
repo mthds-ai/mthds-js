@@ -193,7 +193,7 @@ buildInputsCmd
   .argument("<name>", "Name of the installed method")
   .option(
     "--pipe <ref>",
-    "Qualified pipe ref (domain.pipe_code). Defaults to the closure's main_pipe.",
+    "Qualified pipe ref (domain.pipe_code). Defaults to the method's entry pipe.",
   )
   .description("Generate inputs for an installed method")
   .allowUnknownOption()
@@ -209,10 +209,10 @@ buildInputsCmd
 
 buildInputsCmd
   .command("pipe")
-  .argument("<target>", "Bundle file path")
+  .argument("<target>", "Bundle file (.mthds) or method directory")
   .option(
     "--pipe <ref>",
-    "Qualified pipe ref (domain.pipe_code). Defaults to the closure's main_pipe.",
+    "Qualified pipe ref (domain.pipe_code). Defaults to the bundle's main_pipe, or a directory's entry pipe.",
   )
   .option("--format <format>", "Template format (json, toml)", "json")
   .option("--explicit", "Emit the ceremonial {concept, content} envelope per input")

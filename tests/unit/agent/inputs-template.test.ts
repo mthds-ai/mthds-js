@@ -63,7 +63,7 @@ function refusal(problem: Problem): ApiResponseError {
 }
 
 const JSON_COMPACT: InputsRendering = { format: "json", explicit: false };
-const FILES = { files: [{ content: 'domain = "x"\n', source: "x.mthds" }] };
+const FILES = { files: { "x.mthds": 'domain = "x"\n' } };
 
 describe("emitInputsTemplate", () => {
   let stdoutSpy: ReturnType<typeof vi.spyOn>;
@@ -94,7 +94,7 @@ describe("emitInputsTemplate", () => {
   }
 
   describe("the request", () => {
-    it("posts the closure and the qualified pipe ref to pipeIo", async () => {
+    it("posts the method's tree and the qualified pipe ref to pipeIo", async () => {
       const pipeIo = vi.fn().mockResolvedValue(validReport());
       await emitInputsTemplate(apiRunner(pipeIo), FILES, PIPE_REF, JSON_COMPACT);
       expect(pipeIo).toHaveBeenCalledWith({ ...FILES, pipe_ref: PIPE_REF });
@@ -189,7 +189,7 @@ describe("emitInputsTemplate", () => {
   });
 
   describe("the failures", () => {
-    // An invalid closure is a PRODUCED verdict (a 200 `is_valid: false` body), not a
+    // An invalid method is a PRODUCED verdict (a 200 `is_valid: false` body), not a
     // request/transport failure: the `method.invalid` problem `validate` writes.
     it("writes the method.invalid problem carrying the verdict's items", async () => {
       const item = { code: "method.syntax", detail: "The method does not parse (boom)." };

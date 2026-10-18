@@ -10,7 +10,8 @@ vi.mock("node:child_process", () => {
   return { execFile: execFileMock, spawn: vi.fn() };
 });
 
-vi.mock("node:fs", () => ({
+vi.mock("node:fs", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("node:fs")>()),
   mkdtempSync: vi.fn(() => "/tmp/mthds-test"),
   writeFileSync: vi.fn(),
   readFileSync: vi.fn(() => "{}"),
@@ -30,6 +31,8 @@ import { PipelexRunner } from "../../../src/runners/pipelex/runner.js";
 import { MODEL_CATEGORIES } from "../../../src/protocol/models.js";
 import { isProblemItem } from "../../../src/problems/read.js";
 import { ProblemError } from "../../../src/problems/errors.js";
+import { EMPTY_METHOD_TREE_MESSAGE } from "../../../src/protocol/options.js";
+import { MethodTree } from "../../../src/method-tree/tree.js";
 
 const mockedReadFileSync = vi.mocked(readFileSync);
 const mockedExistsSync = vi.mocked(existsSync);
@@ -38,6 +41,30 @@ const mockedSpawn = vi.mocked(spawn);
 
 /** A minimal bundle that declares a domain and a main_pipe. */
 const BUNDLE = 'domain = "smoke"\nmain_pipe = "echo"\n';
+
+/** The directory a run's method is written into, alone, under the mocked scratch directory. */
+const METHOD_DIR = "/tmp/mthds-test/method";
+
+/**
+ * A tree the lister read from this machine, rooted at `root`, without touching the disk. `spelled`
+ * gives a file's name on disk where it differs from its tree path.
+ */
+function onDiskTree(
+  root: string,
+  paths: readonly string[],
+  spelled: Record<string, string> = {},
+): MethodTree {
+  return new MethodTree({
+    root,
+    entry: null,
+    files: paths.map((path) => ({ path, size: 1, sha256: "0".repeat(64) })),
+    digest: `sha256:${"0".repeat(64)}`,
+    absolutes: new Map(
+      paths.map((path) => [path, Buffer.from(`${root}/${spelled[path] ?? path}`)]),
+    ),
+    exclusions: new Map(),
+  });
+}
 
 /** Make `spawn` return a fake child that closes with the given exit code, or by `signal`. */
 function mockSpawnExit(code: number | null, signal: NodeJS.Signals | null = null): void {
@@ -255,7 +282,7 @@ describe("PipelexRunner", () => {
     it("runs `pipelex validate bundle` on the written contents and returns the minimal valid arm", async () => {
       execFileAsync.mockResolvedValue({ stdout: "", stderr: "" });
 
-      const report = await runner.validate(["domain = 'x'"]);
+      const report = await runner.validate({ files: { "bundle.mthds": "domain = 'x'" } });
 
       expect(report).toEqual({ is_valid: true });
       const args = execFileAsync.mock.calls[0]![1] as string[];
@@ -264,40 +291,47 @@ describe("PipelexRunner", () => {
       expect(args).not.toContain("--allow-signatures");
     });
 
-    it("writes the first content as bundle.mthds, the rest beside it, and points the CLI there", async () => {
+    it("writes the tree under its tree paths into its own directory and hands pipelex that directory", async () => {
       execFileAsync.mockResolvedValue({ stdout: "", stderr: "" });
 
-      await runner.validate([BUNDLE, "domain = 'other'", "domain = 'third'"]);
+      await runner.validate({
+        files: {
+          "steps/other.mthds": "domain = 'other'",
+          "bundle.mthds": BUNDLE,
+          "funcs/f.py": "def f(): ...\n",
+        },
+      });
 
       expect(mockedWriteFileSync.mock.calls.map((call) => [call[0], call[1]])).toEqual([
-        ["/tmp/mthds-test/bundle.mthds", BUNDLE],
-        ["/tmp/mthds-test/extra_1.mthds", "domain = 'other'"],
-        ["/tmp/mthds-test/extra_2.mthds", "domain = 'third'"],
+        [`${METHOD_DIR}/steps/other.mthds`, "domain = 'other'"],
+        [`${METHOD_DIR}/bundle.mthds`, BUNDLE],
+        [`${METHOD_DIR}/funcs/f.py`, "def f(): ...\n"],
       ]);
       const args = execFileAsync.mock.calls[0]![1] as string[];
-      expect(args.slice(0, 5)).toEqual([
-        "validate",
-        "bundle",
-        "/tmp/mthds-test/bundle.mthds",
-        "-L",
-        "/tmp/mthds-test",
-      ]);
+      expect(args).toEqual(["validate", "bundle", METHOD_DIR]);
     });
 
-    it("refuses an empty bundle list before calling the CLI", async () => {
-      const err = await runner.validate([]).catch((e: unknown) => e);
-      expect((err as Error).message).toMatch(/At least one MTHDS file/);
-      expect((err as ProblemError).problem.params).toEqual({
-        argument: "mthds_contents",
-        reason: "empty",
-      });
+    it("hands pipelex the root of a tree read from this machine, writing nothing", async () => {
+      execFileAsync.mockResolvedValue({ stdout: "", stderr: "" });
+
+      await runner.validate({ tree: onDiskTree("/work/acme", ["main.mthds", "funcs/f.py"]) });
+
+      expect(mockedWriteFileSync).not.toHaveBeenCalled();
+      const args = execFileAsync.mock.calls[0]![1] as string[];
+      expect(args).toEqual(["validate", "bundle", "/work/acme"]);
+    });
+
+    it("refuses an empty tree before calling the CLI, with the one empty-tree message", async () => {
+      const err = await runner.validate({ files: {} }).catch((e: unknown) => e);
+      expect((err as Error).message).toContain(EMPTY_METHOD_TREE_MESSAGE);
+      expect((err as ProblemError).problem.params).toEqual({ argument: "files", reason: "empty" });
       expect(execFileAsync).not.toHaveBeenCalled();
     });
 
     it("passes --allow-signatures when requested", async () => {
       execFileAsync.mockResolvedValue({ stdout: "", stderr: "" });
 
-      await runner.validate(["domain = 'x'"], true);
+      await runner.validate({ files: { "bundle.mthds": "domain = 'x'" } }, true);
 
       const args = execFileAsync.mock.calls[0]![1] as string[];
       expect(args).toContain("--allow-signatures");
@@ -310,7 +344,9 @@ describe("PipelexRunner", () => {
       });
       execFileAsync.mockRejectedValue(failure);
 
-      await expect(runner.validate(["broken"])).rejects.toThrow(/unknown concept/);
+      await expect(runner.validate({ files: { "bundle.mthds": "broken" } })).rejects.toThrow(
+        /unknown concept/,
+      );
     });
   });
 
@@ -362,11 +398,11 @@ describe("PipelexRunner", () => {
         }),
       );
 
-      const result = await runner.execute({ mthds_contents: ["bundle content"] });
+      const result = await runner.execute({ files: { "bundle.mthds": "bundle content" } });
 
-      // spawn was invoked as `pipelex run bundle <path> -L <tmp> ...`
+      // With no bundle named, pipelex is handed the tree's directory and chooses the entry.
       const spawnArgs = mockedSpawn.mock.calls[0]![1] as string[];
-      expect(spawnArgs.slice(0, 2)).toEqual(["run", "bundle"]);
+      expect(spawnArgs.slice(0, 4)).toEqual(["run", "bundle", METHOD_DIR, "--working-memory-path"]);
 
       const root = (
         result.pipe_output as {
@@ -396,7 +432,7 @@ describe("PipelexRunner", () => {
         }),
       );
 
-      const result = await runner.execute({ mthds_contents: ["bundle content"] });
+      const result = await runner.execute({ files: { "bundle.mthds": "bundle content" } });
 
       const root = (
         result.pipe_output as {
@@ -428,15 +464,15 @@ describe("PipelexRunner", () => {
           }),
         );
 
-        await expect(runner.execute({ mthds_contents: ["bundle content"] })).rejects.toThrow(
-          `pipelex wrote the stuff "main_stuff" whose "concept" is ${described}`,
-        );
+        await expect(
+          runner.execute({ files: { "bundle.mthds": "bundle content" } }),
+        ).rejects.toThrow(`pipelex wrote the stuff "main_stuff" whose "concept" is ${described}`);
       },
     );
 
     it("throws runtime.unexpected saying `pipelex exited with code N` when the CLI fails", async () => {
       mockSpawnExit(1);
-      const err = await problemOf(runner.execute({ mthds_contents: ["bundle content"] }));
+      const err = await problemOf(runner.execute({ files: { "bundle.mthds": "bundle content" } }));
       expect(err.message).toMatch(/pipelex exited with code 1/);
       expect(err.problem.code).toBe("runtime.unexpected");
     });
@@ -446,13 +482,13 @@ describe("PipelexRunner", () => {
       ["exiting 130, having handled Ctrl-C", 130, null],
     ] as const)("reads a run %s as client.aborted", async (_topic, code, signal) => {
       mockSpawnExit(code, signal);
-      const err = await problemOf(runner.execute({ mthds_contents: ["bundle content"] }));
+      const err = await problemOf(runner.execute({ files: { "bundle.mthds": "bundle content" } }));
       expect(err.problem.code).toBe("client.aborted");
     });
 
     it("reads a run stopped by another signal as runtime.unexpected naming the signal", async () => {
       mockSpawnExit(null, "SIGKILL");
-      const err = await problemOf(runner.execute({ mthds_contents: ["bundle content"] }));
+      const err = await problemOf(runner.execute({ files: { "bundle.mthds": "bundle content" } }));
       expect(err.problem.code).toBe("runtime.unexpected");
       expect(err.message).toContain("stopped by the signal SIGKILL");
     });
@@ -464,26 +500,184 @@ describe("PipelexRunner", () => {
         JSON.stringify({ root: { main_stuff: { concept: { code: "X" } } }, aliases: {} }),
       );
       execFileAsync.mockResolvedValue({ stdout: "pipelex 0.40.0\n", stderr: "" });
-      const err = await problemOf(runner.execute({ mthds_contents: ["bundle content"] }));
+      const err = await problemOf(runner.execute({ files: { "bundle.mthds": "bundle content" } }));
       expect(err.problem.code).toBe("client.tool_outdated");
       expect(err.problem.params).toEqual({ tool: "pipelex", version: "0.40.0" });
       execFileAsync.mockRejectedValue(new Error("gone"));
-      const unknown = await problemOf(runner.execute({ mthds_contents: ["bundle content"] }));
+      const unknown = await problemOf(
+        runner.execute({ files: { "bundle.mthds": "bundle content" } }),
+      );
       expect(unknown.problem.params).toEqual({ tool: "pipelex", version: "unknown" });
     });
 
-    it("rejects bundle_b64 — the local runner has no zip decoder", async () => {
-      const err = await runner.execute({ bundle_b64: "UEsDBBQ=" }).catch((e: unknown) => e);
-      expect((err as Error).message).toMatch(/bundle_b64|zip/i);
-      expect((err as ProblemError).problem.code).toBe("runtime.unsupported");
-      expect((err as ProblemError).problem.params).toEqual({ capability: "bundle_b64" });
+    it("refuses a hash entry — the local runner keeps no blob store", async () => {
+      await expect(
+        runner.execute({
+          files: { "m.mthds": BUNDLE, "big.bin": { sha256: "a".repeat(64), size: 3 } },
+        }),
+      ).rejects.toThrow(/no blob store/);
       expect(mockedSpawn).not.toHaveBeenCalled();
     });
 
-    it("rejects files combined with mthds_contents (self-contained bundle)", async () => {
+    it("refuses a map holding a name no tree holds, which pipelex would read as the run's inputs", async () => {
+      for (const key of ["inputs.json", ".env"]) {
+        await expect(
+          runner.execute({ files: { "bundle.mthds": BUNDLE, [key]: '{"leaked": true}' } }),
+        ).rejects.toThrow(new RegExp(`'${key.replace(/\./g, "\\.")}', a name the membership rule`));
+      }
+      expect(mockedWriteFileSync).not.toHaveBeenCalled();
+      expect(mockedSpawn).not.toHaveBeenCalled();
+    });
+
+    it("refuses files beside a tree, two forms of one method", async () => {
       await expect(
-        runner.execute({ files: { "m.mthds": BUNDLE }, mthds_contents: ["domain = 'x'"] }),
-      ).rejects.toThrow(/self-contained|mutually exclusive/i);
+        runner.execute({
+          files: { "m.mthds": BUNDLE },
+          tree: {
+            files: [],
+            digest: `sha256:${"0".repeat(64)}`,
+            readFile: () => Promise.resolve(new Uint8Array()),
+          },
+        }),
+      ).rejects.toThrow(/mutually exclusive/i);
+      expect(mockedSpawn).not.toHaveBeenCalled();
+    });
+
+    it("reads a tree in full and writes it to disk, text as text and other bytes as they are", async () => {
+      mockSpawnExit(0);
+      mockedExistsSync.mockReturnValue(true);
+      mockedReadFileSync.mockReturnValue(JSON.stringify({ root: {}, aliases: {} }));
+      const contents: Record<string, Uint8Array> = {
+        "bundle.mthds": new TextEncoder().encode(BUNDLE),
+        "images/logo.png": new Uint8Array([0x89, 0xff, 0x00]),
+      };
+      await runner.execute({
+        tree: {
+          files: Object.entries(contents).map(([path, bytes]) => ({
+            path,
+            size: bytes.length,
+            sha256: "0".repeat(64),
+          })),
+          digest: `sha256:${"0".repeat(64)}`,
+          readFile: (path) => Promise.resolve(contents[path]!),
+        },
+      });
+      const written = new Map(mockedWriteFileSync.mock.calls.map((call) => [call[0], call[1]]));
+      expect(written.get(`${METHOD_DIR}/bundle.mthds`)).toBe(BUNDLE);
+      expect([...(written.get(`${METHOD_DIR}/images/logo.png`) as Uint8Array)]).toEqual([
+        0x89, 0xff, 0x00,
+      ]);
+      const spawnArgs = mockedSpawn.mock.calls[0]![1] as string[];
+      expect(spawnArgs.slice(0, 3)).toEqual(["run", "bundle", METHOD_DIR]);
+    });
+
+    it("writes a Base64 bundle decoded and lets pipelex choose the entry from the directory", async () => {
+      mockSpawnExit(0);
+      await runner.execute({
+        files: {
+          "a.mthds": 'domain = "a"',
+          "b.mthds": { base64: Buffer.from(BUNDLE, "utf-8").toString("base64") },
+        },
+      });
+      const written = new Map(mockedWriteFileSync.mock.calls.map((call) => [call[0], call[1]]));
+      expect(
+        Buffer.from(written.get(`${METHOD_DIR}/b.mthds`) as Uint8Array).toString("utf-8"),
+      ).toBe(BUNDLE);
+      const spawnArgs = mockedSpawn.mock.calls[0]![1] as string[];
+      expect(spawnArgs.slice(0, 3)).toEqual(["run", "bundle", METHOD_DIR]);
+    });
+
+    it("hands pipelex the root of a tree read from this machine as it is, copying nothing", async () => {
+      mockSpawnExit(0);
+      await runner.execute({
+        tree: onDiskTree("/work/acme", ["main.mthds", "funcs/f.py"]),
+        pipe_code: "go",
+      });
+      expect(mockedWriteFileSync).not.toHaveBeenCalled();
+      const spawnArgs = mockedSpawn.mock.calls[0]![1] as string[];
+      expect(spawnArgs.slice(0, 5)).toEqual(["run", "bundle", "/work/acme", "--pipe", "go"]);
+    });
+
+    it("runs a named bundle of an on-disk tree with its root as the library", async () => {
+      mockSpawnExit(0);
+      await runner.execute({
+        tree: onDiskTree("/work/acme", ["main.mthds", "steps/other.mthds"]),
+        bundleMain: "steps/other.mthds",
+      });
+      const spawnArgs = mockedSpawn.mock.calls[0]![1] as string[];
+      expect(spawnArgs.slice(0, 5)).toEqual([
+        "run",
+        "bundle",
+        "/work/acme/steps/other.mthds",
+        "-L",
+        "/work/acme",
+      ]);
+    });
+
+    it("runs a named bundle of an on-disk tree by its spelling on disk, not its NFC tree path", async () => {
+      mockSpawnExit(0);
+      const composed = "caf\u00e9.mthds";
+      const decomposed = "cafe\u0301.mthds";
+      await runner.execute({
+        tree: onDiskTree("/work/acme", ["main.mthds", composed], { [composed]: decomposed }),
+        bundleMain: composed,
+      });
+      const spawnArgs = mockedSpawn.mock.calls[0]![1] as string[];
+      expect(spawnArgs.slice(0, 5)).toEqual([
+        "run",
+        "bundle",
+        `/work/acme/${decomposed}`,
+        "-L",
+        "/work/acme",
+      ]);
+    });
+
+    it("keeps the files a run writes outside the method's directory", async () => {
+      mockSpawnExit(0);
+      // A method holding files named like the run's own artifacts keeps them intact. No tree holds
+      // an `inputs.json`, which the membership rule keeps out as a run's inputs file.
+      await runner.execute({
+        files: {
+          "bundle.mthds": BUNDLE,
+          "working_memory.json": "{}",
+          "results/keep.txt": "kept",
+        },
+        inputs: { text: { concept: "native.Text", content: "hi" } },
+      });
+      const spawnArgs = mockedSpawn.mock.calls[0]![1] as string[];
+      const after = (flag: string): string => spawnArgs[spawnArgs.indexOf(flag) + 1]!;
+      expect(after("--inputs")).toBe("/tmp/mthds-test/inputs.json");
+      expect(after("--working-memory-path")).toBe("/tmp/mthds-test/working_memory.json");
+      expect(after("--output-dir")).toBe("/tmp/mthds-test/results");
+      for (const artifact of [
+        after("--inputs"),
+        after("--working-memory-path"),
+        after("--output-dir"),
+      ]) {
+        expect(artifact.startsWith(`${METHOD_DIR}/`)).toBe(false);
+      }
+      const writes = mockedWriteFileSync.mock.calls.map((call) => [call[0], call[1]]);
+      expect(writes).toContainEqual([`${METHOD_DIR}/working_memory.json`, "{}"]);
+      expect(writes).toContainEqual([
+        "/tmp/mthds-test/inputs.json",
+        JSON.stringify({ text: { concept: "native.Text", content: "hi" } }),
+      ]);
+    });
+
+    it("refuses a bundleMain that is not a .mthds file of the tree, before running", async () => {
+      await expect(
+        runner.execute({ files: { "a.mthds": BUNDLE }, bundleMain: "missing.mthds" }),
+      ).rejects.toThrow(/not a \.mthds file of the method's tree/);
+      await expect(
+        runner.execute({ files: { "a.mthds": BUNDLE, "f.py": "x" }, bundleMain: "f.py" }),
+      ).rejects.toThrow(/not a \.mthds file of the method's tree/);
+      expect(mockedSpawn).not.toHaveBeenCalled();
+    });
+
+    it("refuses an empty tree beside a pipe code with the one empty-tree message", async () => {
+      await expect(runner.execute({ pipe_code: "go", files: {} })).rejects.toThrow(
+        EMPTY_METHOD_TREE_MESSAGE,
+      );
       expect(mockedSpawn).not.toHaveBeenCalled();
     });
 
@@ -496,16 +690,21 @@ describe("PipelexRunner", () => {
         bundleMain: "method_b.mthds",
       });
       const spawnArgs = mockedSpawn.mock.calls[0]![1] as string[];
-      // `run bundle <path>` — the path must be the selected method_b, not method_a.
-      expect(spawnArgs[2]).toContain("method_b.mthds");
-      expect(spawnArgs[2]).not.toContain("method_a.mthds");
+      // `run bundle <path> -L <dir>` — the selected method_b, with the tree as its library.
+      expect(spawnArgs.slice(0, 5)).toEqual([
+        "run",
+        "bundle",
+        `${METHOD_DIR}/method_b.mthds`,
+        "-L",
+        METHOD_DIR,
+      ]);
     });
 
     // A dry run that never reaches pipelex is a real, paid run.
     it("forwards --dry-run, --mock-inputs and --local to `pipelex run`", async () => {
       mockSpawnExit(0);
       await runner.execute(
-        { mthds_contents: ["bundle content"] },
+        { files: { "bundle.mthds": "bundle content" } },
         { dryRun: true, mockInputs: true, hosted: false },
       );
       const spawnArgs = mockedSpawn.mock.calls[0]![1] as string[];
@@ -524,7 +723,7 @@ describe("PipelexRunner", () => {
 
     it("adds no run flag when none is given, leaving `[run] execution` to pipelex", async () => {
       mockSpawnExit(0);
-      await runner.execute({ mthds_contents: ["bundle content"] });
+      await runner.execute({ files: { "bundle.mthds": "bundle content" } });
       const spawnArgs = mockedSpawn.mock.calls[0]![1] as string[];
       for (const flag of ["--dry-run", "--mock-inputs", "--hosted", "--local"]) {
         expect(spawnArgs).not.toContain(flag);
@@ -536,7 +735,7 @@ describe("PipelexRunner", () => {
     it("returns the valid arm when the CLI exits 0", async () => {
       execFileAsync.mockResolvedValue({ stdout: "OK", stderr: "" });
 
-      const result = await runner.validate(["bundle content"]);
+      const result = await runner.validate({ files: { "bundle.mthds": "bundle content" } });
 
       expect(result).toEqual({ is_valid: true });
     });
@@ -549,7 +748,7 @@ describe("PipelexRunner", () => {
       });
       execFileAsync.mockRejectedValue(execError);
 
-      const result = await runner.validate(["bundle content"]);
+      const result = await runner.validate({ files: { "bundle.mthds": "bundle content" } });
 
       expect(result.is_valid).toBe(false);
       if (result.is_valid !== false) return;
@@ -571,7 +770,7 @@ describe("PipelexRunner", () => {
       });
       execFileAsync.mockRejectedValue(execError);
 
-      const err = await problemOf(runner.validate(["bundle content"]));
+      const err = await problemOf(runner.validate({ files: { "bundle.mthds": "bundle content" } }));
       expect(err.message).toContain("Bundle validation failed");
       expect(err.message).toContain("no .mthds bundle file found");
       expect(err.problem.code).toBe("runtime.unexpected");
@@ -581,7 +780,7 @@ describe("PipelexRunner", () => {
       const execError = Object.assign(new Error("spawn ENOENT"), { code: "ENOENT" });
       execFileAsync.mockRejectedValue(execError);
 
-      const err = await problemOf(runner.validate(["bundle content"]));
+      const err = await problemOf(runner.validate({ files: { "bundle.mthds": "bundle content" } }));
       expect(err.problem.code).toBe("client.tool_missing");
       expect(err.problem.params).toEqual({ tool: "pipelex" });
     });

@@ -19,12 +19,16 @@
 export * from "./protocol/index.js";
 
 // ── API runner / client (runners/api) ────────────────────────────────
-export { MthdsApiClient, DEFAULT_API_BASE_URL } from "./runners/api/client.js";
-export type {
-  MthdsApiClientOptions,
-  MthdsFile,
-  ValidateFilesOptions,
-} from "./runners/api/client.js";
+export { MthdsApiClient, DEFAULT_API_BASE_URL, HANDSHAKE_TTL_MS } from "./runners/api/client.js";
+export type { MthdsApiClientOptions } from "./runners/api/client.js";
+// How a sender chooses between inline and by hash, and what it reads from a handshake.
+export {
+  INLINE_TREE_MAX_BYTES,
+  announcedTreeLimits,
+  declaresBlobStore,
+  listerLimitsOf,
+} from "./runners/api/tree-sending.js";
+export type { AnnouncedTreeLimits } from "./runners/api/tree-sending.js";
 export type { AppInfo } from "./runners/api/user-agent.js";
 export { MTHDS_JS_VERSION } from "./version.js";
 
@@ -33,18 +37,19 @@ export { PIPE_SELECTION_CODES } from "./runners/types.js";
 export type {
   CrateInvalidReport,
   CrateRequestBase,
-  MthdsFileItem,
   PipeIORequest,
   PipeIOResponse,
   PipeIOValidReport,
 } from "./runners/types.js";
 
 // ── API-runner errors (runners/api — the protocol-base `PipelineRequestError`, the
-//    `ProblemError` every one of them is, and the problem types ride the protocol
+//    `ProblemError` all of them but `BlobUploadError` are, and the problem types ride the protocol
 //    barrel above) ──────────────────────────────────────────────────────
 export {
   ApiResponseError,
   ApiTransportError,
+  BlobUploadError,
+  MalformedBlobsAnswerError,
   RunStillRunningError,
 } from "./runners/api/exceptions.js";
 export type { ApiAnswerFacts } from "./runners/api/exceptions.js";

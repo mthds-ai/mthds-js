@@ -114,6 +114,7 @@ describe("mthds CLI prints a validation item's suggested fix", () => {
   it("validate prints the fix under the item that has one", async () => {
     useRunner({
       type: "api",
+      methodTreeLimits: vi.fn().mockResolvedValue({}),
       validate: vi.fn().mockResolvedValue({
         ...INVALID,
         pending_signatures: [],
@@ -132,7 +133,11 @@ describe("mthds CLI prints a validation item's suggested fix", () => {
   });
 
   it("build prints the fix under the item that has one", async () => {
-    useRunner({ type: "api", pipeIo: vi.fn().mockResolvedValue(INVALID) });
+    useRunner({
+      type: "api",
+      methodTreeLimits: vi.fn().mockResolvedValue({}),
+      pipeIo: vi.fn().mockResolvedValue(INVALID),
+    });
 
     await expect(buildInputsPipe(bundlePath, {})).rejects.toThrow("__exit__");
 
@@ -141,14 +146,14 @@ describe("mthds CLI prints a validation item's suggested fix", () => {
   });
 
   it("install's validation step prints the fix under the item that has one", async () => {
-    vi.mocked(resolveFromLocal).mockReturnValue({
+    vi.mocked(resolveFromLocal).mockResolvedValue({
       methods: [
         {
           name: "demo",
           manifest: {
             package: { address: "github.com/acme/demo", version: "1.0.0", description: "Demo" },
           },
-          files: [{ relativePath: "demo.mthds", content: 'domain = "demo"\n' }],
+          files: [{ path: "demo.mthds", bytes: new TextEncoder().encode('domain = "demo"\n') }],
         },
       ],
       skipped: [],

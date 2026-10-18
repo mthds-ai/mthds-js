@@ -4,8 +4,8 @@ import { printLogo } from "./index.js";
 import { isPipelexRunner, isApiRunner, extractPassthroughArgs } from "./utils.js";
 import { formatCliError, formatItemLines, verdictSummary } from "./error-output.js";
 import { createRunner } from "../../runners/registry.js";
-import { resolveBundleClosure } from "../../runners/bundle.js";
-import type { MthdsFileItem } from "../../runners/types.js";
+import { resolveMethodTarget } from "../../runners/method-target.js";
+import type { ResolvedMethodTarget } from "../../runners/method-target.js";
 import type { RunnerType } from "../../runners/types.js";
 
 interface ValidateOptions {
@@ -98,13 +98,15 @@ export async function validatePipe(target: string, options: ValidateOptions): Pr
     p.log.warning("--pipe is not yet supported by the API runner and will be ignored.");
   }
 
-  // The bundle file first, then every `.mthds` file of the `-L` directories, so a
-  // method split across files validates as it does on the pipelex runner.
-  let files: MthdsFileItem[];
+  // The bundle's method tree, with the `-L` directories that belong to it, so a
+  // method split across files validates as it does on the pipelex runner, and its
+  // Python, templates and other files are judged with it.
+  let resolved: ResolvedMethodTarget;
   try {
-    files = resolveBundleClosure({ path: bundlePath }, options.libraryDir ?? []).files;
+    const limits = isApiRunner(runner) ? await runner.methodTreeLimits() : {};
+    resolved = await resolveMethodTarget({ path: bundlePath }, options.libraryDir ?? [], limits);
   } catch (err) {
-    p.log.error((err as Error).message);
+    p.log.error(formatCliError(err));
     p.outro("");
     process.exit(1);
   }
@@ -113,24 +115,14 @@ export async function validatePipe(target: string, options: ValidateOptions): Pr
   s.start("Validating...");
 
   try {
-    // Name each submitted file so cross-file diagnostics resolve the owning file.
-    // `mthds_sources` is a Pipelex-API extension carried only by the concrete
-    // client (not the pure protocol) — reach it through `isApiRunner`.
-    const mthdsContents = files.map((file) => file.content);
-    const report = isApiRunner(runner)
-      ? await runner.validate(
-          mthdsContents,
-          false,
-          files.map((file) => file.source ?? bundlePath),
-        )
-      : await runner.validate(mthdsContents);
+    const report = await runner.validate(resolved.method);
     if (report.is_valid === false) {
       // A produced "invalid" verdict (the 200 InvalidReport arm) — report the
       // diagnostics and exit non-zero, rather than mistaking a 200 for success.
       s.stop("Validation failed.");
       p.log.error(verdictSummary(report.message));
       for (const item of report.errors) {
-        // The server names each item's file from `mthds_sources`; fall back to the
+        // The runner names each item's file by its tree path; fall back to the
         // path the user passed so a diagnostic always names its file.
         const located =
           item.location?.file === undefined

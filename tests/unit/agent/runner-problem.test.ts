@@ -62,7 +62,13 @@ describe("mthds-agent error stream for a runner's refusal", () => {
       { status: 500, extra: { request_id: "req-500" } },
     );
     await expect(
-      runProtocolValidate(throwingRunner(apiError(problem, 500)), ["x"], false, undefined, "json"),
+      runProtocolValidate(
+        throwingRunner(apiError(problem, 500)),
+        { files: { "x.mthds": "x" } },
+        false,
+        undefined,
+        "json",
+      ),
     ).rejects.toThrow("__exit__");
     const { status: _status, ...relayed } = problem;
     expect(firstEnvelope()).toEqual(relayed);
@@ -76,11 +82,17 @@ describe("mthds-agent error stream for a runner's refusal", () => {
   it("relays a request-shape 422's code, domain, request id and items, with no is_valid", async () => {
     const problem = buildProblem(
       "request.invalid",
-      { field: "mthds_contents" },
+      { field: "files" },
       { status: 422, errors: [MISSING_PIPE_ITEM], extra: { request_id: "req-422" } },
     );
     await expect(
-      runProtocolValidate(throwingRunner(apiError(problem, 422)), ["x"], false, undefined, "json"),
+      runProtocolValidate(
+        throwingRunner(apiError(problem, 422)),
+        { files: { "x.mthds": "x" } },
+        false,
+        undefined,
+        "json",
+      ),
     ).rejects.toThrow("__exit__");
     const envelope = firstEnvelope();
     expect(envelope).toMatchObject({
@@ -105,7 +117,7 @@ describe("mthds-agent error stream for a runner's refusal", () => {
     } as unknown as Runner;
     chooseErrorFormat("json");
     await expect(
-      emitInputsTemplate(runner, { files: [{ content: "x" }] }, "demo.nope", {
+      emitInputsTemplate(runner, { files: { "x.mthds": "x" } }, "demo.nope", {
         format: "json",
         explicit: false,
       }),
@@ -125,7 +137,13 @@ describe("mthds-agent error stream for a runner's refusal", () => {
       networkCode: "ECONNREFUSED",
     });
     await expect(
-      runProtocolValidate(throwingRunner(err), ["x"], false, undefined, "json"),
+      runProtocolValidate(
+        throwingRunner(err),
+        { files: { "x.mthds": "x" } },
+        false,
+        undefined,
+        "json",
+      ),
     ).rejects.toThrow("__exit__");
     expect(firstEnvelope()).toEqual(problem);
   });
@@ -134,7 +152,7 @@ describe("mthds-agent error stream for a runner's refusal", () => {
     await expect(
       runProtocolValidate(
         throwingRunner(new Error("socket hung up")),
-        ["x"],
+        { files: { "x.mthds": "x" } },
         false,
         undefined,
         "json",
@@ -152,13 +170,13 @@ describe("mthds-agent error stream for a runner's refusal", () => {
   it("renders a refusal as Markdown when the error stream is Markdown", async () => {
     const problem = buildProblem(
       "request.invalid",
-      { field: "mthds_contents" },
+      { field: "files" },
       { status: 422, errors: [MISSING_PIPE_ITEM], extra: { request_id: "req-md" } },
     );
     await expect(
       runProtocolValidate(
         throwingRunner(apiError(problem, 422)),
-        ["x"],
+        { files: { "x.mthds": "x" } },
         false,
         undefined,
         "markdown",

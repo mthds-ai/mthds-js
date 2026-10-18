@@ -44,9 +44,10 @@ afterAll(() => {
 class ExitCalled extends Error {}
 
 const execute = vi.fn();
+const methodTreeLimits = vi.fn();
 
 function useRunner(type: "pipelex" | "api"): void {
-  vi.mocked(createRunner).mockReturnValue({ type, execute } as unknown as Runner);
+  vi.mocked(createRunner).mockReturnValue({ type, execute, methodTreeLimits } as unknown as Runner);
 }
 
 function errorMessages(): string[] {
@@ -61,6 +62,7 @@ const COMMANDS = [
 beforeEach(() => {
   vi.clearAllMocks();
   execute.mockResolvedValue({ pipeline_run_id: "", pipe_output: null });
+  methodTreeLimits.mockResolvedValue({});
   vi.spyOn(process, "exit").mockImplementation(() => {
     throw new ExitCalled();
   });
@@ -106,11 +108,47 @@ describe.each(COMMANDS)("mthds %s", (_name, command) => {
     expect(message).not.toContain("dry run");
   });
 
-  it("runs on the API runner when no pipelex flag is given", async () => {
+  it("runs on the API runner when no pipelex flag is given, sending the bundle's tree", async () => {
     useRunner("api");
     await command(BUNDLE_PATH, {});
 
     expect(execute).toHaveBeenCalledOnce();
     expect(execute.mock.calls[0]).toHaveLength(1);
+    const options = execute.mock.calls[0]![0] as {
+      tree: { files: { path: string }[] };
+      bundleMain: string;
+      pipe_code: string;
+    };
+    // A .mthds file with no manifest above it travels alone, its main_pipe the pipe to run.
+    expect(options.tree.files.map((file) => file.path)).toEqual(["hello.mthds"]);
+    expect(options.bundleMain).toBe("hello.mthds");
+    expect(options.pipe_code).toBe("hello");
+  });
+});
+
+describe("a named bundle declaring no main_pipe", () => {
+  const NO_MAIN = join(tmp, "no-main.mthds");
+  writeFileSync(NO_MAIN, 'domain = "demo"\n', "utf-8");
+
+  it.each(["pipelex", "api"] as const)(
+    "is refused on the %s runner without --pipe, naming --pipe, and starts nothing",
+    async (type) => {
+      useRunner(type);
+      await expect(runBundle(NO_MAIN, {})).rejects.toThrow(ExitCalled);
+
+      expect(execute).not.toHaveBeenCalled();
+      const [message] = errorMessages();
+      expect(message).toContain("Could not determine pipe code");
+      expect(message).toContain("--pipe");
+    },
+  );
+
+  it("runs the pipe --pipe names", async () => {
+    useRunner("api");
+    await runBundle(NO_MAIN, { pipe: "greet" });
+
+    const options = execute.mock.calls[0]![0] as { bundleMain: string; pipe_code: string };
+    expect(options.bundleMain).toBe("no-main.mthds");
+    expect(options.pipe_code).toBe("greet");
   });
 });

@@ -13,6 +13,7 @@ import {
 import { buildProblem } from "../../../src/problems/build.js";
 import { PIPE_SELECTION_CODES } from "../../../src/runners/types.js";
 import { MTHDS_JS_VERSION } from "../../../src/version.js";
+import { EMPTY_METHOD_TREE_MESSAGE } from "../../../src/protocol/options.js";
 
 const BASE_URL = "http://localhost:8081";
 
@@ -185,7 +186,7 @@ describe("MthdsApiClient constructor", () => {
 });
 
 describe("MthdsApiClient.execute argument validation", () => {
-  it("throws PipelineRequestError when neither pipe_code nor mthds_contents provided", async () => {
+  it("throws PipelineRequestError when neither pipe_code nor the method's tree is provided", async () => {
     const client = makeClient();
     await expect(client.execute({})).rejects.toBeInstanceOf(PipelineRequestError);
   });
@@ -884,29 +885,31 @@ describe("MthdsApiClient happy path", () => {
   });
 });
 
-describe("MthdsApiClient method-bundle transport (files / bundle_b64)", () => {
-  it("sends the files map on execute and accepts a bundle-only request", async () => {
+describe("MthdsApiClient method files on the run routes", () => {
+  it("sends the files map on execute as given, and takes it alone as something to run", async () => {
     const client = makeClient();
     const fetchSpy = vi
       .spyOn(globalThis, "fetch")
       .mockResolvedValue(jsonResponse(200, { pipeline_run_id: "ok", pipe_output: {} }));
-    // No pipe_code, no mthds_contents — the bundle alone satisfies the precondition.
-    await client.execute({
-      files: { "m.mthds": "domain = 'x'", "funcs/f.py": "def f(): ..." },
-    });
+    const files = {
+      "m.mthds": "domain = 'x'",
+      "funcs/f.py": "def f(): ...",
+      "images/logo.png": { base64: "iVBORw==" },
+      "data/big.bin": { sha256: "a".repeat(64), size: 1048576 },
+    };
+    await client.execute({ files });
     const body = JSON.parse((fetchSpy.mock.calls[0]![1] as RequestInit).body as string);
-    expect(body.files).toEqual({ "m.mthds": "domain = 'x'", "funcs/f.py": "def f(): ..." });
-    expect(body.mthds_contents).toBeUndefined();
+    expect(body).toEqual({ files });
   });
 
-  it("sends bundle_b64 on start", async () => {
+  it("sends the files map on start", async () => {
     const client = makeClient();
     const fetchSpy = vi
       .spyOn(globalThis, "fetch")
       .mockResolvedValue(jsonResponse(202, { pipeline_run_id: "run-b", state: "STARTED" }));
-    await client.start({ bundle_b64: "UEsDBBQ=" });
+    await client.start({ files: { "m.mthds": "domain = 'x'" } });
     const body = JSON.parse((fetchSpy.mock.calls[0]![1] as RequestInit).body as string);
-    expect(body.bundle_b64).toBe("UEsDBBQ=");
+    expect(body).toEqual({ files: { "m.mthds": "domain = 'x'" } });
   });
 
   it("an empty files map does NOT satisfy the precondition", async () => {
@@ -914,40 +917,7 @@ describe("MthdsApiClient method-bundle transport (files / bundle_b64)", () => {
     await expect(client.execute({ files: {} })).rejects.toBeInstanceOf(PipelineRequestError);
   });
 
-  it("rejects files + bundle_b64 before dispatch (two encodings of one bundle)", async () => {
-    const client = makeClient();
-    const fetchSpy = vi.spyOn(globalThis, "fetch");
-    const err = await rejection(
-      client.execute({ files: { "m.mthds": "domain = 'x'" }, bundle_b64: "UEsDBBQ=" }),
-    );
-    expect(err).toBeInstanceOf(PipelineRequestError);
-    expect((err as ProblemError).problem.code).toBe("client.argument_invalid");
-    expect((err as ProblemError).problem.params).toEqual({
-      argument: "bundle_b64",
-      reason: "conflicts_with_files",
-    });
-    expect(fetchSpy).not.toHaveBeenCalled();
-  });
-
-  it("rejects a bundle combined with mthds_contents before dispatch (bundle is self-contained)", async () => {
-    const client = makeClient();
-    const fetchSpy = vi.spyOn(globalThis, "fetch");
-    await expect(
-      client.execute({ files: { "m.mthds": "domain = 'x'" }, mthds_contents: ["domain = 'y'"] }),
-    ).rejects.toBeInstanceOf(PipelineRequestError);
-    expect(fetchSpy).not.toHaveBeenCalled();
-  });
-
-  it("start() also rejects a bundle combined with mthds_contents before dispatch", async () => {
-    const client = makeClient();
-    const fetchSpy = vi.spyOn(globalThis, "fetch");
-    await expect(
-      client.start({ bundle_b64: "UEsDBBQ=", mthds_contents: ["domain = 'y'"] }),
-    ).rejects.toBeInstanceOf(PipelineRequestError);
-    expect(fetchSpy).not.toHaveBeenCalled();
-  });
-
-  it("rejects bundle fields smuggled through `extra` (reserved request keys)", async () => {
+  it("rejects the files map smuggled through `extra` (a protocol field)", async () => {
     const client = makeClient();
     const fetchSpy = vi.spyOn(globalThis, "fetch");
     const err = await rejection(
@@ -956,26 +926,34 @@ describe("MthdsApiClient method-bundle transport (files / bundle_b64)", () => {
     expect(err).toBeInstanceOf(PipelineRequestError);
     expect((err as ProblemError).problem.params).toEqual({
       argument: "extra",
-      reason: "protocol_arg",
+      reason: "reserved_arg",
     });
-    await expect(
-      client.execute({ pipe_code: "p", extra: { bundle_b64: "UEsDBBQ=" } }),
-    ).rejects.toBeInstanceOf(PipelineRequestError);
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
-  it("does not ship an empty files map on the wire", async () => {
+  it("refuses an empty files map beside a pipe code, sending nothing", async () => {
     const client = makeClient();
     const fetchSpy = vi
       .spyOn(globalThis, "fetch")
       .mockResolvedValue(jsonResponse(200, { pipeline_run_id: "ok", pipe_output: {} }));
-    // pipe_code satisfies the precondition; the empty `files` must be dropped so
-    // the runner never sees a zero-file bundle.
-    await client.execute({ pipe_code: "registered_pipe", files: {} });
-    const body = JSON.parse((fetchSpy.mock.calls[0]![1] as RequestInit).body as string);
-    expect(body.files).toBeUndefined();
-    expect(body.pipe_code).toBe("registered_pipe");
+    // A tree holds at least one file, so an empty map is refused rather than dropped.
+    await expect(client.execute({ pipe_code: "registered_pipe", files: {} })).rejects.toThrow(
+      EMPTY_METHOD_TREE_MESSAGE,
+    );
+    expect(fetchSpy).not.toHaveBeenCalled();
   });
+
+  it.each(["tree", "bundleMain"])(
+    "rejects the client-only option %s smuggled through `extra`",
+    async (key) => {
+      const client = makeClient();
+      const fetchSpy = vi.spyOn(globalThis, "fetch");
+      await expect(client.execute({ pipe_code: "p", extra: { [key]: "x" } })).rejects.toThrow(
+        `extra carries reserved args [${key}]`,
+      );
+      expect(fetchSpy).not.toHaveBeenCalled();
+    },
+  );
 });
 
 describe("MthdsApiClient.start", () => {
@@ -989,7 +967,7 @@ describe("MthdsApiClient.start", () => {
 
     const ack = await client.start({
       pipe_code: "my_pipe",
-      mthds_contents: ["domain = 'x'"],
+      files: { "bundle.mthds": "domain = 'x'" },
       inputs: { a: 1 },
     });
 
@@ -999,7 +977,7 @@ describe("MthdsApiClient.start", () => {
     expect(init).toMatchObject({ method: "POST" });
     expect(JSON.parse((init as RequestInit).body as string)).toEqual({
       pipe_code: "my_pipe",
-      mthds_contents: ["domain = 'x'"],
+      files: { "bundle.mthds": "domain = 'x'" },
       inputs: { a: 1 },
     });
   });
@@ -1015,7 +993,7 @@ describe("MthdsApiClient.start", () => {
     const body = JSON.parse((fetchSpy.mock.calls[0]![1] as RequestInit).body as string);
     expect(body).toEqual({ some_vendor_selector: "sel_123", inputs: { q: "hi" } });
     expect(body.pipe_code).toBeUndefined();
-    expect(body.mthds_contents).toBeUndefined();
+    expect(body.files).toBeUndefined();
     expect(body.extra).toBeUndefined();
   });
 
@@ -1037,11 +1015,11 @@ describe("MthdsApiClient.start", () => {
   it("rejects protocol args smuggled through extra", async () => {
     const client = makeClient();
     await expect(
-      client.start({ mthds_contents: ["domain d"], extra: { pipe_code: "smuggled" } }),
+      client.start({ files: { "d.mthds": "domain d" }, extra: { pipe_code: "smuggled" } }),
     ).rejects.toBeInstanceOf(PipelineRequestError);
   });
 
-  it("throws PipelineRequestError when pipe_code, mthds_contents, and extra are all missing", async () => {
+  it("throws PipelineRequestError when pipe_code, the method's tree, and extra are all missing", async () => {
     const client = makeClient();
     await expect(client.start({})).rejects.toBeInstanceOf(PipelineRequestError);
   });
@@ -1061,7 +1039,7 @@ describe("MthdsApiClient.start", () => {
 });
 
 describe("MthdsApiClient.validate", () => {
-  it("POSTs /v1/validate with mthds_contents + allow_signatures and returns the valid report", async () => {
+  it("POSTs /v1/validate with files + allow_signatures and returns the valid report", async () => {
     const client = makeClient();
     const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
       jsonResponse(200, {
@@ -1075,7 +1053,7 @@ describe("MthdsApiClient.validate", () => {
       }),
     );
 
-    const report = await client.validate(["domain = 'x'"], true);
+    const report = await client.validate({ files: { "bundle.mthds": "domain = 'x'" } }, true);
 
     expect(report.is_valid).toBe(true);
     if (report.is_valid === false) throw new Error("expected a valid report");
@@ -1084,7 +1062,7 @@ describe("MthdsApiClient.validate", () => {
     const [url, init] = fetchSpy.mock.calls[0]!;
     expect(url).toBe("http://localhost:8081/v1/validate");
     expect(JSON.parse((init as RequestInit).body as string)).toEqual({
-      mthds_contents: ["domain = 'x'"],
+      files: { "bundle.mthds": "domain = 'x'" },
       allow_signatures: true,
       render: ["markdown"],
     });
@@ -1095,7 +1073,7 @@ describe("MthdsApiClient.validate", () => {
     const fetchSpy = vi
       .spyOn(globalThis, "fetch")
       .mockResolvedValue(jsonResponse(200, { is_valid: true }));
-    await client.validate(["domain = 'x'"]);
+    await client.validate({ files: { "bundle.mthds": "domain = 'x'" } });
     const body = JSON.parse((fetchSpy.mock.calls[0]![1] as RequestInit).body as string);
     expect(body.allow_signatures).toBe(false);
   });
@@ -1112,10 +1090,9 @@ describe("MthdsApiClient.validate", () => {
         pending_signatures: [],
         is_runnable: true,
         message: "MTHDS content validated successfully",
-        mthds_contents: ["domain = 'x'"],
       }),
     );
-    const report = await client.validate(["domain = 'x'"]);
+    const report = await client.validate({ files: { "bundle.mthds": "domain = 'x'" } });
     expect(report.is_valid).toBe(true);
     if (report.is_valid === false) throw new Error("expected a valid report");
     // `validate()` returns the protocol's neutral `ValidationResult`; the structural
@@ -1133,7 +1110,7 @@ describe("MthdsApiClient.validate", () => {
     const client = makeClient();
     // The 200-diagnostic contract: an invalid bundle is a produced verdict, not a
     // transport failure. The body carries the discriminant and one problem item per
-    // fault, each located in the file `mthds_sources` named, no structural artifacts.
+    // fault, each naming its file by tree path, no structural artifacts.
     const items = [
       {
         code: "method.schema_violation",
@@ -1157,7 +1134,7 @@ describe("MthdsApiClient.validate", () => {
         message: "MTHDS validation found errors",
       }),
     );
-    const report = await client.validate(["broken"], false, ["broken.mthds"]);
+    const report = await client.validate({ files: { "broken.mthds": "broken" } });
     expect(report.is_valid).toBe(false);
     if (report.is_valid !== false) throw new Error("expected an invalid report");
     expect(report.is_runnable).toBe(false);
@@ -1177,39 +1154,14 @@ describe("MthdsApiClient.validate", () => {
         message: "MTHDS validation found errors",
       }),
     );
-    const err = await rejection(client.validate(["broken"]));
+    const err = await rejection(client.validate({ files: { "broken.mthds": "broken" } }));
     expect(err).toBeInstanceOf(ApiResponseError);
     expect((err as ApiResponseError).problem).toEqual(
       buildProblem("client.response_unreadable", { status: 200 }),
     );
   });
 
-  it("sends mthds_sources parallel to mthds_contents when provided", async () => {
-    const client = makeClient();
-    const fetchSpy = vi
-      .spyOn(globalThis, "fetch")
-      .mockResolvedValue(jsonResponse(200, { is_valid: true }));
-    await client.validate(["domain = 'x'", "domain = 'y'"], true, ["x.mthds", "y.mthds"]);
-    const body = JSON.parse((fetchSpy.mock.calls[0]![1] as RequestInit).body as string);
-    expect(body).toEqual({
-      mthds_contents: ["domain = 'x'", "domain = 'y'"],
-      allow_signatures: true,
-      mthds_sources: ["x.mthds", "y.mthds"],
-      render: ["markdown"],
-    });
-  });
-
-  it("omits mthds_sources from the body when not provided", async () => {
-    const client = makeClient();
-    const fetchSpy = vi
-      .spyOn(globalThis, "fetch")
-      .mockResolvedValue(jsonResponse(200, { is_valid: true }));
-    await client.validate(["domain = 'x'"]);
-    const body = JSON.parse((fetchSpy.mock.calls[0]![1] as RequestInit).body as string);
-    expect("mthds_sources" in body).toBe(false);
-  });
-
-  it("throws ApiResponseError on a request-shape 422 (mthds_sources length mismatch)", async () => {
+  it("throws ApiResponseError on a request-shape 422 (a files map that is not a tree)", async () => {
     const client = makeClient();
     // The no-verdict path: the runner answers a malformed request with a problem
     // document. A produced verdict never 422s — only request-shape errors do.
@@ -1217,113 +1169,20 @@ describe("MthdsApiClient.validate", () => {
       type: "https://mthds.ai/errors/request.invalid",
       title: "The request is invalid",
       status: 422,
-      detail: "mthds_sources length must match mthds_contents",
+      detail: "The key 'a/../b.mthds' of files is not a tree path",
       code: "request.invalid",
       domain: "input",
       retry: "no",
-      next_step: { kind: "change_input", detail: "Send as many sources as contents." },
+      next_step: { kind: "change_input", detail: "Name each file by its tree path." },
     };
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
       jsonResponse(422, problem, { "content-type": "application/problem+json" }),
     );
-    const err = await rejection(client.validate(["x"], false, ["a", "b"]));
+    const err = await rejection(client.validate({ files: { "a/../b.mthds": "x" } }));
     expect(err).toBeInstanceOf(ApiResponseError);
     expect((err as ApiResponseError).status).toBe(422);
     expect((err as ApiResponseError).problem).toEqual(problem);
     expect((err as ApiResponseError).problem).not.toHaveProperty("errors");
-  });
-});
-
-describe("MthdsApiClient.validateFiles", () => {
-  function bodyOf(fetchSpy: ReturnType<typeof vi.spyOn>): Record<string, unknown> {
-    const init = fetchSpy.mock.calls[0]![1] as { body?: string };
-    return JSON.parse(init.body ?? "{}") as Record<string, unknown>;
-  }
-
-  it("sends content and sources for files that all have URIs", async () => {
-    const client = makeClient();
-    const fetchSpy = vi
-      .spyOn(globalThis, "fetch")
-      .mockResolvedValue(jsonResponse(200, { is_valid: true }));
-
-    await client.validateFiles(
-      [
-        { uri: "file:///bundle/main.mthds", content: "domain = 'x'" },
-        { uri: "file:///bundle/pipes.mthds", content: "pipe x.greet" },
-      ],
-      { allowSignatures: true },
-    );
-
-    expect(fetchSpy.mock.calls[0]![0]).toBe("http://localhost:8081/v1/validate");
-    expect(bodyOf(fetchSpy)).toEqual({
-      mthds_contents: ["domain = 'x'", "pipe x.greet"],
-      allow_signatures: true,
-      mthds_sources: ["file:///bundle/main.mthds", "file:///bundle/pipes.mthds"],
-      render: ["markdown"],
-    });
-  });
-
-  it("omits mthds_sources when no file has a URI", async () => {
-    const client = makeClient();
-    const fetchSpy = vi
-      .spyOn(globalThis, "fetch")
-      .mockResolvedValue(jsonResponse(200, { is_valid: true }));
-
-    await client.validateFiles([{ content: "domain = 'x'" }, { content: "pipe x.greet" }]);
-
-    expect(bodyOf(fetchSpy)).toEqual({
-      mthds_contents: ["domain = 'x'", "pipe x.greet"],
-      allow_signatures: false,
-      render: ["markdown"],
-    });
-  });
-
-  it("fills deterministic inline sources for missing URIs in mixed input", async () => {
-    const client = makeClient();
-    const fetchSpy = vi
-      .spyOn(globalThis, "fetch")
-      .mockResolvedValue(jsonResponse(200, { is_valid: true }));
-
-    await client.validateFiles([
-      { uri: "file:///bundle/main.mthds", content: "domain = 'x'" },
-      { content: "pipe x.inline" },
-      { uri: "file:///bundle/other.mthds", content: "pipe x.other" },
-    ]);
-
-    expect(bodyOf(fetchSpy)).toMatchObject({
-      mthds_contents: ["domain = 'x'", "pipe x.inline", "pipe x.other"],
-      mthds_sources: [
-        "file:///bundle/main.mthds",
-        "inline://file-2.mthds",
-        "file:///bundle/other.mthds",
-      ],
-      render: ["markdown"],
-    });
-  });
-
-  it("rejects empty files before calling the API", async () => {
-    const client = makeClient();
-    const fetchSpy = vi.spyOn(globalThis, "fetch");
-
-    const err = await rejection(client.validateFiles([]));
-    expect(err).toBeInstanceOf(PipelineRequestError);
-    expect((err as ProblemError).problem.params).toEqual({ argument: "files", reason: "empty" });
-    expect(fetchSpy).not.toHaveBeenCalled();
-  });
-
-  it("passes render options through to validate", async () => {
-    const client = makeClient();
-    const fetchSpy = vi
-      .spyOn(globalThis, "fetch")
-      .mockResolvedValue(jsonResponse(200, { is_valid: true, rendered_markdown: "# ok" }));
-
-    await client.validateFiles([{ content: "domain = 'x'" }], { render: ["markdown"] });
-
-    expect(bodyOf(fetchSpy)).toEqual({
-      mthds_contents: ["domain = 'x'"],
-      allow_signatures: false,
-      render: ["markdown"],
-    });
   });
 });
 
@@ -1403,25 +1262,62 @@ describe("MthdsApiClient.pipeIo", () => {
     is_runnable: true,
   };
 
-  it("posts the request verbatim to /v1/pipe-io and returns the valid arm", async () => {
+  it("posts a files map and the other fields as given to /v1/pipe-io and returns the valid arm", async () => {
     const client = makeClient();
     const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(jsonResponse(200, VALID));
+    const request = {
+      files: {
+        "METHODS.toml": "[package]\n",
+        "smoke.mthds": "domain = 'smoke'",
+        "templates/t.docx": { base64: "UEsDBA==" },
+        "data/big.bin": { sha256: "a".repeat(64), size: 1048576 },
+      },
+      dependencies: { "github.com/acme/lib": { "lib.mthds": "domain = 'lib'" } },
+      resources: { "templates/extra.html": "PHAvPg==" },
+      read_scope: "org/acme",
+      pipe_ref: "smoke.echo",
+      all_pipes: true,
+      include_files: true,
+    };
+
+    const result = await client.pipeIo(request);
+
+    // A caller's own files map needs no handshake: the one call is the route's.
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(fetchSpy.mock.calls[0]![0]).toBe("http://localhost:8081/v1/pipe-io");
+    expect(bodyOf(fetchSpy)).toEqual(request);
+    expect(result).toEqual(VALID);
+  });
+
+  it("reads the include_files echo as a map from tree path to bundle text", async () => {
+    const client = makeClient();
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      jsonResponse(200, { ...VALID, files: { "smoke.mthds": "domain = 'smoke'" } }),
+    );
 
     const result = await client.pipeIo({
-      files: [{ content: "domain = 'smoke'", source: "smoke.mthds" }],
-      pipe_ref: "smoke.echo",
-      all_pipes: true,
+      files: { "smoke.mthds": "domain = 'smoke'" },
       include_files: true,
     });
 
-    expect(fetchSpy.mock.calls[0]![0]).toBe("http://localhost:8081/v1/pipe-io");
-    expect(bodyOf(fetchSpy)).toEqual({
-      files: [{ content: "domain = 'smoke'", source: "smoke.mthds" }],
-      pipe_ref: "smoke.echo",
-      all_pipes: true,
-      include_files: true,
-    });
-    expect(result).toEqual(VALID);
+    if (!result.is_valid) throw new Error("expected the valid arm");
+    expect(result.files).toEqual({ "smoke.mthds": "domain = 'smoke'" });
+  });
+
+  it("refuses files and tree together, and an empty files map, before anything is sent", async () => {
+    const client = makeClient();
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(jsonResponse(200, VALID));
+    const tree = {
+      files: [{ path: "smoke.mthds", size: 1, sha256: "b".repeat(64) }],
+      digest: `sha256:${"c".repeat(64)}`,
+      readFile: async () => new Uint8Array([0x78]),
+    };
+
+    await expect(client.pipeIo({ files: { "smoke.mthds": "x" }, tree })).rejects.toBeInstanceOf(
+      PipelineRequestError,
+    );
+    await expect(client.pipeIo({ files: {} })).rejects.toThrow(EMPTY_METHOD_TREE_MESSAGE);
+    expect(fetchSpy).not.toHaveBeenCalled();
   });
 
   // The hosted catalog selector is a pass-through: the platform resolves it, so the
@@ -1445,7 +1341,7 @@ describe("MthdsApiClient.pipeIo", () => {
       }),
     );
 
-    const result = await client.pipeIo({ files: [{ content: "domain = 'smoke'" }] });
+    const result = await client.pipeIo({ files: { "smoke.mthds": "domain = 'smoke'" } });
 
     expect(result.is_valid).toBe(false);
     if (result.is_valid) throw new Error("expected the invalid arm");
@@ -1469,7 +1365,7 @@ describe("MthdsApiClient.pipeIo", () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue(jsonResponse(422, problem));
 
     const err = await rejection(
-      client.pipeIo({ files: [{ content: "domain = 'smoke'" }], pipe_ref: "smoke.nope" }),
+      client.pipeIo({ files: { "smoke.mthds": "domain = 'smoke'" }, pipe_ref: "smoke.nope" }),
     );
 
     expect(err).toBeInstanceOf(ApiResponseError);
@@ -1487,14 +1383,14 @@ describe("MthdsApiClient.pipeIo", () => {
     const client = makeClient();
     vi.spyOn(globalThis, "fetch").mockRejectedValue(networkError("ECONNREFUSED", "connect"));
 
-    const err = await rejection(client.pipeIo({ files: [{ content: "x" }] }));
+    const err = await rejection(client.pipeIo({ files: { "x.mthds": "x" } }));
     expect(err).toBeInstanceOf(ApiTransportError);
     expect((err as ApiTransportError).code).toBe("client.unreachable");
   });
 
   // A `method_ref` can make the server clone a repository first, so it gets the
-  // fetch-sized budget; inline files get the static-route one.
-  it("gives a method_ref the fetch-sized budget and inline files the static one", async () => {
+  // fetch-sized budget; a tree gets the static-route one.
+  it("gives a method_ref the fetch-sized budget and a tree the static one", async () => {
     const client = makeClient();
     vi.spyOn(globalThis, "fetch").mockImplementation(() =>
       Promise.resolve(jsonResponse(200, VALID)),
@@ -1505,7 +1401,7 @@ describe("MthdsApiClient.pipeIo", () => {
     expect(armedTimeouts(timeoutSpy)).toContain(180_000);
 
     timeoutSpy.mockClear();
-    await client.pipeIo({ files: [{ content: "x" }] });
+    await client.pipeIo({ files: { "x.mthds": "x" } });
     expect(armedTimeouts(timeoutSpy)).toContain(30_000);
     expect(armedTimeouts(timeoutSpy)).not.toContain(180_000);
   });
@@ -1556,7 +1452,7 @@ describe("MthdsApiClient problem items keep their next step", () => {
       }),
     );
 
-    const result = await client.pipeIo({ files: [{ content: "domain = 'demo'" }] });
+    const result = await client.pipeIo({ files: { "demo.mthds": "domain = 'demo'" } });
 
     if (result.is_valid) throw new Error("expected the invalid arm");
     const [modelItem, pipeItem] = result.errors;
@@ -1683,7 +1579,7 @@ describe("MthdsApiClient.validate render extra", () => {
       .mockResolvedValue(
         jsonResponse(200, { is_valid: true, rendered_markdown: "# Validation passed" }),
       );
-    await client.validate(["domain = 'x'"], false, undefined, ["markdown"]);
+    await client.validate({ files: { "bundle.mthds": "domain = 'x'" } }, false, ["markdown"]);
     expect(bodyOf(fetchSpy).render).toEqual(["markdown"]);
   });
 
@@ -1694,7 +1590,7 @@ describe("MthdsApiClient.validate render extra", () => {
       .mockResolvedValue(
         jsonResponse(200, { is_valid: true, rendered_markdown: "# Validation passed" }),
       );
-    await client.validate(["domain = 'x'"], false);
+    await client.validate({ files: { "bundle.mthds": "domain = 'x'" } }, false);
     expect(bodyOf(fetchSpy).render).toEqual(["markdown"]);
   });
 
@@ -1705,7 +1601,7 @@ describe("MthdsApiClient.validate render extra", () => {
       .mockResolvedValue(
         jsonResponse(200, { is_valid: true, rendered_markdown: "# Validation passed" }),
       );
-    await client.validate(["domain = 'x'"], false, undefined, []);
+    await client.validate({ files: { "bundle.mthds": "domain = 'x'" } }, false, []);
     expect(bodyOf(fetchSpy).render).toEqual(["markdown"]);
   });
 
@@ -1716,7 +1612,7 @@ describe("MthdsApiClient.validate render extra", () => {
       .mockResolvedValue(
         jsonResponse(200, { is_valid: true, rendered_markdown: "# Validation passed" }),
       );
-    await client.validate(["domain = 'x'"], false, undefined, ["html"]);
+    await client.validate({ files: { "bundle.mthds": "domain = 'x'" } }, false, ["html"]);
     expect(bodyOf(fetchSpy).render).toEqual(["html", "markdown"]);
   });
 });

@@ -1,45 +1,64 @@
 import { Runners } from "../types.js";
 import type { Runner, RunnerType, PipeIORequest, PipeIOResponse } from "../types.js";
-import type { RunOptions, RunRequest, StartOptions, StartRequest } from "../../protocol/options.js";
 import type {
+  RunOptions,
+  RunRequest,
+  StartOptions,
+  ValidateSource,
+} from "../../protocol/options.js";
+import type { MethodFiles, MethodTreeSource } from "../../protocol/file_entries.js";
+import type {
+  MissingBlob,
+  MissingBlobsRequest,
+  MissingBlobsResult,
   ModelCategory,
   ModelDeck,
   RunResultStart,
   ValidationResult,
   VersionInfo,
 } from "../../protocol/models.js";
+import type { MethodTreeLimits } from "../../method-tree/lister.js";
 import type { DictRunResultExecute } from "./models.js";
-import { ApiResponseError, ApiTransportError, RunStillRunningError } from "./exceptions.js";
+import {
+  ApiResponseError,
+  ApiTransportError,
+  BlobUploadError,
+  MalformedBlobsAnswerError,
+  RunStillRunningError,
+} from "./exceptions.js";
 import type { ApiAnswerFacts } from "./exceptions.js";
+import { PipelineRequestError } from "../../protocol/exceptions.js";
 import { argumentInvalid, problemError } from "../../problems/errors.js";
+import type { ProblemError } from "../../problems/errors.js";
 import { buildProblem } from "../../problems/build.js";
 import {
   isProblemItem,
   parseJsonBody,
   readAnswer,
+  readProblemBody,
   retryAfterSeconds,
   unreadableAnswer,
 } from "../../problems/read.js";
 import type { Problem } from "../../problems/types.js";
 import { networkErrorCode, provesNothingSent } from "./transport.js";
 import { isValidBaseUrl } from "../../config/config.js";
-import { assertExclusiveRunSources, hasBundlePayload } from "../../protocol/options.js";
+import { assertOneMethodSource, hasMethodSource } from "../../protocol/options.js";
 import { buildUserAgent } from "./user-agent.js";
 import type { AppInfo } from "./user-agent.js";
-
-export interface MthdsFile {
-  /** File contents to validate. */
-  content: string;
-  /** Optional provenance URI threaded into validation diagnostics. */
-  uri?: string;
-}
-
-export interface ValidateFilesOptions {
-  /** Whether unresolved pipe signatures are accepted as pending instead of invalid. */
-  allowSignatures?: boolean;
-  /** Optional validate presentation hints, e.g. ["markdown"]. */
-  render?: string[];
-}
+import {
+  INLINE_TREE_MAX_BYTES,
+  announcedTreeLimits,
+  declaresBlobStore,
+  fileByBlob,
+  forEachConcurrently,
+  hashMethodFiles,
+  inlineFilesOf,
+  inlineMapBytes,
+  listerLimitsOf,
+  mightTravelInline,
+  treeTotalSize,
+  uniqueBlobs,
+} from "./tree-sending.js";
 
 export interface MthdsApiClientOptions {
   /** API key (Bearer). Falls back to `MTHDS_API_KEY`. Optional for anonymous bare runners. */
@@ -104,6 +123,50 @@ const POLL_REQUEST_TIMEOUT_MS = 30_000; // single GETs (models/version/start); t
 // caps a response at ~30s whatever the client allows.
 const METHOD_REF_FETCH_TIMEOUT_MS = 180_000; // 3 min — covers the server's clone + resolve
 const VALIDATE_MARKDOWN_RENDER_FORMAT = "markdown";
+// One blob of up to the runner's file limit (tens of MiB on the hosted plane) per request.
+const BLOB_UPLOAD_TIMEOUT_MS = 300_000; // 5 min
+// Uploads run side by side, a few at a time, so a tree of many small files is not sent one by one.
+const BLOB_UPLOAD_CONCURRENCY = 4;
+const SHA256_HEX = /^[0-9a-f]{64}$/;
+
+/**
+ * How long a runner's handshake is trusted before the client asks again. A runner's
+ * blob store and tree limits change only with a deploy, so a client asks once per
+ * this span rather than before every request; a refusal that says the answer is
+ * stale (`/blobs/missing` gone, a tree refused as too large) drops it sooner.
+ */
+export const HANDSHAKE_TTL_MS = 5 * 60_000;
+
+/**
+ * How a runner refuses a tree past one of its limits, on a run, a validation or a pipe I/O
+ * read. The standard asks for "a problem naming the limit": the core registry's
+ * `method.package_invalid` with its `limit` parameter, which that code carries only when the rule
+ * the tree breaks is a limit. The client also reads the two runners that sent one before the
+ * registry: the hosted platform's problem `code` (with its `limit: {name, value, reached}`), and
+ * pipelex-api's `error_type`, which the platform also relays when the runner behind it refuses the
+ * tree.
+ */
+const PACKAGE_INVALID_CODE = "method.package_invalid";
+/** The code of a refusal listing, in `params.missing_blobs`, the hash entries the runner lacks. */
+const BLOBS_MISSING_CODE = "request.blobs_missing";
+const METHOD_TREE_TOO_LARGE_CODE = "method_tree_too_large";
+const METHOD_TREE_TOO_LARGE_ERROR_TYPE = "MethodTreeTooLarge";
+
+/** The `files` map a request carries, and the tree behind it when it travels by hash. */
+interface PreparedFiles {
+  files: MethodFiles | undefined;
+  /**
+   * The tree, when the client sent it by hash: a `422` naming `missing_blobs` is then
+   * answered by uploading them and resending, since the client holds their bytes.
+   */
+  byHashTree: MethodTreeSource | undefined;
+}
+
+/**
+ * The bytes of a tree's files already read for one request, by tree path, so a file
+ * read to weigh the inline map is not read again to be uploaded or resent.
+ */
+type ReadBytes = Map<string, Uint8Array>;
 
 /**
  * The run an answer's body names: its `pipeline_run_id` when that is an identifier, the
@@ -137,16 +200,25 @@ function outcomeUnknown(runId: string | undefined): Problem {
  *
  * One base URL (`MTHDS_BASE_URL`); every endpoint is `<base>/v1/<endpoint>`:
  * - **protocol** (`execute` / `start` / `validate` / `models` / `version`) — works
- *   against any MTHDS-compliant runner, hosted or bare.
+ *   against any MTHDS-compliant runner, hosted or bare. A method travels as its
+ *   tree: given as `tree`, the client sends it inline, or by hash through the
+ *   optional blob routes (`findMissingBlobs`, `uploadBlob`) when the runner
+ *   declares a blob store and the tree is large.
  * - **`pipeIo`** (`/v1/pipe-io`) — a Pipelex API extension carrying the standard's
- *   I/O artifacts. It lives on this class and not on `Runner`: the local pipelex
- *   runner shells out and has no use for it.
+ *   I/O artifacts, which takes the method's tree as the protocol routes do. It lives
+ *   on this class and not on `Runner`: the local pipelex runner shells out and has
+ *   no use for it.
  *
  * Every failure of every route, `health` included, is a `ProblemError` carrying a problem with a
  * registered code (see `exceptions.ts` and docs/errors.md): an answer that is not the route's
- * result is an `ApiResponseError`, a call that got no answer an `ApiTransportError`. The client
- * never repeats a request by itself, so a problem whose `retry` is `outcome_unknown` is never
- * retried here; a caller that retries reads `retry` first.
+ * result is an `ApiResponseError`, a call that got no answer an `ApiTransportError`. Two failures
+ * of sending a tree by hash carry no problem yet: a failed upload of a blob to the target a runner
+ * named, a `BlobUploadError`, and a `/blobs/missing` answer naming a blob the tree does not hold,
+ * a `PipelineRequestError`. The client never repeats a request whose outcome it does not know, so a problem whose `retry` is
+ * `outcome_unknown` is never retried here; a caller that retries reads `retry` first. It sends a
+ * request carrying a method a second time only after a `422` refusal, which created nothing: once
+ * after uploading the blobs a `request.blobs_missing` problem lists, and once after a tree refused
+ * as past one of the runner's limits, on a fresh handshake.
  *
  * The durable run-lifecycle (poll a run by id: `getRunStatus` / `getRunResult` /
  * `waitForResult` / `startAndWaitForResult`) is NOT part of this client — it now
@@ -164,6 +236,8 @@ export class MthdsApiClient implements Runner {
    * where the header must not be set.
    */
   private readonly userAgent: string | undefined;
+  /** The runner's handshake and when it was asked, kept for `HANDSHAKE_TTL_MS`. */
+  private handshakeCache: { promise: Promise<VersionInfo>; askedAt: number } | undefined;
 
   constructor(options: MthdsApiClientOptions = {}) {
     // Validate appInfo first: a bad identity is an argument error regardless
@@ -357,10 +431,7 @@ export class MthdsApiClient implements Runner {
    * `client.outcome_unknown`, naming the run whenever the body names one.
    */
   private readResult<T>(route: Route, res: RawResponse, isResult: (value: unknown) => boolean): T {
-    if (res.status < 200 || res.status >= 300) {
-      const { problem, fromBody } = readAnswer(res, { createsRun: route.createsRun });
-      throw new ApiResponseError(problem, this.answerFacts(route, res, fromBody));
-    }
+    if (res.status < 200 || res.status >= 300) throw this.refusal(route, res);
     const reading = parseJsonBody(res.body);
     if (!reading.ok || !isResult(reading.value)) {
       const problem = route.createsRun
@@ -369,6 +440,12 @@ export class MthdsApiClient implements Runner {
       throw new ApiResponseError(problem, this.answerFacts(route, res, false));
     }
     return reading.value as T;
+  }
+
+  /** An answer outside `2xx`, read as its problem (`readAnswer`). */
+  private refusal(route: Route, res: RawResponse): ApiResponseError {
+    const { problem, fromBody } = readAnswer(res, { createsRun: route.createsRun });
+    return new ApiResponseError(problem, this.answerFacts(route, res, fromBody));
   }
 
   /**
@@ -416,40 +493,24 @@ export class MthdsApiClient implements Runner {
    * Execute a method synchronously and wait for its completion —
    * `POST /v1/execute`.
    *
+   * The method travels as `files`, the map sent as given, or as `tree`, which the
+   * client sends inline or by hash (see `prepareMethodFiles`). Sent by hash, a
+   * `422` coded `request.blobs_missing` is answered by uploading the blobs it lists and resending
+   * once.
+   *
    * A request that creates a run: a connection lost or a time limit reached once it left throws
    * an `ApiTransportError` of `client.outcome_unknown`, which no caller repeats automatically. A
    * `202` throws `RunStillRunningError` (`client.follow_failed`).
    */
   async execute(options: RunOptions): Promise<DictRunResultExecute> {
     const extensions = buildExtensions(options.extra);
-    if (
-      !options.pipe_code &&
-      (!options.mthds_contents || options.mthds_contents.length === 0) &&
-      !hasBundlePayload(options) &&
-      Object.keys(extensions).length === 0
-    ) {
-      throw argumentInvalid(
-        "pipe_code",
-        "missing",
-        "Either pipe_code, mthds_contents, a method bundle (files/bundle_b64) or a server-specific extension arg (extra) must be provided to execute().",
-      );
-    }
-    assertExclusiveRunSources(options);
-
-    const request: RunRequest & Record<string, unknown> = {
-      pipe_code: options.pipe_code,
-      mthds_contents: options.mthds_contents,
-      inputs: options.inputs,
-      output_name: options.output_name,
-      output_multiplicity: options.output_multiplicity,
-      dynamic_output_concept_ref: options.dynamic_output_concept_ref,
-      files: nonEmptyFiles(options.files),
-      bundle_b64: nonEmptyString(options.bundle_b64),
-      ...extensions,
-    };
+    assertOneMethodSource(options);
+    assertRunnable(options, extensions, "execute");
 
     const route = this.route("POST", "execute", DEFAULT_REQUEST_TIMEOUT_MS, true);
-    const res = await this.send(route, { body: request });
+    const res = await this.postMethodRequest(route, options, (files) =>
+      runRequestBody(options, files, extensions),
+    );
     if (res.status === 202) throw this.acceptedAsynchronously(route, res);
     return this.readResult(route, res, isRunResultExecute);
   }
@@ -457,61 +518,40 @@ export class MthdsApiClient implements Runner {
   /**
    * Start a method asynchronously — `POST /v1/start` (202, no output yet).
    *
-   * Server-specific extension args ride `options.extra` and merge into the
-   * request body — the server you call defines and handles them (including a
-   * client-supplied run id where a server supports one). The returned
-   * `pipeline_run_id` is always authoritative. How completion is later delivered
-   * (durable polling, callbacks) is implementation-defined and outside this
-   * client — the durable run-lifecycle lives in `@pipelex/sdk`. A request that creates a run, so
-   * an answer lost once it left is `client.outcome_unknown`.
+   * The method travels as `execute` sends it. Server-specific extension args ride
+   * `options.extra` and merge into the request body — the server you call defines
+   * and handles them (including a client-supplied run id where a server supports
+   * one). The returned `pipeline_run_id` is always authoritative. How completion is
+   * later delivered (durable polling, callbacks) is implementation-defined and
+   * outside this client — the durable run-lifecycle lives in `@pipelex/sdk`. A request that
+   * creates a run, so an answer lost once it left is `client.outcome_unknown`.
    */
   async start(options: StartOptions): Promise<RunResultStart> {
     const extensions = buildExtensions(options.extra);
-    if (
-      !options.pipe_code &&
-      (!options.mthds_contents || options.mthds_contents.length === 0) &&
-      !hasBundlePayload(options) &&
-      Object.keys(extensions).length === 0
-    ) {
-      throw argumentInvalid(
-        "pipe_code",
-        "missing",
-        "Either pipe_code, mthds_contents, a method bundle (files/bundle_b64) or a server-specific extension arg (extra) must be provided to start().",
-      );
-    }
-    assertExclusiveRunSources(options);
-
-    // `?? undefined` so JSON.stringify drops absent fields from the wire body.
-    const request: StartRequest & Record<string, unknown> = {
-      pipe_code: options.pipe_code ?? undefined,
-      mthds_contents: options.mthds_contents ?? undefined,
-      inputs: options.inputs ?? undefined,
-      output_name: options.output_name ?? undefined,
-      output_multiplicity: options.output_multiplicity ?? undefined,
-      dynamic_output_concept_ref: options.dynamic_output_concept_ref ?? undefined,
-      files: nonEmptyFiles(options.files),
-      bundle_b64: nonEmptyString(options.bundle_b64),
-      ...extensions,
-    };
+    assertOneMethodSource(options);
+    assertRunnable(options, extensions, "start");
 
     const route = this.route("POST", "start", POLL_REQUEST_TIMEOUT_MS, true);
-    return this.readResult(route, await this.send(route, { body: request }), isRunResultStart);
+    const res = await this.postMethodRequest(route, options, (files) =>
+      runRequestBody(options, files, extensions),
+    );
+    return this.readResult(route, res, isRunResultStart);
   }
 
   /**
-   * Parse, validate, and dry-run an MTHDS bundle — `POST /v1/validate`.
+   * Parse, validate, and dry-run a method — `POST /v1/validate`.
+   *
+   * The method travels as its whole tree: `{ files }`, the map sent as given, or
+   * `{ tree }`, which the client sends inline or by hash as it does for a run. The
+   * runner judges every bundle and every file a bundle names, and attributes each
+   * fault to its file by tree path (the item's `location.file`).
    *
    * `/validate` is a diagnostic endpoint: every produced verdict rides a **200**,
    * discriminated on `is_valid`. This returns the protocol's `ValidationResult` union verbatim —
    * `is_valid: true` ⇒ a `ValidationReport`, `is_valid: false` ⇒ an `InvalidValidationReport`,
-   * whose `errors` are problem items. An invalid bundle is NOT thrown — the caller
-   * pattern-matches `is_valid`. Only a *no-verdict* condition (a malformed request, an
-   * `mthds_sources` length mismatch, auth, a server fault) is non-2xx and surfaces as
-   * `ApiResponseError`.
-   *
-   * `mthdsSources` (optional, parallel to `mthdsContents`) names each submitted
-   * content — a Pipelex-API extension, so cross-file diagnostics name the owning file in their
-   * location. The server 422s a length mismatch; this client sends the arrays verbatim.
+   * whose `errors` are problem items. An invalid method is NOT thrown — the caller
+   * pattern-matches `is_valid`. Only a *no-verdict* condition (a malformed request, a tree the
+   * runner refuses, auth, a server fault) is non-2xx and surfaces as `ApiResponseError`.
    *
    * `render` is the Pipelex-API presentation hint — a list of view-format tokens.
    * This client always asks for Markdown so both valid results and produced
@@ -519,55 +559,25 @@ export class MthdsApiClient implements Runner {
    * tokens. Unknown tokens are server-side lenient-ignored (never a 422).
    */
   async validate(
-    mthdsContents: string[],
+    source: ValidateSource,
     allowSignatures = false,
-    mthdsSources?: string[],
     render?: string[],
   ): Promise<ValidationResult> {
-    const body: Record<string, unknown> = {
-      mthds_contents: mthdsContents,
-      allow_signatures: allowSignatures,
-    };
-    if (mthdsSources !== undefined) {
-      body.mthds_sources = mthdsSources;
-    }
-    body.render = withValidateMarkdownRender(render);
-    const route = this.route("POST", "validate", DEFAULT_REQUEST_TIMEOUT_MS);
-    return this.readResult(route, await this.send(route, { body }), isVerdict);
-  }
-
-  /**
-   * Validate paired MTHDS files while preserving URI attribution for diagnostics.
-   *
-   * This adapter intentionally keeps the low-level `validate(...)` payload shape
-   * intact for existing consumers. When any file has a URI, every content gets a
-   * parallel source label; inline labels are deterministic so the server never
-   * sees a length-mismatched `mthds_sources` array.
-   */
-  async validateFiles(
-    files: MthdsFile[],
-    options: ValidateFilesOptions = {},
-  ): Promise<ValidationResult> {
-    if (files.length === 0) {
+    assertOneMethodSource(source);
+    if (!hasMethodSource(source)) {
       throw argumentInvalid(
         "files",
-        "empty",
-        "At least one MTHDS file must be provided to validateFiles().",
+        "missing",
+        "validate() needs the method's tree, as files or tree.",
       );
     }
-
-    const mthdsContents = files.map((file) => file.content);
-    const hasAnyUri = files.some((file) => file.uri !== undefined);
-    const mthdsSources = hasAnyUri
-      ? files.map((file, index) => file.uri ?? `inline://file-${index + 1}.mthds`)
-      : undefined;
-
-    return this.validate(
-      mthdsContents,
-      options.allowSignatures ?? false,
-      mthdsSources,
-      options.render,
-    );
+    const route = this.route("POST", "validate", DEFAULT_REQUEST_TIMEOUT_MS);
+    const res = await this.postMethodRequest(route, source, (files) => ({
+      files,
+      allow_signatures: allowSignatures,
+      render: withValidateMarkdownRender(render),
+    }));
+    return this.readResult(route, res, isVerdict);
   }
 
   /** The model deck the runner can route to — `GET /v1/models[?type=]`. */
@@ -586,31 +596,367 @@ export class MthdsApiClient implements Runner {
     return this.readResult(route, await this.send(route), isVersionInfo);
   }
 
+  // ── Sending a method tree ─────────────────────────────────────────
+
+  /**
+   * The limits this runner announces for a tree, as `listMethodTree` takes them,
+   * so a lister stops at the first breach before it hashes anything: the hosted
+   * platform's `limits.method_tree` member of `GET /v1/version`. Empty when the
+   * runner announces none; no limit is ever assumed.
+   */
+  async methodTreeLimits(): Promise<MethodTreeLimits> {
+    return listerLimitsOf(announcedTreeLimits(await this.handshake()));
+  }
+
+  /**
+   * The `files` map to send for a tree, after uploading what the runner lacks. The
+   * whole tree travels inline when the runner keeps no blob store, or when its
+   * inline map, serialized as JSON in UTF-8, weighs 256 KiB or less
+   * (`INLINE_TREE_MAX_BYTES`) and no more than the inline limit the runner
+   * announces; otherwise every file travels by hash, after
+   * `POST /v1/blobs/missing` with the tree's digest and the upload of each blob it
+   * names. `execute`, `start`, `validate` and `pipeIo` call it for a `tree`; a
+   * caller building its own request calls it directly.
+   */
+  async prepareMethodFiles(tree: MethodTreeSource): Promise<MethodFiles> {
+    assertOneMethodSource({ tree });
+    const prepared = await this.prepareTree(tree, new Map());
+    return prepared.files!;
+  }
+
+  /**
+   * Which of these blobs the runner lacks, and where to upload each —
+   * `POST /v1/blobs/missing`, the protocol's optional route, served by a runner
+   * whose `GET /v1/version` declares `blob_store: true`. A blob the runner holds is
+   * left out, and an empty `missing` means there is nothing to upload. An answer that is not a
+   * success throws an `ApiResponseError`; a success whose body is not shaped as the protocol says
+   * throws a `MalformedBlobsAnswerError`, which never quotes the body, since its upload URLs are
+   * bearer capabilities.
+   */
+  async findMissingBlobs(request: MissingBlobsRequest): Promise<MissingBlobsResult> {
+    const route = this.route("POST", "blobs/missing", POLL_REQUEST_TIMEOUT_MS);
+    const res = await this.send(route, { body: request });
+    if (res.status < 200 || res.status >= 300) throw this.refusal(route, res);
+    const reading = parseJsonBody(res.body);
+    if (!reading.ok) {
+      throw new MalformedBlobsAnswerError(
+        "POST /v1/blobs/missing answered a body that is not JSON.",
+        res.status,
+      );
+    }
+    const parsed = reading.value;
+    const missing = isObject(parsed) ? parsed.missing : undefined;
+    if (!Array.isArray(missing)) {
+      throw new MalformedBlobsAnswerError(
+        "POST /v1/blobs/missing answered without a `missing` list, which the protocol requires.",
+        res.status,
+      );
+    }
+    missing.forEach((entry: unknown, index) => {
+      const fault = missingBlobFault(entry);
+      if (fault !== null) {
+        const sha256 = isObject(entry) && typeof entry.sha256 === "string" ? entry.sha256 : "";
+        const wellFormed = SHA256_HEX.test(sha256) ? sha256 : undefined;
+        const named = wellFormed === undefined ? "" : ` (blob ${wellFormed})`;
+        throw new MalformedBlobsAnswerError(
+          `POST /v1/blobs/missing answered a malformed entry at missing[${index}]${named}: ${fault}.`,
+          res.status,
+          index,
+          wellFormed,
+        );
+      }
+    });
+    return parsed as unknown as MissingBlobsResult;
+  }
+
+  /**
+   * Upload one blob's bytes to the target `findMissingBlobs` named: its bytes as the
+   * whole body of a request with the target's method to its URL, carrying exactly
+   * its headers. No credential is sent: the target authorizes the upload itself, by
+   * a signed URL. The `User-Agent` is added only when the target is this runner's
+   * own origin, since a third party's object store is not the API. A `412` means
+   * the bytes are already held and counts as uploaded. Throws `BlobUploadError`,
+   * which never carries the target URL, a bearer capability.
+   */
+  async uploadBlob(
+    blob: MissingBlob,
+    bytes: Uint8Array,
+    options: { signal?: AbortSignal } = {},
+  ): Promise<void> {
+    const { sha256, upload } = blob;
+    let target: URL;
+    try {
+      target = new URL(upload.url);
+    } catch {
+      throw new BlobUploadError(
+        `The upload target of blob ${sha256} is not a URL.`,
+        sha256,
+        undefined,
+        "",
+      );
+    }
+    const headers: Record<string, string> = { ...upload.headers };
+    const namesUserAgent = Object.keys(headers).some((name) => name.toLowerCase() === "user-agent");
+    if (this.userAgent !== undefined && target.origin === this.originUrl && !namesUserAgent) {
+      headers["User-Agent"] = this.userAgent;
+    }
+
+    const controller = new AbortController();
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      controller.abort(new DOMException("Upload timed out.", "TimeoutError"));
+    }, BLOB_UPLOAD_TIMEOUT_MS);
+    // A caller's signal, such as another upload of the same tree having failed, stops this one.
+    const callerSignal = options.signal;
+    const onCallerAbort = (): void => controller.abort(callerSignal?.reason);
+    if (callerSignal?.aborted === true) controller.abort(callerSignal.reason);
+    else callerSignal?.addEventListener("abort", onCallerAbort, { once: true });
+    let response: Response;
+    try {
+      response = await fetch(upload.url, {
+        method: upload.method,
+        headers,
+        body: bytes as Uint8Array<ArrayBuffer>,
+        signal: controller.signal,
+      });
+      await response.arrayBuffer().catch(() => undefined);
+    } catch (err) {
+      // Only the network code is kept: the fetch error itself can quote the URL, its
+      // signed query and any credentials written in it.
+      const code =
+        callerSignal?.aborted === true
+          ? "stopped"
+          : timedOut
+            ? "ABORT_TIMEOUT"
+            : (networkErrorCode(err) ?? "network error");
+      throw new BlobUploadError(
+        `Could not upload blob ${sha256} to ${target.host} (${code}).`,
+        sha256,
+        undefined,
+        target.host,
+      );
+    } finally {
+      clearTimeout(timer);
+      callerSignal?.removeEventListener("abort", onCallerAbort);
+    }
+    if (response.ok || response.status === 412) return;
+    throw new BlobUploadError(
+      `Uploading blob ${sha256} to ${target.host} failed (${response.status} ${response.statusText}).`.trimEnd(),
+      sha256,
+      response.status,
+      target.host,
+    );
+  }
+
+  /**
+   * The runner's handshake, asked once per `HANDSHAKE_TTL_MS`; a failed ask is not
+   * kept, so the next call asks again.
+   */
+  private handshake(): Promise<VersionInfo> {
+    const now = Date.now();
+    const cached = this.handshakeCache;
+    if (cached !== undefined && now - cached.askedAt < HANDSHAKE_TTL_MS) return cached.promise;
+    const promise: Promise<VersionInfo> = this.version().catch((err: unknown) => {
+      if (this.handshakeCache?.promise === promise) this.handshakeCache = undefined;
+      throw err;
+    });
+    this.handshakeCache = { promise, askedAt: now };
+    return promise;
+  }
+
+  /** Drop the kept handshake, which a refusal has shown to be stale. */
+  private forgetHandshake(): void {
+    this.handshakeCache = undefined;
+  }
+
+  /**
+   * Post a request carrying a method: prepare its `files` (a `tree` sent inline or by
+   * hash, a `files` map as given), post it, and answer a `422` coded `request.blobs_missing`
+   * (see `postWithBlobRetry`). When a run, a validation or a pipe I/O read refuses a
+   * tree the client prepared as past one of the runner's limits (`isMethodTreeTooLarge`), the
+   * limits the handshake announced may be stale, so the client asks the handshake again, prepares
+   * the tree as the fresh limits say and sends it once more: a `422` created nothing, so the
+   * second request is no repeat of one whose outcome is unknown.
+   */
+  private async postMethodRequest(
+    route: Route,
+    method: RunOptions,
+    body: (files: MethodFiles | undefined) => unknown,
+  ): Promise<RawResponse> {
+    const read: ReadBytes = new Map();
+    const send = async (): Promise<RawResponse> => {
+      const prepared = await this.prepareRequestFiles(method, read);
+      return this.postWithBlobRetry(route, body(prepared.files), prepared, read);
+    };
+    const res = await send();
+    if (method.tree == null || !isMethodTreeTooLarge(res)) return res;
+    this.forgetHandshake();
+    return send();
+  }
+
+  /** The `files` a request carries: `tree` prepared, `files` as given, or none. */
+  private async prepareRequestFiles(options: RunOptions, read: ReadBytes): Promise<PreparedFiles> {
+    if (options.tree != null) return this.prepareTree(options.tree, read);
+    return { files: options.files ?? undefined, byHashTree: undefined };
+  }
+
+  /**
+   * Choose how a tree travels, upload what it needs, and give the map to send. A file
+   * is read at most once per request: what was read to weigh the inline map is what an
+   * upload sends. When `/blobs/missing` answers `404`, the handshake that declared a
+   * blob store is stale, so it is asked again and the tree prepared once more.
+   */
+  private async prepareTree(
+    tree: MethodTreeSource,
+    read: ReadBytes,
+    retried = false,
+  ): Promise<PreparedFiles> {
+    const version = await this.handshake();
+    const { maxInlineBytes } = announcedTreeLimits(version);
+    if (!declaresBlobStore(version)) {
+      return { files: await this.inlineWithin(tree, read, maxInlineBytes), byHashTree: undefined };
+    }
+    const inlineLimit = Math.min(INLINE_TREE_MAX_BYTES, maxInlineBytes ?? Infinity);
+    // Raw sizes rule out a large tree without reading it; a tree that may fit is read
+    // and weighed as the request would carry it.
+    if (mightTravelInline(tree, inlineLimit)) {
+      const inline = inlineFilesOf(tree, await readAll(tree, read));
+      if (inlineMapBytes(inline) <= inlineLimit) {
+        return { files: inline, byHashTree: undefined };
+      }
+    }
+    let answer: MissingBlobsResult;
+    try {
+      answer = await this.findMissingBlobs({ digest: tree.digest, blobs: uniqueBlobs(tree) });
+    } catch (err) {
+      if (!retried && err instanceof ApiResponseError && err.status === 404) {
+        this.forgetHandshake();
+        return this.prepareTree(tree, read, true);
+      }
+      throw err;
+    }
+    await this.uploadMissing(tree, answer.missing, read);
+    return { files: hashMethodFiles(tree), byHashTree: tree };
+  }
+
+  /**
+   * The whole tree inline, for a runner with no blob store, held to the inline limit it
+   * announces: its raw sizes are checked before anything is read, since the map weighs
+   * at least that much, then the encoded map, so a tree the runner would refuse is
+   * refused here, naming the limit, without being sent.
+   */
+  private async inlineWithin(
+    tree: MethodTreeSource,
+    read: ReadBytes,
+    maxInlineBytes: number | undefined,
+  ): Promise<MethodFiles> {
+    if (maxInlineBytes !== undefined && treeTotalSize(tree) > maxInlineBytes) {
+      throw inlineLimitError(treeTotalSize(tree), maxInlineBytes, "its files alone weigh");
+    }
+    const inline = inlineFilesOf(tree, await readAll(tree, read));
+    if (maxInlineBytes !== undefined) {
+      const weight = inlineMapBytes(inline);
+      if (weight > maxInlineBytes) {
+        throw inlineLimitError(weight, maxInlineBytes, "its inline map weighs");
+      }
+    }
+    return inline;
+  }
+
+  /**
+   * Upload each missing blob from the tree's bytes, a few at a time, stopping at the
+   * first failure. A blob the tree does not hold is refused before anything is sent.
+   */
+  private async uploadMissing(
+    tree: MethodTreeSource,
+    missing: readonly MissingBlob[],
+    read: ReadBytes,
+  ): Promise<void> {
+    const byBlob = fileByBlob(tree);
+    const stranger = missing.find((blob) => !byBlob.has(blob.sha256));
+    if (stranger !== undefined) {
+      throw new PipelineRequestError(
+        `The runner asked for blob ${stranger.sha256}, which is not a file of the tree being sent.`,
+      );
+    }
+    await forEachConcurrently(missing, BLOB_UPLOAD_CONCURRENCY, async (blob, signal) => {
+      const file = byBlob.get(blob.sha256)!;
+      const bytes = read.get(file.path) ?? (await tree.readFile(file.path));
+      await this.uploadBlob(blob, bytes, { signal });
+    });
+  }
+
+  /**
+   * Post a request whose method may have travelled by hash. When it did and the
+   * runner answers a `422` coded `request.blobs_missing` whose `params.missing_blobs` the tree
+   * holds, such as a blob dropped since the check, the client asks where to upload them, uploads
+   * them and sends the same request once more, which the refusal left uncreated.
+   */
+  private async postWithBlobRetry(
+    route: Route,
+    body: unknown,
+    prepared: PreparedFiles,
+    read: ReadBytes,
+  ): Promise<RawResponse> {
+    const res = await this.send(route, { body });
+    const byHashTree = prepared.byHashTree;
+    if (res.status !== 422 || byHashTree === undefined) return res;
+    const missing = missingBlobsOf(res);
+    if (missing === undefined || missing.length === 0) return res;
+    const byBlob = fileByBlob(byHashTree);
+    const files = missing.map((sha256) => byBlob.get(sha256));
+    if (files.some((file) => file === undefined)) return res;
+    const answer = await this.findMissingBlobs({
+      blobs: files.map((file) => ({ sha256: file!.sha256, size: file!.size })),
+    });
+    await this.uploadMissing(byHashTree, answer.missing, read);
+    return this.send(route, { body });
+  }
+
   // ── Pipe I/O (Pipelex API extension — `POST /v1/pipe-io`) ─────────
 
   /**
    * Read a method's three I/O artifacts — `POST /v1/pipe-io`.
    *
-   * Resolves the closure through the server's static core, selects a pipe, and
+   * Resolves the method through the server's static core, selects a pipe, and
    * returns its pipe I/O contracts, input form and output form (the MTHDS standard's
    * artifacts, typed from `mthds/protocol`) beside the resolved `pipe_ref`, the
    * method's own `default_pipe_ref` and the runnability facts. It runs no dry run, so
    * it costs one load and one derivation where `validate` dry-runs every pipe.
    *
-   * Returns a **200 verdict**: pattern-match `is_valid` before reading the arm. A
-   * closure that does not load comes back as `is_valid: false` with its `errors`, problem items,
-   * never as a throw. Only a no-verdict condition throws an `ApiResponseError`: a malformed
-   * selector, an over-limit file and a refused pipe selection are `422`s (a selection refusal is
-   * coded by one of `PIPE_SELECTION_CODES`), a registry-form `method_ref` is a `501`, and an
-   * artifact that cannot be derived is a `500`.
+   * The method travels as `validate` sends it: `files`, the map posted as given, or
+   * `tree`, which the client sends inline or by hash (see `prepareMethodFiles`), the
+   * two refused together, as is an empty tree, before anything is sent. A tree sent
+   * by hash and refused with a `422` coded `request.blobs_missing` is uploaded and resent
+   * once, and a tree refused as too large is prepared again on a fresh handshake and
+   * resent once. A `method_ref` or a `method_id` is posted as given.
    *
-   * The request is posted as given, `method_id` included, and the selector XOR is the
-   * server's to enforce. A `method_ref` gets the fetch-sized budget; every other
-   * request gets the static-route one.
+   * Returns a **200 verdict**: pattern-match `is_valid` before reading the arm. A
+   * method that does not load comes back as `is_valid: false` with its `errors`, problem items,
+   * never as a throw. Only a no-verdict condition throws an `ApiResponseError`: a malformed
+   * selector, a tree the runner refuses and a refused pipe selection are `422`s (a selection
+   * refusal is coded by one of `PIPE_SELECTION_CODES`), a registry-form `method_ref` is a `501`,
+   * and an artifact that cannot be derived is a `500`.
+   *
+   * The selector XOR between the tree, `method_ref` and `method_id` is the server's
+   * to enforce. A `method_ref` gets the fetch-sized budget; every other request gets
+   * the static-route one.
    */
   async pipeIo(request: PipeIORequest): Promise<PipeIOResponse> {
+    const { files, tree, ...rest } = request;
     const route = this.route("POST", "pipe-io", crateRequestTimeoutMs(request));
-    return this.readResult(route, await this.send(route, { body: request }), isVerdict);
+    let res: RawResponse;
+    if (files == null && tree == null) {
+      res = await this.send(route, { body: rest });
+    } else {
+      assertOneMethodSource({ files, tree });
+      res = await this.postMethodRequest(route, { files, tree }, (prepared) => ({
+        files: prepared,
+        ...rest,
+      }));
+    }
+    return this.readResult(route, res, isVerdict);
   }
 }
 
@@ -656,19 +1002,19 @@ function isVersionInfo(value: unknown): boolean {
   return isObject(value) && typeof value.protocol_version === "string";
 }
 
-// The protocol's own request fields — `extra` is for extension args only.
-// `files` / `bundle_b64` are reserved too: they are named run-source options,
-// so smuggling them through `extra` (which merges last into the body) would
-// overwrite the validated fields and bypass the run-source exclusivity check.
-const PROTOCOL_REQUEST_KEYS: ReadonlySet<string> = new Set([
+// The protocol's own request fields and the client-only options — `extra` is for
+// extension args only, and merges last into the body, so a protocol field smuggled
+// through it would overwrite the named option and bypass the method-source checks,
+// and a client-only option would travel to a runner that has no use for it.
+const RESERVED_REQUEST_KEYS: ReadonlySet<string> = new Set([
   "pipe_code",
-  "mthds_contents",
+  "files",
   "inputs",
   "output_name",
   "output_multiplicity",
   "dynamic_output_concept_ref",
-  "files",
-  "bundle_b64",
+  "tree",
+  "bundleMain",
 ]);
 
 /**
@@ -680,27 +1026,124 @@ function buildExtensions(
   extra: Record<string, unknown> | null | undefined,
 ): Record<string, unknown> {
   if (!extra) return {};
-  const overlap = Object.keys(extra).filter((key) => PROTOCOL_REQUEST_KEYS.has(key));
+  const overlap = Object.keys(extra).filter((key) => RESERVED_REQUEST_KEYS.has(key));
   if (overlap.length > 0) {
     throw argumentInvalid(
       "extra",
-      "protocol_arg",
-      `extra carries protocol args [${overlap.sort().join(", ")}] — pass them as named options instead.`,
+      "reserved_arg",
+      `extra carries reserved args [${overlap.sort().join(", ")}] — pass them as named options instead.`,
     );
   }
   return { ...extra };
 }
 
+/** Refuse a run request that names nothing to run, before anything is read or sent. */
+function assertRunnable(
+  options: RunOptions,
+  extensions: Record<string, unknown>,
+  verb: "execute" | "start",
+): void {
+  if (!options.pipe_code && !hasMethodSource(options) && Object.keys(extensions).length === 0) {
+    throw argumentInvalid(
+      "pipe_code",
+      "missing",
+      `Either pipe_code, the method's tree (files or tree) or a server-specific extension arg (extra) must be provided to ${verb}().`,
+    );
+  }
+}
+
 /**
- * Normalize a bundle encoding for the wire: an empty map / string is NOT a
- * runnable bundle, so it must not be sent (the runner rejects a zero-file
- * bundle). Exclusivity is still checked on presence upstream, so an empty
- * encoding supplied alongside another source has already been rejected.
+ * The wire body of `/execute` and `/start`: the protocol's fields, then the
+ * extension args. `?? undefined` so JSON.stringify drops absent fields, and the
+ * client-only `tree` and `bundleMain` never travel.
  */
-function nonEmptyFiles(
-  files: Record<string, string> | null | undefined,
-): Record<string, string> | undefined {
-  return files != null && Object.keys(files).length > 0 ? files : undefined;
+function runRequestBody(
+  options: RunOptions,
+  files: MethodFiles | undefined,
+  extensions: Record<string, unknown>,
+): RunRequest & Record<string, unknown> {
+  return {
+    pipe_code: options.pipe_code ?? undefined,
+    files,
+    inputs: options.inputs ?? undefined,
+    output_name: options.output_name ?? undefined,
+    output_multiplicity: options.output_multiplicity ?? undefined,
+    dynamic_output_concept_ref: options.dynamic_output_concept_ref ?? undefined,
+    ...extensions,
+  };
+}
+
+/** Read every file of the tree not read yet for this request, and give the bytes by path. */
+async function readAll(tree: MethodTreeSource, read: ReadBytes): Promise<ReadBytes> {
+  for (const file of tree.files) {
+    if (!read.has(file.path)) read.set(file.path, await tree.readFile(file.path));
+  }
+  return read;
+}
+
+/**
+ * The refusal of a tree past the inline limit of a runner that keeps no blob store, before
+ * anything is sent: `client.argument_invalid` naming the tree.
+ */
+function inlineLimitError(weight: number, limit: number, measured: string): ProblemError {
+  return argumentInvalid(
+    "tree",
+    "past_inline_limit",
+    `The method's tree cannot be sent: this runner keeps no blob store, so a tree travels inline, and ${measured} ${weight} bytes, more than its inline limit max_inline_bytes of ${limit} bytes.`,
+  );
+}
+
+/** Whether a response is a refusal of the tree as past one of the runner's limits. */
+function isMethodTreeTooLarge(res: RawResponse): boolean {
+  if (res.status !== 422) return false;
+  const reading = parseJsonBody(res.body);
+  if (!reading.ok || !isObject(reading.value)) return false;
+  const body = reading.value;
+  if (body.code === PACKAGE_INVALID_CODE) {
+    return isObject(body.params) && typeof body.params.limit === "number";
+  }
+  return (
+    body.code === METHOD_TREE_TOO_LARGE_CODE || body.error_type === METHOD_TREE_TOO_LARGE_ERROR_TYPE
+  );
+}
+
+/**
+ * The blobs a `422` lists as missing: the `params.missing_blobs` of a `request.blobs_missing`
+ * problem, each a SHA-256 in lowercase hexadecimal, or `undefined` when the answer is no such
+ * problem.
+ */
+function missingBlobsOf(res: RawResponse): string[] | undefined {
+  const problem = readProblemBody(res.body);
+  if (problem === undefined || problem.code !== BLOBS_MISSING_CODE) return undefined;
+  return problem.params?.missing_blobs;
+}
+
+/**
+ * What is wrong with one entry of a `/blobs/missing` answer, or `null` when it is a
+ * missing blob as the protocol shapes it. The upload URL is never quoted, since it is
+ * a signed capability.
+ */
+function missingBlobFault(entry: unknown): string | null {
+  if (!isObject(entry)) return "it is not an object";
+  if (typeof entry.sha256 !== "string" || !SHA256_HEX.test(entry.sha256)) {
+    return "its sha256 is not 64 lowercase hexadecimal digits";
+  }
+  if (typeof entry.size !== "number" || !Number.isSafeInteger(entry.size) || entry.size < 0) {
+    return "its size is not a non-negative integer";
+  }
+  const upload = entry.upload;
+  if (!isObject(upload)) return "it has no upload object";
+  if (typeof upload.method !== "string" || upload.method.length === 0) {
+    return "its upload.method is not a method name";
+  }
+  if (typeof upload.url !== "string" || !URL.canParse(upload.url)) {
+    return "its upload.url is not a URL";
+  }
+  const headers = upload.headers;
+  if (!isObject(headers) || Object.values(headers).some((value) => typeof value !== "string")) {
+    return "its upload.headers is not an object of strings";
+  }
+  return null;
 }
 
 function nonEmptyString(value: string | null | undefined): string | undefined {
@@ -708,7 +1151,7 @@ function nonEmptyString(value: string | null | undefined): string | undefined {
 }
 
 /**
- * The request budget for a crate-route call: the fetch-sized one when the closure
+ * The request budget for a crate-route call: the fetch-sized one when the method
  * is a `method_ref` the server may have to clone first, the static-route one
  * otherwise.
  */

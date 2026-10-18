@@ -179,7 +179,7 @@ describe("publishMethod", () => {
   });
 
   it("publishes a local directory by each manifest's address, and points out an unpushed version", async () => {
-    vi.mocked(resolveFromLocal).mockReturnValue({
+    vi.mocked(resolveFromLocal).mockResolvedValue({
       ...publicRepo,
       source: "local",
       isPublic: false,
@@ -213,7 +213,7 @@ describe("publishMethod", () => {
         typeof import("../../../src/installer/resolver/address.js")
       >("../../../src/installer/resolver/address.js");
       vi.mocked(parseAddress).mockImplementation(actual.parseAddress);
-      vi.mocked(resolveFromLocal).mockReturnValue({
+      vi.mocked(resolveFromLocal).mockResolvedValue({
         ...publicRepo,
         source: "local",
         isPublic: false,
@@ -289,7 +289,7 @@ describe("publishMethod", () => {
         exports: { secret: { pipes: ["secret_pipe"] } },
       },
     };
-    vi.mocked(resolveFromLocal).mockReturnValue({
+    vi.mocked(resolveFromLocal).mockResolvedValue({
       ...publicRepo,
       source: "local",
       isPublic: false,

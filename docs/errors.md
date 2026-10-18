@@ -11,7 +11,7 @@ The problem module (`src/problems/`) imports nothing but itself and the protocol
 | Export | `mthds` | `mthds/errors` | `mthds/protocol` |
 |---|---|---|---|
 | `PipelineRequestError`, `ProblemError` and the problem module (types, registry, readers, builders, renderers) | yes | yes | yes |
-| `ApiResponseError`, `RunStillRunningError`, `ApiTransportError` | yes | yes | no (runner layer) |
+| `ApiResponseError`, `RunStillRunningError`, `ApiTransportError`, `BlobUploadError`, `MalformedBlobsAnswerError` | yes | yes | no (runner layer) |
 
 `mthds/errors` carries the whole taxonomy and nothing that reaches `node:fs`, so a module bundled for a browser imports from it. For why the entry point exists, see [architecture.md → "Why `mthds/errors` exists"](./architecture.md#why-mthdserrors-exists).
 
@@ -59,14 +59,18 @@ flowchart TD
     ARE["ApiResponseError<br/>an answer that is not the result"]
     RSR["RunStillRunningError<br/>202 on execute"]
     ATE["ApiTransportError<br/>no answer"]
+    MBA["MalformedBlobsAnswerError<br/>a /blobs/missing answer not shaped as the protocol says"]
+    BUE["BlobUploadError<br/>an upload of a blob failed"]
     Err --> PRE
     PRE --> PE
     PE --> ARE
     ARE --> RSR
     PE --> ATE
+    PE --> MBA
+    PRE --> BUE
 ```
 
-Every error the client and the runners raise is a `ProblemError`, so `catch (err) { if (err instanceof ProblemError) … }` reaches the problem of any of them.
+Every error the client and the runners raise is a `ProblemError`, so `catch (err) { if (err instanceof ProblemError) … }` reaches the problem of any of them, but for two failures of sending a tree by hash that the registry has no code for yet: a `BlobUploadError`, and a `422` `request.blobs_missing` naming a blob the request did not carry, which only a runner at fault answers. Both are a `PipelineRequestError`, which a catch-all on that class reaches too.
 
 ### `ProblemError`
 
@@ -79,6 +83,14 @@ The runtime answered, and the answer is not the route's result. Beside `problem`
 ### `RunStillRunningError`
 
 A blocking `execute` the runtime accepted asynchronously, a `202` with the run's id, read as `client.follow_failed`: the run keeps going and this client does not follow it. It adds `runId`, `retryAfterSeconds` (the `Retry-After` header) and `location` (the `Location` header). Read the run by its id with the durable run API of [`@pipelex/sdk`](./run-lifecycle.md) rather than start it again.
+
+### `MalformedBlobsAnswerError`
+
+A runner's success answer to `POST /v1/blobs/missing` is not shaped as the protocol says: its body is not JSON, it has no `missing` list, or an entry of that list is not a missing blob (a `sha256` of 64 lowercase hexadecimal digits, a non-negative integer `size`, and an `upload` object with a method, a URL and string headers). It is a `ProblemError` of `client.response_unreadable` naming the answer's status, as any success that is not its route's result is. Nothing was uploaded and no request carrying the tree was sent. Raised by `MthdsApiClient` (`src/runners/api/client.ts`) when it sends a tree by hash, and by its `findMissingBlobs`. It adds `index`, the position of the faulty entry in `missing` (`undefined` when the answer as a whole is malformed), and `sha256`, the faulty entry's SHA-256 when it carries a well-formed one. Its message names the entry and what is wrong with it, never its upload URL.
+
+### `BlobUploadError`
+
+Uploading a blob of a method's tree failed: `POST /v1/blobs/missing` named the blob as missing and gave a target to upload it to, and the target answered neither a success nor a `412` (which means the store already holds the bytes), or could not be reached. No request carrying the tree was sent. Raised by `MthdsApiClient` when it sends a tree by hash, and by its `uploadBlob`. It is a `PipelineRequestError` that carries no problem yet, since its target may be a store outside the runtime, which the registry has no code for. It adds `sha256`, the blob's SHA-256; `status`, the status the target answered, `undefined` when it could not be reached; and `host`, the host of the upload target. An upload target is a signed URL, which grants whoever holds it the right to write, so neither the message, a member nor a `cause` carries it: only its host is kept, with no credentials, path, query or fragment. The first failed upload of a tree stops the others: none starts after it, those in flight are aborted, and the first failure is the one raised.
 
 ### `ApiTransportError`
 
@@ -107,6 +119,8 @@ A failure to get an answer:
 | The connection lost, or the time limit, after a request that creates a run left | `client.outcome_unknown`: the run may have started, so read the run history before starting it again. |
 | The connection lost on a call that creates nothing | `client.unreachable`. |
 
+Two refusals of a request carrying a method's tree are answered by the client itself before they reach the caller, each once (see [api-runner.md](./api-runner.md#sending-a-methods-tree)). A `422` `request.blobs_missing` lists in its `missing_blobs` parameter the blobs the runner's store no longer holds: the client uploads them and sends the request once more, and a second refusal reaches the caller as an `ApiResponseError` carrying that problem. A `422` refusing a tree the client prepared as past one of the runner's limits, a `method.package_invalid` problem naming the `limit` it reached (or the hosted platform's `method_tree_too_large` code, or pipelex-api's `MethodTreeTooLarge` error type), makes the client ask the handshake again and send the tree once more as the fresh limits say.
+
 `src/runners/api/transport.ts` decides whether a failure proves the request never left; only such a failure counts as one that created nothing.
 
 Every body is decoded by the same rules, a route's result as much as a problem (`parseJsonBody`): JSON nested no deeper than `MAX_BODY_NESTING`, with no `NaN` or `Infinity` and no number too large for a double, such as `1e999`, which would otherwise read as `Infinity`; a body breaking any of them is no JSON. A `Retry-After` header is read as delta-seconds written in ASCII digits or as an HTTP date (`retryAfterSeconds`), in exactly the forms RFC 9110 has a recipient accept (`parseHttpDate`): the IMF-fixdate `Sun, 06 Nov 1994 08:49:37 GMT`, the obsolete RFC 850 form `Sunday, 06-Nov-94 08:49:37 GMT`, whose two-digit year reads as the year ending in those digits from 49 years before now to 50 years after, and the asctime form `Sun Nov  6 08:49:37 1994`. Day and month names are case-sensitive, the zone is the literal `GMT`, the day name is not checked against the date, a date that does not exist, such as the 31st of February or the hour 24, is unreadable, and a second of 60 counts as the next minute, unless it carries the date past the year 9999. Any other value, a number too large to hold exactly included, gives no delay, and reading it never throws.
@@ -116,11 +130,11 @@ Every body is decoded by the same rules, a route's result as much as a problem (
 | Code | When |
 |---|---|
 | `client.not_configured` `{ setting }` | The base URL is not host-only, the API key holds a character the `Authorization` header cannot carry as written, anything but visible ASCII, such as a line break or a space at its end, a NUL or a letter past ASCII (`api_key`, refused when the client is constructed, the key never quoted), or no runner is configured for a command. |
-| `client.argument_invalid` `{ argument, reason }` | An argument refused before any request left: run sources that exclude each other, method files that are not an array of file entries, a body that does not serialize as JSON, a CLI option's value. |
+| `client.argument_invalid` `{ argument, reason }` | An argument refused before any request left: `files` and `tree` together, an empty tree, a tree past the inline limit a runner with no blob store announces, a command line naming a method that is not one tree, an argument passed through `extra` that the client reserves, method files that are not an array of file entries, a body that does not serialize as JSON, a CLI option's value. |
 | `client.file_unreadable`, `client.write_failed`, `client.target_exists` | A local file the CLIs cannot read, cannot write, or would overwrite. |
 | `client.tool_missing`, `client.tool_outdated` | A program a CLI runs (`pipelex`, `pipelex-agent`, `plxt`, `uv`, `codex`) is missing or older than the CLI needs. An install `mthds-agent` attempts (`install`, `runner setup pipelex`, `--auto-install`) without `uv` is `client.tool_missing` naming `uv`, and one `uv` ran and failed is `client.tool_missing` naming the tool (`toolInstallProblem`). |
 | `method.not_found`, `method.fetch_failed` `{ method_ref }` | `mthds-agent install`, `publish` and `share` found no method at the address or directory given (`method.not_found`), or could not read it from GitHub, which was unreachable, rate limited, refusing with a `403` or failing with a `5xx` (`method.fetch_failed`, worth a retry). A token GitHub refuses, from `GITHUB_TOKEN` or the `gh` CLI, is `client.not_configured` naming `GITHUB_TOKEN`, and a local directory the system refuses to read is `client.file_unreadable`. |
-| `security.input_path_refused` `{ rule }` | A file a bundle names lands outside the bundle's root. |
+| `security.input_path_refused` `{ rule }` | A file a bundle names lands outside the bundle's root, or a tree path the pipelex runner would write a method's file to escapes the method's directory. |
 | `runtime.unsupported` `{ capability }` | The runner cannot do what was asked, such as `check_model` on the API runner. |
 | `runtime.unexpected` | A failure no other code describes. |
 

@@ -86,7 +86,7 @@ describe("runner type guards", () => {
     vi.clearAllMocks();
   });
 
-  it("isApiRunner narrows the API client (the type-safe gateway to the mthds_sources extension)", () => {
+  it("isApiRunner narrows the API client (the type-safe gateway to the Pipelex-API extensions)", () => {
     const api = createRunner("mthds-cli", "api");
     const pipelex = createRunner("mthds-cli", "pipelex");
     expect(isApiRunner(api)).toBe(true);

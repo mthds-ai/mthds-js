@@ -44,7 +44,8 @@ src/
 ├── runners/                        # Runner implementations
 │   ├── types.ts                    # Runner interface + request/response types
 │   ├── registry.ts                 # createRunner() factory
-│   ├── api/                        # MthdsApiClient (IS the api runner) + Dict models + errors
+│   ├── method-target.ts            # A command line's target and -L into the one method tree it sends
+│   ├── api/                        # MthdsApiClient (IS the api runner) + Dict models + errors; tree-sending.ts: inline or by hash — see docs/api-runner.md
 │   └── pipelex/runner.ts           # Pipelex CLI runner
 ├── config/
 │   ├── config.ts                   # ~/.mthds/config handling

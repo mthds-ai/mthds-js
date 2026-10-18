@@ -31,9 +31,10 @@ export interface MethodsManifest {
   readonly exports?: Exports;
 }
 
+/** One file of a method's tree: its tree path and its exact bytes. */
 export interface MethodsFile {
-  readonly relativePath: string;
-  readonly content: string;
+  readonly path: string;
+  readonly bytes: Uint8Array;
 }
 
 export type PackageSource = "github" | "local";
@@ -43,6 +44,10 @@ export interface ResolvedMethod {
   readonly name: string;
   readonly manifest: MethodsManifest;
   readonly rawManifest: string;
+  /**
+   * Every file of the method's tree, as the standard's lister defines it from the method's
+   * directory, its `METHODS.toml` included, sorted by tree path byte for byte.
+   */
   readonly files: MethodsFile[];
 }
 

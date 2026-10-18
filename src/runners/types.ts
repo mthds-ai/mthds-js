@@ -2,6 +2,7 @@ import type { MTHDSProtocol } from "../protocol/protocol.js";
 import type { InputForm } from "../protocol/input_form.js";
 import type { OutputForm } from "../protocol/output_form.js";
 import type { PipeIOContracts } from "../protocol/pipe_io_contracts.js";
+import type { MethodFiles, MethodTreeSource } from "../protocol/file_entries.js";
 import type { DictPipeOutput } from "./api/models.js";
 import type { ProblemItem } from "../problems/types.js";
 
@@ -16,37 +17,62 @@ export type RunnerType = (typeof Runners)[keyof typeof Runners];
 
 export const RUNNER_NAMES: RunnerType[] = Object.values(Runners);
 
-// ── Crate envelope (`/v1/pipe-io`) ──────────────────────────────────
+// ── Method selector of the crate routes (`/v1/pipe-io`) ─────────────
 
 /**
- * One MTHDS file in a closure. `source` is an optional provenance label
- * (a filename, a URI) that the server threads onto every diagnostic it raises
- * from this file, so an invalid verdict can point at the file that caused it.
- */
-export interface MthdsFileItem {
-  content: string;
-  source?: string;
-}
-
-/**
- * The closure selector of the crate-family routes (`/v1/resolve`, `/v1/codegen`,
- * `/v1/pipe-io`), of which this package calls `/v1/pipe-io`.
+ * The method selector of the crate routes (`/v1/resolve`, `/v1/codegen`,
+ * `/v1/pipe-io`), of which this package calls `/v1/pipe-io`: the runner's
+ * `MethodTreeRequest`.
  *
- * Supply the closure EITHER as inline `files` OR as a `method_ref` — never both.
+ * The method is EITHER its tree OR a `method_ref`. The tree is the MTHDS protocol's
+ * map of file entries, which the runner reads exactly as `/v1/validate` and the run
+ * routes read it: give it as `files`, posted as given, or as `tree`, which the
+ * client sends inline or by hash as it does for a run. `files` and `tree` are two
+ * forms of the one tree, so the client refuses them together, and refuses an empty
+ * one, before anything is sent.
+ *
  * An **address-form** `method_ref` (`github.com/<owner>/<repo>[/<selector>][@<tag>]`)
- * is resolved by the API (pipelex-api >= 0.21.0): the repository is fetched at the
- * tag, the package is located by manifest identity, and its `.mthds` files feed the
- * closure with their real relative paths as per-file sources. The **registry form**
- * (any non-address reference) stays reserved and answers `501` until a method
- * registry exists.
+ * is resolved by the runner, which fetches the package's whole tree at the tag. The
+ * **registry form** (any non-address reference) stays reserved and answers `501`
+ * until a method registry exists.
  *
- * The exclusivity is the server's to enforce: neither or both is a request-shape
- * `422`, which this client surfaces as an `ApiResponseError` rather than checking it
- * first.
+ * The tree beside a `method_ref`, neither, `dependencies` or `resources` without the
+ * tree: the runner refuses each with a request-shape `422`, which this client
+ * surfaces as an `ApiResponseError` rather than checking it first.
  */
 export interface CrateRequestBase {
-  files?: MthdsFileItem[];
+  /**
+   * The method's tree as the protocol's map from tree path to file entry: each
+   * file's text, `{ base64 }`, or `{ sha256, size }` naming bytes the runner holds
+   * in its blob store. Posted as given.
+   */
+  files?: MethodFiles;
+  /**
+   * CLIENT-ONLY: the method's tree as the sender holds it, such as the `MethodTree`
+   * the lister returns, in place of `files`. Sent as `files`, inline or by hash, as
+   * `prepareMethodFiles` decides; never sent as such.
+   */
+  tree?: MethodTreeSource;
+  /** A published method by reference, in place of its tree. */
   method_ref?: string;
+  /**
+   * PIPELEX-API EXTENSION: the method packages the method calls by address that the
+   * runner cannot fetch, each a map of file entries of its own keyed by its address.
+   * Posted as given, beside the method's tree.
+   */
+  dependencies?: Record<string, MethodFiles>;
+  /**
+   * Files the method's steps read, such as a `PipeDocGen` step's `template_file`,
+   * keyed by their path from the tree's root, each in standard Base64, joining the
+   * tree. Posted as given, beside the method's tree; a file the tree sent already
+   * travels with it.
+   */
+  resources?: Record<string, string>;
+  /**
+   * PIPELEX-API EXTENSION: the scope the request reads the method under. A hash
+   * entry resolves in that scope's blob store, and the tree read is recorded there.
+   */
+  read_scope?: string;
 }
 
 // ── Request types ───────────────────────────────────────────────────
@@ -54,12 +80,12 @@ export interface CrateRequestBase {
 /**
  * `POST /v1/pipe-io` request — a method's three I/O artifacts, with no dry run.
  *
- * The closure selector is the crate envelope's `files` XOR `method_ref`, plus a
- * third selector a hosted API accepts: the catalog id `method_id`, which the
- * hosted platform resolves against the caller's organization and forwards as
- * `files` before the runner sees the request. It is posted as given; a bare runner
- * has no catalog and refuses a request whose only selector is a `method_id`.
- * Exactly one of the three, and the server enforces it.
+ * The method selector is the crate routes' tree (`files` or `tree`) XOR
+ * `method_ref`, plus a third selector a hosted API accepts: the catalog id
+ * `method_id`, which the hosted platform resolves against the caller's organization
+ * and forwards as the method's `files` before the runner sees the request. It is
+ * posted as given; a bare runner has no catalog and refuses a request whose only
+ * selector is a `method_id`. Exactly one of the three, and the server enforces it.
  *
  * There is no `views` field: the valid arm always carries all three artifacts.
  */
@@ -68,20 +94,20 @@ export interface PipeIORequest extends CrateRequestBase {
   method_id?: string;
   /**
    * The pipe to describe, as a QUALIFIED `domain.pipe_code` ref. Omit it and the
-   * server's selection chain decides: a fetched package's manifest `main_pipe`,
-   * else the closure's single `main_pipe` declaration. A ref that names no pipe,
-   * and (without `all_pipes`) a chain that finds no entry pipe or several, are
+   * server's selection chain decides: the `main_pipe` of the `METHODS.toml` at the
+   * tree's root, else the tree's single `main_pipe` declaration. A ref that names no
+   * pipe, and (without `all_pipes`) a chain that finds no entry pipe or several, are
    * input `422`s typed by {@link PIPE_SELECTION_CODES}, not malformed requests.
    */
   pipe_ref?: string;
   /**
-   * Describe every pipe the closure loads instead of the selected one. The maps
+   * Describe every pipe the method loads instead of the selected one. The maps
    * are then keyed by every pipe, and the route never refuses for want of an entry
    * pipe. Defaults to `false` server-side.
    */
   all_pipes?: boolean;
   /**
-   * Echo the resolved closure's `.mthds` files on the valid arm as `files`.
+   * Echo the text of the method's own `.mthds` bundles on the valid arm as `files`.
    * Defaults to `false` server-side, and the field is then absent from the answer.
    */
   include_files?: boolean;
@@ -111,8 +137,8 @@ export interface CheckModelRequest {
 /**
  * The `is_valid: false` arm of `/v1/pipe-io`, which the crate-family routes share.
  *
- * They follow `/validate`'s discipline: an unresolvable closure is
- * the *successful product* of the call (the request was well-formed, the library
+ * They follow `/validate`'s discipline: a method that does not resolve is
+ * the *successful product* of the call (the request was well-formed, the method
  * was not), so it rides a **200** discriminated on `is_valid` — never a 4xx.
  * Only a no-verdict condition (an unknown `pipe_ref`, auth, a server fault)
  * throws. Branch on `is_valid`, never on the transport. Its faults are problem
@@ -134,8 +160,8 @@ export interface CrateInvalidReport {
  *
  * The artifacts are the MTHDS standard's own types from `mthds/protocol`, carried
  * here by a Pipelex API extension route. The three maps share one key set: the
- * resolved `pipe_ref` alone by default, every pipe the closure loads under
- * `all_pipes`. `is_valid: true` means the closure parsed, loaded and passed static
+ * resolved `pipe_ref` alone by default, every pipe the method loads under
+ * `all_pipes`. `is_valid: true` means the method parsed, loaded and passed static
  * validation; no dry run ran, so that verdict stays `validate`'s.
  */
 export interface PipeIOValidReport {
@@ -159,15 +185,17 @@ export interface PipeIOValidReport {
    * the same name, which is the run default.
    */
   default_pipe_ref: string | null;
-  /** Qualified refs of every pipe of the closure still declared as a signature. */
+  /** Qualified refs of every pipe of the method still declared as a signature. */
   pending_signatures: string[];
   /** `pending_signatures` is empty. No dry run backs it. */
   is_runnable: boolean;
   /**
-   * The resolved closure's `.mthds` files, in the request's `files` shape. Present
-   * only when the request passed `include_files: true`.
+   * The method's own `.mthds` bundles, each tree path to its text: the bundles of
+   * the tree the request sent, whatever entry carried them, or those of the fetched
+   * package for a `method_ref`. Its other files and its dependencies are not
+   * echoed. Present only when the request passed `include_files: true`.
    */
-  files?: MthdsFileItem[];
+  files?: Record<string, string>;
 }
 
 /** The `POST /v1/pipe-io` 200 response — pattern-match `is_valid` before reading the arm. */

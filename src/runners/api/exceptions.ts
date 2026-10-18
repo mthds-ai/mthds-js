@@ -1,7 +1,7 @@
 /**
- * The errors `MthdsApiClient` raises. Every one is a `ProblemError` carrying a problem with a
- * registered code (docs/errors.md), so a caller branches on `err.problem.code`, and on `domain`,
- * `retry` and `nextStep` when it handles several codes alike:
+ * The errors `MthdsApiClient` raises. Every one but `BlobUploadError` is a `ProblemError` carrying
+ * a problem with a registered code (docs/errors.md), so a caller branches on `err.problem.code`,
+ * and on `domain`, `retry` and `nextStep` when it handles several codes alike:
  *
  * - `ApiResponseError`: the runtime answered, and the answer is not the route's result: its
  *   problem document read as received, or the problem the client read the answer as when its body
@@ -10,13 +10,20 @@
  *   started and the client does not follow it (`client.follow_failed`);
  * - `ApiTransportError`: no answer came back: the runtime could not be reached
  *   (`client.unreachable`), the call ran out of time (`client.timeout`), or a request that creates
- *   a run left and its outcome is unknown (`client.outcome_unknown`).
+ *   a run left and its outcome is unknown (`client.outcome_unknown`);
+ * - `MalformedBlobsAnswerError`: `POST /blobs/missing` answered a success whose body is not
+ *   shaped as the protocol says (`client.response_unreadable`), quoting none of it, since its
+ *   upload URLs are bearer capabilities.
  *
  * An argument the client refuses before any request leaves is a `ProblemError` of
- * `client.argument_invalid` or `client.not_configured`. Mirrors `mthds/runners/api/exceptions.py`.
+ * `client.argument_invalid` or `client.not_configured`. A failed upload of a blob to the target
+ * `POST /blobs/missing` named is a `BlobUploadError`, which carries no problem yet. Mirrors
+ * `mthds/runners/api/exceptions.py`.
  */
 
+import { PipelineRequestError } from "../../protocol/exceptions.js";
 import { ProblemError, problemSentence } from "../../problems/errors.js";
+import { buildProblem } from "../../problems/build.js";
 import type { Problem } from "../../problems/types.js";
 
 export { PipelineRequestError } from "../../protocol/exceptions.js";
@@ -135,5 +142,58 @@ export class ApiTransportError extends ProblemError {
     this.name = "ApiTransportError";
     this.apiUrl = facts.apiUrl;
     this.networkCode = facts.networkCode;
+  }
+}
+
+/**
+ * Thrown when uploading a blob to the target `POST /blobs/missing` named fails: the
+ * target answered neither a success nor a `412` (the bytes are already held), or it
+ * could not be reached. The target URL is a bearer capability, so neither the message
+ * nor any member carries it; `host` names where the upload went. The target may be
+ * another server than the runtime, such as an object store behind a signed URL, whose
+ * answer is no problem document, so this error carries no problem.
+ */
+export class BlobUploadError extends PipelineRequestError {
+  /** The SHA-256 of the blob, in lowercase hexadecimal. */
+  public readonly sha256: string;
+  /** The status the target answered, or `undefined` when it could not be reached. */
+  public readonly status: number | undefined;
+  /** The host of the upload target. */
+  public readonly host: string;
+
+  constructor(
+    message: string,
+    sha256: string,
+    status: number | undefined,
+    host: string,
+    options?: { cause?: unknown },
+  ) {
+    super(message, options);
+    this.name = "BlobUploadError";
+    this.sha256 = sha256;
+    this.status = status;
+    this.host = host;
+  }
+}
+
+/**
+ * Thrown when a runner's success answer to `POST /blobs/missing` is not shaped as the protocol
+ * says: a body that is not JSON, no `missing` list, or an entry that is not a missing blob with a
+ * well-formed upload target. It reads as `client.response_unreadable`, naming the answer's status,
+ * as any success that is not its route's result does. No upload was started and no request
+ * carrying the tree was sent. An entry's upload URL is a bearer capability, so neither the message
+ * nor any member quotes the body.
+ */
+export class MalformedBlobsAnswerError extends ProblemError {
+  /** The position of the faulty entry in `missing`, or `undefined` when the answer as a whole is malformed. */
+  public readonly index: number | undefined;
+  /** The faulty entry's SHA-256 when it carries a well-formed one, else `undefined`. */
+  public readonly sha256: string | undefined;
+
+  constructor(message: string, status: number, index?: number, sha256?: string) {
+    super(buildProblem("client.response_unreadable", { status }, { extra: { message } }));
+    this.name = "MalformedBlobsAnswerError";
+    this.index = index;
+    this.sha256 = sha256;
   }
 }

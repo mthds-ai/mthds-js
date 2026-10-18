@@ -4,10 +4,10 @@ import type { Runner } from "../../../src/runners/types.js";
 import type { ValidationResult } from "../../../src/protocol/models.js";
 import { chooseErrorFormat } from "../../../src/agent/output.js";
 
-// `runProtocolValidate` is the live agent validate path. These tests pin the
-// `mthds_sources` threading: the file path the user passed must reach the
-// concrete API client so the server names it in each item's `location.file`,
-// and the `method.invalid` problem must forward that file to agent consumers. The guard is duck-typed on `.type`, so a stub runner suffices.
+// `runProtocolValidate` is the live agent validate path. These tests pin that the method's tree
+// reaches the runner as given, each item naming its file by tree path in its `location.file`, and
+// that the `method.invalid` problem forwards that path to agent consumers. The guard is duck-typed
+// on `.type`, so a stub runner suffices.
 
 function makeRunner(
   type: "api" | "pipelex",
@@ -22,8 +22,9 @@ function makeRunner(
 }
 
 const VALID_REPORT: ValidationResult = { is_valid: true };
+const SOURCE = { files: { "bundle.mthds": "domain = 'x'", "funcs/f.py": "def f(): ..." } };
 
-describe("runProtocolValidate — mthds_sources threading", () => {
+describe("runProtocolValidate — the method's tree", () => {
   let stderrSpy: ReturnType<typeof vi.spyOn>;
   let exitSpy: ReturnType<typeof vi.spyOn>;
 
@@ -41,27 +42,19 @@ describe("runProtocolValidate — mthds_sources threading", () => {
     vi.restoreAllMocks();
   });
 
-  it("passes the file path as mthds_sources to the API client", async () => {
+  it("hands the tree to the API client, opting into the rendered Markdown", async () => {
     const { runner, validate } = makeRunner("api", VALID_REPORT);
-    await runProtocolValidate(runner, ["domain = 'x'"], false, ["bundle.mthds"]);
-    // The default output format is markdown, so the client also opts into the
-    // server's rendered_markdown extra (render: ["markdown"]); mthds_sources rides arg 3.
-    expect(validate).toHaveBeenCalledWith(["domain = 'x'"], false, ["bundle.mthds"], ["markdown"]);
+    await runProtocolValidate(runner, SOURCE, true);
+    expect(validate).toHaveBeenCalledWith(SOURCE, true, ["markdown"]);
   });
 
-  it("omits the sources argument when none is provided (inline --content)", async () => {
-    const { runner, validate } = makeRunner("api", VALID_REPORT);
-    await runProtocolValidate(runner, ["domain = 'x'"], true);
-    expect(validate).toHaveBeenCalledWith(["domain = 'x'"], true, undefined, ["markdown"]);
-  });
-
-  it("does not thread sources through a non-API runner (extension lives on the client)", async () => {
+  it("hands the tree to a non-API runner with no render request (an API extension)", async () => {
     const { runner, validate } = makeRunner("pipelex", VALID_REPORT);
-    await runProtocolValidate(runner, ["domain = 'x'"], false, ["bundle.mthds"]);
-    expect(validate).toHaveBeenCalledWith(["domain = 'x'"], false);
+    await runProtocolValidate(runner, SOURCE, false);
+    expect(validate).toHaveBeenCalledWith(SOURCE, false);
   });
 
-  it("forwards the items' files into the method.invalid problem", async () => {
+  it("forwards the items' files, named by tree path, into the method.invalid problem", async () => {
     const invalid: ValidationResult = {
       is_valid: false,
       message: "Bundle is invalid",
@@ -78,9 +71,9 @@ describe("runProtocolValidate — mthds_sources threading", () => {
     };
     const { runner } = makeRunner("api", invalid);
 
-    await expect(
-      runProtocolValidate(runner, ["broken"], false, ["bundle.mthds"], "markdown", "json"),
-    ).rejects.toThrow("__exit__");
+    await expect(runProtocolValidate(runner, SOURCE, false, "markdown", "json")).rejects.toThrow(
+      "__exit__",
+    );
 
     expect(exitSpy).toHaveBeenCalledWith(1);
     // The first stderr write is the real method.invalid problem (mocking
@@ -114,9 +107,7 @@ describe("runProtocolValidate — mthds_sources threading", () => {
     };
     const { runner } = makeRunner("api", invalid);
 
-    await expect(runProtocolValidate(runner, ["broken"], false, ["bundle.mthds"])).rejects.toThrow(
-      "__exit__",
-    );
+    await expect(runProtocolValidate(runner, SOURCE, false)).rejects.toThrow("__exit__");
 
     const markdown = String(stderrSpy.mock.calls[0]![0]);
     expect(markdown).toContain("`method.syntax`: The method does not parse (boom).");

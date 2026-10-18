@@ -39,7 +39,6 @@ const VALID_BODY = JSON.stringify({
   pending_signatures: [],
   is_runnable: true,
   graph_spec: { nodes: [], edges: [] },
-  mthds_contents: ["<verbatim submitted source>"],
   message: "Validation succeeded.",
 });
 
@@ -83,7 +82,6 @@ describe("validate contract round-trip", () => {
     expect(result).toMatchObject({
       bundle_blueprint: { source: "contracts.mthds" },
       validated_pipes: [{ pipe_ref: "legal_contracts.summarize", status: "SUCCESS" }],
-      mthds_contents: ["<verbatim submitted source>"],
       message: "Validation succeeded.",
     });
     expect(result.graph_spec).not.toBeNull();
@@ -161,7 +159,6 @@ describe("validate contract round-trip", () => {
         pending_signatures: ["pending_sig.draft_step"],
         is_runnable: false,
         graph_spec: null,
-        mthds_contents: ["..."],
         message: "Validation succeeded.",
       }),
     ) as ValidationResult;

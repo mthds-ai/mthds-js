@@ -18,6 +18,7 @@ import { parseAddress } from "../../installer/resolver/address.js";
 import { repositoryVisibility, resolveFromGitHub } from "../../installer/resolver/github.js";
 import type { RepositoryVisibility } from "../../installer/resolver/github.js";
 import { resolveFromLocal } from "../../installer/resolver/local.js";
+import { describeTreeFiles } from "../../installer/methods/method-files.js";
 import { describeUnusableMethod } from "../../installer/resolver/skipped.js";
 import {
   describeRegistration,
@@ -114,7 +115,7 @@ export async function publishMethod(options: {
   if (dir) {
     s.message(`Resolving methods from ${dir}...`);
     try {
-      resolved = resolveFromLocal(dir);
+      resolved = await resolveFromLocal(dir);
     } catch (err) {
       s.stop("Failed to resolve local methods.");
       p.log.error((err as Error).message);
@@ -185,12 +186,11 @@ export async function publishMethod(options: {
 
   for (const method of resolved.methods) {
     const m = method.manifest.package;
-    const fileCount = method.files.length;
     p.log.success(
       [
         `${chalk.bold(method.name)} — ${m.display_name ?? m.address} v${m.version}`,
         `  ${m.description}`,
-        `  ${fileCount} .mthds file${fileCount !== 1 ? "s" : ""}`,
+        `  ${describeTreeFiles(method)}`,
       ].join("\n"),
     );
   }

@@ -1,14 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { chmodSync, mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import {
-  collectBundleFiles,
-  hasCustomPython,
-  pickMainBundleFile,
-  materializeBundleFiles,
-  resolveRunBundle,
-} from "../../../src/runners/bundle.js";
+import { materializeMethodFiles } from "../../../src/runners/bundle.js";
 
 const MTHDS = [
   'domain      = "pf_hostname_probe"',
@@ -20,124 +14,7 @@ const MTHDS = [
 
 const FUNC = "@pipe_func(name='probe_host')\nasync def probe_host(): ...\n";
 
-// A folder its owner cannot list stays listable by root, and Windows has no such mode.
-const canLockFolders = process.platform !== "win32" && process.getuid?.() !== 0;
-
-describe("bundle collection", () => {
-  let dir: string;
-
-  beforeEach(() => {
-    dir = mkdtempSync(join(tmpdir(), "bundle-test-"));
-  });
-
-  afterEach(() => {
-    rmSync(dir, { recursive: true, force: true });
-  });
-
-  it("collects the .mthds and funcs/*.py with POSIX relative paths", () => {
-    writeFileSync(join(dir, "hostname_probe.mthds"), MTHDS, "utf-8");
-    mkdirSync(join(dir, "funcs"));
-    writeFileSync(join(dir, "funcs", "probe_host.py"), FUNC, "utf-8");
-
-    const files = collectBundleFiles(dir);
-    expect(Object.keys(files).sort()).toEqual(["funcs/probe_host.py", "hostname_probe.mthds"]);
-    expect(files["funcs/probe_host.py"]).toBe(FUNC);
-  });
-
-  it("includes requirements.txt and skips __pycache__ / hidden dirs", () => {
-    writeFileSync(join(dir, "m.mthds"), MTHDS, "utf-8");
-    writeFileSync(join(dir, "requirements.txt"), "pandas\n", "utf-8");
-    mkdirSync(join(dir, "__pycache__"));
-    writeFileSync(join(dir, "__pycache__", "junk.py"), "x", "utf-8");
-    mkdirSync(join(dir, ".git"));
-    writeFileSync(join(dir, ".git", "config.py"), "x", "utf-8");
-    mkdirSync(join(dir, ".methods"));
-    writeFileSync(join(dir, ".methods", "private.mthds"), MTHDS, "utf-8");
-
-    const files = collectBundleFiles(dir);
-    expect(Object.keys(files).sort()).toEqual(["m.mthds", "requirements.txt"]);
-  });
-
-  it("skips virtual environments and run outputs, as pipelex's library scan does", () => {
-    writeFileSync(join(dir, "m.mthds"), MTHDS, "utf-8");
-    for (const skipped of ["venv", "env", "virtualenv", "results"]) {
-      mkdirSync(join(dir, skipped, "lib"), { recursive: true });
-      writeFileSync(join(dir, skipped, "lib", "site.py"), "x", "utf-8");
-      writeFileSync(join(dir, skipped, "lib", "corpus.mthds"), MTHDS, "utf-8");
-    }
-
-    expect(Object.keys(collectBundleFiles(dir))).toEqual(["m.mthds"]);
-  });
-
-  it.skipIf(!canLockFolders)(
-    "skips a folder this user may not list, as pipelex's library scan does",
-    () => {
-      writeFileSync(join(dir, "m.mthds"), MTHDS, "utf-8");
-      mkdirSync(join(dir, "pgdata"));
-      writeFileSync(join(dir, "pgdata", "stray.py"), "x", "utf-8");
-      chmodSync(join(dir, "pgdata"), 0o000);
-      try {
-        expect(Object.keys(collectBundleFiles(dir))).toEqual(["m.mthds"]);
-      } finally {
-        chmodSync(join(dir, "pgdata"), 0o755);
-      }
-    },
-  );
-
-  it("excludes non-bundle files (json, md, images)", () => {
-    writeFileSync(join(dir, "m.mthds"), MTHDS, "utf-8");
-    writeFileSync(join(dir, "inputs.json"), "{}", "utf-8");
-    writeFileSync(join(dir, "README.md"), "# x", "utf-8");
-
-    expect(Object.keys(collectBundleFiles(dir))).toEqual(["m.mthds"]);
-  });
-});
-
-describe("hasCustomPython", () => {
-  it("is true when a .py is present", () => {
-    expect(hasCustomPython({ "m.mthds": MTHDS, "funcs/x.py": FUNC })).toBe(true);
-  });
-  it("is true when requirements.txt is present", () => {
-    expect(hasCustomPython({ "m.mthds": MTHDS, "requirements.txt": "pandas" })).toBe(true);
-  });
-  it("is false for a pure .mthds bundle", () => {
-    expect(hasCustomPython({ "m.mthds": MTHDS })).toBe(false);
-  });
-});
-
-describe("pickMainBundleFile", () => {
-  it("prefers a root-level .mthds declaring main_pipe", () => {
-    const files = {
-      "sub/other.mthds": 'domain = "x"',
-      "root.mthds": MTHDS,
-      "funcs/x.py": FUNC,
-    };
-    expect(pickMainBundleFile(files)).toBe("root.mthds");
-  });
-  it("falls back to the first .mthds when none declares main_pipe", () => {
-    expect(pickMainBundleFile({ "a.mthds": 'domain = "x"' })).toBe("a.mthds");
-  });
-  it("throws when there is no .mthds", () => {
-    expect(() => pickMainBundleFile({ "funcs/x.py": FUNC })).toThrow(/no .mthds/i);
-  });
-  it("recognizes a quoted `main_pipe` TOML key (regex missed it, fell back to file order)", () => {
-    const files = {
-      "a_no_main.mthds": 'domain = "a"',
-      "b_quoted.mthds": 'domain = "b"\n"main_pipe" = "run_b"',
-    };
-    expect(pickMainBundleFile(files)).toBe("b_quoted.mthds");
-  });
-  it("does not treat a `main_pipe` mention inside another value as a declaration", () => {
-    // A commented-out / string-embedded mention is not a real top-level key.
-    const files = {
-      "real.mthds": 'domain = "r"\nmain_pipe = "go"',
-      "decoy.mthds": 'domain = "d"\ndescription = "sets main_pipe = later"',
-    };
-    expect(pickMainBundleFile(files)).toBe("real.mthds");
-  });
-});
-
-describe("materializeBundleFiles", () => {
+describe("materializeMethodFiles", () => {
   let dir: string;
   beforeEach(() => {
     dir = mkdtempSync(join(tmpdir(), "bundle-mat-"));
@@ -146,122 +23,86 @@ describe("materializeBundleFiles", () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
-  it("writes files preserving subdirs and returns the main .mthds path", () => {
+  it("writes every file of the tree into the directory, preserving subdirs", async () => {
     const files = { "hostname_probe.mthds": MTHDS, "funcs/probe_host.py": FUNC };
-    const mainPath = materializeBundleFiles(dir, files);
-    expect(mainPath).toBe(join(dir, "hostname_probe.mthds"));
-    expect(readFileSync(join(dir, "funcs", "probe_host.py"), "utf-8")).toBe(FUNC);
-    expect(readFileSync(mainPath, "utf-8")).toBe(MTHDS);
+    const target = join(dir, "method");
+    await expect(materializeMethodFiles(target, files)).resolves.toBeUndefined();
+    expect(readFileSync(join(target, "funcs", "probe_host.py"), "utf-8")).toBe(FUNC);
+    expect(readFileSync(join(target, "hostname_probe.mthds"), "utf-8")).toBe(MTHDS);
+    expect(readdirSync(target).sort()).toEqual(["funcs", "hostname_probe.mthds"]);
   });
 
-  it("rejects a key that escapes the target directory via `..` (no write outside)", () => {
+  it("rejects a key that escapes the target directory via `..` (no write outside)", async () => {
     // Target a nested subdir so an escape lands under `dir` (auto-cleaned),
     // never in the shared tmpdir.
     const target = join(dir, "box");
     mkdirSync(target);
     const outside = join(target, "..", "escaped.py"); // → dir/escaped.py
-    expect(() =>
-      materializeBundleFiles(target, { "m.mthds": MTHDS, "../escaped.py": "pwned" }),
-    ).toThrow(/escape|unsafe/i);
+    await expect(
+      materializeMethodFiles(target, { "m.mthds": MTHDS, "../escaped.py": "pwned" }),
+    ).rejects.toThrow(/not a tree path/);
     expect(() => readFileSync(outside, "utf-8")).toThrow();
   });
 
-  it("rejects an absolute-path key pointing outside the target directory", () => {
+  it("rejects an absolute-path key pointing outside the target directory", async () => {
     const target = join(dir, "box");
     mkdirSync(target);
     // Absolute, under `dir` (auto-cleaned) but NOT under `target`.
     const abs = join(dir, "abs-escape-target.py");
-    expect(() => materializeBundleFiles(target, { "m.mthds": MTHDS, [abs]: "pwned" })).toThrow(
-      /escape|unsafe|absolute/i,
-    );
+    await expect(
+      materializeMethodFiles(target, { "m.mthds": MTHDS, [abs]: "pwned" }),
+    ).rejects.toThrow(/not a tree path/);
     expect(() => readFileSync(abs, "utf-8")).toThrow();
   });
 
-  it("honors an explicit `main` over the inferred pick", () => {
-    // Both root .mthds declare main_pipe, so the inferred pick would take the
-    // first; an explicit main must win so the caller's selection is respected.
-    const files = {
-      "method_a.mthds": 'domain = "a"\nmain_pipe = "run_a"',
-      "method_b.mthds": 'domain = "b"\nmain_pipe = "run_b"',
-    };
-    expect(materializeBundleFiles(dir, files, "method_b.mthds")).toBe(join(dir, "method_b.mthds"));
-    // An unknown main falls back to the inferred pick rather than a bogus path.
-    expect(materializeBundleFiles(dir, files, "nope.mthds")).toBe(join(dir, "method_a.mthds"));
-  });
-});
-
-describe("resolveRunBundle", () => {
-  let dir: string;
-  beforeEach(() => {
-    dir = mkdtempSync(join(tmpdir(), "bundle-resolve-"));
-  });
-  afterEach(() => {
-    rmSync(dir, { recursive: true, force: true });
-  });
-
-  it("directory target → files map", () => {
-    writeFileSync(join(dir, "hostname_probe.mthds"), MTHDS, "utf-8");
-    mkdirSync(join(dir, "funcs"));
-    writeFileSync(join(dir, "funcs", "probe_host.py"), FUNC, "utf-8");
-
-    const resolved = resolveRunBundle(dir);
-    expect(resolved.mthds_contents).toBeUndefined();
-    expect(Object.keys(resolved.files ?? {}).sort()).toEqual([
-      "funcs/probe_host.py",
-      "hostname_probe.mthds",
+  it("writes a Base64 entry's exact bytes, including a Base64 bundle", async () => {
+    await materializeMethodFiles(dir, {
+      "m.mthds": { base64: Buffer.from(MTHDS, "utf-8").toString("base64") },
+      "images/logo.png": { base64: "iVBOR/8A" },
+    });
+    expect(readFileSync(join(dir, "m.mthds"), "utf-8")).toBe(MTHDS);
+    expect([...readFileSync(join(dir, "images", "logo.png"))]).toEqual([
+      0x89, 0x50, 0x4e, 0x47, 0xff, 0x00,
     ]);
   });
 
-  it(".mthds file with sibling funcs/ → files map", () => {
-    const mthdsPath = join(dir, "hostname_probe.mthds");
-    writeFileSync(mthdsPath, MTHDS, "utf-8");
-    mkdirSync(join(dir, "funcs"));
-    writeFileSync(join(dir, "funcs", "probe_host.py"), FUNC, "utf-8");
-
-    const resolved = resolveRunBundle(mthdsPath);
-    expect(resolved.mthds_contents).toBeUndefined();
-    expect(resolved.files?.["funcs/probe_host.py"]).toBe(FUNC);
+  it("refuses a hash entry, which only a blob store resolves, before writing anything", async () => {
+    await expect(
+      materializeMethodFiles(dir, {
+        "m.mthds": MTHDS,
+        "big.bin": { sha256: "a".repeat(64), size: 3 },
+      }),
+    ).rejects.toThrow(/no blob store, so it cannot resolve the hash entry of 'big\.bin'/);
+    expect(() => readFileSync(join(dir, "m.mthds"), "utf-8")).toThrow();
   });
 
-  it("preserves the targeted .mthds as `main` when a sibling method shares the dir", () => {
-    // Two methods in one dir + custom Python. Targeting method_b must resolve
-    // method_b as the entrypoint, never let a runner run method_a instead.
-    const methodA = 'domain = "a"\nmain_pipe = "run_a"';
-    const methodB = 'domain = "b"\nmain_pipe = "run_b"';
-    writeFileSync(join(dir, "method_a.mthds"), methodA, "utf-8");
-    const targetB = join(dir, "method_b.mthds");
-    writeFileSync(targetB, methodB, "utf-8");
-    mkdirSync(join(dir, "funcs"));
-    writeFileSync(join(dir, "funcs", "x.py"), FUNC, "utf-8");
-
-    const resolved = resolveRunBundle(targetB);
-    expect(resolved.main).toBe("method_b.mthds");
-    expect(resolved.files?.["method_a.mthds"]).toBe(methodA);
+  it("refuses a key that is not a tree path", async () => {
+    await expect(materializeMethodFiles(dir, { "m.mthds": MTHDS, "a\\b.py": "x" })).rejects.toThrow(
+      /not a tree path/,
+    );
   });
 
-  it("directory target records the inferred `main`", () => {
-    writeFileSync(join(dir, "root.mthds"), MTHDS, "utf-8");
-    mkdirSync(join(dir, "funcs"));
-    writeFileSync(join(dir, "funcs", "probe_host.py"), FUNC, "utf-8");
-    expect(resolveRunBundle(dir).main).toBe("root.mthds");
+  // The map is checked as a runner receiving it checks it, so a name no tree holds is refused
+  // rather than written where pipelex would find it.
+  it.each([
+    ["a run's inputs file", "inputs.json"],
+    ["a run's inputs file below the root", "examples/inputs.toml"],
+    ["a dot segment", ".env"],
+    ["a file inside a dot directory", ".venv/lib/site.py"],
+  ])("refuses a key naming %s, writing nothing", async (_what, key) => {
+    const target = join(dir, "method");
+    await expect(materializeMethodFiles(target, { "m.mthds": MTHDS, [key]: "{}" })).rejects.toThrow(
+      new RegExp(`'${key.replace(/\./g, "\\.")}', a name the membership rule never admits`),
+    );
+    expect(() => readdirSync(target)).toThrow();
   });
 
-  it("plain .mthds file (no custom Python) → mthds_contents", () => {
-    const mthdsPath = join(dir, "pure.mthds");
-    writeFileSync(mthdsPath, MTHDS, "utf-8");
-
-    const resolved = resolveRunBundle(mthdsPath);
-    expect(resolved.files).toBeUndefined();
-    expect(resolved.mthds_contents).toEqual([MTHDS]);
-  });
-
-  it("directory with no .mthds → throws", () => {
-    mkdirSync(join(dir, "funcs"));
-    writeFileSync(join(dir, "funcs", "x.py"), FUNC, "utf-8");
-    expect(() => resolveRunBundle(dir)).toThrow(/no .mthds/i);
-  });
-
-  it("missing target → throws", () => {
-    expect(() => resolveRunBundle(join(dir, "nope"))).toThrow();
+  it("refuses a malformed entry, as a receiver does", async () => {
+    await expect(
+      materializeMethodFiles(dir, {
+        "m.mthds": MTHDS,
+        "f.py": 3 as unknown as string,
+      }),
+    ).rejects.toThrow(/The entry of 'f\.py' is none of/);
   });
 });

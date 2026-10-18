@@ -83,7 +83,7 @@ export async function agentInstall(
 
   if (options.local) {
     try {
-      resolved = resolveFromLocal(options.local);
+      resolved = await resolveFromLocal(options.local);
     } catch (err) {
       agentError(
         resolveFailureProblem(

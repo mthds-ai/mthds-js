@@ -73,7 +73,7 @@ export async function agentShare(
 
   if (options.local) {
     try {
-      resolved = resolveFromLocal(options.local);
+      resolved = await resolveFromLocal(options.local);
     } catch (err) {
       agentError(
         resolveFailureProblem(

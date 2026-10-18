@@ -4,12 +4,15 @@ import { existsSync, writeFileSync, readFileSync, mkdtempSync, rmSync } from "no
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { Runners } from "../types.js";
-import { materializeBundleFiles } from "../bundle.js";
-import { assertExclusiveRunSources } from "../../protocol/options.js";
+import { materializeMethodFiles } from "../bundle.js";
+import { inlineMethodFiles } from "../api/tree-sending.js";
+import { MethodTree } from "../../method-tree/tree.js";
+import { assertOneMethodSource, hasMethodSource } from "../../protocol/options.js";
 import { argumentInvalid, problemError, ProblemError } from "../../problems/errors.js";
 import { readProblemBody } from "../../problems/read.js";
 import type { Runner, RunnerType, CheckModelRequest, CheckModelResponse } from "../types.js";
-import type { RunOptions, StartOptions } from "../../protocol/options.js";
+import type { MethodFiles } from "../../protocol/file_entries.js";
+import type { RunOptions, StartOptions, ValidateSource } from "../../protocol/options.js";
 import type {
   ModelCategory,
   ModelDeck,
@@ -73,22 +76,54 @@ function makeTmpDir(): string {
   return mkdtempSync(join(tmpdir(), "mthds-"));
 }
 
+/** The subdirectory of a run's scratch directory a method's tree is written into, alone. */
+const METHOD_DIR_NAME = "method";
+
 /**
- * Materialize bare `.mthds` contents into a temp directory so the local CLI can load
- * them, for the MTHDS Protocol routes that ride bare strings (`execute` / `start` /
- * `validate`). Returns the path of the first file, `bundle.mthds`, which the CLI is
- * pointed at; the rest sit beside it as `extra_<n>.mthds` and are picked up via
- * `-L <tmp>`.
+ * The directory holding the method's tree on disk, for pipelex to list: the root of a
+ * tree the lister read from this machine, used where it is rather than copied, or
+ * `<scratch>/method/`, into which a `files` map or any other tree is written. Nothing
+ * a run generates is written there, so no artifact lands on a file of the method.
+ * `undefined` when the request carries no method.
  */
-function writeMthdsContents(tmp: string, contents: string[]): string {
-  if (contents.length === 0) {
-    throw argumentInvalid("mthds_contents", "empty", "At least one MTHDS file is required.");
+async function methodDirectory(
+  source: { files?: MethodFiles | null; tree?: RunOptions["tree"] },
+  scratch: string,
+): Promise<string | undefined> {
+  if (source.tree instanceof MethodTree && source.tree.root !== null) return source.tree.root;
+  let files: MethodFiles | undefined;
+  if (source.tree != null) files = await inlineMethodFiles(source.tree);
+  else files = source.files ?? undefined;
+  if (files === undefined) return undefined;
+  const directory = join(scratch, METHOD_DIR_NAME);
+  await materializeMethodFiles(directory, files);
+  return directory;
+}
+
+/**
+ * Where the bundle named by its tree path lies in the method's directory. In a tree read from this
+ * machine it is the file's own spelling on disk, which a name written decomposed keeps while its
+ * tree path is normalized to NFC; in a directory written from a map, its tree path.
+ */
+function bundlePathIn(
+  source: { tree?: RunOptions["tree"] },
+  directory: string,
+  bundleMain: string,
+): string {
+  if (source.tree instanceof MethodTree && source.tree.root !== null) {
+    const onDisk = source.tree.onDiskPath(bundleMain);
+    if (onDisk !== undefined) return onDisk;
   }
-  contents.forEach((content, index) => {
-    const name = index === 0 ? "bundle.mthds" : `extra_${index}.mthds`;
-    writeFileSync(join(tmp, name), content, "utf-8");
-  });
-  return join(tmp, "bundle.mthds");
+  return join(directory, ...bundleMain.split("/"));
+}
+
+/** Whether the request's tree holds this tree path. */
+function treeHolds(
+  source: { files?: MethodFiles | null; tree?: RunOptions["tree"] },
+  treePath: string,
+): boolean {
+  if (source.tree != null) return source.tree.files.some((file) => file.path === treePath);
+  return source.files != null && Object.hasOwn(source.files, treePath);
 }
 
 /** How a stuff's `concept` reads when it is not the ref string, for the refusal that names it. */
@@ -349,44 +384,37 @@ export class PipelexRunner implements Runner {
   // `start` primitive is unsupported (use the API runner for that).
 
   async execute(options: RunOptions, flags: PipelexRunFlags = {}): Promise<DictRunResultExecute> {
-    // Reject conflicting run sources up front — the same contract the API client
-    // enforces — so a bundle combined with `mthds_contents` (or both encodings)
-    // fails clearly instead of the branch order below silently preferring one.
-    assertExclusiveRunSources(options);
-    // The local runner materializes `files` to disk; it has no zip decoder, so
-    // the `bundle_b64` transport form is API-runner-only. Reject it explicitly
-    // rather than dispatching `run` with no target (which fails cryptically).
-    if (options.bundle_b64 != null) {
-      throw problemError(
-        "runtime.unsupported",
-        { capability: "bundle_b64" },
-        {
-          message:
-            "The local pipelex runner does not support the bundle_b64 (zip) transport; pass the bundle as `files`, or use the API runner.",
-        },
+    // Refuse a method given twice, or an empty tree, up front — the same contract the
+    // API client enforces — so `files` beside a `tree` fails clearly instead of one winning.
+    assertOneMethodSource(options);
+    const bundleMain = options.bundleMain;
+    if (bundleMain != null && (!bundleMain.endsWith(".mthds") || !treeHolds(options, bundleMain))) {
+      throw argumentInvalid(
+        "bundleMain",
+        "not_in_tree",
+        `bundleMain names '${bundleMain}', which is not a .mthds file of the method's tree.`,
       );
     }
     const tmp = makeTmpDir();
     try {
+      // The local runner keeps no blob store: a tree is read in full and written to
+      // disk, and a hash entry in a caller's `files` is refused while writing.
+      const directory = await methodDirectory(options, tmp);
       // The pipelex CLI dispatches through `run bundle <path>` / `run pipe <code>`.
       const args: string[] = ["run"];
 
-      if (options.files && Object.keys(options.files).length > 0) {
-        // A full method bundle (custom PipeFunc Python travels with the method).
-        // Materialize it to disk preserving `funcs/*.py`, then run the main
-        // `.mthds` with the temp dir as its library so the funcs resolve. The
-        // caller-selected entrypoint (`bundleMain`) is honored so a directory of
-        // several methods runs the one that was named, not a re-guessed sibling.
-        const bundlePath = materializeBundleFiles(tmp, options.files, options.bundleMain);
-        args.push("bundle", bundlePath);
-        args.push("-L", tmp);
-        if (options.pipe_code) {
-          args.push("--pipe", options.pipe_code);
+      if (directory !== undefined) {
+        // The method's whole tree (its Python, templates and other files beside its
+        // bundles). A bundle the caller named runs, with the tree's directory as its
+        // library so its files resolve. With none named, pipelex is handed the
+        // directory and chooses where the run starts by the protocol's rule: the
+        // manifest's `main_pipe`, else the one `main_pipe` the bundles declare,
+        // refusing a tree where that is ambiguous.
+        if (bundleMain != null) {
+          args.push("bundle", bundlePathIn(options, directory, bundleMain), "-L", directory);
+        } else {
+          args.push("bundle", directory);
         }
-      } else if (options.mthds_contents?.length) {
-        const bundlePath = writeMthdsContents(tmp, options.mthds_contents);
-        args.push("bundle", bundlePath);
-        args.push("-L", tmp);
         if (options.pipe_code) {
           args.push("--pipe", options.pipe_code);
         }
@@ -469,13 +497,23 @@ export class PipelexRunner implements Runner {
   }
 
   // ── Validation ──────────────────────────────────────────────────
-  // pipelex validate bundle <bundle.mthds> [--allow-signatures]
+  // pipelex validate bundle <the tree's directory> [--allow-signatures]
 
-  async validate(mthdsContents: string[], allowSignatures = false): Promise<ValidationResult> {
+  async validate(source: ValidateSource, allowSignatures = false): Promise<ValidationResult> {
+    assertOneMethodSource(source);
+    if (!hasMethodSource(source)) {
+      throw argumentInvalid(
+        "files",
+        "missing",
+        "validate() needs the method's tree, as files or tree.",
+      );
+    }
     const tmp = makeTmpDir();
     try {
-      const bundlePath = writeMthdsContents(tmp, mthdsContents);
-      const args = ["validate", "bundle", bundlePath, "-L", tmp];
+      // pipelex is handed the tree's directory, so it chooses the bundle to start at
+      // and loads the directory beside it, refusing a tree where the choice is ambiguous.
+      const directory = (await methodDirectory(source, tmp))!;
+      const args = ["validate", "bundle", directory];
       if (allowSignatures) {
         args.push("--allow-signatures");
       }

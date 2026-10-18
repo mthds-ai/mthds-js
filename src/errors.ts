@@ -29,6 +29,8 @@ export * from "./problems/index.js";
 export {
   ApiResponseError,
   ApiTransportError,
+  BlobUploadError,
+  MalformedBlobsAnswerError,
   RunStillRunningError,
 } from "./runners/api/exceptions.js";
 export type { ApiAnswerFacts } from "./runners/api/exceptions.js";

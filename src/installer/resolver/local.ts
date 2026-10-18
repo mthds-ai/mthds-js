@@ -1,13 +1,9 @@
 import { resolve, join, basename } from "node:path";
 import { readFileSync, readdirSync, statSync } from "node:fs";
-import type {
-  ResolvedRepo,
-  ResolvedMethod,
-  SkippedMethod,
-  MethodsFile,
-} from "../../package/manifest/types.js";
+import type { ResolvedRepo, ResolvedMethod, SkippedMethod } from "../../package/manifest/types.js";
 import { validateManifest } from "../../package/manifest/validate.js";
 import { MethodResolveError } from "./exceptions.js";
+import { readMethodTreeOrSkip } from "./method-tree-files.js";
 
 /** The system's error code of `err`, such as `ENOENT`, when it carries one. */
 function fsErrorCode(err: unknown): string | undefined {
@@ -25,36 +21,15 @@ function unreadablePath(path: string, err: unknown): MethodResolveError {
   });
 }
 
-function collectMthdFiles(dirPath: string): MethodsFile[] {
-  const entries = readdirSync(dirPath, { recursive: true, encoding: "utf-8" });
-  const files: MethodsFile[] = [];
-
-  for (const entry of entries) {
-    if (typeof entry === "string" && entry.endsWith(".mthds")) {
-      const fullPath = resolve(dirPath, entry);
-      try {
-        const stat = statSync(fullPath);
-        if (stat.isFile()) {
-          files.push({
-            relativePath: entry,
-            content: readFileSync(fullPath, "utf-8"),
-          });
-        }
-      } catch {
-        // Skip files that can't be read
-      }
-    }
-  }
-
-  return files;
-}
-
 /**
- * Resolve the methods of a local directory's `methods/` folder. Throws a `MethodResolveError`:
- * `not_found` when the directory or its `methods/` folder is missing or holds no method, and
- * `unreadable` when the system refuses to read one of them for another reason, such as `EACCES`.
+ * Resolve the methods of a local repository: each directory under its `methods/` holding a valid
+ * `METHODS.toml` whose `[package].name` is the directory's name, with every file of its tree as the
+ * standard's lister defines it. A method whose manifest or tree is refused is skipped with the
+ * reason. Throws a `MethodResolveError`: `not_found` when the directory or its `methods/` folder
+ * is missing or holds no method, and `unreadable` when the system refuses to read one of them for
+ * another reason, such as `EACCES`.
  */
-export function resolveFromLocal(dirPath: string): ResolvedRepo {
+export async function resolveFromLocal(dirPath: string): Promise<ResolvedRepo> {
   const absPath = resolve(dirPath);
 
   // Check directory exists
@@ -154,14 +129,18 @@ export function resolveFromLocal(dirPath: string): ResolvedRepo {
       }
     }
 
-    // Collect .mthds files
-    const files = collectMthdFiles(dirPath);
+    // The method's whole tree, its Python, templates and other files beside its bundles.
+    const tree = await readMethodTreeOrSkip(dirPath);
+    if ("error" in tree) {
+      skipped.push({ dirName, errors: [tree.error] });
+      continue;
+    }
 
     methods.push({
       name: result.manifest.package.name,
       manifest: result.manifest,
       rawManifest: rawToml,
-      files,
+      files: tree.files,
     });
   }
 

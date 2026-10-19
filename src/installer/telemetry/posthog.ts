@@ -6,13 +6,15 @@
  * another project, and they follow fewer switches: `DO_NOT_TRACK`, the `DISABLE_TELEMETRY`
  * environment variable, the machine's `disabled` file and a `DISABLE_TELEMETRY` in
  * `~/.mthds/config` not migrated yet. `PIPELEX_USAGE_STATS` and a project's setting do not reach
- * them. Publishing never depends on them: mthds.sh lists a method through its registry route.
+ * them. The endpoint override does: a loopback `PIPELEX_USAGE_STATS_ENDPOINT` sends them to the
+ * server it names instead of PostHog, as it does the usage statistics, and any other value turns
+ * them off. Publishing never depends on them: mthds.sh lists a method through its registry route.
  */
 
 import { PostHog } from "posthog-node";
 import type { ListedMethod } from "../registry/client.js";
 import type { ResolvedMethod } from "../../package/manifest/types.js";
-import { methodEventsEnabled } from "../../usage-stats/switches.js";
+import { methodEventsEnabled, resolveEndpoint } from "../../usage-stats/switches.js";
 
 const POSTHOG_API_KEY = "phc_LRwe2lybfPTNCzAT1ScpnsWznrxAvmc1pmCaXEr1hwJ";
 const POSTHOG_HOST = "https://eu.i.posthog.com";
@@ -20,9 +22,10 @@ const POSTHOG_HOST = "https://eu.i.posthog.com";
 let client: PostHog | null = null;
 
 function getClient(): PostHog | null {
-  if (!methodEventsEnabled()) return null;
+  const host = resolveEndpoint(process.env, POSTHOG_HOST);
+  if (host === undefined || !methodEventsEnabled()) return null;
   if (!client) {
-    client = new PostHog(POSTHOG_API_KEY, { host: POSTHOG_HOST, disableGeoip: true });
+    client = new PostHog(POSTHOG_API_KEY, { host, disableGeoip: true });
   }
   return client;
 }

@@ -2,8 +2,9 @@
  * Publishing, end to end: the built `mthds` and `mthds-agent` publish a local repository to a
  * loopback server standing in for mthds.sh, named by `MTHDS_HUB_URL`, with `DO_NOT_TRACK=1` set,
  * which no longer has any say in publishing. GitHub, which a local publish asks whether the
- * manifest's repository is public, is a stub `gh` first on the PATH. Neither the real hub nor
- * GitHub is ever reached.
+ * manifest's repository is public, is a stub `gh` first on the PATH. The case that turns the
+ * method events on points `PIPELEX_USAGE_STATS_ENDPOINT` at a second loopback server standing in
+ * for PostHog. Neither the real hub, nor GitHub, nor PostHog is ever reached.
  */
 
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
@@ -43,6 +44,7 @@ interface Result {
 }
 
 let hub: LoopbackServer;
+let capture: LoopbackServer;
 let home: string;
 let repo: string;
 let bin: string;
@@ -77,12 +79,23 @@ function ghCalls(): string[] {
   return existsSync(log) ? readFileSync(log, "utf-8").trim().split("\n") : [];
 }
 
+/**
+ * What the CLI may send besides the publish: nothing (`DO_NOT_TRACK=1`), or its method events,
+ * posted to the loopback capture server, with `PIPELEX_USAGE_STATS=0` keeping the usage statistics,
+ * which that switch reaches and the method events do not, out of the way.
+ */
+type Events = "off" | "method-events-to-capture";
+
 /** Run without blocking this process, whose event loop serves the fake hub. */
 function run(
   cli: string,
   args: string[],
-  options: { hubUrl?: string; github?: GitHubAnswer } = {},
+  options: { hubUrl?: string; github?: GitHubAnswer; events?: Events } = {},
 ): Promise<Result> {
+  const events: NodeJS.ProcessEnv =
+    options.events === "method-events-to-capture"
+      ? { PIPELEX_USAGE_STATS: "0", PIPELEX_USAGE_STATS_ENDPOINT: capture.origin }
+      : { DO_NOT_TRACK: "1", PIPELEX_USAGE_STATS_ENDPOINT: "http://127.0.0.1:9" };
   return new Promise((resolve) => {
     const child = spawn("node", [cli, ...args], {
       cwd: home,
@@ -91,8 +104,7 @@ function run(
         HOME: home,
         LC_ALL: "C",
         TERM: "dumb",
-        DO_NOT_TRACK: "1",
-        PIPELEX_USAGE_STATS_ENDPOINT: "http://127.0.0.1:9",
+        ...events,
         MTHDS_HUB_URL: options.hubUrl ?? hub.origin,
         STUB_GH_ANSWER: options.github ?? "public",
       },
@@ -132,10 +144,12 @@ function writeMethod(name: string): void {
 
 beforeAll(async () => {
   hub = await startLoopbackServer();
+  capture = await startLoopbackServer();
 });
 
 afterAll(async () => {
   await hub.close();
+  await capture.close();
 });
 
 beforeEach(() => {
@@ -146,6 +160,7 @@ beforeEach(() => {
   writeStubGh();
   writeMethod("scoring");
   hub.requests.length = 0;
+  capture.requests.length = 0;
   hub.respond(() => ({
     status: 201,
     body: { outcome: "registered", method: LISTED, validation: "queued" },
@@ -166,6 +181,22 @@ describe.skipIf(process.platform === "win32")("publishing through the registry r
     expect(result.output).toContain(LISTED.url);
     expect(result.output).toContain("Published 1 method to mthds.sh");
     expect(ghCalls()).toContain("api repos/acme/tools");
+  });
+
+  it("mthds publish sends its method_publish to a loopback endpoint override, not PostHog", async () => {
+    const result = await run(MTHDS, ["--no-logo", "publish", "--local", repo], {
+      events: "method-events-to-capture",
+    });
+    expect(result.status).toBe(0);
+    expect(capture.requests).toHaveLength(1);
+    const [post] = capture.requests;
+    expect(post).toMatchObject({ method: "POST", path: "/batch/" });
+    const { batch } = post!.body as { batch: { event: string; properties: unknown }[] };
+    expect(batch).toHaveLength(1);
+    expect(batch[0]).toMatchObject({
+      event: "method_publish",
+      properties: { address: LISTED.address, name: LISTED.name, package_version: LISTED.version },
+    });
   });
 
   it.each([

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { afterEach, describe, it, expect, vi, beforeEach } from "vitest";
 
 // ── Mocks ────────────────────────────────────────────────────────────
 
@@ -13,10 +13,12 @@ vi.mock("posthog-node", () => {
   return { PostHog: MockPostHog };
 });
 
-vi.mock("../../../../src/usage-stats/switches.js", () => ({
+vi.mock("../../../../src/usage-stats/switches.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../../../src/usage-stats/switches.js")>()),
   methodEventsEnabled: vi.fn().mockReturnValue(true),
 }));
 
+import { PostHog } from "posthog-node";
 import { methodEventsEnabled } from "../../../../src/usage-stats/switches.js";
 import {
   trackLocalPublish,
@@ -27,6 +29,7 @@ import {
 import type { ResolvedMethod } from "../../../../src/package/manifest/types.js";
 
 const mockedMethodEventsEnabled = vi.mocked(methodEventsEnabled);
+const MockedPostHog = vi.mocked(PostHog);
 
 beforeEach(async () => {
   // Drop the client a previous test created, so each test sees getClient()
@@ -34,6 +37,10 @@ beforeEach(async () => {
   await shutdown();
   vi.clearAllMocks();
   mockedMethodEventsEnabled.mockReturnValue(true);
+});
+
+afterEach(() => {
+  vi.unstubAllEnvs();
 });
 
 const sampleMethod: ResolvedMethod = {
@@ -188,6 +195,38 @@ describe("trackPublish vs trackInstall", () => {
     const publishKeys = Object.keys(publishCall.properties).sort();
     const installKeys = Object.keys(installCall.properties).sort();
     expect(publishKeys).toEqual(installKeys);
+  });
+});
+
+describe("where the events go", () => {
+  it("posts to PostHog's EU host when no endpoint override is set", () => {
+    vi.stubEnv("PIPELEX_USAGE_STATS_ENDPOINT", undefined);
+    trackInstall(sampleMethod, "mthds-ai/contract-analysis");
+
+    expect(MockedPostHog).toHaveBeenCalledWith(expect.any(String), {
+      host: "https://eu.i.posthog.com",
+      disableGeoip: true,
+    });
+    expect(mockCapture).toHaveBeenCalledTimes(1);
+  });
+
+  it("posts to a loopback endpoint override instead of PostHog", () => {
+    vi.stubEnv("PIPELEX_USAGE_STATS_ENDPOINT", "http://127.0.0.1:8123");
+    trackInstall(sampleMethod, "mthds-ai/contract-analysis");
+
+    expect(MockedPostHog).toHaveBeenCalledWith(expect.any(String), {
+      host: "http://127.0.0.1:8123",
+      disableGeoip: true,
+    });
+    expect(mockCapture).toHaveBeenCalledTimes(1);
+  });
+
+  it("sends nothing at an endpoint override that is not a loopback origin", () => {
+    vi.stubEnv("PIPELEX_USAGE_STATS_ENDPOINT", "https://eu.i.posthog.com");
+    trackInstall(sampleMethod, "mthds-ai/contract-analysis");
+
+    expect(MockedPostHog).not.toHaveBeenCalled();
+    expect(mockCapture).not.toHaveBeenCalled();
   });
 });
 

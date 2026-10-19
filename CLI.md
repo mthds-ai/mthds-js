@@ -492,7 +492,7 @@ Manage the anonymous usage statistics that every Pipelex and MTHDS tool on the m
 
 Statistics are off while any of these says so: `DO_NOT_TRACK` set to anything but empty, `0` or `false`; `PIPELEX_USAGE_STATS=0` (or `false`, `no`, `off`); `DISABLE_TELEMETRY=1` in the environment; the machine's choice made by `mthds telemetry disable` or another tool's disable command; a legacy `DISABLE_TELEMETRY=1` in `~/.mthds/config`; `[usage_stats] enabled = false` in the project's `.pipelex/pipelex.toml`; or a `PIPELEX_USAGE_STATS_ENDPOINT` that is not a loopback `http` origin. The group's own commands never send an event or print the notice.
 
-`mthds install` and `mthds publish` also send `method_install` and `method_publish` events that rank methods on mthds.sh; those follow `DO_NOT_TRACK`, `DISABLE_TELEMETRY` and the machine's choice only. Publishing never depends on them.
+`mthds install` and `mthds publish` also send `method_install` and `method_publish` events that rank methods on mthds.sh; those follow only `DO_NOT_TRACK`, `DISABLE_TELEMETRY` in the environment, the machine's choice, the legacy `DISABLE_TELEMETRY=1` in `~/.mthds/config` and the endpoint override, which sends them to a loopback `PIPELEX_USAGE_STATS_ENDPOINT` instead of PostHog and turns them off at any other value. Publishing never depends on them.
 
 ### `mthds telemetry status`
 

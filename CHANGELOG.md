@@ -1,5 +1,11 @@
 # Changelog
 
+## [Unreleased]
+
+### Changed
+
+- **Method events follow the endpoint override**: a loopback `PIPELEX_USAGE_STATS_ENDPOINT` now sends `method_install` and `method_publish` to the server it names instead of PostHog, as it does the usage statistics, and any other value turns them off, so an environment that points the override at a test server keeps every event the CLIs send on the machine.
+
 ## [v0.33.0] - 2026-10-18
 
 ### Added

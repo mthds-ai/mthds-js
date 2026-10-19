@@ -2,7 +2,8 @@
  * The usage statistics, end to end: the built `mthds` and `mthds-agent` run in an environment
  * built from nothing (a scratch home, no inherited switch), posting to a loopback server that
  * stands in for PostHog's capture host. Every event they print or post is checked against the
- * vendored schema.
+ * vendored schema. The endpoint override that names the server also carries the method events of
+ * an install or a publish, so no case here can reach PostHog, though the statistics are on.
  */
 
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";

@@ -86,7 +86,7 @@ tests/
 └── e2e/                            # Full CLI invocation tests
 ```
 
-The CLIs send usage statistics and method events, so tests never touch the real home or network: `vitest.config.ts` gives every test, and every CLI a test spawns, a scratch `HOME`, `DO_NOT_TRACK=1` and a loopback statistics endpoint, `tests/support/isolation-guard.ts` fails a test that connects to a non-loopback host, and the run fails if the real `~/.mthds/usage-stats/` changed. A test that builds a CLI's environment from scratch keeps a scratch `HOME` and a loopback `PIPELEX_USAGE_STATS_ENDPOINT` or `MTHDS_HUB_URL`. Run a built CLI by hand as `env HOME=$(mktemp -d) DO_NOT_TRACK=1 node dist/cli.js …` (a shell's unexported `DO_NOT_TRACK` does not reach it).
+The CLIs send usage statistics and method events, so tests never touch the real home or network: `vitest.config.ts` gives every test, and every CLI a test spawns, a scratch `HOME`, `DO_NOT_TRACK=1` and a loopback statistics endpoint, `tests/support/isolation-guard.ts` fails a test that connects to a non-loopback host, and the run fails if the real `~/.mthds/usage-stats/` changed. A test that builds a CLI's environment from scratch keeps a scratch `HOME` and a loopback `PIPELEX_USAGE_STATS_ENDPOINT`, which the method events of an install or a publish follow as the usage statistics do, plus a loopback `MTHDS_HUB_URL` when it publishes. Run a built CLI by hand as `env HOME=$(mktemp -d) DO_NOT_TRACK=1 node dist/cli.js …` (a shell's unexported `DO_NOT_TRACK` does not reach it).
 
 ## Conventions
 

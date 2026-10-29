@@ -4,6 +4,7 @@
 
 ### Changed
 
+- **The core error registry `8.0.1`**: the package vendors the registry the MTHDS standard publishes with its `v8.0.1` release, whose titles and `other` steps for the codes a run can raise are written for someone following a run of a method they did not write, so `CORE_REGISTRY` and every problem `buildProblem` or `problemError` builds for such a code carry the new wording, such as "A step's result does not have the structure the method declares" for `pipe.output_invalid` where it read "A pipe's output does not fit its concept". `MTHDS_ERROR_REGISTRY_VERSION` and `MTHDS_ERROR_REGISTRY_TARGET_VERSION` are `8.0.1`, and no code, domain, retry verdict, step kind or parameter changes.
 - **Method events follow the endpoint override**: a loopback `PIPELEX_USAGE_STATS_ENDPOINT` now sends `method_install` and `method_publish` to the server it names instead of PostHog, as it does the usage statistics, and any other value turns them off, so an environment that points the override at a test server keeps every event the CLIs send on the machine.
 
 ## [v0.33.0] - 2026-10-18

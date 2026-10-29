@@ -9,4 +9,4 @@
  * It is not `MTHDS_STANDARD_VERSION`, the standard version this package implements for manifests
  * and crates, which a release of the standard moves on its own.
  */
-export const MTHDS_ERROR_REGISTRY_TARGET_VERSION = "8.0.0";
+export const MTHDS_ERROR_REGISTRY_TARGET_VERSION = "8.0.1";

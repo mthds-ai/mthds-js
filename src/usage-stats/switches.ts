@@ -12,7 +12,10 @@
  * | `disabled`                                | off                 | off                                |
  * | legacy `DISABLE_TELEMETRY` in the config  | off                 | off                                |
  * | project setting                           | off                 | unaffected                         |
- * | `PIPELEX_USAGE_STATS_ENDPOINT` not loopback | off               | unaffected                         |
+ * | `PIPELEX_USAGE_STATS_ENDPOINT` not loopback | off               | off                                |
+ *
+ * A loopback `PIPELEX_USAGE_STATS_ENDPOINT` reroutes both kinds to the server it names, so the
+ * override a test sets keeps every event the CLIs send on the machine.
  */
 
 import { CAPTURE_HOST, ENV, SWITCH_VALUES } from "./contract.js";
@@ -41,13 +44,16 @@ export function disableTelemetryEnvSaysOff(env: NodeJS.ProcessEnv = process.env)
 }
 
 /**
- * Where events are posted: the endpoint override when it is a loopback `http` origin, PostHog's
- * capture host when it is unset, and nowhere (undefined) when it is set to anything else, which
- * turns statistics off for the process.
+ * Where events are posted: the endpoint override when it is a loopback `http` origin, `host` when
+ * it is unset (PostHog's capture host unless the caller names another), and nowhere (undefined)
+ * when it is set to anything else, which turns every event off for the process.
  */
-export function resolveEndpoint(env: NodeJS.ProcessEnv = process.env): string | undefined {
+export function resolveEndpoint(
+  env: NodeJS.ProcessEnv = process.env,
+  host: string = CAPTURE_HOST,
+): string | undefined {
   const override = env[ENV.endpointOverride];
-  if (override === undefined) return CAPTURE_HOST;
+  if (override === undefined) return host;
   const match = LOOPBACK_ORIGIN.exec(override);
   if (!match) return undefined;
   const port = Number(match[1]);
@@ -74,8 +80,9 @@ export function usageStatsOffBy(context: SwitchContext = {}): OffByToken[] {
 
 /**
  * Every switch that turns `method_install` and `method_publish` off. Those events go to the
- * project mthds.sh reads, not the shared one, so `PIPELEX_USAGE_STATS`, the project setting and
- * the endpoint override do not reach them.
+ * project mthds.sh reads, not the shared one, so `PIPELEX_USAGE_STATS` and the project setting do
+ * not reach them. The endpoint override does, as it does every event: a test's loopback override
+ * reroutes them, and any other value turns them off.
  */
 export function methodEventsOffBy(env: NodeJS.ProcessEnv = process.env): OffByToken[] {
   const offBy: OffByToken[] = [];
@@ -83,6 +90,7 @@ export function methodEventsOffBy(env: NodeJS.ProcessEnv = process.env): OffByTo
   if (disableTelemetryEnvSaysOff(env)) offBy.push("tool_variable");
   if (isMachineDisabled()) offBy.push("machine_choice");
   if (legacyOptOutPending()) offBy.push("legacy_mthds_choice");
+  if (resolveEndpoint(env) === undefined) offBy.push("invalid_endpoint_override");
   return offBy;
 }
 

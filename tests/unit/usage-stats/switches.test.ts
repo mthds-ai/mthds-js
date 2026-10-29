@@ -96,6 +96,15 @@ describe("the endpoint override", () => {
     expect(resolveEndpoint({ PIPELEX_USAGE_STATS_ENDPOINT: value })).toBeUndefined();
     expect(offBy({ PIPELEX_USAGE_STATS_ENDPOINT: value })).toEqual(["invalid_endpoint_override"]);
   });
+
+  it("overrides the host a caller names as it overrides PostHog's capture host", () => {
+    const host = "https://events.example.com";
+    expect(resolveEndpoint({}, host)).toBe(host);
+    expect(resolveEndpoint({ PIPELEX_USAGE_STATS_ENDPOINT: "http://127.0.0.1:8123" }, host)).toBe(
+      "http://127.0.0.1:8123",
+    );
+    expect(resolveEndpoint({ PIPELEX_USAGE_STATS_ENDPOINT: "https://x" }, host)).toBeUndefined();
+  });
 });
 
 describe("usageStatsOffBy", () => {
@@ -138,11 +147,20 @@ describe("methodEventsOffBy", () => {
     writeFileSync(join(work, ".pipelex", "pipelex.toml"), "[usage_stats]\nenabled = false\n");
     vi.spyOn(process, "cwd").mockReturnValue(work);
     expect(
-      methodEventsOffBy({ PIPELEX_USAGE_STATS: "0", PIPELEX_USAGE_STATS_ENDPOINT: "https://x" }),
+      methodEventsOffBy({
+        PIPELEX_USAGE_STATS: "0",
+        PIPELEX_USAGE_STATS_ENDPOINT: "http://127.0.0.1:8123",
+      }),
     ).toEqual([]);
     expect(methodEventsOffBy({ DO_NOT_TRACK: "1", DISABLE_TELEMETRY: "true" })).toEqual([
       "do_not_track",
       "tool_variable",
+    ]);
+  });
+
+  it("goes off at an endpoint override that is not a loopback origin", () => {
+    expect(methodEventsOffBy({ PIPELEX_USAGE_STATS_ENDPOINT: "https://x" })).toEqual([
+      "invalid_endpoint_override",
     ]);
   });
 

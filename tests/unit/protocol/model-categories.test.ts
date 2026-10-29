@@ -52,8 +52,9 @@ describe("MODEL_CATEGORIES", () => {
 describe("MTHDS_PROTOCOL_VERSION", () => {
   it("is the protocol release this package follows, which keeps the judgment category", () => {
     // 2.0.0 codes every error from the core registry and itemizes a verdict's faults as
-    // problem items; the model categories are unchanged from 1.0.0.
-    expect(MTHDS_PROTOCOL_VERSION).toBe("2.0.0");
+    // problem items, and 2.0.1 clarifies the order of a files map's checks; the model
+    // categories are unchanged from 1.0.0.
+    expect(MTHDS_PROTOCOL_VERSION).toBe("2.0.1");
   });
 });
 

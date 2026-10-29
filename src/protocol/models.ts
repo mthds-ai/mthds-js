@@ -30,7 +30,7 @@ import type { ProblemItem } from "../problems/types.js";
  * is the `info.version` of `mthds-protocol.openapi.yaml` and what a runner reports
  * as `protocol_version` from `GET /version`.
  */
-export const MTHDS_PROTOCOL_VERSION = "2.0.0";
+export const MTHDS_PROTOCOL_VERSION = "2.0.1";
 
 // ── Run responses (`POST /execute` 200, `POST /start` 202) ───────────
 

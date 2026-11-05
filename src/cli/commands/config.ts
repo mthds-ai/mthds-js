@@ -10,9 +10,15 @@ import {
   isValidTelemetryValue,
   TELEMETRY_VALUE_HINT,
 } from "../../config/config.js";
+import type { ConfigKey } from "../../config/config.js";
 import { RUNNER_NAMES } from "../../runners/types.js";
 import type { RunnerType } from "../../runners/types.js";
-import { maskApiKey } from "./utils.js";
+import { maskUrlCredentials, shownConfigValue } from "../../config/secrets.js";
+
+/** A setting's value as these commands print it: `shownConfigValue`'s, and `(not set)` for an empty one. */
+function displayed(key: ConfigKey, value: string): string {
+  return shownConfigValue(key, value).value || "(not set)";
+}
 
 export async function configSet(cliKey: string, value: string): Promise<void> {
   printLogo();
@@ -35,7 +41,7 @@ export async function configSet(cliKey: string, value: string): Promise<void> {
   }
 
   if (configKey === "baseUrl" && !isValidBaseUrl(value)) {
-    p.log.error(`Invalid URL: ${value}`);
+    p.log.error(`Invalid URL: ${maskUrlCredentials(value)}`);
     p.outro("");
     process.exit(1);
   }
@@ -48,7 +54,7 @@ export async function configSet(cliKey: string, value: string): Promise<void> {
   }
 
   setConfigValue(configKey, value);
-  p.log.success(`${cliKey} = ${value}`);
+  p.log.success(`${cliKey} = ${displayed(configKey, value)}`);
   p.outro("");
 }
 
@@ -66,8 +72,7 @@ export async function configGet(cliKey: string): Promise<void> {
 
   const { value, source } = getConfigValue(configKey);
   const sourceLabel = source === "env" ? " (from env)" : source === "default" ? " (default)" : "";
-  const display = cliKey === "api-key" ? maskApiKey(value) : value;
-  p.log.info(`${cliKey} = ${display}${sourceLabel}`);
+  p.log.info(`${cliKey} = ${displayed(configKey, value)}${sourceLabel}`);
   p.outro("");
 }
 
@@ -79,8 +84,7 @@ export async function configList(): Promise<void> {
   for (const entry of entries) {
     const sourceLabel =
       entry.source === "env" ? " (from env)" : entry.source === "default" ? " (default)" : "";
-    const display = entry.cliKey === "api-key" ? maskApiKey(entry.value) : entry.value;
-    p.log.info(`${entry.cliKey} = ${display}${sourceLabel}`);
+    p.log.info(`${entry.cliKey} = ${displayed(entry.key, entry.value)}${sourceLabel}`);
   }
   p.outro("");
 }

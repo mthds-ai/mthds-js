@@ -1,9 +1,3 @@
-export function maskApiKey(key: string): string {
-  if (!key) return "(not set)";
-  if (key.length <= 5) return "*".repeat(key.length);
-  return `${key.slice(0, 4)}${"*".repeat(key.length - 4)}`;
-}
-
 import { PipelexRunner } from "../../runners/pipelex/runner.js";
 import { MthdsApiClient } from "../../runners/api/client.js";
 import { Runners } from "../../runners/types.js";

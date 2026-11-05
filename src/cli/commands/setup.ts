@@ -12,7 +12,7 @@ import {
   setConfigValue,
 } from "../../config/config.js";
 import { Runners, RUNNER_NAMES } from "../../runners/types.js";
-import { maskApiKey } from "./utils.js";
+import { maskSecret, maskUrlCredentials } from "../../config/secrets.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -30,10 +30,14 @@ async function initApi(): Promise<void> {
     return undefined;
   };
 
+  // A current base URL holding credentials, which the client refuses, is not offered for editing:
+  // the prompt would print them.
+  const shownBaseUrl = maskUrlCredentials(currentBaseUrl);
   const baseUrl = await p.text({
     message: "API base URL (host only, e.g. https://api.pipelex.com or http://localhost:8081)",
-    placeholder: currentBaseUrl,
-    initialValue: baseUrlSource !== "default" ? currentBaseUrl : "",
+    placeholder: shownBaseUrl,
+    initialValue:
+      baseUrlSource !== "default" && shownBaseUrl === currentBaseUrl ? currentBaseUrl : "",
     validate: validateUrl,
   });
 
@@ -42,7 +46,7 @@ async function initApi(): Promise<void> {
     process.exit(0);
   }
 
-  const maskedKey = currentKey ? maskApiKey(currentKey) : undefined;
+  const maskedKey = currentKey ? maskSecret(currentKey) : undefined;
 
   const apiKey = await p.password({
     message: `API key${maskedKey ? ` (current: ${maskedKey})` : ""}`,
@@ -197,8 +201,8 @@ export async function runnerStatus(): Promise<void> {
   const { value: baseUrl } = getConfigValue("baseUrl");
   const { value: apiKey } = getConfigValue("apiKey");
   p.log.message(`\n  API runner`);
-  p.log.message(`    Base URL: ${baseUrl}`);
-  p.log.message(`    API key:  ${maskApiKey(apiKey)}`);
+  p.log.message(`    Base URL: ${maskUrlCredentials(baseUrl)}`);
+  p.log.message(`    API key:  ${maskSecret(apiKey) || "(not set)"}`);
 
   // Pipelex runner
   const pipelexVersion = await getPipelexVersion();

@@ -152,6 +152,29 @@ describe("MthdsApiClient constructor", () => {
     expect((caught as ProblemError).message).toContain("host-only");
   });
 
+  it.each([
+    "https://fakeuser:FAKEPASS123@api.example.com",
+    "fakeuser:FAKEPASS123@api.example.com",
+    " https://fakeuser:FAKEPASS123@api.example.com ",
+    "https:fakeuser:FAKEPASS123@api.example.com",
+    "https:\\\\fakeuser:FAKEPASS123@api.example.com",
+  ])("refuses the base URL %j, which holds credentials, without quoting them", (baseUrl) => {
+    let caught: unknown;
+    try {
+      new MthdsApiClient({ baseUrl });
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(ProblemError);
+    const refusal = caught as ProblemError;
+    expect(refusal.problem.code).toBe("client.not_configured");
+    expect(refusal.message).toContain("…@api.example.com");
+    for (const credential of ["FAKEPASS123", "fakeuser"]) {
+      expect(refusal.message).not.toContain(credential);
+      expect(JSON.stringify(refusal.problem)).not.toContain(credential);
+    }
+  });
+
   it.each(["localhost:8081", "api.pipelex.com", "ftp://api.pipelex.com", "file:///tmp"])(
     "refuses the base URL %s, whose scheme is missing or unsupported, as client.not_configured",
     (baseUrl) => {

@@ -8,6 +8,7 @@ import { BINARY_RECOVERY, buildInstallCommand } from "../binaries.js";
 import type { BinaryRecoveryInfo } from "../binaries.js";
 import { checkBinaryVersion } from "../../installer/runtime/version-check.js";
 import { listConfig } from "../../config/config.js";
+import { shownConfigValue } from "../../config/secrets.js";
 import { assessCodexVersion } from "../codex-version.js";
 import { inspectCodexConfig } from "./codex-config.js";
 import type { CodexConfigInspection } from "./codex-config.js";
@@ -38,6 +39,8 @@ interface DependencyCheck {
 interface ConfigEntry {
   key: string;
   value: string;
+  /** Present when the value shown is not the value set, as in `config list`. */
+  masked?: true;
   source: string;
 }
 
@@ -181,13 +184,23 @@ export async function agentDoctor(format: OutputFormat = OutputFormat.MARKDOWN):
   let apiKeyConfigured = false;
 
   for (const entry of rawConfig) {
-    const displayValue =
-      entry.cliKey === "api-key" ? (entry.value ? "configured" : "not set") : entry.value;
-    configEntries.push({
-      key: entry.cliKey,
-      value: displayValue,
-      source: entry.source,
-    });
+    // The API key is reported as set or not, never shown even masked; every other value is shown
+    // as `config list` shows it, so a base URL's credentials never reach the report.
+    if (entry.cliKey === "api-key") {
+      configEntries.push({
+        key: entry.cliKey,
+        value: entry.value ? "configured" : "not set",
+        source: entry.source,
+      });
+    } else {
+      const shown = shownConfigValue(entry.key, entry.value);
+      configEntries.push({
+        key: entry.cliKey,
+        value: shown.value,
+        ...(shown.masked ? { masked: true as const } : {}),
+        source: entry.source,
+      });
+    }
 
     if (entry.cliKey === "runner") runnerValue = entry.value;
     if (entry.cliKey === "api-key" && entry.value) apiKeyConfigured = true;

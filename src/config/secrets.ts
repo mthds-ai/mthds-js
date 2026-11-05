@@ -39,33 +39,33 @@ export function maskSecret(secret: string): string {
 }
 
 /**
- * The credentials of a URL: from the end of its scheme's `://` to the last `@` before a query or a
- * fragment. Hiding a little more than the userinfo of a malformed URL, such as one with a `/` in
- * its password, is the safe side.
+ * A value that may be a URL, with everything before its last `@` replaced by `…`, such as
+ * `…@example.com` for `https://user:password@example.com`, and a value holding no `@` as it is.
+ *
+ * A URL carries a user name, a password or a token only before an `@`: the URL parser takes
+ * credentials from the text before the last `@` of the authority, and nothing else, so hiding
+ * everything before the last `@` of the whole value hides every credential, whatever its scheme,
+ * slashes, backslashes or surrounding whitespace, and whether or not the value parses at all. The
+ * value is never parsed, so this rule and the parser cannot disagree. The scheme and anything else
+ * before that `@` are hidden too, which is the safe side: a valid base URL holds no `@` and is never
+ * changed, and only a refused value, or one set in `MTHDS_BASE_URL` or by hand in
+ * `~/.mthds/config`, is shown this way.
  */
-const URL_CREDENTIALS = /^([A-Za-z][A-Za-z0-9+.-]*:\/\/)[^?#]*@/;
-
-/**
- * A URL with the credentials it carries, a user name, a password or a token, replaced by `…`, such
- * as `https://…@example.com` for `https://user:password@example.com`. A base URL never holds
- * credentials, which the client refuses, but a refused value, or one set in `MTHDS_BASE_URL` or by
- * hand in `~/.mthds/config`, is still quoted by the command that reads it. A URL holding none is
- * returned as it is.
- */
-export function maskUrlCredentials(url: string): string {
-  return url.replace(URL_CREDENTIALS, `$1${HIDDEN_MARK}@`);
+export function maskUrlCredentials(value: string): string {
+  const lastAt = value.lastIndexOf("@");
+  return lastAt === -1 ? value : `${HIDDEN_MARK}${value.slice(lastAt)}`;
 }
 
 /** A setting's value as a command shows it, and whether a secret of it was hidden. */
 export interface ShownConfigValue {
   value: string;
-  /** True when the value shown is not the value set: the API key masked, or a URL's credentials hidden. */
+  /** True when the value shown is not the value set: the API key masked, or what may be a URL's credentials hidden. */
   masked: boolean;
 }
 
 /**
  * A setting's value as `config set`, `config get` and `config list` show it: the API key masked
- * (`maskSecret`), the base URL without its credentials (`maskUrlCredentials`), and every other
+ * (`maskSecret`), the base URL with what may be its credentials hidden (`maskUrlCredentials`), and every other
  * setting as it is. No command shows the API key whole: it is read where it is set, in
  * `MTHDS_API_KEY` or `~/.mthds/config`.
  */

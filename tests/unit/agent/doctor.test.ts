@@ -271,6 +271,45 @@ describe("agentDoctor", () => {
     writeSpy.mockRestore();
   });
 
+  it("shows the configuration as config list does, never a secret", async () => {
+    mockedCheckBinaryVersion.mockReturnValue({
+      status: "ok",
+      installed_version: "0.22.0",
+      version_constraint: PX_CONSTRAINT,
+    });
+    mockedExecFileSync.mockReturnValue(Buffer.from("/usr/local/bin/pipelex"));
+    const secrets = [
+      { key: "runner", cliKey: "runner", value: "api", source: "file" },
+      {
+        key: "baseUrl",
+        cliKey: "base-url",
+        value: " https:fakeuser:FAKEPASS123@example.com",
+        source: "env",
+      },
+      { key: "apiKey", cliKey: "api-key", value: "sk-test-dummy-0123456789abcdef", source: "file" },
+    ] as const;
+    mockedListConfig.mockReturnValue(secrets.map((entry) => ({ ...entry })));
+
+    await agentDoctor(OutputFormat.JSON);
+    expect(capturedResult!.config).toEqual([
+      { key: "runner", value: "api", source: "file" },
+      { key: "base-url", value: "…@example.com", masked: true, source: "env" },
+      { key: "api-key", value: "configured", source: "file" },
+    ]);
+
+    const writeSpy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    await agentDoctor(OutputFormat.MARKDOWN);
+    const markdown = writeSpy.mock.calls[0]![0] as string;
+    writeSpy.mockRestore();
+    expect(markdown).toContain("| base-url | …@example.com | env |");
+
+    for (const output of [JSON.stringify(capturedResult), markdown]) {
+      for (const secret of ["FAKEPASS123", "fakeuser", "sk-test-dummy", "sk-t…def"]) {
+        expect(output).not.toContain(secret);
+      }
+    }
+  });
+
   it("markdown includes issues section when there are problems", async () => {
     mockedCheckBinaryVersion.mockReturnValue({
       status: "missing",

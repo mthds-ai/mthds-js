@@ -16,8 +16,23 @@ const MTHDS_CLI = join(__dirname, "../../dist/cli.js");
 const DUMMY_KEY = "sk-test-dummy-0123456789abcdef";
 const DUMMY_KEY_MASKED = "sk-t…def";
 const SHORT_DUMMY_KEY = "short-dummy";
-const DUMMY_PASSWORD = "hunter2-dummy";
-const URL_WITH_CREDENTIALS = `https://user:${DUMMY_PASSWORD}@example.com`;
+const DUMMY_USER = "fakeuser";
+const DUMMY_PASSWORD = "FAKEPASS123";
+const CREDENTIALS = `${DUMMY_USER}:${DUMMY_PASSWORD}`;
+
+/**
+ * A base URL holding credentials, in every form the URL parser reads them from, or a person would
+ * write them in: with its scheme, without one, wrapped in whitespace, which the parser trims, and
+ * with no slashes or with backslashes after a special scheme, which the parser accepts. The last
+ * member is the value as it is shown: everything before its last `@` hidden, the rest kept.
+ */
+const URLS_WITH_CREDENTIALS: ReadonlyArray<[string, string, string]> = [
+  ["with its scheme", `https://${CREDENTIALS}@example.com`, "…@example.com"],
+  ["without a scheme", `${CREDENTIALS}@example.com`, "…@example.com"],
+  ["wrapped in whitespace", ` https://${CREDENTIALS}@example.com `, "…@example.com "],
+  ["with no slashes after the scheme", `https:${CREDENTIALS}@example.com`, "…@example.com"],
+  ["with backslashes after the scheme", `https:\\\\${CREDENTIALS}@example.com`, "…@example.com"],
+];
 
 /** A `PATH` holding node alone, so that `runner status` finds no `pipelex` to ask its version of. */
 const NO_PIPELEX = { PATH: dirname(process.execPath) };
@@ -117,30 +132,52 @@ describe("mthds-agent config never answers a secret whole", () => {
     });
   });
 
-  it("hides the credentials of a base URL, in config get and list and in the refusal of config set", () => {
-    const env = { MTHDS_BASE_URL: URL_WITH_CREDENTIALS };
-    expect(agent(["config", "get", "base-url"], env)).toEqual({
-      key: "base-url",
-      value: "https://…@example.com",
-      masked: true,
-      source: "env",
+  it("never reports the API key in doctor, even masked", () => {
+    const report = run(AGENT_CLI, ["doctor", "--format", "json"], {
+      MTHDS_API_KEY: DUMMY_KEY,
+      ...NO_PIPELEX,
     });
-    expect(JSON.stringify(agent(["config", "list"], env))).not.toContain(DUMMY_PASSWORD);
-
-    const refused = run(AGENT_CLI, [
-      "config",
-      "set",
-      "base-url",
-      URL_WITH_CREDENTIALS,
-      "--error-format",
-      "json",
-    ]);
-    expect(refused.status).toBe(1);
-    expect(refused.stderr).not.toContain(DUMMY_PASSWORD);
-    expect((JSON.parse(refused.stderr) as { message?: string }).message).toBe(
-      "Invalid URL: https://…@example.com",
-    );
+    expect(report.stdout + report.stderr).not.toContain(DUMMY_KEY);
+    expect(report.stdout).not.toContain(DUMMY_KEY_MASKED);
+    const config = (JSON.parse(report.stdout) as { config: Array<Record<string, unknown>> }).config;
+    expect(config.find((entry) => entry["key"] === "api-key")?.["value"]).toBe("configured");
   });
+
+  it.each(URLS_WITH_CREDENTIALS)(
+    "hides the credentials of a base URL %s in config get, config list, doctor and the refusal of config set",
+    (_form, url, shown) => {
+      const env = { MTHDS_BASE_URL: url, ...NO_PIPELEX };
+      const got = agent(["config", "get", "base-url"], env);
+      expect(got).toEqual({ key: "base-url", value: shown, masked: true, source: "env" });
+
+      const printed = [
+        JSON.stringify(got),
+        JSON.stringify(agent(["config", "list"], env)),
+        run(AGENT_CLI, ["doctor", "--format", "json"], env).stdout,
+        run(AGENT_CLI, ["doctor"], env).stdout,
+      ];
+      const doctor = JSON.parse(printed[2]!) as { config: Array<Record<string, unknown>> };
+      expect(doctor.config.find((entry) => entry["key"] === "base-url")).toEqual({
+        key: "base-url",
+        value: shown,
+        masked: true,
+        source: "env",
+      });
+      expect(printed[3]).toContain(`| base-url | ${shown} | env |`);
+
+      const refused = run(AGENT_CLI, ["config", "set", "base-url", url, "--error-format", "json"]);
+      expect(refused.status).toBe(1);
+      expect((JSON.parse(refused.stderr) as { message?: string }).message).toBe(
+        `Invalid URL: ${shown}`,
+      );
+      printed.push(refused.stdout, refused.stderr);
+
+      for (const output of printed) {
+        expect(output).not.toContain(DUMMY_PASSWORD);
+        expect(output).not.toContain(DUMMY_USER);
+      }
+    },
+  );
 });
 
 describe("mthds config never prints a secret whole", () => {
@@ -166,19 +203,29 @@ describe("mthds config never prints a secret whole", () => {
     expect(got.stdout).not.toContain(SHORT_DUMMY_KEY);
   });
 
-  it("hides the credentials of a base URL", () => {
-    const env = { MTHDS_BASE_URL: URL_WITH_CREDENTIALS, ...NO_PIPELEX };
-    for (const args of [
-      ["config", "get", "base-url"],
-      ["config", "list"],
-      ["runner", "status"],
-    ]) {
-      const printed = run(MTHDS_CLI, args, env);
-      expect(printed.stdout + printed.stderr).not.toContain(DUMMY_PASSWORD);
-      expect(printed.stdout).toContain("https://…@example.com");
-    }
-    const refused = run(MTHDS_CLI, ["config", "set", "base-url", URL_WITH_CREDENTIALS]);
-    expect(refused.status).toBe(1);
-    expect(refused.stdout + refused.stderr).not.toContain(DUMMY_PASSWORD);
-  });
+  it.each(URLS_WITH_CREDENTIALS)(
+    "hides the credentials of a base URL %s in config get, config list, runner status and the refusal of config set",
+    (_form, url, shown) => {
+      const env = { MTHDS_BASE_URL: url, ...NO_PIPELEX };
+      const printed: string[] = [];
+      for (const args of [
+        ["config", "get", "base-url"],
+        ["config", "list"],
+        ["runner", "status"],
+      ]) {
+        const output = run(MTHDS_CLI, args, env);
+        expect(output.stdout).toContain(shown);
+        printed.push(output.stdout, output.stderr);
+      }
+      const refused = run(MTHDS_CLI, ["config", "set", "base-url", url]);
+      expect(refused.status).toBe(1);
+      expect(refused.stdout).toContain(`Invalid URL: ${shown}`);
+      printed.push(refused.stdout, refused.stderr);
+
+      for (const output of printed) {
+        expect(output).not.toContain(DUMMY_PASSWORD);
+        expect(output).not.toContain(DUMMY_USER);
+      }
+    },
+  );
 });

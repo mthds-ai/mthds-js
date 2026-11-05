@@ -51,29 +51,49 @@ describe("maskSecret", () => {
 });
 
 describe("maskUrlCredentials", () => {
-  it("hides a URL's user name and password", () => {
-    expect(maskUrlCredentials("https://user:hunter2-dummy@example.com")).toBe(
-      "https://…@example.com",
-    );
+  const CREDENTIALS = "fakeuser:FAKEPASS123";
+
+  // Every form the URL parser reads credentials from, or a person would write them in.
+  const URLS_WITH_CREDENTIALS: ReadonlyArray<[string, string, string]> = [
+    ["with its scheme", `https://${CREDENTIALS}@example.com`, "…@example.com"],
+    ["without a scheme", `${CREDENTIALS}@example.com`, "…@example.com"],
+    ["wrapped in whitespace", ` https://${CREDENTIALS}@example.com `, "…@example.com "],
+    ["with no slashes after the scheme", `https:${CREDENTIALS}@example.com`, "…@example.com"],
+    ["with backslashes after the scheme", `https:\\\\${CREDENTIALS}@example.com`, "…@example.com"],
+    ["with a slash in the password", "https://fakeuser:pa/ss@example.com", "…@example.com"],
+    ["with an at sign in the password", "https://fakeuser:pa@ss@example.com", "…@example.com"],
+    ["as a token alone", "http://tok-dummy@localhost:8081", "…@localhost:8081"],
+    ["with a path after the host", `https://${CREDENTIALS}@example.com/v1`, "…@example.com/v1"],
+  ];
+
+  it.each(URLS_WITH_CREDENTIALS)("hides the credentials of a URL %s", (_form, url, shown) => {
+    expect(maskUrlCredentials(url)).toBe(shown);
   });
 
-  it("hides a token written as the user name", () => {
-    expect(maskUrlCredentials("http://tok-dummy@localhost:8081")).toBe("http://…@localhost:8081");
+  it.each(URLS_WITH_CREDENTIALS)(
+    "never shows what the URL parser reads as the credentials of a URL %s",
+    (_form, url) => {
+      const masked = maskUrlCredentials(url);
+      let parsed: URL | undefined;
+      try {
+        parsed = new URL(url);
+      } catch {
+        parsed = undefined;
+      }
+      for (const credential of [parsed?.username, parsed?.password]) {
+        if (credential) expect(masked).not.toContain(decodeURIComponent(credential));
+      }
+      expect(masked).not.toContain("FAKEPASS123");
+      expect(masked).not.toContain("fakeuser");
+    },
+  );
+
+  it("hides everything before the last at sign, even one in a query", () => {
+    expect(maskUrlCredentials("https://api.pipelex.com/v1?to=a@b")).toBe("…@b");
   });
 
-  it("hides a password holding a slash, up to the last at sign", () => {
-    const shown = maskUrlCredentials("https://user:pa/ss-dummy@example.com");
-    expect(shown).toBe("https://…@example.com");
-    expect(shown).not.toContain("ss-dummy");
-  });
-
-  it("keeps a URL holding no credentials as it is", () => {
-    for (const url of [
-      "https://api.pipelex.com",
-      "http://localhost:8081",
-      "https://api.pipelex.com/v1?to=a@b",
-      "not a url",
-    ]) {
+  it("keeps a value holding no at sign as it is", () => {
+    for (const url of ["https://api.pipelex.com", "http://localhost:8081", " not a url ", ""]) {
       expect(maskUrlCredentials(url)).toBe(url);
     }
   });
@@ -91,7 +111,7 @@ describe("shownConfigValue", () => {
 
   it("hides a base URL's credentials, and keeps a base URL holding none", () => {
     expect(shownConfigValue("baseUrl", "https://user:pw-dummy@example.com")).toEqual({
-      value: "https://…@example.com",
+      value: "…@example.com",
       masked: true,
     });
     expect(shownConfigValue("baseUrl", "https://api.pipelex.com")).toEqual({

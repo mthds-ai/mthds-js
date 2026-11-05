@@ -356,6 +356,12 @@ Configuration values are resolved in this order: **environment variables > confi
 | `api-key` | `MTHDS_API_KEY` | (empty) | The API runner's authentication key. The pipelex runner never reads it: pipelex's hosted runs use `PIPELEX_API_KEY`, which [`mthds login`](#login) saves |
 | `telemetry` | `DISABLE_TELEMETRY`, `PIPELEX_USAGE_STATS`, `DO_NOT_TRACK` | `0` | Whether [usage statistics](#telemetry) are on. It reads and writes the machine's shared choice in `~/.mthds/usage-stats/`, never `~/.mthds/config`. `config set telemetry false` (or `0`, `no`, `off`) turns statistics off for every tool, as `mthds telemetry disable` does, and `true` (or `1`, `yes`, `on`) turns them back on, as `mthds telemetry enable` does. `config get telemetry` answers in the `DISABLE_TELEMETRY` encoding, `1` meaning off: from `env` while a variable keeps them off, from `file` while the machine's choice or a legacy `DISABLE_TELEMETRY=1` in `~/.mthds/config` does |
 
+### Secrets are never shown whole
+
+Whatever these commands print lands in a terminal's scrollback, an agent's transcript or a log, so no command of `mthds` or `mthds-agent` shows the API key whole. `config set`, `config get` and `config list`, `runner status` and `runner setup` show it masked: never more than a quarter of its characters, taken as up to its first twelve and its last four around `…`. A Pipelex API key, `plx_sk_` followed by 64 hexadecimal characters and a checksum, shows as the prefix the Pipelex app lists it by and its last four characters, such as `plx_sk_a1b2c…9f3e`, so you can tell which key is configured. A key shorter than sixteen characters shows as `…` alone. A base URL never holds credentials, which the client refuses, but a value set in `MTHDS_BASE_URL` or by hand in `~/.mthds/config`, or refused by `config set`, may: a value holding an `@` is shown, and quoted in a refusal, with everything before its last `@` replaced by `…`, such as `…@example.com`. Credentials can only stand before an `@`, so this hides them however the value is written, with or without a scheme, slashes or surrounding spaces. `mthds-agent doctor` shows the configuration the same way, and reports the API key only as `configured` or `not set`.
+
+No command prints the raw key. It is where you set it: in `MTHDS_API_KEY`, or as `MTHDS_API_KEY` in `~/.mthds/config`, a file only its owner can read.
+
 ### `mthds config set`
 
 Set a config value.
@@ -398,7 +404,11 @@ mthds config get <key>
 ```bash
 mthds config get runner
 # runner = pipelex (default)
+mthds config get api-key
+# api-key = plx_sk_a1b2c…9f3e
 ```
+
+The API key is shown masked (see [Secrets are never shown whole](#secrets-are-never-shown-whole)), and as `(not set)` when it has no value.
 
 ### `mthds config list`
 
@@ -408,7 +418,7 @@ List all config values.
 mthds config list
 ```
 
-Displays all configuration keys with their current values and sources (env, file, or default).
+Displays all configuration keys with their current values and sources (env, file, or default), the API key masked.
 
 ---
 
@@ -478,7 +488,7 @@ Default runner: pipelex
 
   API runner
     Base URL: http://127.0.0.1:8081
-    API key:  test-*******
+    API key:  plx_sk_a1b2c…9f3e
 
   Pipelex runner
     Version: pipelex 0.18.0b4
@@ -768,7 +778,7 @@ mthds-agent runner setup api --api-key <key> [--base-url <url>]
 | `--api-key <key>` | string | yes | API key for the Pipelex API |
 | `--base-url <url>` | string | no | API base URL — host only, no version prefix (uses the hosted default if omitted) |
 
-The key is saved as the API runner's `api-key` in `~/.mthds/config`. The pipelex runner does not read it: its hosted runs use `PIPELEX_API_KEY` from pipelex's own `.env` (see [Login](#login)).
+The key is saved as the API runner's `api-key` in `~/.mthds/config`. The pipelex runner does not read it: its hosted runs use `PIPELEX_API_KEY` from pipelex's own `.env` (see [Login](#login)). The command answers as `mthds-agent config set api-key` does, with the key masked.
 
 **Examples:**
 
@@ -778,6 +788,24 @@ mthds-agent runner setup api --api-key sk-my-api-key
 
 # Self-hosted bare runner
 mthds-agent runner setup api --api-key sk-my-api-key --base-url http://localhost:8081
+```
+
+### `mthds-agent config set|get|list`
+
+Set, read and list the [configuration keys](#valid-configuration-keys), answering in JSON on stdout.
+
+```bash
+mthds-agent config set <key> <value>
+mthds-agent config get <key>
+mthds-agent config list
+```
+
+`config set` answers `{"success": true, "key": …, "value": …}`, `config get` answers `{"key": …, "value": …, "source": …}`, the source being `env`, `file` or `default`, and `config list` answers `{"config": [...]}`, one such entry per key. The API key is never answered whole (see [Secrets are never shown whole](#secrets-are-never-shown-whole)): its value is masked, and `"masked": true` beside a value says it is not the value set, so a program never takes it for a key it can send. An unset key is the empty string, with no `masked`. A base URL holding an `@` is answered with everything before its last `@` replaced by `…`, with `"masked": true` too.
+
+**Example output** (`mthds-agent config get api-key`):
+
+```json
+{ "key": "api-key", "value": "plx_sk_a1b2c…9f3e", "masked": true, "source": "file" }
 ```
 
 ### `mthds-agent init`

@@ -211,13 +211,13 @@ function coerceBooleanInput(value: string): boolean {
 }
 
 export function listConfig(): Array<{
-  key: string;
+  key: ConfigKey;
   cliKey: string;
   value: string;
   source: ConfigSource;
 }> {
   const result: Array<{
-    key: string;
+    key: ConfigKey;
     cliKey: string;
     value: string;
     source: ConfigSource;

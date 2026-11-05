@@ -1,5 +1,9 @@
 /**
  * Agent config commands — manage configuration with JSON output.
+ *
+ * A value is answered as `shownConfigValue` shows it: the API key masked and a URL's credentials
+ * hidden, with `masked: true` beside a value that is not the one set, so an agent session never
+ * copies a secret into its transcript. No command answers the API key whole.
  */
 
 import { agentSuccess, agentError, agentProblem } from "../output.js";
@@ -13,8 +17,15 @@ import {
   isValidTelemetryValue,
   TELEMETRY_VALUE_HINT,
 } from "../../config/config.js";
+import { maskUrlCredentials, shownConfigValue } from "../../config/secrets.js";
+import type { ShownConfigValue } from "../../config/secrets.js";
 import { RUNNER_NAMES } from "../../runners/types.js";
 import type { RunnerType } from "../../runners/types.js";
+
+/** A shown value's members: `value`, and `masked: true` only when a secret of it was hidden. */
+function shownMembers(shown: ShownConfigValue): { value: string; masked?: true } {
+  return shown.masked ? { value: shown.value, masked: true } : { value: shown.value };
+}
 
 export async function agentConfigSet(cliKey: string, value: string): Promise<void> {
   const configKey = resolveKey(cliKey);
@@ -43,7 +54,7 @@ export async function agentConfigSet(cliKey: string, value: string): Promise<voi
       agentProblem(
         "client.argument_invalid",
         { argument: "value", reason: "invalid_base_url" },
-        `Invalid URL: ${value}`,
+        `Invalid URL: ${maskUrlCredentials(value)}`,
       ),
     );
   }
@@ -59,7 +70,7 @@ export async function agentConfigSet(cliKey: string, value: string): Promise<voi
   }
 
   setConfigValue(configKey, value);
-  agentSuccess({ success: true, key: cliKey, value });
+  agentSuccess({ success: true, key: cliKey, ...shownMembers(shownConfigValue(configKey, value)) });
 }
 
 export async function agentConfigGet(cliKey: string): Promise<void> {
@@ -75,7 +86,7 @@ export async function agentConfigGet(cliKey: string): Promise<void> {
   }
 
   const { value, source } = getConfigValue(configKey);
-  agentSuccess({ key: cliKey, value, source });
+  agentSuccess({ key: cliKey, ...shownMembers(shownConfigValue(configKey, value)), source });
 }
 
 export async function agentConfigList(): Promise<void> {
@@ -83,7 +94,7 @@ export async function agentConfigList(): Promise<void> {
   agentSuccess({
     config: entries.map((e) => ({
       key: e.cliKey,
-      value: e.value,
+      ...shownMembers(shownConfigValue(e.key, e.value)),
       source: e.source,
     })),
   });

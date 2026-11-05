@@ -152,6 +152,21 @@ describe("MthdsApiClient constructor", () => {
     expect((caught as ProblemError).message).toContain("host-only");
   });
 
+  it("refuses a base URL holding credentials without quoting them", () => {
+    let caught: unknown;
+    try {
+      new MthdsApiClient({ baseUrl: "https://user:hunter2-dummy@api.example.com" });
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(ProblemError);
+    const refusal = caught as ProblemError;
+    expect(refusal.problem.code).toBe("client.not_configured");
+    expect(refusal.message).toContain('"https://…@api.example.com"');
+    expect(JSON.stringify(refusal.problem)).not.toContain("hunter2-dummy");
+    expect(refusal.message).not.toContain("hunter2-dummy");
+  });
+
   it.each(["localhost:8081", "api.pipelex.com", "ftp://api.pipelex.com", "file:///tmp"])(
     "refuses the base URL %s, whose scheme is missing or unsupported, as client.not_configured",
     (baseUrl) => {

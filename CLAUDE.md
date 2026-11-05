@@ -50,7 +50,8 @@ src/
 ├── config/
 │   ├── config.ts                   # ~/.mthds/config handling
 │   ├── config-file.ts              # the config file's path, read and write
-│   └── dotenv.ts                   # the config file's dotenv format
+│   ├── dotenv.ts                   # the config file's dotenv format
+│   └── secrets.ts                  # how a secret is shown: the API key masked, a URL's credentials hidden
 ├── usage-stats/                    # Anonymous usage statistics (command_completed) — see docs/usage-statistics.md
 │   ├── contract.ts                 # The shared contract's constants, checked against tests/fixtures/usage-statistics.json
 │   ├── switches.ts / project.ts    # What turns statistics off

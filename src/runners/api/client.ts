@@ -44,6 +44,7 @@ import type { JsonReading } from "../../problems/read.js";
 import type { Problem } from "../../problems/types.js";
 import { networkErrorCode, provesNothingSent } from "./transport.js";
 import { isValidBaseUrl } from "../../config/config.js";
+import { maskUrlCredentials } from "../../config/secrets.js";
 import { assertOneMethodSource, hasMethodSource } from "../../protocol/options.js";
 import { buildUserAgent } from "./user-agent.js";
 import type { AppInfo } from "./user-agent.js";
@@ -275,14 +276,15 @@ export class MthdsApiClient implements Runner {
     // or a path-prefixed value (e.g. `.../v1`) composes as `/v1/v1/...` and
     // fails with a misleading endpoint error instead of a clear base-URL one.
     // Trailing slashes are stripped first (leniency the SDK has always had);
-    // a remaining path/query/fragment/credentials is rejected.
+    // a remaining path/query/fragment/credentials is rejected. The message quotes the URL without
+    // its credentials, which are the very reason some URLs are refused.
     if (!isValidBaseUrl(normalizedBaseUrl)) {
       throw problemError(
         "client.not_configured",
         { setting: "base_url" },
         {
           message:
-            `Invalid API base URL "${normalizedBaseUrl}": must be host-only ` +
+            `Invalid API base URL "${maskUrlCredentials(normalizedBaseUrl)}": must be host-only ` +
             `(http/https, no path, query, fragment, or credentials). Endpoints ` +
             `compose as {base}/v1/{endpoint}.`,
         },

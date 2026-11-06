@@ -49,7 +49,7 @@ export const RESERVED_DOMAINS: ReadonlySet<string> = new Set(["native", "mthds",
  * (`satisfiesMthdsStandardVersion` below) and what `mthds package init` writes as
  * the floor of a new package's constraint.
  */
-export const MTHDS_STANDARD_VERSION = "8.0.1";
+export const MTHDS_STANDARD_VERSION = "8.1.0";
 
 // ---------------------------------------------------------------------------
 // Standalone validation helpers (used outside the parser too)
@@ -126,6 +126,17 @@ export function isValidMethodName(name: string): boolean {
   return METHOD_NAME_RE.test(name);
 }
 
+/**
+ * One entry of `[package] categories`: a lowercase slug, the standard's pattern as it writes it
+ * (`mthds/docs/spec/manifest-format.md`, "Categories"). The standard lists no values, so this is
+ * the whole check: a repeated entry and a value no list names are not errors.
+ */
+export const CATEGORY_SLUG_RE = /^[a-z0-9]+(-[a-z0-9]+)*$/;
+
+export function isValidCategory(category: string): boolean {
+  return CATEGORY_SLUG_RE.test(category);
+}
+
 /** Raw [package] section in METHODS.toml */
 export const PackageSectionSchema = z
   .object({
@@ -139,6 +150,7 @@ export const PackageSectionSchema = z
     mthds_version: z.string().optional(),
     main_pipe: z.string().optional(),
     exclude: z.array(z.string()).optional(),
+    categories: z.array(z.string()).optional(),
   })
   .strict();
 
@@ -182,6 +194,11 @@ export interface ParsedManifest {
   readonly mainPipe?: string;
   /** `[package] exclude`: patterns in `.gitignore` syntax keeping files out of the method tree. */
   readonly exclude?: string[];
+  /**
+   * `[package] categories`: the categories the method belongs to, as lowercase slugs, carried as
+   * the manifest writes them, order, repeats and an empty array included.
+   */
+  readonly categories?: string[];
   readonly exports: Record<string, DomainExports>;
 }
 

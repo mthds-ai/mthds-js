@@ -427,3 +427,85 @@ describe("parseMethodsToml — exclude", () => {
     expect(() => parseMethodsToml(withExclude("[1]"))).toThrow(ManifestValidationError);
   });
 });
+
+// ---------------------------------------------------------------------------
+// [package] categories
+// ---------------------------------------------------------------------------
+describe("parseMethodsToml — categories", () => {
+  const withCategories = (value: string): string =>
+    MINIMAL_TOML.replace("[package]\n", `[package]\ncategories = ${value}\n`);
+
+  it("reads the categories and serializes them back", () => {
+    const manifest = parseMethodsToml(withCategories('["legal", "customer-support"]'));
+    expect(manifest.categories).toEqual(["legal", "customer-support"]);
+    expect(serializeManifestToToml(manifest)).toContain(
+      'categories = [ "legal", "customer-support" ]',
+    );
+    expect(parseMethodsToml(serializeManifestToToml(manifest)).categories).toEqual([
+      "legal",
+      "customer-support",
+    ]);
+  });
+
+  it("leaves categories out when the manifest has none, and writes none back", () => {
+    const manifest = parseMethodsToml(MINIMAL_TOML);
+    expect(manifest.categories).toBeUndefined();
+    expect(serializeManifestToToml(manifest)).not.toContain("categories");
+  });
+
+  it("accepts an empty array, and carries it as written", () => {
+    const manifest = parseMethodsToml(withCategories("[]"));
+    expect(manifest.categories).toEqual([]);
+    expect(parseMethodsToml(serializeManifestToToml(manifest)).categories).toEqual([]);
+  });
+
+  it("accepts a repeated entry, and carries it as written", () => {
+    const manifest = parseMethodsToml(withCategories('["legal", "finance", "legal"]'));
+    expect(manifest.categories).toEqual(["legal", "finance", "legal"]);
+    expect(parseMethodsToml(serializeManifestToToml(manifest)).categories).toEqual([
+      "legal",
+      "finance",
+      "legal",
+    ]);
+  });
+
+  it("keeps the order the manifest writes", () => {
+    const manifest = parseMethodsToml(withCategories('["sales", "legal"]'));
+    expect(parseMethodsToml(serializeManifestToToml(manifest)).categories).toEqual([
+      "sales",
+      "legal",
+    ]);
+  });
+
+  it.each(["no-catalog-knows-this", "3d-printing", "2026", "a", "a-1-b"])(
+    "accepts %s, a value no list names but the pattern admits",
+    (slug) => {
+      expect(parseMethodsToml(withCategories(JSON.stringify([slug]))).categories).toEqual([slug]);
+    },
+  );
+
+  it.each([
+    ["an uppercase letter", "Legal"],
+    ["an underscore", "customer_support"],
+    ["a doubled hyphen", "customer--support"],
+    ["a leading hyphen", "-legal"],
+    ["a trailing hyphen", "legal-"],
+    ["nothing at all", ""],
+    ["a space", "customer support"],
+    ["a line break after a valid slug", "legal\n"],
+    ["a line break before a valid slug", "\nlegal"],
+    ["a letter outside ASCII", "légal"],
+    ["a dot", "legal.contracts"],
+  ])("refuses an entry holding %s", (_topic, slug) => {
+    const raw = withCategories(JSON.stringify(["finance", slug]));
+    expect(() => parseMethodsToml(raw)).toThrow(ManifestValidationError);
+    expect(() => parseMethodsToml(raw)).toThrow(/\[package\.categories\]/);
+    expect(() => parseMethodsToml(raw)).toThrow(JSON.stringify(slug));
+  });
+
+  it("refuses categories that is not a list of strings", () => {
+    expect(() => parseMethodsToml(withCategories('"legal"'))).toThrow(ManifestValidationError);
+    expect(() => parseMethodsToml(withCategories("[1]"))).toThrow(ManifestValidationError);
+    expect(() => parseMethodsToml(withCategories('[["legal"]]'))).toThrow(ManifestValidationError);
+  });
+});

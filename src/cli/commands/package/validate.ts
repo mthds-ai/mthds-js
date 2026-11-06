@@ -65,6 +65,9 @@ export async function packageValidate(options: { directory?: string }): Promise<
   if (manifest.mainPipe !== undefined) {
     p.log.info(`  Main pipe:     ${manifest.mainPipe}`);
   }
+  if (manifest.categories && manifest.categories.length > 0) {
+    p.log.info(`  Categories:    ${manifest.categories.join(", ")}`);
+  }
 
   // Display exports
   const exportEntries = Object.entries(manifest.exports);

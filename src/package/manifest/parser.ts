@@ -2,9 +2,11 @@ import { parse, stringify } from "smol-toml";
 import { z } from "zod";
 import { ManifestParseError, ManifestValidationError } from "../exceptions.js";
 import {
+  CATEGORY_SLUG_RE,
   isValidSemver,
   isValidVersionConstraint,
   isValidAddress,
+  isValidCategory,
   isValidMethodName,
   isReservedDomainPath,
   isValidExcludePattern,
@@ -260,6 +262,19 @@ export function parseMethodsToml(content: string): ParsedManifest {
     exclude = [...pkg.exclude];
   }
 
+  let categories: string[] | undefined;
+  if (pkg.categories !== undefined) {
+    for (const [idx, category] of pkg.categories.entries()) {
+      if (!isValidCategory(category)) {
+        throw new ManifestValidationError(
+          `Invalid category ${JSON.stringify(category)} at index ${idx} in [package.categories]. ` +
+            `Each entry must be a lowercase slug matching ${CATEGORY_SLUG_RE.source} (e.g. 'customer-support').`,
+        );
+      }
+    }
+    categories = [...pkg.categories];
+  }
+
   // Step 3: Process and validate exports
   let exports: Record<string, DomainExports> = {};
   if (validated.exports) {
@@ -300,6 +315,7 @@ export function parseMethodsToml(content: string): ParsedManifest {
     ...(mthdsVersion !== undefined ? { mthdsVersion } : {}),
     ...(mainPipe !== undefined ? { mainPipe } : {}),
     ...(exclude !== undefined ? { exclude } : {}),
+    ...(categories !== undefined ? { categories } : {}),
   };
 }
 
@@ -338,6 +354,9 @@ export function serializeManifestToToml(manifest: ParsedManifest): string {
   }
   if (manifest.exclude !== undefined) {
     packageSection["exclude"] = manifest.exclude;
+  }
+  if (manifest.categories !== undefined) {
+    packageSection["categories"] = manifest.categories;
   }
   doc["package"] = packageSection;
 

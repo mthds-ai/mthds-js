@@ -1,6 +1,8 @@
 import { parse } from "smol-toml";
 import type { MethodsManifest, ExportNode, Exports } from "./types.js";
 import {
+  CATEGORY_SLUG_RE,
+  isValidCategory,
   isValidExcludePattern,
   isValidVersionConstraint,
   METHOD_NAME_RE,
@@ -225,6 +227,27 @@ export function validateManifest(raw: string): ValidationResult {
     }
   }
 
+  // package.categories (optional) — lowercase slugs. Only the pattern can refuse one: a repeated
+  // entry and a value no list names are not errors.
+  if (pkg["categories"] !== undefined) {
+    if (!Array.isArray(pkg["categories"])) {
+      errors.push("[package.categories] must be an array of strings.");
+    } else {
+      for (const category of pkg["categories"] as unknown[]) {
+        if (typeof category !== "string") {
+          errors.push("[package.categories] must contain only strings.");
+          break;
+        }
+        if (!isValidCategory(category)) {
+          errors.push(
+            `[package.categories] ${JSON.stringify(category)} must be a lowercase slug matching ` +
+              `${CATEGORY_SLUG_RE.source} (e.g. "customer-support").`,
+          );
+        }
+      }
+    }
+  }
+
   // --- [exports] section (required, hierarchical) ---
   const exports = parsed["exports"] as Record<string, unknown> | undefined;
   if (!exports || typeof exports !== "object" || Object.keys(exports).length === 0) {
@@ -285,6 +308,7 @@ export function validateManifest(raw: string): ValidationResult {
       : {}),
     ...(pkg["main_pipe"] !== undefined ? { main_pipe: pkg["main_pipe"] as string } : {}),
     ...(pkg["exclude"] !== undefined ? { exclude: pkg["exclude"] as string[] } : {}),
+    ...(pkg["categories"] !== undefined ? { categories: pkg["categories"] as string[] } : {}),
   };
 
   const manifest: MethodsManifest = {

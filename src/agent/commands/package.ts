@@ -72,6 +72,8 @@ function manifestToJson(manifest: ParsedManifest): Record<string, unknown> {
   if (manifest.license !== undefined) result.license = manifest.license;
   if (manifest.mthdsVersion !== undefined) result.mthds_version = manifest.mthdsVersion;
   if (manifest.mainPipe !== undefined) result.main_pipe = manifest.mainPipe;
+  if (manifest.exclude !== undefined) result.exclude = manifest.exclude;
+  if (manifest.categories !== undefined) result.categories = manifest.categories;
   return result;
 }
 

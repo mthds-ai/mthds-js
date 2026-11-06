@@ -598,3 +598,64 @@ describe("validateManifest — package.exclude", () => {
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+// validateManifest — package.categories
+// ---------------------------------------------------------------------------
+describe("validateManifest — package.categories", () => {
+  const withCategories = (value: string): string =>
+    minimal.replace("[package]\n", `[package]\ncategories = ${value}\n`);
+
+  it("accepts a list of slugs, and leaves it on the manifest", () => {
+    const r = validateManifest(withCategories('["legal", "customer-support"]'));
+    expect(r.valid).toBe(true);
+    expect(r.manifest!.package.categories).toEqual(["legal", "customer-support"]);
+  });
+
+  it("leaves categories off a manifest that declares none", () => {
+    const r = validateManifest(minimal);
+    expect(r.valid).toBe(true);
+    expect(r.manifest!.package.categories).toBeUndefined();
+  });
+
+  it("accepts an empty array", () => {
+    const r = validateManifest(withCategories("[]"));
+    expect(r.valid).toBe(true);
+    expect(r.manifest!.package.categories).toEqual([]);
+  });
+
+  it("accepts a repeated entry", () => {
+    const r = validateManifest(withCategories('["legal", "legal"]'));
+    expect(r.valid).toBe(true);
+    expect(r.manifest!.package.categories).toEqual(["legal", "legal"]);
+  });
+
+  it("accepts a value no list names, when the pattern admits it", () => {
+    const r = validateManifest(withCategories('["no-catalog-knows-this", "3d-printing"]'));
+    expect(r.valid).toBe(true);
+  });
+
+  it.each(["Legal", "customer_support", "customer--support", "-legal", "legal-", "", "legal\n"])(
+    "rejects the entry %j, naming it",
+    (slug) => {
+      const r = validateManifest(withCategories(JSON.stringify(["finance", slug])));
+      expect(r.valid).toBe(false);
+      expect(r.errors).toContainEqual(expect.stringContaining("[package.categories]"));
+      expect(r.errors).toContainEqual(expect.stringContaining(JSON.stringify(slug)));
+    },
+  );
+
+  it("reports each entry that breaks the pattern", () => {
+    const r = validateManifest(withCategories('["Legal", "finance", "customer_support"]'));
+    expect(r.valid).toBe(false);
+    expect(r.errors).toHaveLength(2);
+  });
+
+  it("rejects a value that is not a list of strings", () => {
+    for (const value of ['"legal"', "[1]", '[["legal"]]']) {
+      const r = validateManifest(withCategories(value));
+      expect(r.valid).toBe(false);
+      expect(r.errors).toContainEqual(expect.stringContaining("[package.categories]"));
+    }
+  });
+});

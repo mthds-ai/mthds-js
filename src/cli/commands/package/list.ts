@@ -49,6 +49,9 @@ export function packageList(options: { directory?: string }): void {
   if (manifest.mthdsVersion) {
     p.log.info(`MTHDS Version: ${manifest.mthdsVersion}`);
   }
+  if (manifest.categories && manifest.categories.length > 0) {
+    p.log.info(`Categories: ${manifest.categories.join(", ")}`);
+  }
 
   // Exports
   const exportEntries = Object.entries(manifest.exports);

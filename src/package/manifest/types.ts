@@ -16,6 +16,7 @@ export interface PackageSection {
   readonly mthds_version?: string;
   readonly main_pipe?: string;
   readonly exclude?: string[];
+  readonly categories?: string[];
 }
 
 // --- Exports: hierarchical with pipes arrays ---

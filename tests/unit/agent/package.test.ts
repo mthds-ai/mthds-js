@@ -710,3 +710,50 @@ describe("manifestToJson consistency", () => {
     expect(valManifest).toEqual(listManifest);
   });
 });
+
+// ── categories and exclude ───────────────────────────────────────────
+
+describe("the manifest's categories and exclude in the JSON", () => {
+  const MANIFEST_TOML = `[package]
+address = "github.com/acme/tools"
+version = "1.0.0"
+description = "Useful tools."
+exclude = ["samples/"]
+categories = ["legal", "customer-support", "legal"]
+`;
+
+  beforeEach(() => {
+    mockedExistsSync.mockReturnValue(true);
+    mockedReadFileSync.mockReturnValue(MANIFEST_TOML);
+  });
+
+  it("list and validate answer them as the manifest writes them", async () => {
+    await agentPackageList({});
+    const listed = capturedResult!.manifest as Record<string, unknown>;
+    await agentPackageValidate({});
+    const validated = capturedResult!.manifest as Record<string, unknown>;
+
+    expect(listed.categories).toEqual(["legal", "customer-support", "legal"]);
+    expect(listed.exclude).toEqual(["samples/"]);
+    expect(validated).toEqual(listed);
+  });
+
+  it("list leaves them out when the manifest declares neither", async () => {
+    mockedReadFileSync.mockReturnValue(MINIMAL_TOML);
+    await agentPackageList({});
+    const manifest = capturedResult!.manifest as Record<string, unknown>;
+
+    expect(manifest).not.toHaveProperty("categories");
+    expect(manifest).not.toHaveProperty("exclude");
+  });
+
+  it("validate refuses a category that breaks the slug pattern", async () => {
+    mockedReadFileSync.mockReturnValue(MANIFEST_TOML.replace('"customer-support"', '"Legal"'));
+
+    await expect(agentPackageValidate({})).rejects.toThrow("agentError called");
+
+    expect(capturedError!.problem.code).toBe("method.package_invalid");
+    expect(capturedError!.problem.params).toEqual({ reason: "manifest_invalid" });
+    expect(capturedError!.problem.message).toContain('"Legal"');
+  });
+});

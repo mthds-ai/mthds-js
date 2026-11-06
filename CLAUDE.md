@@ -61,9 +61,10 @@ src/
 │   └── sender.ts / sender-main.ts  # The sender process posting to PostHog
 ├── method-tree/                    # The method tree: lister, .gitignore matching, tree paths, case folding, digest, references, file entries — see docs/method-tree.md
 ├── package/
-│   ├── manifest/
+│   ├── manifest/                   # The two readers of METHODS.toml — see docs/manifest.md
+│   │   ├── schema.ts / parser.ts   # The flat ParsedManifest and its strict reader and writer
 │   │   ├── types.ts                # Manifest types
-│   │   └── validate.ts             # METHODS.toml validation
+│   │   └── validate.ts             # METHODS.toml validation, for the installer's resolvers
 │   └── exceptions.ts               # Package error types
 └── installer/                      # JS-only: method installation
     ├── resolver/                   # GitHub/local method resolution

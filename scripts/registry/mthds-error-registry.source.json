@@ -1,7 +1,7 @@
 {
   "source": "mthds/docs/spec/openapi/mthds-error-registry.json",
-  "ref": "v8.0.1",
-  "mthds_commit": "fdfedc5356ea88a9647a262711dd477c4b1c7a71",
-  "version": "8.0.1",
-  "sha256": "d1db2596cd5711ed9c0b28231d4371b2d2fd5fdc49783c590a1b735cd5a0886a"
+  "ref": "v8.1.0",
+  "mthds_commit": "7ec648d7bd6e25c0facdedbe810c5a17cf88b873",
+  "version": "8.1.0",
+  "sha256": "4460097c17fe174f6ad7306bc65d063bca2ca6e514f1fdcd754db0664befccb2"
 }

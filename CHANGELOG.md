@@ -1,5 +1,20 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- **`categories` in a manifest**: `[package] categories`, the key the standard adds in `8.1.0`, is accepted wherever a `METHODS.toml` is read, so a package declaring it validates, installs and publishes, where `mthds package validate` and `mthds-agent package validate` refused it as an unknown key. Each entry must be a lowercase slug matching `^[a-z0-9]+(-[a-z0-9]+)*$`, and a manifest holding one that does not is refused, while a repeated entry, a value the CLI does not know and an empty array are accepted and carried as written. `mthds package list` and `mthds package validate` show the categories, and `mthds-agent package list` and `package validate` answer them in the manifest's JSON.
+
+### Changed
+
+- **Standard version `8.1.0` and the core error registry `8.1.0` (Breaking)**: `MTHDS_STANDARD_VERSION` moves to `8.1.0`, so `mthds package init` writes `mthds_version = ">=8.1.0"` and a manifest capped below it, such as an exact `8.0.1`, `<=8.0.1`, `~8.0.0` or `>=8.0.0, <8.1.0`, is no longer satisfied and the installer skips its method, while `>=8.0.0`, `^8.0.0` and `8.*` still are. The package vendors the registry the standard publishes with its `v8.1.0` release, and `MTHDS_ERROR_REGISTRY_VERSION` and `MTHDS_ERROR_REGISTRY_TARGET_VERSION` are `8.1.0`: no code, wording, domain, retry verdict, step kind or parameter changes, and the protocol stays at `2.0.1`.
+
+### Fixed
+
+- **`exclude` in `mthds-agent package` answers**: `mthds-agent package list` and `package validate` now answer `[package] exclude` in the manifest's JSON, which they left out.
+- **The README's sample manifest**: its `name` is now `your_method`, since the `your-method` it showed is not a valid method name.
+
 ## [v0.35.0] - 2026-11-06
 
 ### Security

@@ -1,5 +1,11 @@
 # Changelog
 
+## [Unreleased]
+
+### Changed
+
+- **Standard version `9.0.0` and the core error registry `9.0.0` (Breaking)**: the package follows the standard's `v9.0.0` release, which carries `v8.2.0` with it: `MTHDS_STANDARD_VERSION` moves to `9.0.0`, so `mthds package init` writes `mthds_version = ">=9.0.0"`, the standard's own complete manifest example now validates, and a manifest capped below `9.0.0`, such as `^8.0.0`, `8.*`, `~8.2.0`, an exact `8.2.0` or `>=8.0.0, <9.0.0`, is no longer satisfied and the installer skips its method. In the native set pinned at `9.0.0`, `native.Text`, `native.Html` and `native.JSON` may carry a stored value at `url` with its `size`, `mime_type` and `preview` in place of the inline `text`, `inner_html` or `json_obj`; the package models none of them, and the inline placeholder an inputs template writes stays compliant. The package vendors the registry the standard publishes with its `v9.0.0` release, and `MTHDS_ERROR_REGISTRY_VERSION` and `MTHDS_ERROR_REGISTRY_TARGET_VERSION` are `9.0.0`: no code, title, domain, retry verdict, step kind or parameter changes, and the protocol stays at `2.0.1`.
+
 ## [v0.36.0] - 2026-11-06
 
 ### Added

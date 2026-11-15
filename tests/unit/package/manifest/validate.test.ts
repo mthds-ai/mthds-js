@@ -97,27 +97,39 @@ pipes = ["extract_clause", "analyze_nda"]
     expect(contracts.pipes).toEqual(["extract_clause", "analyze_nda"]);
   });
 
-  it("accepts complete example from spec", () => {
+  // The complete example of the standard's manifest format, as `v9.0.0` publishes it
+  // (mthds/docs/spec/manifest-format.md, "Complete Manifest Example"), copied verbatim:
+  // its `mthds_version` floor is the standard's own version, so it passes only once
+  // MTHDS_STANDARD_VERSION has followed the cut.
+  it("accepts the standard's complete manifest example", () => {
     const raw = `
 [package]
-name          = "legal_tools"
+name          = "nda_analyzer"
 address       = "github.com/acme/legal-tools"
-version       = "0.3.0"
-description   = "Legal document analysis methods."
 display_name  = "Legal Tools"
-authors       = ["ACME <legal@acme.com>"]
+version       = "0.3.0"
+description   = "Legal document analysis and contract review methods."
+authors       = ["ACME Legal Tech <legal@acme.com>"]
 license       = "MIT"
-mthds_version = ">=1.0.0"
+mthds_version = ">=9.0.0"
+main_pipe     = "analyze_nda"
+exclude       = ["drafts/"]
+categories    = ["legal", "compliance"]
 
 [exports.legal]
 pipes = ["classify_document"]
 
 [exports.legal.contracts]
-pipes = ["extract_clause", "analyze_nda"]
+pipes = ["extract_clause", "analyze_nda", "compare_contracts"]
+
+[exports.scoring]
+pipes = ["compute_weighted_score"]
 `;
     const r = validateManifest(raw);
-    expect(r.valid).toBe(true);
     expect(r.errors).toEqual([]);
+    expect(r.valid).toBe(true);
+    expect(r.manifest!.package.mthds_version).toBe(">=9.0.0");
+    expect(r.manifest!.package.categories).toEqual(["legal", "compliance"]);
   });
 
   it("accepts valid name", () => {

@@ -173,6 +173,25 @@ const ENVELOPE_RETENTION: EnvelopeCase[] = [
     expected: false,
   },
   {
+    topic:
+      "a list of JSON does not, though its element is an object: a shaper reads a bare object literally",
+    field: {
+      name: "payloads_in",
+      kind: "list",
+      concept_ref: "native.JSON",
+      required: true,
+      presence: "plain",
+      gating: false,
+      item: {
+        kind: "object",
+        concept_ref: "native.JSON",
+        required: true,
+        fields: [{ name: "json_obj", kind: "unknown", required: true }],
+      },
+    },
+    expected: false,
+  },
+  {
     topic: "a list over an authored concept does not: it names no native to be unbuildable as",
     field: {
       name: "gadgets_in",

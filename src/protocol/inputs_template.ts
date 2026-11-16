@@ -88,10 +88,12 @@ const TIME_CONTENT_KEY = "time";
 
 const NATIVE_PREFIX = "native.";
 
-// The natives an input shaper cannot build top-down: their compact form keeps the whole
-// `{concept, content}` envelope, because a bare value at one of these positions is not re-shapable.
-// The vocabulary is the standard's closed native set (`docs/spec/native-concepts.md`), which is why
-// a projection may consult it: it reads an identity the descriptor states, never sniffs a shape.
+// The open natives whose compact form keeps the whole `{concept, content}` envelope: a bare value at
+// one of these positions either has no reading every runtime shares or, for `Anything`, would
+// misstate what the slot takes — its bare placeholder `{}` reads as "send an object", while the
+// envelope names the concept that says any value goes. The vocabulary is the standard's closed
+// native set (`docs/spec/native-concepts.md`), which is why a projection may consult it: it reads an
+// identity the descriptor states, never sniffs a shape.
 //
 // Membership is what decides a native whose descriptor kind cannot say it — the `unknown` natives.
 // An `object` native keeps its envelope through the kind arm of `keepsEnvelope` whether it is listed
@@ -105,11 +107,17 @@ const OUT_OF_MATRIX_NATIVES = new Set([
   "Composite",
   "Dynamic",
   "Html",
-  "JSON",
   "Page",
   "SearchResult",
   "TextAndImages",
 ]);
+
+// `native.JSON`'s compact form is the JSON object itself: the descriptor states the content form, an
+// object holding one `json_obj`, and the compact projection unwraps it, since a shaper reads a bare
+// object at a `JSON` position literally. Its explicit form keeps the `{json_obj}` content like any
+// other object native's.
+const NATIVE_JSON = "JSON";
+const JSON_CONTENT_KEY = "json_obj";
 
 // `native.Number`'s content is a number union, placeholdered as `1` rather than as the `0` / `0.0` a
 // plain `type = "number"` structure field takes. The descriptor states `kind = "number"` for both,
@@ -288,10 +296,14 @@ export function nativeCode(node: InputFormItem): string | null {
  * `concept_ref` names the ELEMENT concept — and the kind test has to be asked of
  * the `item` for the same reason, or `native.Date[]` unwraps to a bare array of
  * the very objects a single `native.Date` keeps its envelope to avoid.
+ *
+ * `native.JSON` is the one object native that never earns it: a shaper reads a
+ * bare object at a `JSON` position literally, so its compact form is the object
+ * its `json_obj` holds (see {@link compactValue}).
  */
 export function keepsEnvelope(node: InputFormItem): boolean {
   const code = nativeCode(node);
-  if (code === null) return false;
+  if (code === null || code === NATIVE_JSON) return false;
   if (OUT_OF_MATRIX_NATIVES.has(code)) return true;
   switch (node.kind) {
     case "object":
@@ -447,11 +459,26 @@ function slotContent(node: InputFormItem, name: string): TemplateValue {
   }
 }
 
-/** One slot's (or one slot element's) compact value: a scalar unwraps, everything else keeps its mapping. */
+/**
+ * One slot's (or one slot element's) compact value: a scalar unwraps, a `JSON`
+ * object unwraps its `json_obj`, and everything else keeps its mapping.
+ */
 function compactValue(node: InputFormItem, name: string): TemplateValue {
   const contentKey = slotContentKey(node);
   if (contentKey !== null) return leafPlaceholder(node, contentKey);
+  if (nativeCode(node) === NATIVE_JSON) return jsonObject(node);
   return projectValue(node, name);
+}
+
+/** The object a `JSON` node carries under `json_obj`, which its compact form is. */
+function jsonObject(node: InputFormItem): TemplateValue {
+  if (node.kind === "object") {
+    const member = node.fields.find((field) => field.name === JSON_CONTENT_KEY);
+    if (member !== undefined) return projectValue(member, JSON_CONTENT_KEY);
+  }
+  throw new InputsTemplateError(
+    `A '${NATIVE_PREFIX}${NATIVE_JSON}' node must be an object carrying a '${JSON_CONTENT_KEY}' field, got a '${node.kind}' node`,
+  );
 }
 
 /**

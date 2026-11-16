@@ -18,12 +18,73 @@ export const PIPE_IO_CONTRACTS_FIXTURE: PipeIOContracts = {
             "HINTED_concept_Essay: description-only concept carrying a concept-level hint",
           properties: {
             text: {
+              anyOf: [
+                {
+                  type: "string",
+                },
+                {
+                  type: "null",
+                },
+              ],
+              default: null,
               description: "The text",
               title: "Text",
-              type: "string",
+            },
+            url: {
+              anyOf: [
+                {
+                  type: "string",
+                },
+                {
+                  type: "null",
+                },
+              ],
+              default: null,
+              description:
+                "The URL of the stored text: a storage URI, an HTTP(S) URL, or a base64 data URL",
+              title: "Url",
+            },
+            size: {
+              anyOf: [
+                {
+                  type: "integer",
+                },
+                {
+                  type: "null",
+                },
+              ],
+              default: null,
+              description: "The length of the stored text, in bytes as stored",
+              title: "Size",
+            },
+            mime_type: {
+              anyOf: [
+                {
+                  type: "string",
+                },
+                {
+                  type: "null",
+                },
+              ],
+              default: null,
+              description: "The MIME type of the stored text: text/plain or text/markdown",
+              title: "Mime Type",
+            },
+            preview: {
+              anyOf: [
+                {
+                  type: "string",
+                },
+                {
+                  type: "null",
+                },
+              ],
+              default: null,
+              description:
+                "The first few hundred characters of the stored text, always its true start",
+              title: "Preview",
             },
           },
-          required: ["text"],
           title: "input_semantics_hinted.Essay",
           type: "object",
         },
@@ -38,12 +99,73 @@ export const PIPE_IO_CONTRACTS_FIXTURE: PipeIOContracts = {
             "HINTED_concept_Essay: description-only concept carrying a concept-level hint",
           properties: {
             text: {
+              anyOf: [
+                {
+                  type: "string",
+                },
+                {
+                  type: "null",
+                },
+              ],
+              default: null,
               description: "The text",
               title: "Text",
-              type: "string",
+            },
+            url: {
+              anyOf: [
+                {
+                  type: "string",
+                },
+                {
+                  type: "null",
+                },
+              ],
+              default: null,
+              description:
+                "The URL of the stored text: a storage URI, an HTTP(S) URL, or a base64 data URL",
+              title: "Url",
+            },
+            size: {
+              anyOf: [
+                {
+                  type: "integer",
+                },
+                {
+                  type: "null",
+                },
+              ],
+              default: null,
+              description: "The length of the stored text, in bytes as stored",
+              title: "Size",
+            },
+            mime_type: {
+              anyOf: [
+                {
+                  type: "string",
+                },
+                {
+                  type: "null",
+                },
+              ],
+              default: null,
+              description: "The MIME type of the stored text: text/plain or text/markdown",
+              title: "Mime Type",
+            },
+            preview: {
+              anyOf: [
+                {
+                  type: "string",
+                },
+                {
+                  type: "null",
+                },
+              ],
+              default: null,
+              description:
+                "The first few hundred characters of the stored text, always its true start",
+              title: "Preview",
             },
           },
-          required: ["text"],
           title: "input_semantics_hinted.Essay",
           type: "object",
         },
@@ -131,12 +253,73 @@ export const PIPE_IO_CONTRACTS_FIXTURE: PipeIOContracts = {
             description: "HINTED_concept_Badge: base of a hinted refinement chain",
             properties: {
               text: {
+                anyOf: [
+                  {
+                    type: "string",
+                  },
+                  {
+                    type: "null",
+                  },
+                ],
+                default: null,
                 description: "The text",
                 title: "Text",
-                type: "string",
+              },
+              url: {
+                anyOf: [
+                  {
+                    type: "string",
+                  },
+                  {
+                    type: "null",
+                  },
+                ],
+                default: null,
+                description:
+                  "The URL of the stored text: a storage URI, an HTTP(S) URL, or a base64 data URL",
+                title: "Url",
+              },
+              size: {
+                anyOf: [
+                  {
+                    type: "integer",
+                  },
+                  {
+                    type: "null",
+                  },
+                ],
+                default: null,
+                description: "The length of the stored text, in bytes as stored",
+                title: "Size",
+              },
+              mime_type: {
+                anyOf: [
+                  {
+                    type: "string",
+                  },
+                  {
+                    type: "null",
+                  },
+                ],
+                default: null,
+                description: "The MIME type of the stored text: text/plain or text/markdown",
+                title: "Mime Type",
+              },
+              preview: {
+                anyOf: [
+                  {
+                    type: "string",
+                  },
+                  {
+                    type: "null",
+                  },
+                ],
+                default: null,
+                description:
+                  "The first few hundred characters of the stored text, always its true start",
+                title: "Preview",
               },
             },
-            required: ["text"],
             title: "input_semantics_hinted.Badge",
             type: "object",
           },
@@ -152,12 +335,73 @@ export const PIPE_IO_CONTRACTS_FIXTURE: PipeIOContracts = {
         description: "A text",
         properties: {
           text: {
+            anyOf: [
+              {
+                type: "string",
+              },
+              {
+                type: "null",
+              },
+            ],
+            default: null,
             description: "The text",
             title: "Text",
-            type: "string",
+          },
+          url: {
+            anyOf: [
+              {
+                type: "string",
+              },
+              {
+                type: "null",
+              },
+            ],
+            default: null,
+            description:
+              "The URL of the stored text: a storage URI, an HTTP(S) URL, or a base64 data URL",
+            title: "Url",
+          },
+          size: {
+            anyOf: [
+              {
+                type: "integer",
+              },
+              {
+                type: "null",
+              },
+            ],
+            default: null,
+            description: "The length of the stored text, in bytes as stored",
+            title: "Size",
+          },
+          mime_type: {
+            anyOf: [
+              {
+                type: "string",
+              },
+              {
+                type: "null",
+              },
+            ],
+            default: null,
+            description: "The MIME type of the stored text: text/plain or text/markdown",
+            title: "Mime Type",
+          },
+          preview: {
+            anyOf: [
+              {
+                type: "string",
+              },
+              {
+                type: "null",
+              },
+            ],
+            default: null,
+            description:
+              "The first few hundred characters of the stored text, always its true start",
+            title: "Preview",
           },
         },
-        required: ["text"],
         title: "native.Text",
         type: "object",
       },
@@ -371,114 +615,58 @@ export const PIPE_IO_CONTRACTS_FIXTURE: PipeIOContracts = {
               title: "Summary",
             },
             motto: {
-              anyOf: [
-                {
-                  type: "string",
-                },
-                {
-                  type: "null",
-                },
-              ],
               default: "PROBE_default_motto",
               description: "PROBE_desc_field_motto: text with default",
               title: "Motto",
+              type: "string",
             },
             count: {
-              anyOf: [
-                {
-                  type: "integer",
-                },
-                {
-                  type: "null",
-                },
-              ],
               default: 42,
               description: "PROBE_desc_field_count: integer with default",
               title: "Count",
+              type: "integer",
             },
             enabled: {
-              anyOf: [
-                {
-                  type: "boolean",
-                },
-                {
-                  type: "null",
-                },
-              ],
               default: true,
               description: "PROBE_desc_field_enabled: boolean with default",
               title: "Enabled",
+              type: "boolean",
             },
             price: {
-              anyOf: [
-                {
-                  type: "number",
-                },
-                {
-                  type: "null",
-                },
-              ],
               default: 9.99,
               description: "PROBE_desc_field_price: number with default",
               title: "Price",
+              type: "number",
             },
             released_on: {
-              anyOf: [
-                {
-                  format: "date",
-                  type: "string",
-                },
-                {
-                  type: "null",
-                },
-              ],
               default: "2026-01-15",
               description: "PROBE_desc_field_released_on: date with default",
+              format: "date",
               title: "Released On",
+              type: "string",
             },
             launched_at: {
-              anyOf: [
-                {
-                  format: "date-time",
-                  type: "string",
-                },
-                {
-                  type: "null",
-                },
-              ],
               default: "2026-01-15T12:30:00",
               description: "PROBE_desc_field_launched_at: datetime with default",
+              format: "date-time",
               title: "Launched At",
+              type: "string",
             },
             daily_at: {
-              anyOf: [
-                {
-                  format: "time",
-                  type: "string",
-                },
-                {
-                  type: "null",
-                },
-              ],
               default: "12:30:00",
               description: "PROBE_desc_field_daily_at: time with default",
+              format: "time",
               title: "Daily At",
+              type: "string",
             },
             tags: {
-              anyOf: [
-                {
-                  items: {
-                    type: "string",
-                  },
-                  type: "array",
-                },
-                {
-                  type: "null",
-                },
-              ],
               default: ["PROBE_tag_a", "PROBE_tag_b"],
               description: "PROBE_desc_field_tags: list of text with default",
+              items: {
+                type: "string",
+              },
               title: "Tags",
+              type: "array",
             },
             ratings: {
               anyOf: [
@@ -546,22 +734,15 @@ export const PIPE_IO_CONTRACTS_FIXTURE: PipeIOContracts = {
               title: "Attributes",
             },
             scores: {
-              anyOf: [
-                {
-                  additionalProperties: {
-                    type: "number",
-                  },
-                  type: "object",
-                },
-                {
-                  type: "null",
-                },
-              ],
+              additionalProperties: {
+                type: "number",
+              },
               default: {
                 speed: 5,
               },
               description: "PROBE_desc_field_scores: dict text to number with default",
               title: "Scores",
+              type: "object",
             },
             milestones: {
               anyOf: [
@@ -597,18 +778,11 @@ export const PIPE_IO_CONTRACTS_FIXTURE: PipeIOContracts = {
               description: "PROBE_desc_field_icon: native concept field",
             },
             tone: {
-              anyOf: [
-                {
-                  enum: ["PROBE_choice_formal", "PROBE_choice_casual", "PROBE_choice_playful"],
-                  type: "string",
-                },
-                {
-                  type: "null",
-                },
-              ],
               default: "PROBE_choice_casual",
               description: "PROBE_desc_field_tone: choices with default",
+              enum: ["PROBE_choice_formal", "PROBE_choice_casual", "PROBE_choice_playful"],
               title: "Tone",
+              type: "string",
             },
             only_choice: {
               anyOf: [
@@ -714,12 +888,73 @@ export const PIPE_IO_CONTRACTS_FIXTURE: PipeIOContracts = {
           description: "PROBE_desc_concept_PlainNote: description-only concept (basic blueprint)",
           properties: {
             text: {
+              anyOf: [
+                {
+                  type: "string",
+                },
+                {
+                  type: "null",
+                },
+              ],
+              default: null,
               description: "The text",
               title: "Text",
-              type: "string",
+            },
+            url: {
+              anyOf: [
+                {
+                  type: "string",
+                },
+                {
+                  type: "null",
+                },
+              ],
+              default: null,
+              description:
+                "The URL of the stored text: a storage URI, an HTTP(S) URL, or a base64 data URL",
+              title: "Url",
+            },
+            size: {
+              anyOf: [
+                {
+                  type: "integer",
+                },
+                {
+                  type: "null",
+                },
+              ],
+              default: null,
+              description: "The length of the stored text, in bytes as stored",
+              title: "Size",
+            },
+            mime_type: {
+              anyOf: [
+                {
+                  type: "string",
+                },
+                {
+                  type: "null",
+                },
+              ],
+              default: null,
+              description: "The MIME type of the stored text: text/plain or text/markdown",
+              title: "Mime Type",
+            },
+            preview: {
+              anyOf: [
+                {
+                  type: "string",
+                },
+                {
+                  type: "null",
+                },
+              ],
+              default: null,
+              description:
+                "The first few hundred characters of the stored text, always its true start",
+              title: "Preview",
             },
           },
-          required: ["text"],
           title: "input_semantics_probe.PlainNote",
           type: "object",
         },
@@ -734,12 +969,73 @@ export const PIPE_IO_CONTRACTS_FIXTURE: PipeIOContracts = {
         description: "A text",
         properties: {
           text: {
+            anyOf: [
+              {
+                type: "string",
+              },
+              {
+                type: "null",
+              },
+            ],
+            default: null,
             description: "The text",
             title: "Text",
-            type: "string",
+          },
+          url: {
+            anyOf: [
+              {
+                type: "string",
+              },
+              {
+                type: "null",
+              },
+            ],
+            default: null,
+            description:
+              "The URL of the stored text: a storage URI, an HTTP(S) URL, or a base64 data URL",
+            title: "Url",
+          },
+          size: {
+            anyOf: [
+              {
+                type: "integer",
+              },
+              {
+                type: "null",
+              },
+            ],
+            default: null,
+            description: "The length of the stored text, in bytes as stored",
+            title: "Size",
+          },
+          mime_type: {
+            anyOf: [
+              {
+                type: "string",
+              },
+              {
+                type: "null",
+              },
+            ],
+            default: null,
+            description: "The MIME type of the stored text: text/plain or text/markdown",
+            title: "Mime Type",
+          },
+          preview: {
+            anyOf: [
+              {
+                type: "string",
+              },
+              {
+                type: "null",
+              },
+            ],
+            default: null,
+            description:
+              "The first few hundred characters of the stored text, always its true start",
+            title: "Preview",
           },
         },
-        required: ["text"],
         title: "native.Text",
         type: "object",
       },
@@ -756,12 +1052,73 @@ export const PIPE_IO_CONTRACTS_FIXTURE: PipeIOContracts = {
           description: "A text",
           properties: {
             text: {
+              anyOf: [
+                {
+                  type: "string",
+                },
+                {
+                  type: "null",
+                },
+              ],
+              default: null,
               description: "The text",
               title: "Text",
-              type: "string",
+            },
+            url: {
+              anyOf: [
+                {
+                  type: "string",
+                },
+                {
+                  type: "null",
+                },
+              ],
+              default: null,
+              description:
+                "The URL of the stored text: a storage URI, an HTTP(S) URL, or a base64 data URL",
+              title: "Url",
+            },
+            size: {
+              anyOf: [
+                {
+                  type: "integer",
+                },
+                {
+                  type: "null",
+                },
+              ],
+              default: null,
+              description: "The length of the stored text, in bytes as stored",
+              title: "Size",
+            },
+            mime_type: {
+              anyOf: [
+                {
+                  type: "string",
+                },
+                {
+                  type: "null",
+                },
+              ],
+              default: null,
+              description: "The MIME type of the stored text: text/plain or text/markdown",
+              title: "Mime Type",
+            },
+            preview: {
+              anyOf: [
+                {
+                  type: "string",
+                },
+                {
+                  type: "null",
+                },
+              ],
+              default: null,
+              description:
+                "The first few hundred characters of the stored text, always its true start",
+              title: "Preview",
             },
           },
-          required: ["text"],
           title: "native.Text",
           type: "object",
         },
@@ -1152,12 +1509,73 @@ export const PIPE_IO_CONTRACTS_FIXTURE: PipeIOContracts = {
               description: "A text",
               properties: {
                 text: {
+                  anyOf: [
+                    {
+                      type: "string",
+                    },
+                    {
+                      type: "null",
+                    },
+                  ],
+                  default: null,
                   description: "The text",
                   title: "Text",
-                  type: "string",
+                },
+                url: {
+                  anyOf: [
+                    {
+                      type: "string",
+                    },
+                    {
+                      type: "null",
+                    },
+                  ],
+                  default: null,
+                  description:
+                    "The URL of the stored text: a storage URI, an HTTP(S) URL, or a base64 data URL",
+                  title: "Url",
+                },
+                size: {
+                  anyOf: [
+                    {
+                      type: "integer",
+                    },
+                    {
+                      type: "null",
+                    },
+                  ],
+                  default: null,
+                  description: "The length of the stored text, in bytes as stored",
+                  title: "Size",
+                },
+                mime_type: {
+                  anyOf: [
+                    {
+                      type: "string",
+                    },
+                    {
+                      type: "null",
+                    },
+                  ],
+                  default: null,
+                  description: "The MIME type of the stored text: text/plain or text/markdown",
+                  title: "Mime Type",
+                },
+                preview: {
+                  anyOf: [
+                    {
+                      type: "string",
+                    },
+                    {
+                      type: "null",
+                    },
+                  ],
+                  default: null,
+                  description:
+                    "The first few hundred characters of the stored text, always its true start",
+                  title: "Preview",
                 },
               },
-              required: ["text"],
               title: "TextContent",
               type: "object",
             },
@@ -1280,9 +1698,17 @@ export const PIPE_IO_CONTRACTS_FIXTURE: PipeIOContracts = {
           description: "HTML content",
           properties: {
             inner_html: {
+              anyOf: [
+                {
+                  type: "string",
+                },
+                {
+                  type: "null",
+                },
+              ],
+              default: null,
               description: "The inner HTML of the content",
               title: "Inner Html",
-              type: "string",
             },
             css_class: {
               anyOf: [
@@ -1297,8 +1723,61 @@ export const PIPE_IO_CONTRACTS_FIXTURE: PipeIOContracts = {
               description: "The CSS class of the content",
               title: "Css Class",
             },
+            url: {
+              anyOf: [
+                {
+                  type: "string",
+                },
+                {
+                  type: "null",
+                },
+              ],
+              default: null,
+              description:
+                "The URL of the stored inner HTML: a storage URI, an HTTP(S) URL, or a base64 data URL",
+              title: "Url",
+            },
+            size: {
+              anyOf: [
+                {
+                  type: "integer",
+                },
+                {
+                  type: "null",
+                },
+              ],
+              default: null,
+              description: "The length of the stored inner HTML, in bytes as stored",
+              title: "Size",
+            },
+            mime_type: {
+              anyOf: [
+                {
+                  type: "string",
+                },
+                {
+                  type: "null",
+                },
+              ],
+              default: null,
+              description: "The MIME type of the stored inner HTML: text/html",
+              title: "Mime Type",
+            },
+            preview: {
+              anyOf: [
+                {
+                  type: "string",
+                },
+                {
+                  type: "null",
+                },
+              ],
+              default: null,
+              description:
+                "The first few hundred characters of the stored inner HTML, always its true start",
+              title: "Preview",
+            },
           },
-          required: ["inner_html"],
           title: "native.Html",
           type: "object",
         },
@@ -1316,6 +1795,22 @@ export const PIPE_IO_CONTRACTS_FIXTURE: PipeIOContracts = {
               title: "Yes No",
               type: "boolean",
             },
+            probability: {
+              anyOf: [
+                {
+                  maximum: 1,
+                  minimum: 0,
+                  type: "number",
+                },
+                {
+                  type: "null",
+                },
+              ],
+              default: null,
+              description:
+                "The probability that the answer is yes, from 0 to 1, when the producer reports one.",
+              title: "Probability",
+            },
           },
           required: ["yes_no"],
           title: "native.YesNo",
@@ -1332,12 +1827,73 @@ export const PIPE_IO_CONTRACTS_FIXTURE: PipeIOContracts = {
         description: "A text",
         properties: {
           text: {
+            anyOf: [
+              {
+                type: "string",
+              },
+              {
+                type: "null",
+              },
+            ],
+            default: null,
             description: "The text",
             title: "Text",
-            type: "string",
+          },
+          url: {
+            anyOf: [
+              {
+                type: "string",
+              },
+              {
+                type: "null",
+              },
+            ],
+            default: null,
+            description:
+              "The URL of the stored text: a storage URI, an HTTP(S) URL, or a base64 data URL",
+            title: "Url",
+          },
+          size: {
+            anyOf: [
+              {
+                type: "integer",
+              },
+              {
+                type: "null",
+              },
+            ],
+            default: null,
+            description: "The length of the stored text, in bytes as stored",
+            title: "Size",
+          },
+          mime_type: {
+            anyOf: [
+              {
+                type: "string",
+              },
+              {
+                type: "null",
+              },
+            ],
+            default: null,
+            description: "The MIME type of the stored text: text/plain or text/markdown",
+            title: "Mime Type",
+          },
+          preview: {
+            anyOf: [
+              {
+                type: "string",
+              },
+              {
+                type: "null",
+              },
+            ],
+            default: null,
+            description:
+              "The first few hundred characters of the stored text, always its true start",
+            title: "Preview",
           },
         },
-        required: ["text"],
         title: "native.Text",
         type: "object",
       },
@@ -1551,114 +2107,58 @@ export const PIPE_IO_CONTRACTS_FIXTURE: PipeIOContracts = {
               title: "Summary",
             },
             motto: {
-              anyOf: [
-                {
-                  type: "string",
-                },
-                {
-                  type: "null",
-                },
-              ],
               default: "PROBE_default_motto",
               description: "PROBE_desc_field_motto: text with default",
               title: "Motto",
+              type: "string",
             },
             count: {
-              anyOf: [
-                {
-                  type: "integer",
-                },
-                {
-                  type: "null",
-                },
-              ],
               default: 42,
               description: "PROBE_desc_field_count: integer with default",
               title: "Count",
+              type: "integer",
             },
             enabled: {
-              anyOf: [
-                {
-                  type: "boolean",
-                },
-                {
-                  type: "null",
-                },
-              ],
               default: true,
               description: "PROBE_desc_field_enabled: boolean with default",
               title: "Enabled",
+              type: "boolean",
             },
             price: {
-              anyOf: [
-                {
-                  type: "number",
-                },
-                {
-                  type: "null",
-                },
-              ],
               default: 9.99,
               description: "PROBE_desc_field_price: number with default",
               title: "Price",
+              type: "number",
             },
             released_on: {
-              anyOf: [
-                {
-                  format: "date",
-                  type: "string",
-                },
-                {
-                  type: "null",
-                },
-              ],
               default: "2026-01-15",
               description: "PROBE_desc_field_released_on: date with default",
+              format: "date",
               title: "Released On",
+              type: "string",
             },
             launched_at: {
-              anyOf: [
-                {
-                  format: "date-time",
-                  type: "string",
-                },
-                {
-                  type: "null",
-                },
-              ],
               default: "2026-01-15T12:30:00",
               description: "PROBE_desc_field_launched_at: datetime with default",
+              format: "date-time",
               title: "Launched At",
+              type: "string",
             },
             daily_at: {
-              anyOf: [
-                {
-                  format: "time",
-                  type: "string",
-                },
-                {
-                  type: "null",
-                },
-              ],
               default: "12:30:00",
               description: "PROBE_desc_field_daily_at: time with default",
+              format: "time",
               title: "Daily At",
+              type: "string",
             },
             tags: {
-              anyOf: [
-                {
-                  items: {
-                    type: "string",
-                  },
-                  type: "array",
-                },
-                {
-                  type: "null",
-                },
-              ],
               default: ["PROBE_tag_a", "PROBE_tag_b"],
               description: "PROBE_desc_field_tags: list of text with default",
+              items: {
+                type: "string",
+              },
               title: "Tags",
+              type: "array",
             },
             ratings: {
               anyOf: [
@@ -1726,22 +2226,15 @@ export const PIPE_IO_CONTRACTS_FIXTURE: PipeIOContracts = {
               title: "Attributes",
             },
             scores: {
-              anyOf: [
-                {
-                  additionalProperties: {
-                    type: "number",
-                  },
-                  type: "object",
-                },
-                {
-                  type: "null",
-                },
-              ],
+              additionalProperties: {
+                type: "number",
+              },
               default: {
                 speed: 5,
               },
               description: "PROBE_desc_field_scores: dict text to number with default",
               title: "Scores",
+              type: "object",
             },
             milestones: {
               anyOf: [
@@ -1777,18 +2270,11 @@ export const PIPE_IO_CONTRACTS_FIXTURE: PipeIOContracts = {
               description: "PROBE_desc_field_icon: native concept field",
             },
             tone: {
-              anyOf: [
-                {
-                  enum: ["PROBE_choice_formal", "PROBE_choice_casual", "PROBE_choice_playful"],
-                  type: "string",
-                },
-                {
-                  type: "null",
-                },
-              ],
               default: "PROBE_choice_casual",
               description: "PROBE_desc_field_tone: choices with default",
+              enum: ["PROBE_choice_formal", "PROBE_choice_casual", "PROBE_choice_playful"],
               title: "Tone",
+              type: "string",
             },
             only_choice: {
               anyOf: [
@@ -2047,114 +2533,58 @@ export const PIPE_IO_CONTRACTS_FIXTURE: PipeIOContracts = {
                 title: "Summary",
               },
               motto: {
-                anyOf: [
-                  {
-                    type: "string",
-                  },
-                  {
-                    type: "null",
-                  },
-                ],
                 default: "PROBE_default_motto",
                 description: "PROBE_desc_field_motto: text with default",
                 title: "Motto",
+                type: "string",
               },
               count: {
-                anyOf: [
-                  {
-                    type: "integer",
-                  },
-                  {
-                    type: "null",
-                  },
-                ],
                 default: 42,
                 description: "PROBE_desc_field_count: integer with default",
                 title: "Count",
+                type: "integer",
               },
               enabled: {
-                anyOf: [
-                  {
-                    type: "boolean",
-                  },
-                  {
-                    type: "null",
-                  },
-                ],
                 default: true,
                 description: "PROBE_desc_field_enabled: boolean with default",
                 title: "Enabled",
+                type: "boolean",
               },
               price: {
-                anyOf: [
-                  {
-                    type: "number",
-                  },
-                  {
-                    type: "null",
-                  },
-                ],
                 default: 9.99,
                 description: "PROBE_desc_field_price: number with default",
                 title: "Price",
+                type: "number",
               },
               released_on: {
-                anyOf: [
-                  {
-                    format: "date",
-                    type: "string",
-                  },
-                  {
-                    type: "null",
-                  },
-                ],
                 default: "2026-01-15",
                 description: "PROBE_desc_field_released_on: date with default",
+                format: "date",
                 title: "Released On",
+                type: "string",
               },
               launched_at: {
-                anyOf: [
-                  {
-                    format: "date-time",
-                    type: "string",
-                  },
-                  {
-                    type: "null",
-                  },
-                ],
                 default: "2026-01-15T12:30:00",
                 description: "PROBE_desc_field_launched_at: datetime with default",
+                format: "date-time",
                 title: "Launched At",
+                type: "string",
               },
               daily_at: {
-                anyOf: [
-                  {
-                    format: "time",
-                    type: "string",
-                  },
-                  {
-                    type: "null",
-                  },
-                ],
                 default: "12:30:00",
                 description: "PROBE_desc_field_daily_at: time with default",
+                format: "time",
                 title: "Daily At",
+                type: "string",
               },
               tags: {
-                anyOf: [
-                  {
-                    items: {
-                      type: "string",
-                    },
-                    type: "array",
-                  },
-                  {
-                    type: "null",
-                  },
-                ],
                 default: ["PROBE_tag_a", "PROBE_tag_b"],
                 description: "PROBE_desc_field_tags: list of text with default",
+                items: {
+                  type: "string",
+                },
                 title: "Tags",
+                type: "array",
               },
               ratings: {
                 anyOf: [
@@ -2222,22 +2652,15 @@ export const PIPE_IO_CONTRACTS_FIXTURE: PipeIOContracts = {
                 title: "Attributes",
               },
               scores: {
-                anyOf: [
-                  {
-                    additionalProperties: {
-                      type: "number",
-                    },
-                    type: "object",
-                  },
-                  {
-                    type: "null",
-                  },
-                ],
+                additionalProperties: {
+                  type: "number",
+                },
                 default: {
                   speed: 5,
                 },
                 description: "PROBE_desc_field_scores: dict text to number with default",
                 title: "Scores",
+                type: "object",
               },
               milestones: {
                 anyOf: [
@@ -2273,18 +2696,11 @@ export const PIPE_IO_CONTRACTS_FIXTURE: PipeIOContracts = {
                 description: "PROBE_desc_field_icon: native concept field",
               },
               tone: {
-                anyOf: [
-                  {
-                    enum: ["PROBE_choice_formal", "PROBE_choice_casual", "PROBE_choice_playful"],
-                    type: "string",
-                  },
-                  {
-                    type: "null",
-                  },
-                ],
                 default: "PROBE_choice_casual",
                 description: "PROBE_desc_field_tone: choices with default",
+                enum: ["PROBE_choice_formal", "PROBE_choice_casual", "PROBE_choice_playful"],
                 title: "Tone",
+                type: "string",
               },
               only_choice: {
                 anyOf: [
@@ -2396,12 +2812,73 @@ export const PIPE_IO_CONTRACTS_FIXTURE: PipeIOContracts = {
           description: "A text",
           properties: {
             text: {
+              anyOf: [
+                {
+                  type: "string",
+                },
+                {
+                  type: "null",
+                },
+              ],
+              default: null,
               description: "The text",
               title: "Text",
-              type: "string",
+            },
+            url: {
+              anyOf: [
+                {
+                  type: "string",
+                },
+                {
+                  type: "null",
+                },
+              ],
+              default: null,
+              description:
+                "The URL of the stored text: a storage URI, an HTTP(S) URL, or a base64 data URL",
+              title: "Url",
+            },
+            size: {
+              anyOf: [
+                {
+                  type: "integer",
+                },
+                {
+                  type: "null",
+                },
+              ],
+              default: null,
+              description: "The length of the stored text, in bytes as stored",
+              title: "Size",
+            },
+            mime_type: {
+              anyOf: [
+                {
+                  type: "string",
+                },
+                {
+                  type: "null",
+                },
+              ],
+              default: null,
+              description: "The MIME type of the stored text: text/plain or text/markdown",
+              title: "Mime Type",
+            },
+            preview: {
+              anyOf: [
+                {
+                  type: "string",
+                },
+                {
+                  type: "null",
+                },
+              ],
+              default: null,
+              description:
+                "The first few hundred characters of the stored text, always its true start",
+              title: "Preview",
             },
           },
-          required: ["text"],
           title: "native.Text",
           type: "object",
         },
@@ -2416,12 +2893,73 @@ export const PIPE_IO_CONTRACTS_FIXTURE: PipeIOContracts = {
         description: "A text",
         properties: {
           text: {
+            anyOf: [
+              {
+                type: "string",
+              },
+              {
+                type: "null",
+              },
+            ],
+            default: null,
             description: "The text",
             title: "Text",
-            type: "string",
+          },
+          url: {
+            anyOf: [
+              {
+                type: "string",
+              },
+              {
+                type: "null",
+              },
+            ],
+            default: null,
+            description:
+              "The URL of the stored text: a storage URI, an HTTP(S) URL, or a base64 data URL",
+            title: "Url",
+          },
+          size: {
+            anyOf: [
+              {
+                type: "integer",
+              },
+              {
+                type: "null",
+              },
+            ],
+            default: null,
+            description: "The length of the stored text, in bytes as stored",
+            title: "Size",
+          },
+          mime_type: {
+            anyOf: [
+              {
+                type: "string",
+              },
+              {
+                type: "null",
+              },
+            ],
+            default: null,
+            description: "The MIME type of the stored text: text/plain or text/markdown",
+            title: "Mime Type",
+          },
+          preview: {
+            anyOf: [
+              {
+                type: "string",
+              },
+              {
+                type: "null",
+              },
+            ],
+            default: null,
+            description:
+              "The first few hundred characters of the stored text, always its true start",
+            title: "Preview",
           },
         },
-        required: ["text"],
         title: "native.Text",
         type: "object",
       },
@@ -2561,12 +3099,73 @@ export const PIPE_IO_CONTRACTS_FIXTURE: PipeIOContracts = {
             "PROBE_desc_concept_ClassBacked: structure declared as an existing class name",
           properties: {
             text: {
+              anyOf: [
+                {
+                  type: "string",
+                },
+                {
+                  type: "null",
+                },
+              ],
+              default: null,
               description: "The text",
               title: "Text",
-              type: "string",
+            },
+            url: {
+              anyOf: [
+                {
+                  type: "string",
+                },
+                {
+                  type: "null",
+                },
+              ],
+              default: null,
+              description:
+                "The URL of the stored text: a storage URI, an HTTP(S) URL, or a base64 data URL",
+              title: "Url",
+            },
+            size: {
+              anyOf: [
+                {
+                  type: "integer",
+                },
+                {
+                  type: "null",
+                },
+              ],
+              default: null,
+              description: "The length of the stored text, in bytes as stored",
+              title: "Size",
+            },
+            mime_type: {
+              anyOf: [
+                {
+                  type: "string",
+                },
+                {
+                  type: "null",
+                },
+              ],
+              default: null,
+              description: "The MIME type of the stored text: text/plain or text/markdown",
+              title: "Mime Type",
+            },
+            preview: {
+              anyOf: [
+                {
+                  type: "string",
+                },
+                {
+                  type: "null",
+                },
+              ],
+              default: null,
+              description:
+                "The first few hundred characters of the stored text, always its true start",
+              title: "Preview",
             },
           },
-          required: ["text"],
           title: "input_semantics_probe.ClassBacked",
           type: "object",
         },
@@ -2580,12 +3179,73 @@ export const PIPE_IO_CONTRACTS_FIXTURE: PipeIOContracts = {
           description: "PROBE_desc_concept_StringNote: a concept declared as a bare string",
           properties: {
             text: {
+              anyOf: [
+                {
+                  type: "string",
+                },
+                {
+                  type: "null",
+                },
+              ],
+              default: null,
               description: "The text",
               title: "Text",
-              type: "string",
+            },
+            url: {
+              anyOf: [
+                {
+                  type: "string",
+                },
+                {
+                  type: "null",
+                },
+              ],
+              default: null,
+              description:
+                "The URL of the stored text: a storage URI, an HTTP(S) URL, or a base64 data URL",
+              title: "Url",
+            },
+            size: {
+              anyOf: [
+                {
+                  type: "integer",
+                },
+                {
+                  type: "null",
+                },
+              ],
+              default: null,
+              description: "The length of the stored text, in bytes as stored",
+              title: "Size",
+            },
+            mime_type: {
+              anyOf: [
+                {
+                  type: "string",
+                },
+                {
+                  type: "null",
+                },
+              ],
+              default: null,
+              description: "The MIME type of the stored text: text/plain or text/markdown",
+              title: "Mime Type",
+            },
+            preview: {
+              anyOf: [
+                {
+                  type: "string",
+                },
+                {
+                  type: "null",
+                },
+              ],
+              default: null,
+              description:
+                "The first few hundred characters of the stored text, always its true start",
+              title: "Preview",
             },
           },
-          required: ["text"],
           title: "input_semantics_probe.StringNote",
           type: "object",
         },
@@ -2600,12 +3260,73 @@ export const PIPE_IO_CONTRACTS_FIXTURE: PipeIOContracts = {
         description: "A text",
         properties: {
           text: {
+            anyOf: [
+              {
+                type: "string",
+              },
+              {
+                type: "null",
+              },
+            ],
+            default: null,
             description: "The text",
             title: "Text",
-            type: "string",
+          },
+          url: {
+            anyOf: [
+              {
+                type: "string",
+              },
+              {
+                type: "null",
+              },
+            ],
+            default: null,
+            description:
+              "The URL of the stored text: a storage URI, an HTTP(S) URL, or a base64 data URL",
+            title: "Url",
+          },
+          size: {
+            anyOf: [
+              {
+                type: "integer",
+              },
+              {
+                type: "null",
+              },
+            ],
+            default: null,
+            description: "The length of the stored text, in bytes as stored",
+            title: "Size",
+          },
+          mime_type: {
+            anyOf: [
+              {
+                type: "string",
+              },
+              {
+                type: "null",
+              },
+            ],
+            default: null,
+            description: "The MIME type of the stored text: text/plain or text/markdown",
+            title: "Mime Type",
+          },
+          preview: {
+            anyOf: [
+              {
+                type: "string",
+              },
+              {
+                type: "null",
+              },
+            ],
+            default: null,
+            description:
+              "The first few hundred characters of the stored text, always its true start",
+            title: "Preview",
           },
         },
-        required: ["text"],
         title: "native.Text",
         type: "object",
       },
@@ -2981,12 +3702,73 @@ export const PIPE_IO_CONTRACTS_FIXTURE: PipeIOContracts = {
         description: "A text",
         properties: {
           text: {
+            anyOf: [
+              {
+                type: "string",
+              },
+              {
+                type: "null",
+              },
+            ],
+            default: null,
             description: "The text",
             title: "Text",
-            type: "string",
+          },
+          url: {
+            anyOf: [
+              {
+                type: "string",
+              },
+              {
+                type: "null",
+              },
+            ],
+            default: null,
+            description:
+              "The URL of the stored text: a storage URI, an HTTP(S) URL, or a base64 data URL",
+            title: "Url",
+          },
+          size: {
+            anyOf: [
+              {
+                type: "integer",
+              },
+              {
+                type: "null",
+              },
+            ],
+            default: null,
+            description: "The length of the stored text, in bytes as stored",
+            title: "Size",
+          },
+          mime_type: {
+            anyOf: [
+              {
+                type: "string",
+              },
+              {
+                type: "null",
+              },
+            ],
+            default: null,
+            description: "The MIME type of the stored text: text/plain or text/markdown",
+            title: "Mime Type",
+          },
+          preview: {
+            anyOf: [
+              {
+                type: "string",
+              },
+              {
+                type: "null",
+              },
+            ],
+            default: null,
+            description:
+              "The first few hundred characters of the stored text, always its true start",
+            title: "Preview",
           },
         },
-        required: ["text"],
         title: "native.Text",
         type: "object",
       },
@@ -3372,12 +4154,73 @@ export const PIPE_IO_CONTRACTS_FIXTURE: PipeIOContracts = {
         description: "A text",
         properties: {
           text: {
+            anyOf: [
+              {
+                type: "string",
+              },
+              {
+                type: "null",
+              },
+            ],
+            default: null,
             description: "The text",
             title: "Text",
-            type: "string",
+          },
+          url: {
+            anyOf: [
+              {
+                type: "string",
+              },
+              {
+                type: "null",
+              },
+            ],
+            default: null,
+            description:
+              "The URL of the stored text: a storage URI, an HTTP(S) URL, or a base64 data URL",
+            title: "Url",
+          },
+          size: {
+            anyOf: [
+              {
+                type: "integer",
+              },
+              {
+                type: "null",
+              },
+            ],
+            default: null,
+            description: "The length of the stored text, in bytes as stored",
+            title: "Size",
+          },
+          mime_type: {
+            anyOf: [
+              {
+                type: "string",
+              },
+              {
+                type: "null",
+              },
+            ],
+            default: null,
+            description: "The MIME type of the stored text: text/plain or text/markdown",
+            title: "Mime Type",
+          },
+          preview: {
+            anyOf: [
+              {
+                type: "string",
+              },
+              {
+                type: "null",
+              },
+            ],
+            default: null,
+            description:
+              "The first few hundred characters of the stored text, always its true start",
+            title: "Preview",
           },
         },
-        required: ["text"],
         title: "native.Text",
         type: "object",
       },
@@ -3393,13 +4236,75 @@ export const PIPE_IO_CONTRACTS_FIXTURE: PipeIOContracts = {
         json_schema: {
           properties: {
             json_obj: {
-              additionalProperties: true,
+              anyOf: [
+                {
+                  additionalProperties: true,
+                  type: "object",
+                },
+                {
+                  type: "null",
+                },
+              ],
+              default: null,
               description: "The JSON object",
               title: "Json Obj",
-              type: "object",
+            },
+            url: {
+              anyOf: [
+                {
+                  type: "string",
+                },
+                {
+                  type: "null",
+                },
+              ],
+              default: null,
+              description:
+                "The URL of the stored JSON object: a storage URI, an HTTP(S) URL, or a base64 data URL",
+              title: "Url",
+            },
+            size: {
+              anyOf: [
+                {
+                  type: "integer",
+                },
+                {
+                  type: "null",
+                },
+              ],
+              default: null,
+              description:
+                "The length of the stored JSON object's serialized form, in bytes as stored",
+              title: "Size",
+            },
+            mime_type: {
+              anyOf: [
+                {
+                  type: "string",
+                },
+                {
+                  type: "null",
+                },
+              ],
+              default: null,
+              description: "The MIME type of the stored JSON object: application/json",
+              title: "Mime Type",
+            },
+            preview: {
+              anyOf: [
+                {
+                  type: "string",
+                },
+                {
+                  type: "null",
+                },
+              ],
+              default: null,
+              description:
+                "The first few hundred characters of the stored JSON object's serialized form, always its true start",
+              title: "Preview",
             },
           },
-          required: ["json_obj"],
           title: "native.JSON",
           type: "object",
           description: "A JSON object",
@@ -3430,29 +4335,6 @@ export const PIPE_IO_CONTRACTS_FIXTURE: PipeIOContracts = {
           type: "object",
         },
       },
-    },
-    output: {
-      concept_ref: "native.Text",
-      multiplicity: "single",
-      item_count: null,
-      optional: false,
-      json_schema: {
-        description: "A text",
-        properties: {
-          text: {
-            description: "The text",
-            title: "Text",
-            type: "string",
-          },
-        },
-        required: ["text"],
-        title: "native.Text",
-        type: "object",
-      },
-    },
-  },
-  "input_semantics_scaffold.scaffold_anything_slot": {
-    inputs: {
       anything_in: {
         concept_ref: "native.Anything",
         presence: "plain",
@@ -3461,6 +4343,9 @@ export const PIPE_IO_CONTRACTS_FIXTURE: PipeIOContracts = {
         json_schema: {
           title: "native.Anything",
           description: "Anything",
+          not: {
+            type: ["array", "null"],
+          },
         },
       },
     },
@@ -3473,12 +4358,73 @@ export const PIPE_IO_CONTRACTS_FIXTURE: PipeIOContracts = {
         description: "A text",
         properties: {
           text: {
+            anyOf: [
+              {
+                type: "string",
+              },
+              {
+                type: "null",
+              },
+            ],
+            default: null,
             description: "The text",
             title: "Text",
-            type: "string",
+          },
+          url: {
+            anyOf: [
+              {
+                type: "string",
+              },
+              {
+                type: "null",
+              },
+            ],
+            default: null,
+            description:
+              "The URL of the stored text: a storage URI, an HTTP(S) URL, or a base64 data URL",
+            title: "Url",
+          },
+          size: {
+            anyOf: [
+              {
+                type: "integer",
+              },
+              {
+                type: "null",
+              },
+            ],
+            default: null,
+            description: "The length of the stored text, in bytes as stored",
+            title: "Size",
+          },
+          mime_type: {
+            anyOf: [
+              {
+                type: "string",
+              },
+              {
+                type: "null",
+              },
+            ],
+            default: null,
+            description: "The MIME type of the stored text: text/plain or text/markdown",
+            title: "Mime Type",
+          },
+          preview: {
+            anyOf: [
+              {
+                type: "string",
+              },
+              {
+                type: "null",
+              },
+            ],
+            default: null,
+            description:
+              "The first few hundred characters of the stored text, always its true start",
+            title: "Preview",
           },
         },
-        required: ["text"],
         title: "native.Text",
         type: "object",
       },
@@ -3560,12 +4506,748 @@ export const PIPE_IO_CONTRACTS_FIXTURE: PipeIOContracts = {
         description: "A text",
         properties: {
           text: {
+            anyOf: [
+              {
+                type: "string",
+              },
+              {
+                type: "null",
+              },
+            ],
+            default: null,
             description: "The text",
             title: "Text",
-            type: "string",
+          },
+          url: {
+            anyOf: [
+              {
+                type: "string",
+              },
+              {
+                type: "null",
+              },
+            ],
+            default: null,
+            description:
+              "The URL of the stored text: a storage URI, an HTTP(S) URL, or a base64 data URL",
+            title: "Url",
+          },
+          size: {
+            anyOf: [
+              {
+                type: "integer",
+              },
+              {
+                type: "null",
+              },
+            ],
+            default: null,
+            description: "The length of the stored text, in bytes as stored",
+            title: "Size",
+          },
+          mime_type: {
+            anyOf: [
+              {
+                type: "string",
+              },
+              {
+                type: "null",
+              },
+            ],
+            default: null,
+            description: "The MIME type of the stored text: text/plain or text/markdown",
+            title: "Mime Type",
+          },
+          preview: {
+            anyOf: [
+              {
+                type: "string",
+              },
+              {
+                type: "null",
+              },
+            ],
+            default: null,
+            description:
+              "The first few hundred characters of the stored text, always its true start",
+            title: "Preview",
           },
         },
-        required: ["text"],
+        title: "native.Text",
+        type: "object",
+      },
+    },
+  },
+  "input_semantics_scaffold.scaffold_verdict_natives": {
+    inputs: {
+      approved_in: {
+        concept_ref: "native.YesNo",
+        presence: "plain",
+        multiplicity: "single",
+        item_count: null,
+        json_schema: {
+          description: "The answer to a yes/no question",
+          properties: {
+            yes_no: {
+              description: "Whether the answer is yes (true) or no (false).",
+              title: "Yes No",
+              type: "boolean",
+            },
+            probability: {
+              anyOf: [
+                {
+                  maximum: 1,
+                  minimum: 0,
+                  type: "number",
+                },
+                {
+                  type: "null",
+                },
+              ],
+              default: null,
+              description:
+                "The probability that the answer is yes, from 0 to 1, when the producer reports one.",
+              title: "Probability",
+            },
+          },
+          required: ["yes_no"],
+          title: "native.YesNo",
+          type: "object",
+        },
+      },
+      team_in: {
+        concept_ref: "native.Choice",
+        presence: "plain",
+        multiplicity: "single",
+        item_count: null,
+        json_schema: {
+          description: "One option picked out of a declared set",
+          properties: {
+            choice: {
+              description: "The key of the selected option.",
+              title: "Choice",
+              type: "string",
+            },
+            confidence: {
+              anyOf: [
+                {
+                  maximum: 1,
+                  minimum: 0,
+                  type: "number",
+                },
+                {
+                  type: "null",
+                },
+              ],
+              default: null,
+              description:
+                "The producer's confidence in the choice, from 0 to 1, when it reports one.",
+              title: "Confidence",
+            },
+            probabilities: {
+              anyOf: [
+                {
+                  additionalProperties: {
+                    maximum: 1,
+                    minimum: 0,
+                    type: "number",
+                  },
+                  type: "object",
+                },
+                {
+                  type: "null",
+                },
+              ],
+              default: null,
+              description:
+                "The probability of each option, keyed by option key, when the producer measures a distribution.",
+              title: "Probabilities",
+            },
+          },
+          required: ["choice"],
+          title: "native.Choice",
+          type: "object",
+        },
+      },
+      grade_in: {
+        concept_ref: "native.Rating",
+        presence: "plain",
+        multiplicity: "single",
+        item_count: null,
+        json_schema: {
+          description: "A position on an ordered scale of described levels",
+          properties: {
+            level: {
+              description: "The index of the selected level, 0 being the first level declared.",
+              minimum: 0,
+              title: "Level",
+              type: "integer",
+            },
+            label: {
+              anyOf: [
+                {
+                  type: "string",
+                },
+                {
+                  type: "null",
+                },
+              ],
+              default: null,
+              description: "The label of the selected level, when the scale declares labels.",
+              title: "Label",
+            },
+            confidence: {
+              anyOf: [
+                {
+                  maximum: 1,
+                  minimum: 0,
+                  type: "number",
+                },
+                {
+                  type: "null",
+                },
+              ],
+              default: null,
+              description:
+                "The producer's confidence in the level, from 0 to 1, when it reports one.",
+              title: "Confidence",
+            },
+            probabilities: {
+              anyOf: [
+                {
+                  additionalProperties: {
+                    maximum: 1,
+                    minimum: 0,
+                    type: "number",
+                  },
+                  type: "object",
+                },
+                {
+                  type: "null",
+                },
+              ],
+              default: null,
+              description:
+                "The probability of each level, keyed by level index written as text, when the producer measures a distribution.",
+              title: "Probabilities",
+            },
+            position: {
+              anyOf: [
+                {
+                  minimum: 0,
+                  type: "number",
+                },
+                {
+                  type: "null",
+                },
+              ],
+              default: null,
+              description:
+                "A continuous position on the scale, from 0 to the index of the last level, when the producer measures one.",
+              title: "Position",
+            },
+          },
+          required: ["level"],
+          title: "native.Rating",
+          type: "object",
+        },
+      },
+    },
+    output: {
+      concept_ref: "native.Text",
+      multiplicity: "single",
+      item_count: null,
+      optional: false,
+      json_schema: {
+        description: "A text",
+        properties: {
+          text: {
+            anyOf: [
+              {
+                type: "string",
+              },
+              {
+                type: "null",
+              },
+            ],
+            default: null,
+            description: "The text",
+            title: "Text",
+          },
+          url: {
+            anyOf: [
+              {
+                type: "string",
+              },
+              {
+                type: "null",
+              },
+            ],
+            default: null,
+            description:
+              "The URL of the stored text: a storage URI, an HTTP(S) URL, or a base64 data URL",
+            title: "Url",
+          },
+          size: {
+            anyOf: [
+              {
+                type: "integer",
+              },
+              {
+                type: "null",
+              },
+            ],
+            default: null,
+            description: "The length of the stored text, in bytes as stored",
+            title: "Size",
+          },
+          mime_type: {
+            anyOf: [
+              {
+                type: "string",
+              },
+              {
+                type: "null",
+              },
+            ],
+            default: null,
+            description: "The MIME type of the stored text: text/plain or text/markdown",
+            title: "Mime Type",
+          },
+          preview: {
+            anyOf: [
+              {
+                type: "string",
+              },
+              {
+                type: "null",
+              },
+            ],
+            default: null,
+            description:
+              "The first few hundred characters of the stored text, always its true start",
+            title: "Preview",
+          },
+        },
+        title: "native.Text",
+        type: "object",
+      },
+    },
+  },
+  "input_semantics_scaffold.scaffold_stored_natives": {
+    inputs: {
+      markdown_in: {
+        concept_ref: "native.Markdown",
+        presence: "plain",
+        multiplicity: "single",
+        item_count: null,
+        json_schema: {
+          description: "A text written in Markdown",
+          properties: {
+            text: {
+              anyOf: [
+                {
+                  type: "string",
+                },
+                {
+                  type: "null",
+                },
+              ],
+              default: null,
+              description: "The text, written in Markdown",
+              title: "Text",
+            },
+            url: {
+              anyOf: [
+                {
+                  type: "string",
+                },
+                {
+                  type: "null",
+                },
+              ],
+              default: null,
+              description:
+                "The URL of the stored text: a storage URI, an HTTP(S) URL, or a base64 data URL",
+              title: "Url",
+            },
+            size: {
+              anyOf: [
+                {
+                  type: "integer",
+                },
+                {
+                  type: "null",
+                },
+              ],
+              default: null,
+              description: "The length of the stored text, in bytes as stored",
+              title: "Size",
+            },
+            mime_type: {
+              anyOf: [
+                {
+                  type: "string",
+                },
+                {
+                  type: "null",
+                },
+              ],
+              default: null,
+              description: "The MIME type of the stored text: text/plain or text/markdown",
+              title: "Mime Type",
+            },
+            preview: {
+              anyOf: [
+                {
+                  type: "string",
+                },
+                {
+                  type: "null",
+                },
+              ],
+              default: null,
+              description:
+                "The first few hundred characters of the stored text, always its true start",
+              title: "Preview",
+            },
+          },
+          title: "native.Markdown",
+          type: "object",
+        },
+      },
+      webpage_in: {
+        concept_ref: "input_semantics_scaffold.Webpage",
+        presence: "plain",
+        multiplicity: "single",
+        item_count: null,
+        json_schema: {
+          description: "SCAFFOLD_desc_concept_Webpage: a page of HTML, refining the native",
+          properties: {
+            inner_html: {
+              anyOf: [
+                {
+                  type: "string",
+                },
+                {
+                  type: "null",
+                },
+              ],
+              default: null,
+              description: "The inner HTML of the content",
+              title: "Inner Html",
+            },
+            css_class: {
+              anyOf: [
+                {
+                  type: "string",
+                },
+                {
+                  type: "null",
+                },
+              ],
+              default: null,
+              description: "The CSS class of the content",
+              title: "Css Class",
+            },
+            url: {
+              anyOf: [
+                {
+                  type: "string",
+                },
+                {
+                  type: "null",
+                },
+              ],
+              default: null,
+              description:
+                "The URL of the stored inner HTML: a storage URI, an HTTP(S) URL, or a base64 data URL",
+              title: "Url",
+            },
+            size: {
+              anyOf: [
+                {
+                  type: "integer",
+                },
+                {
+                  type: "null",
+                },
+              ],
+              default: null,
+              description: "The length of the stored inner HTML, in bytes as stored",
+              title: "Size",
+            },
+            mime_type: {
+              anyOf: [
+                {
+                  type: "string",
+                },
+                {
+                  type: "null",
+                },
+              ],
+              default: null,
+              description: "The MIME type of the stored inner HTML: text/html",
+              title: "Mime Type",
+            },
+            preview: {
+              anyOf: [
+                {
+                  type: "string",
+                },
+                {
+                  type: "null",
+                },
+              ],
+              default: null,
+              description:
+                "The first few hundred characters of the stored inner HTML, always its true start",
+              title: "Preview",
+            },
+          },
+          title: "input_semantics_scaffold.Webpage",
+          type: "object",
+        },
+      },
+      payload_in: {
+        concept_ref: "input_semantics_scaffold.Payload",
+        presence: "plain",
+        multiplicity: "single",
+        item_count: null,
+        json_schema: {
+          description: "SCAFFOLD_desc_concept_Payload: a JSON payload, refining the native",
+          properties: {
+            json_obj: {
+              anyOf: [
+                {
+                  additionalProperties: true,
+                  type: "object",
+                },
+                {
+                  type: "null",
+                },
+              ],
+              default: null,
+              description: "The JSON object",
+              title: "Json Obj",
+            },
+            url: {
+              anyOf: [
+                {
+                  type: "string",
+                },
+                {
+                  type: "null",
+                },
+              ],
+              default: null,
+              description:
+                "The URL of the stored JSON object: a storage URI, an HTTP(S) URL, or a base64 data URL",
+              title: "Url",
+            },
+            size: {
+              anyOf: [
+                {
+                  type: "integer",
+                },
+                {
+                  type: "null",
+                },
+              ],
+              default: null,
+              description:
+                "The length of the stored JSON object's serialized form, in bytes as stored",
+              title: "Size",
+            },
+            mime_type: {
+              anyOf: [
+                {
+                  type: "string",
+                },
+                {
+                  type: "null",
+                },
+              ],
+              default: null,
+              description: "The MIME type of the stored JSON object: application/json",
+              title: "Mime Type",
+            },
+            preview: {
+              anyOf: [
+                {
+                  type: "string",
+                },
+                {
+                  type: "null",
+                },
+              ],
+              default: null,
+              description:
+                "The first few hundred characters of the stored JSON object's serialized form, always its true start",
+              title: "Preview",
+            },
+          },
+          title: "input_semantics_scaffold.Payload",
+          type: "object",
+        },
+      },
+      memo_in: {
+        concept_ref: "input_semantics_scaffold.Memo",
+        presence: "plain",
+        multiplicity: "single",
+        item_count: null,
+        json_schema: {
+          description: "SCAFFOLD_desc_concept_Memo: a memo, refining the native text",
+          properties: {
+            text: {
+              anyOf: [
+                {
+                  type: "string",
+                },
+                {
+                  type: "null",
+                },
+              ],
+              default: null,
+              description: "The text",
+              title: "Text",
+            },
+            url: {
+              anyOf: [
+                {
+                  type: "string",
+                },
+                {
+                  type: "null",
+                },
+              ],
+              default: null,
+              description:
+                "The URL of the stored text: a storage URI, an HTTP(S) URL, or a base64 data URL",
+              title: "Url",
+            },
+            size: {
+              anyOf: [
+                {
+                  type: "integer",
+                },
+                {
+                  type: "null",
+                },
+              ],
+              default: null,
+              description: "The length of the stored text, in bytes as stored",
+              title: "Size",
+            },
+            mime_type: {
+              anyOf: [
+                {
+                  type: "string",
+                },
+                {
+                  type: "null",
+                },
+              ],
+              default: null,
+              description: "The MIME type of the stored text: text/plain or text/markdown",
+              title: "Mime Type",
+            },
+            preview: {
+              anyOf: [
+                {
+                  type: "string",
+                },
+                {
+                  type: "null",
+                },
+              ],
+              default: null,
+              description:
+                "The first few hundred characters of the stored text, always its true start",
+              title: "Preview",
+            },
+          },
+          title: "input_semantics_scaffold.Memo",
+          type: "object",
+        },
+      },
+    },
+    output: {
+      concept_ref: "native.Text",
+      multiplicity: "single",
+      item_count: null,
+      optional: false,
+      json_schema: {
+        description: "A text",
+        properties: {
+          text: {
+            anyOf: [
+              {
+                type: "string",
+              },
+              {
+                type: "null",
+              },
+            ],
+            default: null,
+            description: "The text",
+            title: "Text",
+          },
+          url: {
+            anyOf: [
+              {
+                type: "string",
+              },
+              {
+                type: "null",
+              },
+            ],
+            default: null,
+            description:
+              "The URL of the stored text: a storage URI, an HTTP(S) URL, or a base64 data URL",
+            title: "Url",
+          },
+          size: {
+            anyOf: [
+              {
+                type: "integer",
+              },
+              {
+                type: "null",
+              },
+            ],
+            default: null,
+            description: "The length of the stored text, in bytes as stored",
+            title: "Size",
+          },
+          mime_type: {
+            anyOf: [
+              {
+                type: "string",
+              },
+              {
+                type: "null",
+              },
+            ],
+            default: null,
+            description: "The MIME type of the stored text: text/plain or text/markdown",
+            title: "Mime Type",
+          },
+          preview: {
+            anyOf: [
+              {
+                type: "string",
+              },
+              {
+                type: "null",
+              },
+            ],
+            default: null,
+            description:
+              "The first few hundred characters of the stored text, always its true start",
+            title: "Preview",
+          },
+        },
         title: "native.Text",
         type: "object",
       },
@@ -3582,12 +5264,73 @@ export const PIPE_IO_CONTRACTS_FIXTURE: PipeIOContracts = {
           description: "A text",
           properties: {
             text: {
+              anyOf: [
+                {
+                  type: "string",
+                },
+                {
+                  type: "null",
+                },
+              ],
+              default: null,
               description: "The text",
               title: "Text",
-              type: "string",
+            },
+            url: {
+              anyOf: [
+                {
+                  type: "string",
+                },
+                {
+                  type: "null",
+                },
+              ],
+              default: null,
+              description:
+                "The URL of the stored text: a storage URI, an HTTP(S) URL, or a base64 data URL",
+              title: "Url",
+            },
+            size: {
+              anyOf: [
+                {
+                  type: "integer",
+                },
+                {
+                  type: "null",
+                },
+              ],
+              default: null,
+              description: "The length of the stored text, in bytes as stored",
+              title: "Size",
+            },
+            mime_type: {
+              anyOf: [
+                {
+                  type: "string",
+                },
+                {
+                  type: "null",
+                },
+              ],
+              default: null,
+              description: "The MIME type of the stored text: text/plain or text/markdown",
+              title: "Mime Type",
+            },
+            preview: {
+              anyOf: [
+                {
+                  type: "string",
+                },
+                {
+                  type: "null",
+                },
+              ],
+              default: null,
+              description:
+                "The first few hundred characters of the stored text, always its true start",
+              title: "Preview",
             },
           },
-          required: ["text"],
           title: "native.Text",
           type: "object",
         },
@@ -3644,12 +5387,73 @@ export const PIPE_IO_CONTRACTS_FIXTURE: PipeIOContracts = {
           description: "A text",
           properties: {
             text: {
+              anyOf: [
+                {
+                  type: "string",
+                },
+                {
+                  type: "null",
+                },
+              ],
+              default: null,
               description: "The text",
               title: "Text",
-              type: "string",
+            },
+            url: {
+              anyOf: [
+                {
+                  type: "string",
+                },
+                {
+                  type: "null",
+                },
+              ],
+              default: null,
+              description:
+                "The URL of the stored text: a storage URI, an HTTP(S) URL, or a base64 data URL",
+              title: "Url",
+            },
+            size: {
+              anyOf: [
+                {
+                  type: "integer",
+                },
+                {
+                  type: "null",
+                },
+              ],
+              default: null,
+              description: "The length of the stored text, in bytes as stored",
+              title: "Size",
+            },
+            mime_type: {
+              anyOf: [
+                {
+                  type: "string",
+                },
+                {
+                  type: "null",
+                },
+              ],
+              default: null,
+              description: "The MIME type of the stored text: text/plain or text/markdown",
+              title: "Mime Type",
+            },
+            preview: {
+              anyOf: [
+                {
+                  type: "string",
+                },
+                {
+                  type: "null",
+                },
+              ],
+              default: null,
+              description:
+                "The first few hundred characters of the stored text, always its true start",
+              title: "Preview",
             },
           },
-          required: ["text"],
           title: "native.Text",
           type: "object",
         },
@@ -3735,12 +5539,73 @@ export const PIPE_IO_CONTRACTS_FIXTURE: PipeIOContracts = {
           description: "A text",
           properties: {
             text: {
+              anyOf: [
+                {
+                  type: "string",
+                },
+                {
+                  type: "null",
+                },
+              ],
+              default: null,
               description: "The text",
               title: "Text",
-              type: "string",
+            },
+            url: {
+              anyOf: [
+                {
+                  type: "string",
+                },
+                {
+                  type: "null",
+                },
+              ],
+              default: null,
+              description:
+                "The URL of the stored text: a storage URI, an HTTP(S) URL, or a base64 data URL",
+              title: "Url",
+            },
+            size: {
+              anyOf: [
+                {
+                  type: "integer",
+                },
+                {
+                  type: "null",
+                },
+              ],
+              default: null,
+              description: "The length of the stored text, in bytes as stored",
+              title: "Size",
+            },
+            mime_type: {
+              anyOf: [
+                {
+                  type: "string",
+                },
+                {
+                  type: "null",
+                },
+              ],
+              default: null,
+              description: "The MIME type of the stored text: text/plain or text/markdown",
+              title: "Mime Type",
+            },
+            preview: {
+              anyOf: [
+                {
+                  type: "string",
+                },
+                {
+                  type: "null",
+                },
+              ],
+              default: null,
+              description:
+                "The first few hundred characters of the stored text, always its true start",
+              title: "Preview",
             },
           },
-          required: ["text"],
           title: "native.Text",
           type: "object",
         },
@@ -3798,12 +5663,73 @@ export const PIPE_IO_CONTRACTS_FIXTURE: PipeIOContracts = {
           description: "A text",
           properties: {
             text: {
+              anyOf: [
+                {
+                  type: "string",
+                },
+                {
+                  type: "null",
+                },
+              ],
+              default: null,
               description: "The text",
               title: "Text",
-              type: "string",
+            },
+            url: {
+              anyOf: [
+                {
+                  type: "string",
+                },
+                {
+                  type: "null",
+                },
+              ],
+              default: null,
+              description:
+                "The URL of the stored text: a storage URI, an HTTP(S) URL, or a base64 data URL",
+              title: "Url",
+            },
+            size: {
+              anyOf: [
+                {
+                  type: "integer",
+                },
+                {
+                  type: "null",
+                },
+              ],
+              default: null,
+              description: "The length of the stored text, in bytes as stored",
+              title: "Size",
+            },
+            mime_type: {
+              anyOf: [
+                {
+                  type: "string",
+                },
+                {
+                  type: "null",
+                },
+              ],
+              default: null,
+              description: "The MIME type of the stored text: text/plain or text/markdown",
+              title: "Mime Type",
+            },
+            preview: {
+              anyOf: [
+                {
+                  type: "string",
+                },
+                {
+                  type: "null",
+                },
+              ],
+              default: null,
+              description:
+                "The first few hundred characters of the stored text, always its true start",
+              title: "Preview",
             },
           },
-          required: ["text"],
           title: "native.Text",
           type: "object",
         },
@@ -3863,12 +5789,73 @@ export const PIPE_IO_CONTRACTS_FIXTURE: PipeIOContracts = {
           description: "A text",
           properties: {
             text: {
+              anyOf: [
+                {
+                  type: "string",
+                },
+                {
+                  type: "null",
+                },
+              ],
+              default: null,
               description: "The text",
               title: "Text",
-              type: "string",
+            },
+            url: {
+              anyOf: [
+                {
+                  type: "string",
+                },
+                {
+                  type: "null",
+                },
+              ],
+              default: null,
+              description:
+                "The URL of the stored text: a storage URI, an HTTP(S) URL, or a base64 data URL",
+              title: "Url",
+            },
+            size: {
+              anyOf: [
+                {
+                  type: "integer",
+                },
+                {
+                  type: "null",
+                },
+              ],
+              default: null,
+              description: "The length of the stored text, in bytes as stored",
+              title: "Size",
+            },
+            mime_type: {
+              anyOf: [
+                {
+                  type: "string",
+                },
+                {
+                  type: "null",
+                },
+              ],
+              default: null,
+              description: "The MIME type of the stored text: text/plain or text/markdown",
+              title: "Mime Type",
+            },
+            preview: {
+              anyOf: [
+                {
+                  type: "string",
+                },
+                {
+                  type: "null",
+                },
+              ],
+              default: null,
+              description:
+                "The first few hundred characters of the stored text, always its true start",
+              title: "Preview",
             },
           },
-          required: ["text"],
           title: "native.Text",
           type: "object",
         },
@@ -3925,12 +5912,73 @@ export const PIPE_IO_CONTRACTS_FIXTURE: PipeIOContracts = {
           description: "A text",
           properties: {
             text: {
+              anyOf: [
+                {
+                  type: "string",
+                },
+                {
+                  type: "null",
+                },
+              ],
+              default: null,
               description: "The text",
               title: "Text",
-              type: "string",
+            },
+            url: {
+              anyOf: [
+                {
+                  type: "string",
+                },
+                {
+                  type: "null",
+                },
+              ],
+              default: null,
+              description:
+                "The URL of the stored text: a storage URI, an HTTP(S) URL, or a base64 data URL",
+              title: "Url",
+            },
+            size: {
+              anyOf: [
+                {
+                  type: "integer",
+                },
+                {
+                  type: "null",
+                },
+              ],
+              default: null,
+              description: "The length of the stored text, in bytes as stored",
+              title: "Size",
+            },
+            mime_type: {
+              anyOf: [
+                {
+                  type: "string",
+                },
+                {
+                  type: "null",
+                },
+              ],
+              default: null,
+              description: "The MIME type of the stored text: text/plain or text/markdown",
+              title: "Mime Type",
+            },
+            preview: {
+              anyOf: [
+                {
+                  type: "string",
+                },
+                {
+                  type: "null",
+                },
+              ],
+              default: null,
+              description:
+                "The first few hundred characters of the stored text, always its true start",
+              title: "Preview",
             },
           },
-          required: ["text"],
           title: "native.Text",
           type: "object",
         },
@@ -3945,12 +5993,73 @@ export const PIPE_IO_CONTRACTS_FIXTURE: PipeIOContracts = {
         description: "A text",
         properties: {
           text: {
+            anyOf: [
+              {
+                type: "string",
+              },
+              {
+                type: "null",
+              },
+            ],
+            default: null,
             description: "The text",
             title: "Text",
-            type: "string",
+          },
+          url: {
+            anyOf: [
+              {
+                type: "string",
+              },
+              {
+                type: "null",
+              },
+            ],
+            default: null,
+            description:
+              "The URL of the stored text: a storage URI, an HTTP(S) URL, or a base64 data URL",
+            title: "Url",
+          },
+          size: {
+            anyOf: [
+              {
+                type: "integer",
+              },
+              {
+                type: "null",
+              },
+            ],
+            default: null,
+            description: "The length of the stored text, in bytes as stored",
+            title: "Size",
+          },
+          mime_type: {
+            anyOf: [
+              {
+                type: "string",
+              },
+              {
+                type: "null",
+              },
+            ],
+            default: null,
+            description: "The MIME type of the stored text: text/plain or text/markdown",
+            title: "Mime Type",
+          },
+          preview: {
+            anyOf: [
+              {
+                type: "string",
+              },
+              {
+                type: "null",
+              },
+            ],
+            default: null,
+            description:
+              "The first few hundred characters of the stored text, always its true start",
+            title: "Preview",
           },
         },
-        required: ["text"],
         title: "native.Text",
         type: "object",
       },
@@ -3967,12 +6076,73 @@ export const PIPE_IO_CONTRACTS_FIXTURE: PipeIOContracts = {
           description: "A text",
           properties: {
             text: {
+              anyOf: [
+                {
+                  type: "string",
+                },
+                {
+                  type: "null",
+                },
+              ],
+              default: null,
               description: "The text",
               title: "Text",
-              type: "string",
+            },
+            url: {
+              anyOf: [
+                {
+                  type: "string",
+                },
+                {
+                  type: "null",
+                },
+              ],
+              default: null,
+              description:
+                "The URL of the stored text: a storage URI, an HTTP(S) URL, or a base64 data URL",
+              title: "Url",
+            },
+            size: {
+              anyOf: [
+                {
+                  type: "integer",
+                },
+                {
+                  type: "null",
+                },
+              ],
+              default: null,
+              description: "The length of the stored text, in bytes as stored",
+              title: "Size",
+            },
+            mime_type: {
+              anyOf: [
+                {
+                  type: "string",
+                },
+                {
+                  type: "null",
+                },
+              ],
+              default: null,
+              description: "The MIME type of the stored text: text/plain or text/markdown",
+              title: "Mime Type",
+            },
+            preview: {
+              anyOf: [
+                {
+                  type: "string",
+                },
+                {
+                  type: "null",
+                },
+              ],
+              default: null,
+              description:
+                "The first few hundred characters of the stored text, always its true start",
+              title: "Preview",
             },
           },
-          required: ["text"],
           title: "native.Text",
           type: "object",
         },
@@ -4100,6 +6270,125 @@ export const PIPE_IO_CONTRACTS_FIXTURE: PipeIOContracts = {
         },
         required: ["url"],
         title: "native.Image",
+        type: "object",
+      },
+    },
+  },
+  "input_semantics_output.output_native_yes_no": {
+    inputs: {
+      note: {
+        concept_ref: "native.Text",
+        presence: "plain",
+        multiplicity: "single",
+        item_count: null,
+        json_schema: {
+          description: "A text",
+          properties: {
+            text: {
+              anyOf: [
+                {
+                  type: "string",
+                },
+                {
+                  type: "null",
+                },
+              ],
+              default: null,
+              description: "The text",
+              title: "Text",
+            },
+            url: {
+              anyOf: [
+                {
+                  type: "string",
+                },
+                {
+                  type: "null",
+                },
+              ],
+              default: null,
+              description:
+                "The URL of the stored text: a storage URI, an HTTP(S) URL, or a base64 data URL",
+              title: "Url",
+            },
+            size: {
+              anyOf: [
+                {
+                  type: "integer",
+                },
+                {
+                  type: "null",
+                },
+              ],
+              default: null,
+              description: "The length of the stored text, in bytes as stored",
+              title: "Size",
+            },
+            mime_type: {
+              anyOf: [
+                {
+                  type: "string",
+                },
+                {
+                  type: "null",
+                },
+              ],
+              default: null,
+              description: "The MIME type of the stored text: text/plain or text/markdown",
+              title: "Mime Type",
+            },
+            preview: {
+              anyOf: [
+                {
+                  type: "string",
+                },
+                {
+                  type: "null",
+                },
+              ],
+              default: null,
+              description:
+                "The first few hundred characters of the stored text, always its true start",
+              title: "Preview",
+            },
+          },
+          title: "native.Text",
+          type: "object",
+        },
+      },
+    },
+    output: {
+      concept_ref: "native.YesNo",
+      multiplicity: "single",
+      item_count: null,
+      optional: false,
+      json_schema: {
+        description: "The answer to a yes/no question",
+        properties: {
+          yes_no: {
+            description: "Whether the answer is yes (true) or no (false).",
+            title: "Yes No",
+            type: "boolean",
+          },
+          probability: {
+            anyOf: [
+              {
+                maximum: 1,
+                minimum: 0,
+                type: "number",
+              },
+              {
+                type: "null",
+              },
+            ],
+            default: null,
+            description:
+              "The probability that the answer is yes, from 0 to 1, when the producer reports one.",
+            title: "Probability",
+          },
+        },
+        required: ["yes_no"],
+        title: "native.YesNo",
         type: "object",
       },
     },

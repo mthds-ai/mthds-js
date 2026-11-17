@@ -769,12 +769,18 @@ describe("PipelexRunner", () => {
       expect(spawnArgs).toEqual(expect.arrayContaining(["--inputs", "--dry-run", "--output-dir"]));
     });
 
-    it("accepts a bare code, a domain-qualified ref and a dependency's ref", async () => {
+    // Every part is the standard's snake_case, `[a-z][a-z0-9_]*`, which pipelex reads the same way:
+    // a doubled or trailing underscore is a valid part, though the manifest reader refuses it.
+    it("accepts every pipe reference the standard's grammar admits", async () => {
       for (const pipeCode of [
         "echo",
+        "step__2",
+        "answer_",
         "smoke.echo",
         "legal.contracts.review",
+        "legal__x.contracts_.answer",
         "dep->scoring.rank",
+        "docproc->legal.contracts.extract_text",
       ]) {
         mockSpawnExit(0);
         await runner.execute({ pipe_code: pipeCode });
@@ -790,6 +796,10 @@ describe("PipelexRunner", () => {
       ["smoke.", "a trailing dot"],
       ["smoke..echo", "an empty domain segment"],
       ["Bad-Alias->smoke.echo", "an alias that is not snake_case"],
+      ["pkg->answer", "a package alias with no domain"],
+      ["a->b->smoke.echo", "two package aliases"],
+      ["_echo", "a leading underscore"],
+      ["echo\n", "a trailing newline"],
       ["smoke echo", "a space"],
     ])("refuses the pipe code %j (%s) before running pipelex", async (pipeCode) => {
       mockSpawnExit(0);

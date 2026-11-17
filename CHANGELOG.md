@@ -9,7 +9,7 @@
 
 ### Security
 
-- **The pipelex runner's pipe code and model reference (Breaking)**: `PipelexRunner.execute` refuses a `pipe_code` that is not a pipe ref, a snake_case pipe code optionally qualified as `domain.pipe_code` or `alias->domain.pipe_code`, with `client.argument_invalid` naming `pipe_code` before it starts pipelex, so a code such as `-L /elsewhere` can no longer pass as an option of `pipelex run pipe`; the code and `checkModel`'s reference now reach `pipelex run pipe` and `pipelex-agent check-model` last, behind `--`.
+- **The pipelex runner's pipe code and model reference**: `PipelexRunner.execute` refuses a `pipe_code` that is not a pipe reference of the standard's grammar, a snake_case pipe code (`[a-z][a-z0-9_]*`) optionally behind a domain path (`legal.contracts.answer`) and a package alias (`alias->domain.pipe_code`), with `client.argument_invalid` naming `pipe_code` before it starts pipelex, so a code such as `-L /elsewhere` can no longer pass as an option of `pipelex run pipe`; the code and `checkModel`'s reference now reach `pipelex run pipe` and `pipelex-agent check-model` last, behind `--`.
 - **`mthds share` on Windows**: the share URLs open with `explorer.exe` instead of `cmd /c start`, which cut the Reddit and LinkedIn URLs at their first `&` and ran the rest as commands, so each URL reaches the browser whole.
 
 ## [v0.36.0] - 2026-11-06

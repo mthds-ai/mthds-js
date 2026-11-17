@@ -10,9 +10,6 @@ import { MethodTree } from "../../method-tree/tree.js";
 import { assertOneMethodSource, hasMethodSource } from "../../protocol/options.js";
 import { argumentInvalid, problemError, ProblemError } from "../../problems/errors.js";
 import { readProblemBody } from "../../problems/read.js";
-import { QualifiedRefError } from "../../package/exceptions.js";
-import { isSnakeCase } from "../../package/manifest/validation.js";
-import { parsePipeRef, splitCrossPackageRef } from "../../package/qualified-ref.js";
 import type { Runner, RunnerType, CheckModelRequest, CheckModelResponse } from "../types.js";
 import type { MethodFiles } from "../../protocol/file_entries.js";
 import type { RunOptions, StartOptions, ValidateSource } from "../../protocol/options.js";
@@ -197,36 +194,36 @@ export function parsePipelexVersionReport(stdout: string): {
   return { pipelexVersion, protocolVersion: labelled("mthds-protocol") };
 }
 
+/** One part of a pipe reference, `snake_case` as the standard defines it. */
+const SNAKE_CASE_PART = "[a-z][a-z0-9_]*";
+
 /**
- * Hold a caller's pipe code to the pipe-ref grammar before it reaches the pipelex command line: a
- * snake_case pipe code, optionally behind snake_case domain segments (`domain.pipe_code`), and
- * optionally behind a dependency's snake_case alias (`alias->domain.pipe_code`). The grammar is
- * `parsePipeRef`'s, the one the manifest reader holds every pipe ref to.
- *
- * A code is the one argument of `pipelex run pipe` an application may take from its own user, and
- * without this check a code such as `-L /elsewhere` or `--output-dir=/elsewhere` would be read by
- * pipelex as an option of the command rather than as the pipe to run.
+ * A pipe reference as the standard writes it (`mthds-format.md`, "Pipe Reference Syntax"): a bare
+ * pipe code, one behind a domain path (`domain.path.pipe_code`), or one behind a package alias and
+ * a domain path (`alias->domain.pipe_code`, never `alias->pipe_code`), every part `[a-z][a-z0-9_]*`.
+ * The manifest reader's `parsePipeRef` is stricter than the standard about underscores, so it is
+ * not the grammar a run is held to.
+ */
+const PIPE_REF_PATTERN = new RegExp(
+  `^(?:${SNAKE_CASE_PART}->(?:${SNAKE_CASE_PART}\\.)+|(?:${SNAKE_CASE_PART}\\.)*)${SNAKE_CASE_PART}$`,
+);
+
+/**
+ * Hold a caller's pipe code to the standard's pipe-reference grammar (`PIPE_REF_PATTERN`) before
+ * it reaches the pipelex command line. A code is the one argument of `pipelex run pipe` an
+ * application may take from its own user, and without this check a code such as `-L /elsewhere`
+ * or `--output-dir=/elsewhere` would be read by pipelex as an option of the command rather than as
+ * the pipe to run.
  *
  * @throws {ProblemError} `client.argument_invalid` naming `pipe_code`, its reason `malformed`.
  */
 export function assertPipeCode(pipeCode: string): void {
-  const refuse = (detail: string): ProblemError =>
-    argumentInvalid(
+  if (!PIPE_REF_PATTERN.test(pipeCode)) {
+    throw argumentInvalid(
       "pipe_code",
       "malformed",
-      `pipe_code '${pipeCode}' is not a pipe ref: ${detail}. A pipe ref is a snake_case pipe code, optionally qualified as domain.pipe_code or alias->domain.pipe_code.`,
+      `pipe_code '${pipeCode}' is not a pipe reference: a pipe code is snake_case, optionally qualified by a domain path and a package alias, such as 'answer', 'legal.contracts.answer' or 'docproc->extraction.extract_text'.`,
     );
-  let ref = pipeCode;
-  if (ref.includes("->")) {
-    const [alias, remainder] = splitCrossPackageRef(ref);
-    if (!isSnakeCase(alias)) throw refuse(`its alias '${alias}' must be snake_case`);
-    ref = remainder;
-  }
-  try {
-    parsePipeRef(ref);
-  } catch (err) {
-    if (err instanceof QualifiedRefError) throw refuse(err.message);
-    throw err;
   }
 }
 

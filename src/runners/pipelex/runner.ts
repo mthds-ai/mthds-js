@@ -10,6 +10,9 @@ import { MethodTree } from "../../method-tree/tree.js";
 import { assertOneMethodSource, hasMethodSource } from "../../protocol/options.js";
 import { argumentInvalid, problemError, ProblemError } from "../../problems/errors.js";
 import { readProblemBody } from "../../problems/read.js";
+import { QualifiedRefError } from "../../package/exceptions.js";
+import { isSnakeCase } from "../../package/manifest/validation.js";
+import { parsePipeRef, splitCrossPackageRef } from "../../package/qualified-ref.js";
 import type { Runner, RunnerType, CheckModelRequest, CheckModelResponse } from "../types.js";
 import type { MethodFiles } from "../../protocol/file_entries.js";
 import type { RunOptions, StartOptions, ValidateSource } from "../../protocol/options.js";
@@ -194,6 +197,39 @@ export function parsePipelexVersionReport(stdout: string): {
   return { pipelexVersion, protocolVersion: labelled("mthds-protocol") };
 }
 
+/**
+ * Hold a caller's pipe code to the pipe-ref grammar before it reaches the pipelex command line: a
+ * snake_case pipe code, optionally behind snake_case domain segments (`domain.pipe_code`), and
+ * optionally behind a dependency's snake_case alias (`alias->domain.pipe_code`). The grammar is
+ * `parsePipeRef`'s, the one the manifest reader holds every pipe ref to.
+ *
+ * A code is the one argument of `pipelex run pipe` an application may take from its own user, and
+ * without this check a code such as `-L /elsewhere` or `--output-dir=/elsewhere` would be read by
+ * pipelex as an option of the command rather than as the pipe to run.
+ *
+ * @throws {ProblemError} `client.argument_invalid` naming `pipe_code`, its reason `malformed`.
+ */
+export function assertPipeCode(pipeCode: string): void {
+  const refuse = (detail: string): ProblemError =>
+    argumentInvalid(
+      "pipe_code",
+      "malformed",
+      `pipe_code '${pipeCode}' is not a pipe ref: ${detail}. A pipe ref is a snake_case pipe code, optionally qualified as domain.pipe_code or alias->domain.pipe_code.`,
+    );
+  let ref = pipeCode;
+  if (ref.includes("->")) {
+    const [alias, remainder] = splitCrossPackageRef(ref);
+    if (!isSnakeCase(alias)) throw refuse(`its alias '${alias}' must be snake_case`);
+    ref = remainder;
+  }
+  try {
+    parsePipeRef(ref);
+  } catch (err) {
+    if (err instanceof QualifiedRefError) throw refuse(err.message);
+    throw err;
+  }
+}
+
 export class PipelexRunner implements Runner {
   readonly type: RunnerType = Runners.PIPELEX;
   private readonly libraryDirs: string[];
@@ -208,8 +244,18 @@ export class PipelexRunner implements Runner {
     return this.libraryDirs.flatMap((dir) => ["-L", dir]);
   }
 
+  /**
+   * The command line pipelex is given: the options, then the library directories, then, behind
+   * `--`, the positionals a caller supplied. Behind `--`, pipelex reads a value starting with a
+   * dash as the positional it is, never as one of its options.
+   */
+  private argv(args: readonly string[], positionals: readonly string[] = []): string[] {
+    const options = [...args, ...this.libraryArgs()];
+    return positionals.length > 0 ? [...options, "--", ...positionals] : options;
+  }
+
   private async exec(args: string[]): Promise<{ stdout: string; stderr: string }> {
-    return execFileAsync("pipelex", [...args, ...this.libraryArgs()], {
+    return execFileAsync("pipelex", this.argv(args), {
       encoding: "utf-8",
       env: this.env,
     });
@@ -222,9 +268,13 @@ export class PipelexRunner implements Runner {
    * exit is `runtime.unexpected`, and one the person caused with Ctrl-C (the interrupt killed
    * pipelex, or pipelex handled it and exited 130) is `client.aborted`.
    */
-  private async execStreaming(args: string[], inheritStdin = false): Promise<void> {
+  private async execStreaming(
+    args: string[],
+    inheritStdin = false,
+    positionals: readonly string[] = [],
+  ): Promise<void> {
     return new Promise<void>((resolve, reject) => {
-      const child = spawn("pipelex", [...args, ...this.libraryArgs()], {
+      const child = spawn("pipelex", this.argv(args, positionals), {
         stdio: [inheritStdin ? "inherit" : "ignore", "inherit", "inherit"],
         env: this.env,
       });
@@ -377,7 +427,17 @@ export class PipelexRunner implements Runner {
         `checkModel requires \`type\` (one of: ${MODEL_CATEGORIES.join(", ")})`,
       );
     }
-    const args = ["check-model", request.reference, "--type", request.type, "--format", "json"];
+    // The reference is the caller's, so it goes behind `--`, where pipelex-agent never reads a
+    // reference starting with a dash as one of its options.
+    const args = [
+      "check-model",
+      "--type",
+      request.type,
+      "--format",
+      "json",
+      "--",
+      request.reference,
+    ];
     const { stdout } = await execFileAsync("pipelex-agent", args, {
       encoding: "utf-8",
       env: this.env,
@@ -414,6 +474,7 @@ export class PipelexRunner implements Runner {
     // Refuse a method given twice, or an empty tree, up front — the same contract the
     // API client enforces — so `files` beside a `tree` fails clearly instead of one winning.
     assertOneMethodSource(options);
+    if (options.pipe_code) assertPipeCode(options.pipe_code);
     const bundleMain = options.bundleMain;
     if (bundleMain != null && (!bundleMain.endsWith(".mthds") || !treeHolds(options, bundleMain))) {
       throw argumentInvalid(
@@ -429,6 +490,8 @@ export class PipelexRunner implements Runner {
       const directory = await methodDirectory(options, tmp);
       // The pipelex CLI dispatches through `run bundle <path>` / `run pipe <code>`.
       const args: string[] = ["run"];
+      // A caller's positional goes last, behind `--` (see `argv`).
+      const positionals: string[] = [];
 
       if (directory !== undefined) {
         // The method's whole tree (its Python, templates and other files beside its
@@ -446,7 +509,8 @@ export class PipelexRunner implements Runner {
           args.push("--pipe", options.pipe_code);
         }
       } else if (options.pipe_code) {
-        args.push("pipe", options.pipe_code);
+        args.push("pipe");
+        positionals.push(options.pipe_code);
       }
 
       if (options.inputs) {
@@ -472,7 +536,7 @@ export class PipelexRunner implements Runner {
       args.push("--output-dir", join(tmp, "results"));
       args.push("--no-pretty-print");
 
-      await this.execStreaming(args);
+      await this.execStreaming(args, false, positionals);
 
       const raw = existsSync(wmPath)
         ? (JSON.parse(readFileSync(wmPath, "utf-8")) as Record<string, unknown>)

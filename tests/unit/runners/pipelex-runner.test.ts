@@ -150,6 +150,25 @@ describe("PipelexRunner", () => {
       expect((err as ProblemError).problem.code).toBe("client.argument_invalid");
       expect((err as ProblemError).problem.params).toEqual({ argument: "type", reason: "missing" });
     });
+
+    // The reference is the caller's: behind `--`, one starting with a dash is the reference to
+    // check, never an option of pipelex-agent's.
+    it("puts the reference last, behind --, after every option", async () => {
+      execFileAsync.mockResolvedValue({ stdout: '{"success":true,"valid":true}', stderr: "" });
+
+      await runner.checkModel({ reference: "--help", type: "llm" });
+
+      expect(execFileAsync.mock.calls[0]![0]).toBe("pipelex-agent");
+      expect(execFileAsync.mock.calls[0]![1]).toEqual([
+        "check-model",
+        "--type",
+        "llm",
+        "--format",
+        "json",
+        "--",
+        "--help",
+      ]);
+    });
   });
 
   describe("models", () => {
@@ -731,9 +750,72 @@ describe("PipelexRunner", () => {
       mockSpawnExit(0);
       await runner.execute({ pipe_code: "echo" }, { hosted: true });
       const spawnArgs = mockedSpawn.mock.calls[0]![1] as string[];
-      expect(spawnArgs.slice(0, 3)).toEqual(["run", "pipe", "echo"]);
+      expect(spawnArgs.slice(0, 2)).toEqual(["run", "pipe"]);
+      expect(spawnArgs.slice(-2)).toEqual(["--", "echo"]);
       expect(spawnArgs).toContain("--hosted");
       expect(spawnArgs).not.toContain("--local");
+    });
+
+    // The pipe code is the caller's: behind `--`, after every option and library directory,
+    // pipelex reads it as the pipe to run whatever it holds.
+    it("hands `pipelex run pipe` the pipe code last, behind --, after the library directories", async () => {
+      mockSpawnExit(0);
+      runner = new PipelexRunner(["/lib/a"]);
+      await runner.execute({ pipe_code: "smoke.echo", inputs: { text: "hi" } }, { dryRun: true });
+      const spawnArgs = mockedSpawn.mock.calls[0]![1] as string[];
+      expect(spawnArgs.slice(0, 2)).toEqual(["run", "pipe"]);
+      expect(spawnArgs.slice(-4)).toEqual(["-L", "/lib/a", "--", "smoke.echo"]);
+      expect(spawnArgs.filter((arg) => arg === "--")).toHaveLength(1);
+      expect(spawnArgs).toEqual(expect.arrayContaining(["--inputs", "--dry-run", "--output-dir"]));
+    });
+
+    // Every part is the standard's snake_case, `[a-z][a-z0-9_]*`, which pipelex reads the same way:
+    // a doubled or trailing underscore is a valid part, though the manifest reader refuses it.
+    it("accepts every pipe reference the standard's grammar admits", async () => {
+      for (const pipeCode of [
+        "echo",
+        "step__2",
+        "answer_",
+        "smoke.echo",
+        "legal.contracts.review",
+        "legal__x.contracts_.answer",
+        "dep->scoring.rank",
+        "docproc->legal.contracts.extract_text",
+      ]) {
+        mockSpawnExit(0);
+        await runner.execute({ pipe_code: pipeCode });
+        expect((mockedSpawn.mock.lastCall![1] as string[]).at(-1)).toBe(pipeCode);
+      }
+    });
+
+    it.each([
+      ["-L", "an option of pipelex run pipe"],
+      ["--output-dir=/elsewhere", "an option with its value"],
+      ["-h", "a short flag"],
+      ["Echo", "not snake_case"],
+      ["smoke.", "a trailing dot"],
+      ["smoke..echo", "an empty domain segment"],
+      ["Bad-Alias->smoke.echo", "an alias that is not snake_case"],
+      ["pkg->answer", "a package alias with no domain"],
+      ["a->b->smoke.echo", "two package aliases"],
+      ["_echo", "a leading underscore"],
+      ["echo\n", "a trailing newline"],
+      ["smoke echo", "a space"],
+    ])("refuses the pipe code %j (%s) before running pipelex", async (pipeCode) => {
+      mockSpawnExit(0);
+      const err = await problemOf(runner.execute({ pipe_code: pipeCode }));
+      expect(err.problem.code).toBe("client.argument_invalid");
+      expect(err.problem.params).toEqual({ argument: "pipe_code", reason: "malformed" });
+      expect(mockedSpawn).not.toHaveBeenCalled();
+    });
+
+    it("refuses a pipe code starting with a dash for `run bundle --pipe` too", async () => {
+      mockSpawnExit(0);
+      const err = await problemOf(
+        runner.execute({ files: { "bundle.mthds": BUNDLE }, pipe_code: "-L" }),
+      );
+      expect(err.problem.params).toEqual({ argument: "pipe_code", reason: "malformed" });
+      expect(mockedSpawn).not.toHaveBeenCalled();
     });
 
     it("adds no run flag when none is given, leaving `[run] execution` to pipelex", async () => {

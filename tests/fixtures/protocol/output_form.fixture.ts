@@ -78,7 +78,7 @@ export const OUTPUT_FORM_FIXTURE: OutputForm = {
       required: true,
     },
   },
-  "input_semantics_scaffold.scaffold_anything_slot": {
+  "input_semantics_scaffold.scaffold_dynamic_prompt": {
     field: {
       kind: "prose",
       name: "output",
@@ -87,7 +87,16 @@ export const OUTPUT_FORM_FIXTURE: OutputForm = {
       required: true,
     },
   },
-  "input_semantics_scaffold.scaffold_dynamic_prompt": {
+  "input_semantics_scaffold.scaffold_verdict_natives": {
+    field: {
+      kind: "prose",
+      name: "output",
+      concept_ref: "native.Text",
+      description: "A text",
+      required: true,
+    },
+  },
+  "input_semantics_scaffold.scaffold_stored_natives": {
     field: {
       kind: "prose",
       name: "output",
@@ -297,6 +306,31 @@ export const OUTPUT_FORM_FIXTURE: OutputForm = {
       concept_ref: "native.Image",
       description: "An image",
       required: true,
+    },
+  },
+  "input_semantics_output.output_native_yes_no": {
+    field: {
+      kind: "object",
+      name: "output",
+      concept_ref: "native.YesNo",
+      description: "The answer to a yes/no question",
+      required: true,
+      fields: [
+        {
+          kind: "boolean",
+          name: "yes_no",
+          description: "Whether the answer is yes (true) or no (false).",
+          required: true,
+        },
+        {
+          kind: "number",
+          name: "probability",
+          description:
+            "The probability that the answer is yes, from 0 to 1, when the producer reports one.",
+          required: false,
+          integer: false,
+        },
+      ],
     },
   },
 };

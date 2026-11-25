@@ -34,23 +34,22 @@ import { SCHEMA, SCHEMA_PATH, noticeFor } from "./schema.js";
 // checked here against the vendored file, so the two cannot drift without a failing test.
 
 describe("the vendored schema", () => {
-  it("is the conformance repository's file, byte for byte, when that repository is checked out beside this one", () => {
+  it("is the conformance repository's file for its schema version, byte for byte, when that repository is checked out beside this one", () => {
     // tests/fixtures/ sits two levels below the repository, whose siblings hold `conformance`.
-    const canonical = join(
-      dirname(SCHEMA_PATH),
-      "..",
-      "..",
-      "..",
-      "conformance",
-      "specs",
-      "usage-statistics.json",
-    );
-    let canonicalText: string;
+    const specs = join(dirname(SCHEMA_PATH), "..", "..", "..", "conformance", "specs");
+    let currentText: string;
     try {
-      canonicalText = readFileSync(canonical, "utf-8");
+      currentText = readFileSync(join(specs, "usage-statistics.json"), "utf-8");
     } catch {
       return; // Not checked out here, as in CI: conformance's own drift check compares the copies.
     }
+    // Conformance keeps each earlier version it still admits frozen as `usage-statistics.v<N>.json`,
+    // so a copy at an earlier version than the current one is held to that file.
+    const current = JSON.parse(currentText) as { schema_version: number };
+    const canonicalText =
+      current.schema_version === SCHEMA.schema_version
+        ? currentText
+        : readFileSync(join(specs, `usage-statistics.v${SCHEMA.schema_version}.json`), "utf-8");
     expect(readFileSync(SCHEMA_PATH, "utf-8")).toBe(canonicalText);
   });
 });

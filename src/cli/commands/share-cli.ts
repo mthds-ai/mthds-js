@@ -1,5 +1,3 @@
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
 import * as p from "@clack/prompts";
 import chalk from "chalk";
 import { printLogo } from "./index.js";
@@ -7,11 +5,10 @@ import { parseAddress } from "../../installer/resolver/address.js";
 import { resolveFromGitHub } from "../../installer/resolver/github.js";
 import { resolveFromLocal } from "../../installer/resolver/local.js";
 import { describeUnusableMethod } from "../../installer/resolver/skipped.js";
+import { openInBrowser } from "./browser-opener.js";
 import { buildShareUrls } from "./share.js";
 import type { SharePlatform } from "./share.js";
 import type { ResolvedRepo } from "../../package/manifest/types.js";
-
-const execFileAsync = promisify(execFile);
 
 export async function shareMethod(options: {
   address?: string;
@@ -188,12 +185,7 @@ export async function shareMethod(options: {
   for (const platform of sharePlatforms) {
     const shareUrl = shareUrls[platform];
     try {
-      if (process.platform === "win32") {
-        await execFileAsync("cmd", ["/c", "start", "", shareUrl]);
-      } else {
-        const openCmd = process.platform === "darwin" ? "open" : "xdg-open";
-        await execFileAsync(openCmd, [shareUrl]);
-      }
+      await openInBrowser(shareUrl);
     } catch {
       p.log.warning(`Could not open browser for ${platform}. URL:\n  ${shareUrl}`);
     }

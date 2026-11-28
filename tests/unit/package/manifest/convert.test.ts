@@ -32,3 +32,28 @@ describe("the bridge between the flat and the nested manifest", () => {
     expect(legacyToParsedManifest(legacy)).not.toHaveProperty("categories");
   });
 });
+
+describe("the bridge carries the result line and the examples", () => {
+  it("carries both both ways, an empty examples array included", () => {
+    for (const examples of [["examples/a.json", "examples/b.json"], []]) {
+      const parsed: ParsedManifest = {
+        ...BASE,
+        mainPipe: "do_thing",
+        resultLine: "{{ output.total }} due",
+        examples,
+      };
+      const legacy = parsedManifestToLegacy(parsed);
+      expect(legacy.package.result_line).toBe("{{ output.total }} due");
+      expect(legacy.package.examples).toEqual(examples);
+      expect(legacyToParsedManifest(legacy)).toEqual(parsed);
+    }
+  });
+
+  it("leaves both out both ways when the manifest declares neither", () => {
+    const legacy = parsedManifestToLegacy(BASE);
+    expect(legacy.package).not.toHaveProperty("result_line");
+    expect(legacy.package).not.toHaveProperty("examples");
+    expect(legacyToParsedManifest(legacy)).not.toHaveProperty("resultLine");
+    expect(legacyToParsedManifest(legacy)).not.toHaveProperty("examples");
+  });
+});

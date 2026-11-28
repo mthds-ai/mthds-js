@@ -509,3 +509,94 @@ describe("parseMethodsToml — categories", () => {
     expect(() => parseMethodsToml(withCategories('[["legal"]]'))).toThrow(ManifestValidationError);
   });
 });
+
+// ---------------------------------------------------------------------------
+// [package] result_line and examples
+// ---------------------------------------------------------------------------
+
+describe("parseMethodsToml — result_line and examples", () => {
+  const RESULT_LINE =
+    "{{ output.clauses | selectattr('verdict', 'equalto', 'negotiate') | list | length }} to negotiate";
+  const withKeys = (lines: string): string =>
+    `${MINIMAL_TOML.replace("[package]\n", `[package]\n${lines}\n`)}\n[exports.legal]\npipes = ["review_nda"]\n`;
+
+  function refusal(raw: string): ManifestValidationError {
+    try {
+      parseMethodsToml(raw);
+    } catch (err) {
+      if (err instanceof ManifestValidationError) return err;
+      throw err;
+    }
+    throw new Error("the manifest was accepted");
+  }
+
+  it("reads both keys beside main_pipe and serializes them back as written", () => {
+    const manifest = parseMethodsToml(
+      withKeys(
+        `main_pipe = "review_nda"\nresult_line = "${RESULT_LINE}"\nexamples = ["examples/mutual-nda.json", "examples/b.json"]`,
+      ),
+    );
+    expect(manifest.resultLine).toBe(RESULT_LINE);
+    expect(manifest.examples).toEqual(["examples/mutual-nda.json", "examples/b.json"]);
+    expect(parseMethodsToml(serializeManifestToToml(manifest))).toEqual(manifest);
+  });
+
+  it("leaves both keys out when the manifest declares neither, and writes neither back", () => {
+    const manifest = parseMethodsToml(withKeys('main_pipe = "review_nda"'));
+    expect(manifest.resultLine).toBeUndefined();
+    expect(manifest.examples).toBeUndefined();
+    const output = serializeManifestToToml(manifest);
+    expect(output).not.toContain("result_line");
+    expect(output).not.toContain("examples");
+  });
+
+  it("accepts an empty examples array without main_pipe, carrying it as written", () => {
+    const manifest = parseMethodsToml(withKeys("examples = []"));
+    expect(manifest.examples).toEqual([]);
+    expect(parseMethodsToml(serializeManifestToToml(manifest)).examples).toEqual([]);
+  });
+
+  it.each([
+    [
+      "a result line with no main pipe to read",
+      'result_line = "{{ output.total }} due"',
+      "result_line_without_main_pipe",
+    ],
+    ["an empty result line", 'main_pipe = "review_nda"\nresult_line = ""', "result_line_invalid"],
+    [
+      "a result line of white space only",
+      'main_pipe = "review_nda"\nresult_line = " \\n "',
+      "result_line_invalid",
+    ],
+    [
+      "a blank result line with no main pipe, refused for the blank first",
+      'result_line = " "',
+      "result_line_invalid",
+    ],
+    [
+      "examples with no main pipe to fill",
+      'examples = ["examples/mutual-nda.json"]',
+      "examples_without_main_pipe",
+    ],
+  ])("refuses %s, naming the reason", (_topic, lines, reason) => {
+    expect(refusal(withKeys(lines)).reason).toBe(reason);
+  });
+
+  it.each([
+    ["a result line that is not a string", 'main_pipe = "review_nda"\nresult_line = 3'],
+    ["examples that are not an array", 'main_pipe = "review_nda"\nexamples = "examples/a.json"'],
+    ["an example entry that is not a string", 'main_pipe = "review_nda"\nexamples = [3]'],
+  ])("refuses %s with no reason of the format's", (_topic, lines) => {
+    expect(refusal(withKeys(lines)).reason).toBeUndefined();
+  });
+
+  it("leaves the template and the example files to the runtime", () => {
+    const manifest = parseMethodsToml(
+      withKeys(
+        'main_pipe = "review_nda"\nresult_line = "{{ counterparty "\nexamples = ["inputs.json"]',
+      ),
+    );
+    expect(manifest.resultLine).toBe("{{ counterparty ");
+    expect(manifest.examples).toEqual(["inputs.json"]);
+  });
+});

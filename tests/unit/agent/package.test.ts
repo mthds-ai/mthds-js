@@ -757,3 +757,63 @@ categories = ["legal", "customer-support", "legal"]
     expect(capturedError!.problem.message).toContain('"Legal"');
   });
 });
+
+// ── result_line and examples ─────────────────────────────────────────
+
+describe("the manifest's result line and examples in the JSON", () => {
+  const MANIFEST_TOML = `[package]
+address = "github.com/acme/tools"
+version = "1.0.0"
+description = "Useful tools."
+main_pipe = "review_nda"
+result_line = "{{ output.clauses | length }} clauses reviewed"
+examples = ["examples/mutual-nda.json"]
+
+[exports.legal]
+pipes = ["review_nda"]
+`;
+
+  beforeEach(() => {
+    mockedExistsSync.mockReturnValue(true);
+    mockedReadFileSync.mockReturnValue(MANIFEST_TOML);
+  });
+
+  it("list and validate answer them as the manifest writes them", async () => {
+    await agentPackageList({});
+    const listed = capturedResult!.manifest as Record<string, unknown>;
+    await agentPackageValidate({});
+    const validated = capturedResult!.manifest as Record<string, unknown>;
+
+    expect(listed.result_line).toBe("{{ output.clauses | length }} clauses reviewed");
+    expect(listed.examples).toEqual(["examples/mutual-nda.json"]);
+    expect(validated).toEqual(listed);
+  });
+
+  it("list leaves them out when the manifest declares neither", async () => {
+    mockedReadFileSync.mockReturnValue(MINIMAL_TOML);
+    await agentPackageList({});
+    const manifest = capturedResult!.manifest as Record<string, unknown>;
+
+    expect(manifest).not.toHaveProperty("result_line");
+    expect(manifest).not.toHaveProperty("examples");
+  });
+
+  it("validate refuses a result line without main_pipe under the format's own reason", async () => {
+    mockedReadFileSync.mockReturnValue(MANIFEST_TOML.replace('main_pipe = "review_nda"\n', ""));
+
+    await expect(agentPackageValidate({})).rejects.toThrow("agentError called");
+
+    expect(capturedError!.problem.code).toBe("method.package_invalid");
+    expect(capturedError!.problem.params).toEqual({ reason: "result_line_without_main_pipe" });
+  });
+
+  it("validate refuses an example without main_pipe under the format's own reason", async () => {
+    mockedReadFileSync.mockReturnValue(
+      MANIFEST_TOML.replace('main_pipe = "review_nda"\n', "").replace(/^result_line.*\n/m, ""),
+    );
+
+    await expect(agentPackageValidate({})).rejects.toThrow("agentError called");
+
+    expect(capturedError!.problem.params).toEqual({ reason: "examples_without_main_pipe" });
+  });
+});

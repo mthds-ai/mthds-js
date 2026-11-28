@@ -6,6 +6,7 @@ import {
   isValidExcludePattern,
   isValidVersionConstraint,
   METHOD_NAME_RE,
+  presentationKeyFaults,
   MTHDS_STANDARD_VERSION,
   satisfiesMthdsStandardVersion,
 } from "./schema.js";
@@ -248,6 +249,39 @@ export function validateManifest(raw: string): ValidationResult {
     }
   }
 
+  // package.result_line (optional) — a template string; package.examples (optional) — file
+  // references. Each needs main_pipe, and a result line holds something; the template itself and
+  // the example files are the runtime's to judge.
+  const resultLine = pkg["result_line"];
+  let resultLineChecked: string | undefined;
+  if (resultLine !== undefined) {
+    if (typeof resultLine !== "string") {
+      errors.push("[package.result_line] must be a string.");
+    } else {
+      resultLineChecked = resultLine;
+    }
+  }
+  const examples = pkg["examples"];
+  let examplesChecked: string[] | undefined;
+  if (examples !== undefined) {
+    if (!Array.isArray(examples)) {
+      errors.push("[package.examples] must be an array of strings.");
+    } else if ((examples as unknown[]).some((entry) => typeof entry !== "string")) {
+      errors.push("[package.examples] must contain only strings.");
+    } else {
+      examplesChecked = examples as string[];
+    }
+  }
+  // A main_pipe of the wrong type is already an error above; it still counts as declared here,
+  // so the manifest is not refused twice for one fault.
+  for (const fault of presentationKeyFaults({
+    mainPipe: pkg["main_pipe"] !== undefined ? String(pkg["main_pipe"]) : undefined,
+    resultLine: resultLineChecked,
+    examples: examplesChecked,
+  })) {
+    errors.push(fault.message);
+  }
+
   // --- [exports] section (required, hierarchical) ---
   const exports = parsed["exports"] as Record<string, unknown> | undefined;
   if (!exports || typeof exports !== "object" || Object.keys(exports).length === 0) {
@@ -309,6 +343,8 @@ export function validateManifest(raw: string): ValidationResult {
     ...(pkg["main_pipe"] !== undefined ? { main_pipe: pkg["main_pipe"] as string } : {}),
     ...(pkg["exclude"] !== undefined ? { exclude: pkg["exclude"] as string[] } : {}),
     ...(pkg["categories"] !== undefined ? { categories: pkg["categories"] as string[] } : {}),
+    ...(pkg["result_line"] !== undefined ? { result_line: pkg["result_line"] as string } : {}),
+    ...(pkg["examples"] !== undefined ? { examples: pkg["examples"] as string[] } : {}),
   };
 
   const manifest: MethodsManifest = {

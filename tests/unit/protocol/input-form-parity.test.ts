@@ -1,6 +1,11 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { FIELD_KINDS } from "../../../src/protocol/input_form.js";
+import {
+  AGGREGATES,
+  CONTRACT_FORMATS,
+  FIELD_KINDS,
+  OPTION_TONES,
+} from "../../../src/protocol/input_form.js";
 import type { InputFormItem, InputFormTopLevelField } from "../../../src/protocol/input_form.js";
 import type { IOMultiplicity, PresenceMarker } from "../../../src/protocol/pipe_io_contracts.js";
 import { INPUT_FORM_FIXTURE } from "../../fixtures/protocol/input_form.fixture.js";
@@ -171,6 +176,44 @@ describe("protocol parity fixtures — the pages' cross-artifact rules", () => {
   it("every kind the engine emitted is one this version of the standard defines", () => {
     for (const node of allNodes()) {
       expect(FIELD_KINDS).toContain(node.kind);
+    }
+  });
+
+  it("the contract facts and choice options stay inside the rules a type cannot state", () => {
+    // Vacuous over a capture whose methods author no contract facts, and binding as soon as one
+    // does: a format, an aggregate or a tone outside its closed set, a negative length, an empty
+    // `examples`, or `options` that do not follow `choices` or carry no word is version drift.
+    const outputNodes = Object.values(OUTPUT_FORM_FIXTURE).flatMap((descriptor) => [
+      ...walkNodes(descriptor.field),
+    ]);
+    for (const node of [...allNodes(), ...outputNodes]) {
+      if (node.examples !== undefined) expect(node.examples.length).toBeGreaterThan(0);
+      if (node.kind === "text" || node.kind === "prose") {
+        if (node.format !== undefined) expect(CONTRACT_FORMATS).toContain(node.format);
+        for (const length of [node.min_length, node.max_length]) {
+          if (length !== undefined) {
+            expect(Number.isInteger(length)).toBe(true);
+            expect(length).toBeGreaterThanOrEqual(0);
+          }
+        }
+      }
+      if (node.kind === "number" && node.aggregate !== undefined) {
+        expect(AGGREGATES).toContain(node.aggregate);
+      }
+      if (node.kind === "enum" && node.options !== undefined) {
+        expect(node.options.map((option) => option.value)).toEqual(node.choices);
+        expect(
+          node.options.some(
+            (option) =>
+              option.label !== undefined ||
+              option.description !== undefined ||
+              option.tone !== undefined,
+          ),
+        ).toBe(true);
+        for (const option of node.options) {
+          if (option.tone !== undefined) expect(OPTION_TONES).toContain(option.tone);
+        }
+      }
     }
   });
 

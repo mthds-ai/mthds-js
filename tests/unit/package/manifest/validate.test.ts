@@ -97,7 +97,7 @@ pipes = ["extract_clause", "analyze_nda"]
     expect(contracts.pipes).toEqual(["extract_clause", "analyze_nda"]);
   });
 
-  // The complete example of the standard's manifest format, as `v9.0.0` publishes it
+  // The complete example of the standard's manifest format, as `v9.2.0` publishes it
   // (mthds/docs/spec/manifest-format.md, "Complete Manifest Example"), copied verbatim:
   // its `mthds_version` floor is the standard's own version, so it passes only once
   // MTHDS_STANDARD_VERSION has followed the cut.
@@ -111,10 +111,12 @@ version       = "0.3.0"
 description   = "Legal document analysis and contract review methods."
 authors       = ["ACME Legal Tech <legal@acme.com>"]
 license       = "MIT"
-mthds_version = ">=9.0.0"
+mthds_version = ">=9.2.0"
 main_pipe     = "analyze_nda"
 exclude       = ["drafts/"]
 categories    = ["legal", "compliance"]
+result_line   = "{{ output.clauses | length }} clauses reviewed"
+examples      = ["examples/mutual-nda.json"]
 
 [exports.legal]
 pipes = ["classify_document"]
@@ -128,8 +130,10 @@ pipes = ["compute_weighted_score"]
     const r = validateManifest(raw);
     expect(r.errors).toEqual([]);
     expect(r.valid).toBe(true);
-    expect(r.manifest!.package.mthds_version).toBe(">=9.0.0");
+    expect(r.manifest!.package.mthds_version).toBe(">=9.2.0");
     expect(r.manifest!.package.categories).toEqual(["legal", "compliance"]);
+    expect(r.manifest!.package.result_line).toBe("{{ output.clauses | length }} clauses reviewed");
+    expect(r.manifest!.package.examples).toEqual(["examples/mutual-nda.json"]);
   });
 
   it("accepts valid name", () => {
@@ -669,5 +673,93 @@ describe("validateManifest — package.categories", () => {
       expect(r.valid).toBe(false);
       expect(r.errors).toContainEqual(expect.stringContaining("[package.categories]"));
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// validateManifest — package.result_line and package.examples
+// ---------------------------------------------------------------------------
+
+describe("validateManifest — package.result_line and package.examples", () => {
+  const withKeys = (lines: string): string =>
+    minimal.replace("[package]\n", `[package]\n${lines}\n`);
+  const RESULT_LINE =
+    "{{ output.clauses | selectattr('verdict', 'equalto', 'negotiate') | list | length }} to negotiate";
+
+  it("carries both keys beside main_pipe, as written", () => {
+    const r = validateManifest(
+      withKeys(
+        `main_pipe = "do_thing"\nresult_line = "${RESULT_LINE}"\nexamples = ["examples/a.json", "examples/b.json"]`,
+      ),
+    );
+    expect(r.errors).toEqual([]);
+    expect(r.manifest!.package.result_line).toBe(RESULT_LINE);
+    expect(r.manifest!.package.examples).toEqual(["examples/a.json", "examples/b.json"]);
+  });
+
+  it("leaves both keys off a manifest that declares neither", () => {
+    const r = validateManifest(withKeys('main_pipe = "do_thing"'));
+    expect(r.valid).toBe(true);
+    expect(r.manifest!.package.result_line).toBeUndefined();
+    expect(r.manifest!.package.examples).toBeUndefined();
+  });
+
+  it("accepts an empty examples array without main_pipe, carrying it as written", () => {
+    const r = validateManifest(withKeys("examples = []"));
+    expect(r.valid).toBe(true);
+    expect(r.manifest!.package.examples).toEqual([]);
+  });
+
+  it.each([
+    [
+      "a result line with no main pipe to read",
+      'result_line = "{{ output.total }} due"',
+      "requires [package.main_pipe]",
+    ],
+    [
+      "examples with no main pipe to fill",
+      'examples = ["examples/a.json"]',
+      "requires [package.main_pipe]",
+    ],
+    ["an empty result line", 'main_pipe = "do_thing"\nresult_line = ""', "must not be empty"],
+    [
+      "a result line of white space only",
+      'main_pipe = "do_thing"\nresult_line = " \\n "',
+      "must not be empty",
+    ],
+    [
+      "a result line that is not a string",
+      'main_pipe = "do_thing"\nresult_line = 3',
+      "must be a string",
+    ],
+    [
+      "examples that are not an array",
+      'main_pipe = "do_thing"\nexamples = "examples/a.json"',
+      "must be an array of strings",
+    ],
+    [
+      "an example entry that is not a string",
+      'main_pipe = "do_thing"\nexamples = [3]',
+      "must contain only strings",
+    ],
+  ])("rejects %s", (_topic, lines, message) => {
+    const r = validateManifest(withKeys(lines));
+    expect(r.valid).toBe(false);
+    expect(r.errors).toContainEqual(expect.stringContaining(message));
+  });
+
+  it("reports every presentation fault at once", () => {
+    const r = validateManifest(withKeys('result_line = " "\nexamples = ["examples/a.json"]'));
+    expect(r.valid).toBe(false);
+    expect(r.errors).toHaveLength(3);
+  });
+
+  it("leaves the template and the example files to the runtime", () => {
+    const r = validateManifest(
+      withKeys(
+        'main_pipe = "do_thing"\nresult_line = "{{ counterparty "\nexamples = ["inputs.json"]',
+      ),
+    );
+    expect(r.errors).toEqual([]);
   });
 });

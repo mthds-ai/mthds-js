@@ -30,3 +30,26 @@ categories = ["legal", "customer-support"]
 - **This package carries them.** It has no use for categories beyond showing them, so `ParsedManifest.categories` and `PackageSection.categories` keep the list as the manifest writes it, its order, its repeats and an empty array included, and `serializeManifestToToml` writes it back. An install copies `METHODS.toml` byte for byte.
 - **Where they show.** `mthds package list` and `mthds package validate` print a list that holds an entry. `mthds-agent package list` and `package validate` answer `categories` in the manifest's JSON as written, and leave the key out when the manifest does.
 - **Nothing writes them for an author.** `mthds package init` and `mthds-agent package init` take no categories: an author adds the key by hand.
+
+## Result line and example inputs
+
+```toml
+[package]
+address     = "github.com/acme/nda-review"
+version     = "1.2.0"
+description = "Review an NDA clause by clause against the company playbook"
+main_pipe   = "review_nda"
+result_line = "{{ output.clauses | length }} clauses reviewed"
+examples    = ["examples/mutual-nda.json"]
+```
+
+`[package] result_line` is a Jinja2 template wording a finished run of the main pipe in one line, reading the main pipe's output as `output`, and `examples` lists files of the method's tree, each holding a complete set of example inputs for the main pipe, in the order a consumer offers them. Both readers carry them as written: `ParsedManifest.resultLine` and `examples`, `PackageSection.result_line` and `examples`, an empty `examples` array included, and `serializeManifestToToml` and the bridge write back each one the manifest declares.
+
+Both readers check the rules a manifest can break on its own, written once as `presentationKeyFaults` in `schema.ts`:
+
+- **Both keys require the manifest's own `main_pipe`.** A `result_line` without one breaks `result_line_without_main_pipe`, and a non-empty `examples` without one breaks `examples_without_main_pipe`. An empty `examples` array declares no example, as leaving the key out does.
+- **A result line holds something.** An empty template, or one holding only white space, which would render to no line at all, breaks `result_line_invalid`.
+
+Each rule carries the `method.package_invalid` reason the manifest format gives it, a `ManifestPackageReason` (`src/package/manifest/package-reason.ts`). The strict reader refuses the manifest for the first rule broken, a blank result line before a missing main pipe, and its `ManifestValidationError.reason` names that reason, so `mthds-agent package validate` and `package list` answer `method.package_invalid` with it, such as `{"reason": "result_line_without_main_pipe"}`, where every other refusal of the manifest answers `manifest_invalid`. The installer's validator collects every rule broken as a message among its errors.
+
+The rest is the runtime's to judge, because it needs what a manifest alone does not hold: whether the template parses as Jinja2 and reads no free variable but `output`, which needs a template engine and is reported as `result_line_invalid`; whether each example names a file of the tree, which needs the tree and is reported as `method.resource_missing`; and whether each file holds a valid set of inputs for the main pipe, which needs the resolved library and is reported as `example_invalid`, the one member of `ManifestPackageReason` this package never raises. Rendering the line when a run succeeds, and offering the examples, are the runtime's as well. `mthds package list` and `validate` show both keys, and `mthds-agent package list` and `validate` answer `result_line` and `examples` in the manifest's JSON as written, leaving each out when the manifest does.

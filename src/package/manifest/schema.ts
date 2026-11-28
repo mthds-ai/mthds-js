@@ -12,6 +12,7 @@
 import { z } from "zod";
 
 import { parseConstraint, parseVersion, SemVerError, versionSatisfies } from "../semver.js";
+import type { ManifestPackageReason } from "./package-reason.js";
 
 // ---------------------------------------------------------------------------
 // Regex patterns
@@ -49,7 +50,7 @@ export const RESERVED_DOMAINS: ReadonlySet<string> = new Set(["native", "mthds",
  * (`satisfiesMthdsStandardVersion` below) and what `mthds package init` writes as
  * the floor of a new package's constraint.
  */
-export const MTHDS_STANDARD_VERSION = "9.0.0";
+export const MTHDS_STANDARD_VERSION = "9.2.0";
 
 // ---------------------------------------------------------------------------
 // Standalone validation helpers (used outside the parser too)
@@ -137,6 +138,60 @@ export function isValidCategory(category: string): boolean {
   return CATEGORY_SLUG_RE.test(category);
 }
 
+/** A rule of `result_line` or `examples` a manifest breaks on its own, with the reason the format gives it. */
+export interface ManifestRuleFault {
+  readonly reason: ManifestPackageReason;
+  readonly message: string;
+}
+
+/**
+ * The rules of `[package] result_line` and `examples` a manifest can break on its own
+ * (`mthds/docs/spec/manifest-format.md`, "Result Line" and "Example Inputs"), in the order the
+ * strict reader reports them, the first one being the one it refuses the manifest for:
+ *
+ * - a `result_line` that is empty or holds only white space, which would render to no line at all,
+ *   breaks `result_line_invalid`;
+ * - a `result_line` without the manifest's own `main_pipe`, whose output it reads, breaks
+ *   `result_line_without_main_pipe`;
+ * - a non-empty `examples` without `main_pipe`, whose inputs each example fills, breaks
+ *   `examples_without_main_pipe`. An empty array declares no example, as leaving the key out does.
+ *
+ * The rest is the runtime's to judge, since it needs what a manifest alone does not hold: whether
+ * the template parses as Jinja2 and reads no free variable but `output`, whether each example
+ * names a file of the tree, and whether each file holds a valid set of inputs for the main pipe.
+ */
+export function presentationKeyFaults(pkg: {
+  readonly mainPipe?: string | undefined;
+  readonly resultLine?: string | undefined;
+  readonly examples?: readonly string[] | undefined;
+}): ManifestRuleFault[] {
+  const faults: ManifestRuleFault[] = [];
+  if (pkg.resultLine !== undefined && pkg.resultLine.trim() === "") {
+    faults.push({
+      reason: "result_line_invalid",
+      message:
+        "[package.result_line] must not be empty: it is a template wording a finished run of the main pipe in one line.",
+    });
+  }
+  if (pkg.mainPipe === undefined) {
+    if (pkg.resultLine !== undefined) {
+      faults.push({
+        reason: "result_line_without_main_pipe",
+        message:
+          "[package.result_line] requires [package.main_pipe]: the result line reads the output of the manifest's own main pipe.",
+      });
+    }
+    if (pkg.examples !== undefined && pkg.examples.length > 0) {
+      faults.push({
+        reason: "examples_without_main_pipe",
+        message:
+          "[package.examples] requires [package.main_pipe]: each example is a set of inputs for the manifest's own main pipe.",
+      });
+    }
+  }
+  return faults;
+}
+
 /** Raw [package] section in METHODS.toml */
 export const PackageSectionSchema = z
   .object({
@@ -151,6 +206,8 @@ export const PackageSectionSchema = z
     main_pipe: z.string().optional(),
     exclude: z.array(z.string()).optional(),
     categories: z.array(z.string()).optional(),
+    result_line: z.string().optional(),
+    examples: z.array(z.string()).optional(),
   })
   .strict();
 
@@ -199,6 +256,17 @@ export interface ParsedManifest {
    * the manifest writes them, order, repeats and an empty array included.
    */
   readonly categories?: string[];
+  /**
+   * `[package] result_line`: a Jinja2 template wording a finished run of `mainPipe` in one line,
+   * reading the main pipe's output as `output`, carried as written. Rendering it is the runtime's.
+   */
+  readonly resultLine?: string;
+  /**
+   * `[package] examples`: files of the method's tree, each holding a complete set of example
+   * inputs for `mainPipe`, in the order a consumer offers them, carried as written, an empty array
+   * included.
+   */
+  readonly examples?: string[];
   readonly exports: Record<string, DomainExports>;
 }
 

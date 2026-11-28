@@ -12,6 +12,7 @@ import {
   isValidExcludePattern,
   MethodsTomlSchema,
   DomainExportsSchema,
+  presentationKeyFaults,
   type ParsedManifest,
   type DomainExports,
 } from "./schema.js";
@@ -275,6 +276,15 @@ export function parseMethodsToml(content: string): ParsedManifest {
     categories = [...pkg.categories];
   }
 
+  const resultLine = pkg.result_line;
+  const examples = pkg.examples !== undefined ? [...pkg.examples] : undefined;
+  const [presentationFault] = presentationKeyFaults({ mainPipe, resultLine, examples });
+  if (presentationFault !== undefined) {
+    throw new ManifestValidationError(presentationFault.message, {
+      reason: presentationFault.reason,
+    });
+  }
+
   // Step 3: Process and validate exports
   let exports: Record<string, DomainExports> = {};
   if (validated.exports) {
@@ -316,6 +326,8 @@ export function parseMethodsToml(content: string): ParsedManifest {
     ...(mainPipe !== undefined ? { mainPipe } : {}),
     ...(exclude !== undefined ? { exclude } : {}),
     ...(categories !== undefined ? { categories } : {}),
+    ...(resultLine !== undefined ? { resultLine } : {}),
+    ...(examples !== undefined ? { examples } : {}),
   };
 }
 
@@ -357,6 +369,12 @@ export function serializeManifestToToml(manifest: ParsedManifest): string {
   }
   if (manifest.categories !== undefined) {
     packageSection["categories"] = manifest.categories;
+  }
+  if (manifest.resultLine !== undefined) {
+    packageSection["result_line"] = manifest.resultLine;
+  }
+  if (manifest.examples !== undefined) {
+    packageSection["examples"] = manifest.examples;
   }
   doc["package"] = packageSection;
 

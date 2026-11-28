@@ -17,6 +17,8 @@ export interface PackageSection {
   readonly main_pipe?: string;
   readonly exclude?: string[];
   readonly categories?: string[];
+  readonly result_line?: string;
+  readonly examples?: string[];
 }
 
 // --- Exports: hierarchical with pipes arrays ---

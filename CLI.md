@@ -712,7 +712,7 @@ Validate the `METHODS.toml` manifest.
 mthds package validate
 ```
 
-Checks that the manifest has valid TOML syntax and passes all validation rules: required fields (`address`, `version`, `description`), valid semver version, valid address format, snake\_case pipe names, valid domain paths, no reserved domains in exports, valid version constraints, `categories` entries that are lowercase slugs matching `^[a-z0-9]+(-[a-z0-9]+)*$`, no unknown keys in `[package]`, and no unknown top-level sections. A repeated category and a category value the CLI does not know are not errors.
+Checks that the manifest has valid TOML syntax and passes all validation rules: required fields (`address`, `version`, `description`), valid semver version, valid address format, snake\_case pipe names, valid domain paths, no reserved domains in exports, valid version constraints, `categories` entries that are lowercase slugs matching `^[a-z0-9]+(-[a-z0-9]+)*$`, a `result_line` that is not blank and, like a non-empty `examples`, comes with `main_pipe`, no unknown keys in `[package]`, and no unknown top-level sections. A repeated category and a category value the CLI does not know are not errors.
 
 Exits with code 1 on failure.
 
@@ -731,7 +731,7 @@ Display the contents of `METHODS.toml`.
 mthds package list
 ```
 
-Shows package metadata (address, version, description, display name, authors, license, MTHDS version, categories) and exported domains with their pipes.
+Shows package metadata (address, version, description, display name, authors, license, MTHDS version, categories, result line, examples) and exported domains with their pipes.
 
 **Example:**
 

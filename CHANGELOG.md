@@ -1,5 +1,23 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- **`unit` and `aggregate` on a `number` node**: the input-form and output-form descriptor types carry the facts MTHDS `9.2.0` authors on a number: `NumberFieldNode.unit`, the site's effective unit, carried as written, and `aggregate` (`Aggregate`: `sum` or `average`, listed at run time by `AGGREGATES`).
+- **Choice options on an `enum` node**: `EnumFieldNode.options` lists one `ChoiceOption` per value of `choices`, in the same order, with its optional `label`, `description` and `tone` (`OptionTone`: `positive`, `caution`, `negative`, `neutral`, listed by `OPTION_TONES`), and is present only when at least one option carries a word.
+- **The intent-hint vocabularies of `9.2.0`**: `mthds/protocol` exports `HINT_KEYS`, `INTENT_WORDS` (with `code`, `identifier`, `question`, `photo`, `screenshot` and `scan`), `ROLE_WORDS` and `PART_WORDS`, their types and a guard for each (`isRoleWord`, …), for a consumer reading a hint by name; a `hints` map is still a plain string map, unknown words included.
+- **`result_line` and `examples` in a manifest**: `[package] result_line` and `examples` are accepted wherever a `METHODS.toml` is read and written back as written, and `mthds package list`, `package validate` and their `mthds-agent` twins show them. A `result_line` or a non-empty `examples` without `main_pipe`, and an empty or blank `result_line`, refuse the manifest, and `mthds-agent package validate` then answers `method.package_invalid` with the format's reason (`result_line_without_main_pipe`, `examples_without_main_pipe` or `result_line_invalid`, carried by `ManifestValidationError.reason`); parsing the template and checking the example files are left to the runtime.
+
+### Changed
+
+- **Standard version `9.2.0` and the core error registry `9.2.0` (Breaking)**: `MTHDS_STANDARD_VERSION` moves to `9.2.0`, so `mthds package init` writes `mthds_version = ">=9.2.0"` and a manifest capped below it, such as an exact `9.0.0`, `~9.0.0`, `~9.1.0` or `>=9.0.0, <9.2.0`, is no longer satisfied and the installer skips its method, while `>=9.0.0` and `^9.0.0` still are. The package vendors the registry of the standard's `v9.2.0` release, and `MTHDS_ERROR_REGISTRY_VERSION` and `MTHDS_ERROR_REGISTRY_TARGET_VERSION` are `9.2.0`: it adds `method.contract_fact_invalid` (parameters `fact`, `field_path` and a `reason` among `inapplicable`, `not_value_slot`, `malformed`, `contradictory`, `value_breaks_contract` and `duplicate_option`) and the warning `method.choice_option_dubious` (`field_path`, and a `reason` of `empty_value` or `duplicate_value`), and gives `method.hint_invalid`'s `reason` the values `unknown_role`, `inapplicable_role`, `unknown_part`, `inapplicable_part` and `duplicate_part`. The protocol stays at `2.0.1`.
+- **Descriptor contract-fact slots are typed (Breaking)**: a text node's `format` is the closed `ContractFormat` (`email`, `uri`, `date-time`, `uuid`, `hostname`, `ipv4`, `ipv6` and `time`, listed by `CONTRACT_FORMATS`) where it was any string, `examples` is a non-empty list of strings and numbers where it was `unknown[]`, and an `enum` node's `choices` is `string[]` where it was `unknown[]`, so code building a descriptor with another format, an empty or boolean example or a non-string choice no longer compiles.
+
+### Fixed
+
+- **A manifest without `[exports]`, or whose `main_pipe` no export lists**: `mthds install`, `publish` and `share` no longer skip such a method, since the manifest format makes `[exports]` optional and exports the main pipe whether or not `[exports]` lists it; an `[exports]` section that is present is still checked.
+
 ## [v0.37.0] - 2026-11-25
 
 ### Changed

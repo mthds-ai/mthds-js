@@ -411,9 +411,9 @@ function leafPlaceholder(node: InputFormItem, name: string): TemplateValue {
     case "boolean":
       return false;
     case "enum":
-      // The first choice, never a random one: these bytes are committed. The authored
-      // choices are `unknown[]` — whatever a bundle declared is what the template offers.
-      return node.choices.length > 0 ? (node.choices[0] as TemplateValue) : `${name}_value`;
+      // The first choice, never a random one: these bytes are committed. The option values
+      // are strings, whatever words `options` gives them: a template holds values, not labels.
+      return node.choices.length > 0 ? node.choices[0]! : `${name}_value`;
     case "image":
     case "document":
       return `${MOCK_URL_PREFIX}${FILE_CONTENT_KEY}`;

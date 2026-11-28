@@ -6,6 +6,7 @@ import {
   isValidExcludePattern,
   isValidVersionConstraint,
   METHOD_NAME_RE,
+  presentationKeyFaults,
   MTHDS_STANDARD_VERSION,
   satisfiesMthdsStandardVersion,
 } from "./schema.js";
@@ -248,38 +249,54 @@ export function validateManifest(raw: string): ValidationResult {
     }
   }
 
-  // --- [exports] section (required, hierarchical) ---
-  const exports = parsed["exports"] as Record<string, unknown> | undefined;
-  if (!exports || typeof exports !== "object" || Object.keys(exports).length === 0) {
-    errors.push(
-      "[exports] section is required: at least one export domain with pipes must be defined.",
-    );
-  } else {
-    for (const [domain, node] of Object.entries(exports)) {
-      const domainLower = domain.toLowerCase();
-      const matchedPrefix = RESERVED_PREFIXES.find((prefix) => domainLower.startsWith(prefix));
-      if (matchedPrefix) {
-        errors.push(
-          `[exports."${domain}"] domain cannot start with reserved prefix "${matchedPrefix}".`,
-        );
-      }
-      validateExportNode(node, domain, errors);
+  // package.result_line (optional) — a template string; package.examples (optional) — file
+  // references. Each needs main_pipe, and a result line holds something; the template itself and
+  // the example files are the runtime's to judge.
+  const resultLine = pkg["result_line"];
+  if (resultLine !== undefined && typeof resultLine !== "string") {
+    errors.push("[package.result_line] must be a string.");
+  }
+  const examples = pkg["examples"];
+  if (examples !== undefined) {
+    if (!Array.isArray(examples)) {
+      errors.push("[package.examples] must be an array of strings.");
+    } else if ((examples as unknown[]).some((entry) => typeof entry !== "string")) {
+      errors.push("[package.examples] must contain only strings.");
     }
   }
+  // A main_pipe of the wrong type is already an error above; it still counts as declared here,
+  // so the manifest is not refused twice for one fault. It is never coerced: a TOML table with a
+  // `toString` key would make `String()` throw and abort the whole repository's resolution.
+  const mainPipe = pkg["main_pipe"];
+  for (const fault of presentationKeyFaults({
+    mainPipe: mainPipe === undefined ? undefined : typeof mainPipe === "string" ? mainPipe : "",
+    // As declared, whatever their type: a key of the wrong type with no main_pipe breaks both rules.
+    resultLine,
+    examples,
+  })) {
+    errors.push(fault.message);
+  }
 
-  // --- main_pipe must be listed in exports ---
-  if (
-    pkg["main_pipe"] &&
-    typeof pkg["main_pipe"] === "string" &&
-    exports &&
-    typeof exports === "object" &&
-    Object.keys(exports).length > 0
-  ) {
-    const allPipes = collectAllExportedPipes(exports as Exports);
-    if (!allPipes.includes(pkg["main_pipe"] as string)) {
-      errors.push(
-        `[package.main_pipe] "${pkg["main_pipe"]}" must be listed in one of the [exports] domains.`,
-      );
+  // --- [exports] section (optional, hierarchical) ---
+  // The manifest format makes [exports] optional, and the main pipe is exported by virtue of being
+  // main_pipe, whether or not [exports] lists it (mthds/docs/spec/manifest-format.md, "Main
+  // Pipe"), so neither an absent section nor an unlisted main pipe is a fault. A section that is
+  // present is still checked.
+  const exports = parsed["exports"];
+  if (exports !== undefined) {
+    if (exports === null || typeof exports !== "object" || Array.isArray(exports)) {
+      errors.push("[exports] must be a table of export domains.");
+    } else {
+      for (const [domain, node] of Object.entries(exports as Record<string, unknown>)) {
+        const domainLower = domain.toLowerCase();
+        const matchedPrefix = RESERVED_PREFIXES.find((prefix) => domainLower.startsWith(prefix));
+        if (matchedPrefix) {
+          errors.push(
+            `[exports."${domain}"] domain cannot start with reserved prefix "${matchedPrefix}".`,
+          );
+        }
+        validateExportNode(node, domain, errors);
+      }
     }
   }
 
@@ -309,11 +326,13 @@ export function validateManifest(raw: string): ValidationResult {
     ...(pkg["main_pipe"] !== undefined ? { main_pipe: pkg["main_pipe"] as string } : {}),
     ...(pkg["exclude"] !== undefined ? { exclude: pkg["exclude"] as string[] } : {}),
     ...(pkg["categories"] !== undefined ? { categories: pkg["categories"] as string[] } : {}),
+    ...(pkg["result_line"] !== undefined ? { result_line: pkg["result_line"] as string } : {}),
+    ...(pkg["examples"] !== undefined ? { examples: pkg["examples"] as string[] } : {}),
   };
 
   const manifest: MethodsManifest = {
     package: manifestPkg,
-    ...(exports ? { exports: exports as Exports } : {}),
+    ...(exports !== undefined ? { exports: exports as Exports } : {}),
   };
 
   return { valid: true, errors: [], manifest };

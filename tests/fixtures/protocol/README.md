@@ -20,7 +20,7 @@ Everything in this directory is committed **byte-identically** here and in `mthd
 
   Copy `input_form.json`, `output_form.json`, `pipe_io_contracts.json` and the whole `inputs_template/` tree from `<dir>` into this directory and into `mthds-python`'s twin of it, then run `npm run fixtures:protocol` here. The `engine/` directory the command also writes is **not** committed: it holds the reference engine's own renderings, which is what the divergence record below is measured against.
 - Engine: `pipelex` `dev` at `5c8f298a0`, the change that let `native.Text`, `native.Html` and `native.JSON` hold their value in storage (MTHDS standard 9.0.0). `pipelex-dev generate-projection-corpus` has its own page, `pipelex/docs/contribute/generate-projection-corpus.md`; it replaced `trace-input-semantics` as the producer of these files, and generating from the two original bundles alone reproduced the previous capture byte for byte, so that move was a no-op diff.
-- Pages the types follow: `mthds/docs/spec/input-form-descriptor.md` and `mthds/docs/spec/pipe-io-contracts.md` as published in MTHDS v0.9.0, with `mthds/docs/spec/intent-hints.md` for the `hints` slot.
+- Pages the types follow: `mthds/docs/spec/input-form-descriptor.md`, `output-form-descriptor.md` and `pipe-io-contracts.md` as published in MTHDS standard `9.2.0`, with `mthds/docs/spec/intent-hints.md` for the `hints` slot. The capture's bundles author no contract facts, choice options, `role` or `part`, so the `9.2.0` slots do not appear in it, and the parity test's checks of them hold vacuously until a capture carries some.
 
 ## The inputs templates
 

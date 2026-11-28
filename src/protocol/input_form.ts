@@ -2,9 +2,10 @@
  * Input-form descriptor — exact mirror of `mthds/protocol/input_form.py`.
  *
  * Normative page: "Input-Form Descriptor"
- * (`mthds/docs/spec/input-form-descriptor.md`, published on mthds.ai with
- * MTHDS v0.9.0), with the `hints` slot's shape from "Intent Hints"
- * (`mthds/docs/spec/intent-hints.md`). The descriptor is the per-pipe,
+ * (`mthds/docs/spec/input-form-descriptor.md`, MTHDS standard `9.2.0`), with
+ * the `hints` slot's shape from "Intent Hints"
+ * (`mthds/docs/spec/intent-hints.md`), whose words are named in
+ * `./intent_hints.ts`. The descriptor is the per-pipe,
  * **ordered** presentation view of a method's inputs: one field descriptor per
  * declared input slot, in authored order, each a recursive node discriminated
  * on `kind` that states every fact a renderer needs — concept identity, the
@@ -15,14 +16,30 @@
  * extension field** `input_form` (see `ValidationReport` in `./models.ts`),
  * keyed by the same `pipe_ref` set as `PipeIOContracts`.
  *
- * Types only, plus one runtime value: `FIELD_KINDS`, the closed kind vocabulary
- * as a `const` tuple from which the `FieldKind` union is derived — the same
- * shape as `MODEL_CATEGORIES` in `./models.ts`. It exists because a union is
- * erased at build while a consumer still needs the vocabulary at run time: a
- * renderer's exhaustiveness guard over `kind`, or the parity test that checks
- * every kind an engine emitted is one this version defines. There is no
- * runtime validator here on purpose — engines own their emission gates and are
- * pinned to these types.
+ * Types only, plus the closed vocabularies as runtime values: `FIELD_KINDS`,
+ * `CONTRACT_FORMATS`, `AGGREGATES` and `OPTION_TONES`, each a `const` tuple from
+ * which its union is derived — the same shape as `MODEL_CATEGORIES` in
+ * `./models.ts`. They exist because a union is erased at build while a
+ * consumer still needs the vocabulary at run time: a renderer's exhaustiveness
+ * guard over `kind` or `tone`, or the parity test that checks every value an
+ * engine emitted is one this version defines. There is no runtime validator
+ * here on purpose — engines own their emission gates and are pinned to these
+ * types.
+ *
+ * Contract facts (MTHDS standard `9.2.0`). The language authors the constraint
+ * slots (the four numeric bounds, `min_length`, `max_length`, `pattern`,
+ * `format`) and the description slots (`unit` and `aggregate` on a `number`
+ * node, `examples` on every node) as contract facts, and a producer states
+ * each one the method authors on the node of the site that declares it: a
+ * field's on the field's node, a slot's on the top-level node, or on a plural
+ * slot's `item` (the `list` node of a plural slot carries none). The types
+ * state each slot's own shape; the relations between facts (contradictory
+ * bounds, an example breaking a constraint) are the producer's validation of
+ * the method, since the descriptor is a presentation view and no validator of
+ * payloads. Two rules a type cannot state stay producer obligations, as the
+ * gating derivation does below: a length is a non-negative integer, and an
+ * `enum` node's `options` lists one `ChoiceOption` per value of `choices`, in
+ * the same order, and appears only when at least one option carries a word.
  *
  * Conventions the page fixes and these types follow:
  *   - wire names are snake_case, verbatim;
@@ -70,16 +87,90 @@ export const FIELD_KINDS = [
 export type FieldKind = (typeof FIELD_KINDS)[number];
 
 /**
+ * The closed `format` set a text node may carry: the language's formats, each
+ * the JSON Schema format of the same name, plus `time`. `time` is not a value
+ * an author writes: the `time` field type and `native.Time` produce it, as a
+ * `text` node with `format: "time"`. Since `9.2.0` a producer emits no other
+ * value, so any other format, such as `phone`, is version drift.
+ */
+export const CONTRACT_FORMATS = [
+  "email",
+  "uri",
+  "date-time",
+  "uuid",
+  "hostname",
+  "ipv4",
+  "ipv6",
+  "time",
+] as const;
+
+/** One of `CONTRACT_FORMATS` — the `format` slot of a text node. */
+export type ContractFormat = (typeof CONTRACT_FORMATS)[number];
+
+/**
+ * How the values of a number-valued field combine across the records that
+ * hold it. A consumer presenting several records together may show the sum or
+ * the average a field declares, counted in the field's effective unit, and
+ * never a total or an average of a field that declares no `aggregate`.
+ */
+export const AGGREGATES = ["sum", "average"] as const;
+
+/** One of `AGGREGATES` — the `aggregate` slot of a `number` node. */
+export type Aggregate = (typeof AGGREGATES)[number];
+
+/**
+ * How a choice option reads to a person, never a colour. A consumer maps a
+ * tone to its own palette or icon, shows an option without one as `neutral`,
+ * and never infers a tone from an option's value or label.
+ */
+export const OPTION_TONES = ["positive", "caution", "negative", "neutral"] as const;
+
+/** One of `OPTION_TONES` — the `tone` of a `ChoiceOption`. */
+export type OptionTone = (typeof OPTION_TONES)[number];
+
+/**
+ * One authored example, as the value itself in JSON: a string, a number, or an
+ * ISO 8601 string for a date, a date-time or a time. Never a boolean, and never
+ * a string standing for a number.
+ */
+export type ExampleValue = string | number;
+
+/**
+ * One option of an `enum` node's `options`: its value, and the words and tone
+ * the method gives it. Closed shape; a word the option does not declare is
+ * absent, never `null`, and a declared word is never empty. Only `value`
+ * matters to a payload; the rest is presentation.
+ */
+export interface ChoiceOption {
+  /**
+   * The option's value exactly as `choices` lists it at the same position — any
+   * string a `choices` list holds, the empty string included for a list written
+   * before option tables existed.
+   */
+  value: string;
+  /** The option's name for people, such as `Under watch` for the value `HIGH_RISK`. */
+  label?: string;
+  /** What choosing the option means. */
+  description?: string;
+  /** How the option reads to a person; absent reads as `neutral`. */
+  tone?: OptionTone;
+}
+
+/**
  * A node's effective intent hints: a flat string → string map, the final
  * key-by-key merge the language defines — along the concept's refinement
  * chain, nearer declaration winning, then the site layer (a structure field's
  * or an input slot's own `hints`) over the concept layer — so a consumer reads
  * one map and walks nothing. Everything well-formed rides it, unknown keys and
- * unknown words included. This version of the standard defines one key,
- * `intent`, with the words `prose` and `label` (text-valued sites) and `rating`
- * and `quantity` (number-valued sites). An applicable word is an input to kind
- * assignment, never a second answer competing with it; hints are non-normative
- * and a renderer that ignores them stays correct.
+ * unknown words included. This version of the standard defines three keys —
+ * `intent`, `role` (on a top-level field) and `part` (on a nested field) — whose
+ * words `./intent_hints.ts` names for a consumer reading a hint by name; nothing
+ * checks a map against them, so a word from a later version still type-checks
+ * as a string. Only a text-valued node's `intent` is an input to kind
+ * assignment (`prose`, `code` and `question` yield `prose`; `label` and
+ * `identifier` yield `text`), never a second answer competing with it; `role`
+ * and `part` never change a kind. Hints are non-normative and a renderer that
+ * ignores them stays correct.
  */
 export type IntentHints = Record<string, string>;
 
@@ -112,7 +203,11 @@ interface InputFormNodeCommon {
    * `native.X`?" is a membership test on this list, never shape sniffing.
    */
   refines?: string[];
-  /** Helper text, from the authored concept or field description. */
+  /**
+   * Helper text: on a top-level field, the input slot's own `description` when
+   * it declares one, and otherwise its concept's; on a nested field, the
+   * field's description.
+   */
   description?: string;
   /**
    * On a top-level field: the caller must supply the slot, derived as
@@ -131,10 +226,11 @@ interface InputFormNodeCommon {
    */
   default_value?: unknown;
   /**
-   * Example values for the field. Shaped now and authored by the language
-   * later; a producer that has nothing to put here omits it.
+   * The site's authored `examples` contract fact, each as the value itself in
+   * JSON. Non-empty when present. A description, never a constraint: no value
+   * is invalid for being unlike them.
    */
-  examples?: unknown[];
+  examples?: [ExampleValue, ...ExampleValue[]];
   /**
    * The node's effective intent hints. Absent when the node has no effective
    * hints, so a hint-free method's descriptor is byte-identical to what it was
@@ -145,19 +241,24 @@ interface InputFormNodeCommon {
 }
 
 /**
- * The constraint slots the two text kinds share — stated where a producer
- * holds them, shaped now and authored by the language later.
+ * The constraint slots the two text kinds share: the site's contract facts, as
+ * the method authors them.
  */
 interface TextConstraintSlots {
+  /** The fewest characters the value holds, counted in Unicode code points; a non-negative integer. */
   min_length?: number;
+  /** The most characters the value holds, counted in Unicode code points; a non-negative integer. */
   max_length?: number;
+  /**
+   * A regular expression in the ECMA-262 dialect JSON Schema's `pattern` uses,
+   * matching anywhere in the value unless anchored.
+   */
   pattern?: string;
   /**
-   * An open string set carrying schema formats the `date` kind does not absorb
-   * (`"time"`, `"uri"`, …). `native.Time` and a `type = "time"` structure field
-   * are `kind: "text"` with `format: "time"`.
+   * One of the language's formats, or `time`, which `native.Time` and a
+   * `type = "time"` structure field produce as `kind: "text"`.
    */
-  format?: string;
+  format?: ContractFormat;
 }
 
 /** A short single-line string. */
@@ -190,6 +291,19 @@ export interface NumberFieldNode extends InputFormNodeCommon {
   maximum?: number;
   exclusive_minimum?: number;
   exclusive_maximum?: number;
+  /**
+   * The site's effective unit: the site's own `unit`, or else the unit of the
+   * concept that types it — an ISO 4217 currency code such as `EUR`, `percent`,
+   * or a unit of measure such as `kg`. A description: a consumer shows the
+   * number in it and converts nothing. Carried as written, so that a unit a
+   * later version of the standard adds still type-checks.
+   */
+  unit?: string;
+  /**
+   * How the field's values combine across records. Only a structure field
+   * declares one: an input slot holds one value, never a column.
+   */
+  aggregate?: Aggregate;
 }
 
 /** True or false. */
@@ -201,10 +315,18 @@ export interface BooleanFieldNode extends InputFormNodeCommon {
 export interface EnumFieldNode extends InputFormNodeCommon {
   kind: "enum";
   /**
-   * Required, and always a list even for a single choice, so that no consumer
-   * has to read a single-value form. The authored `choices`, verbatim.
+   * The option values, in declared order. Required, and always a list even for
+   * a single choice, so that no consumer has to read a single-value form. A
+   * renderer reading `choices` alone stays correct.
    */
-  choices: unknown[];
+  choices: string[];
+  /**
+   * The words and tone of each option, present only when at least one option of
+   * the site carries a `label`, a `description` or a `tone`: one `ChoiceOption`
+   * per value of `choices`, in the same order. A node whose options carry no
+   * words has no `options` member.
+   */
+  options?: ChoiceOption[];
 }
 
 /**

@@ -72,7 +72,10 @@ export async function packageValidate(options: { directory?: string }): Promise<
     p.log.info(`  Result line:   ${manifest.resultLine}`);
   }
   if (manifest.examples && manifest.examples.length > 0) {
-    p.log.info(`  Examples:      ${manifest.examples.join(", ")}`);
+    // Each path quoted, since a path may itself hold a comma or a space.
+    p.log.info(
+      `  Examples:      ${manifest.examples.map((path) => JSON.stringify(path)).join(", ")}`,
+    );
   }
 
   // Display exports

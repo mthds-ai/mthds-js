@@ -277,38 +277,26 @@ export function validateManifest(raw: string): ValidationResult {
     errors.push(fault.message);
   }
 
-  // --- [exports] section (required, hierarchical) ---
-  const exports = parsed["exports"] as Record<string, unknown> | undefined;
-  if (!exports || typeof exports !== "object" || Object.keys(exports).length === 0) {
-    errors.push(
-      "[exports] section is required: at least one export domain with pipes must be defined.",
-    );
-  } else {
-    for (const [domain, node] of Object.entries(exports)) {
-      const domainLower = domain.toLowerCase();
-      const matchedPrefix = RESERVED_PREFIXES.find((prefix) => domainLower.startsWith(prefix));
-      if (matchedPrefix) {
-        errors.push(
-          `[exports."${domain}"] domain cannot start with reserved prefix "${matchedPrefix}".`,
-        );
+  // --- [exports] section (optional, hierarchical) ---
+  // The manifest format makes [exports] optional, and the main pipe is exported by virtue of being
+  // main_pipe, whether or not [exports] lists it (mthds/docs/spec/manifest-format.md, "Main
+  // Pipe"), so neither an absent section nor an unlisted main pipe is a fault. A section that is
+  // present is still checked.
+  const exports = parsed["exports"];
+  if (exports !== undefined) {
+    if (exports === null || typeof exports !== "object" || Array.isArray(exports)) {
+      errors.push("[exports] must be a table of export domains.");
+    } else {
+      for (const [domain, node] of Object.entries(exports as Record<string, unknown>)) {
+        const domainLower = domain.toLowerCase();
+        const matchedPrefix = RESERVED_PREFIXES.find((prefix) => domainLower.startsWith(prefix));
+        if (matchedPrefix) {
+          errors.push(
+            `[exports."${domain}"] domain cannot start with reserved prefix "${matchedPrefix}".`,
+          );
+        }
+        validateExportNode(node, domain, errors);
       }
-      validateExportNode(node, domain, errors);
-    }
-  }
-
-  // --- main_pipe must be listed in exports ---
-  if (
-    pkg["main_pipe"] &&
-    typeof pkg["main_pipe"] === "string" &&
-    exports &&
-    typeof exports === "object" &&
-    Object.keys(exports).length > 0
-  ) {
-    const allPipes = collectAllExportedPipes(exports as Exports);
-    if (!allPipes.includes(pkg["main_pipe"] as string)) {
-      errors.push(
-        `[package.main_pipe] "${pkg["main_pipe"]}" must be listed in one of the [exports] domains.`,
-      );
     }
   }
 
@@ -344,7 +332,7 @@ export function validateManifest(raw: string): ValidationResult {
 
   const manifest: MethodsManifest = {
     package: manifestPkg,
-    ...(exports ? { exports: exports as Exports } : {}),
+    ...(exports !== undefined ? { exports: exports as Exports } : {}),
   };
 
   return { valid: true, errors: [], manifest };

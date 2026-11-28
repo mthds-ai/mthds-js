@@ -11,6 +11,8 @@
 
 The parser stops at the first fault and returns the flat `ParsedManifest`. The validator collects every fault and returns the nested `MethodsManifest` the installer uses. `convert.ts` bridges the two shapes. A rule both readers apply is written once, in `schema.ts`, and each imports it. How `mthds_version` is split between them is in [versioning.md](./versioning.md#mthds_version-is-a-constraint-not-a-stamp).
 
+Neither reader requires `[exports]`, which the manifest format makes optional, nor a `main_pipe` listed in it, since the format exports the main pipe by virtue of being `main_pipe`; a section that is present is checked by both.
+
 A new key of `[package]` therefore touches both readers, their two types, `serializeManifestToToml` and the bridge. Forgetting the schema refuses every manifest declaring the key, and forgetting the serializer or the bridge drops it silently.
 
 ## Categories

@@ -14,6 +14,10 @@
 - **Standard version `9.2.0` and the core error registry `9.2.0` (Breaking)**: `MTHDS_STANDARD_VERSION` moves to `9.2.0`, so `mthds package init` writes `mthds_version = ">=9.2.0"` and a manifest capped below it, such as an exact `9.0.0`, `~9.0.0`, `~9.1.0` or `>=9.0.0, <9.2.0`, is no longer satisfied and the installer skips its method, while `>=9.0.0` and `^9.0.0` still are. The package vendors the registry of the standard's `v9.2.0` release, and `MTHDS_ERROR_REGISTRY_VERSION` and `MTHDS_ERROR_REGISTRY_TARGET_VERSION` are `9.2.0`: it adds `method.contract_fact_invalid` (parameters `fact`, `field_path` and a `reason` among `inapplicable`, `not_value_slot`, `malformed`, `contradictory`, `value_breaks_contract` and `duplicate_option`) and the warning `method.choice_option_dubious` (`field_path`, and a `reason` of `empty_value` or `duplicate_value`), and gives `method.hint_invalid`'s `reason` the values `unknown_role`, `inapplicable_role`, `unknown_part`, `inapplicable_part` and `duplicate_part`. The protocol stays at `2.0.1`.
 - **Descriptor contract-fact slots are typed (Breaking)**: a text node's `format` is the closed `ContractFormat` (`email`, `uri`, `date-time`, `uuid`, `hostname`, `ipv4`, `ipv6` and `time`, listed by `CONTRACT_FORMATS`) where it was any string, `examples` is a non-empty list of strings and numbers where it was `unknown[]`, and an `enum` node's `choices` is `string[]` where it was `unknown[]`, so code building a descriptor with another format, an empty or boolean example or a non-string choice no longer compiles.
 
+### Fixed
+
+- **A manifest without `[exports]`, or whose `main_pipe` no export lists**: `mthds install`, `publish` and `share` no longer skip such a method, since the manifest format makes `[exports]` optional and exports the main pipe whether or not `[exports]` lists it; an `[exports]` section that is present is still checked.
+
 ## [v0.37.0] - 2026-11-25
 
 ### Changed

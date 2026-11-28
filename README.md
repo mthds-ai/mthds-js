@@ -115,6 +115,7 @@ The CLI validates everything during install:
 - `METHODS.toml` must parse as valid TOML
 - `[package]` section with `name`, `address`, `version` (semver), and `description` are required
 - `address` must include a hostname with a dot (e.g. `github.com/...`)
+- `[exports]` is optional, and is checked when present; `main_pipe` is exported whether or not `[exports]` lists it
 - `mthds_version`, if present, must be a valid version constraint *and* must be satisfied by the MTHDS standard version this CLI implements — a method declaring itself incompatible is refused rather than installed. See [docs/versioning.md](docs/versioning.md)
 - `categories`, if present, must be an array of lowercase slugs matching `^[a-z0-9]+(-[a-z0-9]+)*$`, such as `["legal", "customer-support"]`. The standard lists no values, so a repeated entry or a value the CLI does not know is never refused, and an empty array declares no category
 - `result_line` (a template wording a finished run of the main pipe in one line) and a non-empty `examples` (files of the tree holding example inputs) each require `main_pipe`, and `result_line` must not be empty or blank. Whether the template parses and whether each example file exists and holds valid inputs is the runtime's to judge

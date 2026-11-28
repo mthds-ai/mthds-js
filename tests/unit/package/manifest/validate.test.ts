@@ -414,7 +414,7 @@ description = ""
     expect(r.errors.length).toBeGreaterThanOrEqual(3);
   });
 
-  it("rejects manifest with no exports", () => {
+  it("accepts a manifest with no exports, as the manifest format allows", () => {
     const raw = `
 [package]
 name = "tools"
@@ -423,27 +423,69 @@ version = "1.0.0"
 description = "Test."
 `;
     const r = validateManifest(raw);
-    expect(r.valid).toBe(false);
-    expect(r.errors).toContainEqual(expect.stringContaining("[exports] section is required"));
+    expect(r.errors).toEqual([]);
+    expect(r.valid).toBe(true);
+    expect(r.manifest!.exports).toBeUndefined();
   });
 
-  it("rejects main_pipe not in exports", () => {
+  it("accepts a main_pipe that no export domain lists, since it is auto-exported", () => {
     const raw = `
 [package]
 name = "tools"
 address = "github.com/a/b"
 version = "1.0.0"
 description = "Test."
-main_pipe = "nonexistent_pipe"
+main_pipe = "review_nda"
 
 [exports.legal]
 pipes = ["classify_document"]
 `;
     const r = validateManifest(raw);
+    expect(r.errors).toEqual([]);
+    expect(r.manifest!.package.main_pipe).toBe("review_nda");
+  });
+
+  it("accepts a main_pipe with no exports at all", () => {
+    const raw = `
+[package]
+name = "tools"
+address = "github.com/a/b"
+version = "1.0.0"
+description = "Test."
+main_pipe = "review_nda"
+`;
+    expect(validateManifest(raw).valid).toBe(true);
+  });
+
+  it("still checks an exports section that is present", () => {
+    const raw = `
+[package]
+name = "tools"
+address = "github.com/a/b"
+version = "1.0.0"
+description = "Test."
+
+[exports.native]
+pipes = ["NotSnake"]
+`;
+    const r = validateManifest(raw);
     expect(r.valid).toBe(false);
-    expect(r.errors).toContainEqual(
-      expect.stringContaining('[package.main_pipe] "nonexistent_pipe" must be listed'),
-    );
+    expect(r.errors).toContainEqual(expect.stringContaining("reserved prefix"));
+    expect(r.errors).toContainEqual(expect.stringContaining("must be snake_case"));
+  });
+
+  it("rejects an exports key that is not a table", () => {
+    const raw = `exports = "legal"
+
+[package]
+name = "tools"
+address = "github.com/a/b"
+version = "1.0.0"
+description = "Test."
+`;
+    const r = validateManifest(raw);
+    expect(r.valid).toBe(false);
+    expect(r.errors).toContain("[exports] must be a table of export domains.");
   });
 });
 

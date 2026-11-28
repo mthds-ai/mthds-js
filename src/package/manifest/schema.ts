@@ -156,17 +156,21 @@ export interface ManifestRuleFault {
  * - a non-empty `examples` without `main_pipe`, whose inputs each example fills, breaks
  *   `examples_without_main_pipe`. An empty array declares no example, as leaving the key out does.
  *
+ * The values are taken as the manifest writes them, of any type: the two `*_without_main_pipe`
+ * rules follow from a key being declared, whatever its value, so a reader that also refuses a
+ * value of the wrong type reports both faults in one pass. Only a string is checked for blankness.
+ *
  * The rest is the runtime's to judge, since it needs what a manifest alone does not hold: whether
  * the template parses as Jinja2 and reads no free variable but `output`, whether each example
  * names a file of the tree, and whether each file holds a valid set of inputs for the main pipe.
  */
 export function presentationKeyFaults(pkg: {
   readonly mainPipe?: string | undefined;
-  readonly resultLine?: string | undefined;
-  readonly examples?: readonly string[] | undefined;
+  readonly resultLine?: unknown;
+  readonly examples?: unknown;
 }): ManifestRuleFault[] {
   const faults: ManifestRuleFault[] = [];
-  if (pkg.resultLine !== undefined && pkg.resultLine.trim() === "") {
+  if (typeof pkg.resultLine === "string" && pkg.resultLine.trim() === "") {
     faults.push({
       reason: "result_line_invalid",
       message:
@@ -181,7 +185,7 @@ export function presentationKeyFaults(pkg: {
           "[package.result_line] requires [package.main_pipe]: the result line reads the output of the manifest's own main pipe.",
       });
     }
-    if (pkg.examples !== undefined && pkg.examples.length > 0) {
+    if (pkg.examples !== undefined && !(Array.isArray(pkg.examples) && pkg.examples.length === 0)) {
       faults.push({
         reason: "examples_without_main_pipe",
         message:

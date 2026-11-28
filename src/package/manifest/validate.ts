@@ -253,23 +253,15 @@ export function validateManifest(raw: string): ValidationResult {
   // references. Each needs main_pipe, and a result line holds something; the template itself and
   // the example files are the runtime's to judge.
   const resultLine = pkg["result_line"];
-  let resultLineChecked: string | undefined;
-  if (resultLine !== undefined) {
-    if (typeof resultLine !== "string") {
-      errors.push("[package.result_line] must be a string.");
-    } else {
-      resultLineChecked = resultLine;
-    }
+  if (resultLine !== undefined && typeof resultLine !== "string") {
+    errors.push("[package.result_line] must be a string.");
   }
   const examples = pkg["examples"];
-  let examplesChecked: string[] | undefined;
   if (examples !== undefined) {
     if (!Array.isArray(examples)) {
       errors.push("[package.examples] must be an array of strings.");
     } else if ((examples as unknown[]).some((entry) => typeof entry !== "string")) {
       errors.push("[package.examples] must contain only strings.");
-    } else {
-      examplesChecked = examples as string[];
     }
   }
   // A main_pipe of the wrong type is already an error above; it still counts as declared here,
@@ -278,8 +270,9 @@ export function validateManifest(raw: string): ValidationResult {
   const mainPipe = pkg["main_pipe"];
   for (const fault of presentationKeyFaults({
     mainPipe: mainPipe === undefined ? undefined : typeof mainPipe === "string" ? mainPipe : "",
-    resultLine: resultLineChecked,
-    examples: examplesChecked,
+    // As declared, whatever their type: a key of the wrong type with no main_pipe breaks both rules.
+    resultLine,
+    examples,
   })) {
     errors.push(fault.message);
   }

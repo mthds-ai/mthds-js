@@ -776,3 +776,29 @@ describe("validateManifest — a main_pipe of the wrong type", () => {
     expect(r.errors).not.toContainEqual(expect.stringContaining("requires [package.main_pipe]"));
   });
 });
+
+describe("validateManifest — presentation keys of the wrong type without main_pipe", () => {
+  it.each([
+    [
+      "a result line that is not a string",
+      "result_line = 3",
+      "[package.result_line] must be a string.",
+    ],
+    [
+      "examples that are not an array",
+      'examples = "examples/a.json"',
+      "[package.examples] must be an array of strings.",
+    ],
+    [
+      "an example entry that is not a string",
+      "examples = [3]",
+      "[package.examples] must contain only strings.",
+    ],
+  ])("reports both the type and the missing main_pipe for %s", (_topic, line, typeError) => {
+    const r = validateManifest(minimal.replace("[package]\n", `[package]\n${line}\n`));
+    expect(r.valid).toBe(false);
+    expect(r.errors).toContain(typeError);
+    expect(r.errors).toContainEqual(expect.stringContaining("requires [package.main_pipe]"));
+    expect(r.errors).toHaveLength(2);
+  });
+});

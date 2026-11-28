@@ -273,9 +273,11 @@ export function validateManifest(raw: string): ValidationResult {
     }
   }
   // A main_pipe of the wrong type is already an error above; it still counts as declared here,
-  // so the manifest is not refused twice for one fault.
+  // so the manifest is not refused twice for one fault. It is never coerced: a TOML table with a
+  // `toString` key would make `String()` throw and abort the whole repository's resolution.
+  const mainPipe = pkg["main_pipe"];
   for (const fault of presentationKeyFaults({
-    mainPipe: pkg["main_pipe"] !== undefined ? String(pkg["main_pipe"]) : undefined,
+    mainPipe: mainPipe === undefined ? undefined : typeof mainPipe === "string" ? mainPipe : "",
     resultLine: resultLineChecked,
     examples: examplesChecked,
   })) {

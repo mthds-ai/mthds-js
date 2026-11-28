@@ -763,3 +763,16 @@ describe("validateManifest — package.result_line and package.examples", () => 
     expect(r.errors).toEqual([]);
   });
 });
+
+describe("validateManifest — a main_pipe of the wrong type", () => {
+  it("refuses a table whose keys shadow toString and valueOf without throwing", () => {
+    const raw = minimal.replace(
+      "[package]\n",
+      '[package]\nmain_pipe = { toString = 1, valueOf = 1 }\nresult_line = "{{ output.total }} due"\n',
+    );
+    const r = validateManifest(raw);
+    expect(r.valid).toBe(false);
+    expect(r.errors).toContain("[package.main_pipe] must be a string.");
+    expect(r.errors).not.toContainEqual(expect.stringContaining("requires [package.main_pipe]"));
+  });
+});

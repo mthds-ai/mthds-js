@@ -97,7 +97,7 @@ pipes = ["extract_clause", "analyze_nda"]
     expect(contracts.pipes).toEqual(["extract_clause", "analyze_nda"]);
   });
 
-  // The complete example of the standard's manifest format, as `v9.0.0` publishes it
+  // The complete example of the standard's manifest format, as `v9.2.0` publishes it
   // (mthds/docs/spec/manifest-format.md, "Complete Manifest Example"), copied verbatim:
   // its `mthds_version` floor is the standard's own version, so it passes only once
   // MTHDS_STANDARD_VERSION has followed the cut.
@@ -111,10 +111,12 @@ version       = "0.3.0"
 description   = "Legal document analysis and contract review methods."
 authors       = ["ACME Legal Tech <legal@acme.com>"]
 license       = "MIT"
-mthds_version = ">=9.0.0"
+mthds_version = ">=9.2.0"
 main_pipe     = "analyze_nda"
 exclude       = ["drafts/"]
 categories    = ["legal", "compliance"]
+result_line   = "{{ output.clauses | length }} clauses reviewed"
+examples      = ["examples/mutual-nda.json"]
 
 [exports.legal]
 pipes = ["classify_document"]
@@ -128,8 +130,10 @@ pipes = ["compute_weighted_score"]
     const r = validateManifest(raw);
     expect(r.errors).toEqual([]);
     expect(r.valid).toBe(true);
-    expect(r.manifest!.package.mthds_version).toBe(">=9.0.0");
+    expect(r.manifest!.package.mthds_version).toBe(">=9.2.0");
     expect(r.manifest!.package.categories).toEqual(["legal", "compliance"]);
+    expect(r.manifest!.package.result_line).toBe("{{ output.clauses | length }} clauses reviewed");
+    expect(r.manifest!.package.examples).toEqual(["examples/mutual-nda.json"]);
   });
 
   it("accepts valid name", () => {
@@ -410,7 +414,7 @@ description = ""
     expect(r.errors.length).toBeGreaterThanOrEqual(3);
   });
 
-  it("rejects manifest with no exports", () => {
+  it("accepts a manifest with no exports, as the manifest format allows", () => {
     const raw = `
 [package]
 name = "tools"
@@ -419,27 +423,69 @@ version = "1.0.0"
 description = "Test."
 `;
     const r = validateManifest(raw);
-    expect(r.valid).toBe(false);
-    expect(r.errors).toContainEqual(expect.stringContaining("[exports] section is required"));
+    expect(r.errors).toEqual([]);
+    expect(r.valid).toBe(true);
+    expect(r.manifest!.exports).toBeUndefined();
   });
 
-  it("rejects main_pipe not in exports", () => {
+  it("accepts a main_pipe that no export domain lists, since it is auto-exported", () => {
     const raw = `
 [package]
 name = "tools"
 address = "github.com/a/b"
 version = "1.0.0"
 description = "Test."
-main_pipe = "nonexistent_pipe"
+main_pipe = "review_nda"
 
 [exports.legal]
 pipes = ["classify_document"]
 `;
     const r = validateManifest(raw);
+    expect(r.errors).toEqual([]);
+    expect(r.manifest!.package.main_pipe).toBe("review_nda");
+  });
+
+  it("accepts a main_pipe with no exports at all", () => {
+    const raw = `
+[package]
+name = "tools"
+address = "github.com/a/b"
+version = "1.0.0"
+description = "Test."
+main_pipe = "review_nda"
+`;
+    expect(validateManifest(raw).valid).toBe(true);
+  });
+
+  it("still checks an exports section that is present", () => {
+    const raw = `
+[package]
+name = "tools"
+address = "github.com/a/b"
+version = "1.0.0"
+description = "Test."
+
+[exports.native]
+pipes = ["NotSnake"]
+`;
+    const r = validateManifest(raw);
     expect(r.valid).toBe(false);
-    expect(r.errors).toContainEqual(
-      expect.stringContaining('[package.main_pipe] "nonexistent_pipe" must be listed'),
-    );
+    expect(r.errors).toContainEqual(expect.stringContaining("reserved prefix"));
+    expect(r.errors).toContainEqual(expect.stringContaining("must be snake_case"));
+  });
+
+  it("rejects an exports key that is not a table", () => {
+    const raw = `exports = "legal"
+
+[package]
+name = "tools"
+address = "github.com/a/b"
+version = "1.0.0"
+description = "Test."
+`;
+    const r = validateManifest(raw);
+    expect(r.valid).toBe(false);
+    expect(r.errors).toContain("[exports] must be a table of export domains.");
   });
 });
 
@@ -669,5 +715,132 @@ describe("validateManifest — package.categories", () => {
       expect(r.valid).toBe(false);
       expect(r.errors).toContainEqual(expect.stringContaining("[package.categories]"));
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// validateManifest — package.result_line and package.examples
+// ---------------------------------------------------------------------------
+
+describe("validateManifest — package.result_line and package.examples", () => {
+  const withKeys = (lines: string): string =>
+    minimal.replace("[package]\n", `[package]\n${lines}\n`);
+  const RESULT_LINE =
+    "{{ output.clauses | selectattr('verdict', 'equalto', 'negotiate') | list | length }} to negotiate";
+
+  it("carries both keys beside main_pipe, as written", () => {
+    const r = validateManifest(
+      withKeys(
+        `main_pipe = "do_thing"\nresult_line = "${RESULT_LINE}"\nexamples = ["examples/a.json", "examples/b.json"]`,
+      ),
+    );
+    expect(r.errors).toEqual([]);
+    expect(r.manifest!.package.result_line).toBe(RESULT_LINE);
+    expect(r.manifest!.package.examples).toEqual(["examples/a.json", "examples/b.json"]);
+  });
+
+  it("leaves both keys off a manifest that declares neither", () => {
+    const r = validateManifest(withKeys('main_pipe = "do_thing"'));
+    expect(r.valid).toBe(true);
+    expect(r.manifest!.package.result_line).toBeUndefined();
+    expect(r.manifest!.package.examples).toBeUndefined();
+  });
+
+  it("accepts an empty examples array without main_pipe, carrying it as written", () => {
+    const r = validateManifest(withKeys("examples = []"));
+    expect(r.valid).toBe(true);
+    expect(r.manifest!.package.examples).toEqual([]);
+  });
+
+  it.each([
+    [
+      "a result line with no main pipe to read",
+      'result_line = "{{ output.total }} due"',
+      "requires [package.main_pipe]",
+    ],
+    [
+      "examples with no main pipe to fill",
+      'examples = ["examples/a.json"]',
+      "requires [package.main_pipe]",
+    ],
+    ["an empty result line", 'main_pipe = "do_thing"\nresult_line = ""', "must not be empty"],
+    [
+      "a result line of white space only",
+      'main_pipe = "do_thing"\nresult_line = " \\n "',
+      "must not be empty",
+    ],
+    [
+      "a result line that is not a string",
+      'main_pipe = "do_thing"\nresult_line = 3',
+      "must be a string",
+    ],
+    [
+      "examples that are not an array",
+      'main_pipe = "do_thing"\nexamples = "examples/a.json"',
+      "must be an array of strings",
+    ],
+    [
+      "an example entry that is not a string",
+      'main_pipe = "do_thing"\nexamples = [3]',
+      "must contain only strings",
+    ],
+  ])("rejects %s", (_topic, lines, message) => {
+    const r = validateManifest(withKeys(lines));
+    expect(r.valid).toBe(false);
+    expect(r.errors).toContainEqual(expect.stringContaining(message));
+  });
+
+  it("reports every presentation fault at once", () => {
+    const r = validateManifest(withKeys('result_line = " "\nexamples = ["examples/a.json"]'));
+    expect(r.valid).toBe(false);
+    expect(r.errors).toHaveLength(3);
+  });
+
+  it("leaves the template and the example files to the runtime", () => {
+    const r = validateManifest(
+      withKeys(
+        'main_pipe = "do_thing"\nresult_line = "{{ counterparty "\nexamples = ["inputs.json"]',
+      ),
+    );
+    expect(r.errors).toEqual([]);
+  });
+});
+
+describe("validateManifest — a main_pipe of the wrong type", () => {
+  it("refuses a table whose keys shadow toString and valueOf without throwing", () => {
+    const raw = minimal.replace(
+      "[package]\n",
+      '[package]\nmain_pipe = { toString = 1, valueOf = 1 }\nresult_line = "{{ output.total }} due"\n',
+    );
+    const r = validateManifest(raw);
+    expect(r.valid).toBe(false);
+    expect(r.errors).toContain("[package.main_pipe] must be a string.");
+    expect(r.errors).not.toContainEqual(expect.stringContaining("requires [package.main_pipe]"));
+  });
+});
+
+describe("validateManifest — presentation keys of the wrong type without main_pipe", () => {
+  it.each([
+    [
+      "a result line that is not a string",
+      "result_line = 3",
+      "[package.result_line] must be a string.",
+    ],
+    [
+      "examples that are not an array",
+      'examples = "examples/a.json"',
+      "[package.examples] must be an array of strings.",
+    ],
+    [
+      "an example entry that is not a string",
+      "examples = [3]",
+      "[package.examples] must contain only strings.",
+    ],
+  ])("reports both the type and the missing main_pipe for %s", (_topic, line, typeError) => {
+    const r = validateManifest(minimal.replace("[package]\n", `[package]\n${line}\n`));
+    expect(r.valid).toBe(false);
+    expect(r.errors).toContain(typeError);
+    expect(r.errors).toContainEqual(expect.stringContaining("requires [package.main_pipe]"));
+    expect(r.errors).toHaveLength(2);
   });
 });

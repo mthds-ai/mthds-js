@@ -82,9 +82,12 @@ export type { StuffContentOrData, PipelineInputs } from "./pipeline_inputs.js";
 // extension fields of the validate response — `pipe_io_contracts` (mirror of
 // `mthds/protocol/pipe_io_contracts.py`), `input_form` (mirror of
 // `mthds/protocol/input_form.py`) and `output_form` (mirror of
-// `mthds/protocol/output_form.py`). Types only; the one runtime value is the
-// closed kind vocabulary, `FIELD_KINDS`, from which `FieldKind` is derived —
-// and it covers the output form too, which reuses the same node union.
+// `mthds/protocol/output_form.py`). Types only; the runtime values are the
+// closed vocabularies — `FIELD_KINDS`, `CONTRACT_FORMATS`, `AGGREGATES` and
+// `OPTION_TONES` — from which their unions are derived, and they cover the
+// output form too, which reuses the same node union. The intent-hint
+// vocabularies (mirror of `mthds/protocol/intent_hints.py`) name the words of
+// the open `hints` map for a consumer reading a hint by name.
 export type {
   IOMultiplicity,
   PresenceMarker,
@@ -93,9 +96,14 @@ export type {
   PipeIOContract,
   PipeIOContracts,
 } from "./pipe_io_contracts.js";
-export { FIELD_KINDS } from "./input_form.js";
+export { AGGREGATES, CONTRACT_FORMATS, FIELD_KINDS, OPTION_TONES } from "./input_form.js";
 export type {
+  Aggregate,
+  ChoiceOption,
+  ContractFormat,
+  ExampleValue,
   FieldKind,
+  OptionTone,
   IntentHints,
   InputFormField,
   InputFormItem,
@@ -115,6 +123,17 @@ export type {
   InputForm,
 } from "./input_form.js";
 export type { PipeOutputFormDescriptor, OutputForm } from "./output_form.js";
+export {
+  HINT_KEYS,
+  INTENT_WORDS,
+  PART_WORDS,
+  ROLE_WORDS,
+  isHintKey,
+  isIntentWord,
+  isPartWord,
+  isRoleWord,
+} from "./intent_hints.js";
+export type { HintKey, IntentWord, PartWord, RoleWord } from "./intent_hints.js";
 
 // ── The inputs-template projection ───────────────────────────────────
 // A pipe's fill-in template, projected client-side from the `input_form`

@@ -49,7 +49,7 @@ function readManifest(manifestPath: string, notFoundMessage: string): ParsedMani
       agentError(
         agentProblem(
           "method.package_invalid",
-          { reason: "manifest_invalid" },
+          { reason: err.reason ?? "manifest_invalid" },
           `Validation error: ${err.message}. Fix the validation errors in METHODS.toml and try again.`,
           { reader: "actor" },
         ),
@@ -74,6 +74,8 @@ function manifestToJson(manifest: ParsedManifest): Record<string, unknown> {
   if (manifest.mainPipe !== undefined) result.main_pipe = manifest.mainPipe;
   if (manifest.exclude !== undefined) result.exclude = manifest.exclude;
   if (manifest.categories !== undefined) result.categories = manifest.categories;
+  if (manifest.resultLine !== undefined) result.result_line = manifest.resultLine;
+  if (manifest.examples !== undefined) result.examples = manifest.examples;
   return result;
 }
 

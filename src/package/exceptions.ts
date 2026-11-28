@@ -1,3 +1,5 @@
+import type { ManifestPackageReason } from "./manifest/package-reason.js";
+
 export class MthdsPackageError extends Error {
   constructor(message: string) {
     super(message);
@@ -19,10 +21,19 @@ export class ManifestParseError extends ManifestError {
   }
 }
 
+/**
+ * A parsed manifest breaks a rule of the manifest format. `reason` names the
+ * `method.package_invalid` reason the broken rule gives when the format names one, such as
+ * `result_line_without_main_pipe`, and is `undefined` for every other rule, which a runtime
+ * reports under a reason of its own.
+ */
 export class ManifestValidationError extends ManifestError {
-  constructor(message: string) {
+  readonly reason: ManifestPackageReason | undefined;
+
+  constructor(message: string, options: { reason?: ManifestPackageReason } = {}) {
     super(message);
     this.name = "ManifestValidationError";
+    this.reason = options.reason;
   }
 }
 

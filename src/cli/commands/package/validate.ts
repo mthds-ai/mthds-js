@@ -68,6 +68,15 @@ export async function packageValidate(options: { directory?: string }): Promise<
   if (manifest.categories && manifest.categories.length > 0) {
     p.log.info(`  Categories:    ${manifest.categories.join(", ")}`);
   }
+  if (manifest.resultLine !== undefined) {
+    p.log.info(`  Result line:   ${manifest.resultLine}`);
+  }
+  if (manifest.examples && manifest.examples.length > 0) {
+    // Each path quoted, since a path may itself hold a comma or a space.
+    p.log.info(
+      `  Examples:      ${manifest.examples.map((path) => JSON.stringify(path)).join(", ")}`,
+    );
+  }
 
   // Display exports
   const exportEntries = Object.entries(manifest.exports);

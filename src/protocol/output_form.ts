@@ -54,6 +54,21 @@
  * `multiplicity`: the concept alone cannot state it. A consumer never sees the
  * wrap — it reads `kind: "list"` and never touches the contract for plurality.
  *
+ * ## Contract facts inside an output (MTHDS standard `9.2.0`)
+ *
+ * Every node inside an output carries the contract facts of its field exactly
+ * as under an input — the bounds and lengths, `pattern` and `format`, the
+ * effective `unit`, `aggregate`, `examples`, and an `enum` node's `options` —
+ * so a result view shows a number with a `unit` as money or a percentage, a
+ * column whose field declares an `aggregate` with its total, and a status by
+ * its option's label and tone. The output node itself is no slot, so it
+ * carries only what its concept states, such as the unit of a concept refining
+ * `native.Number`; facts written on input slots never reach it. The `part` of
+ * each field rides that field's `hints`, which is where a result view finds
+ * the anatomy of a record (`PART_WORDS` in `./intent_hints.ts`); a `role` means
+ * nothing on an output. The node types are shared, so none of this needs a
+ * type of its own here.
+ *
  * ## Read with the contract, never instead of it
  *
  * The descriptor states what the field IS;
